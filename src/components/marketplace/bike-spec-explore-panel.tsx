@@ -1,10 +1,15 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowUpRight, X } from "lucide-react";
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import type { BikeSpecExploreResult } from "@/lib/ai/bike-spec-explore-schema";
+import {
+  genieProgressShimmerClassName,
+  genieProgressShimmerStyle,
+} from "@/lib/genie/shimmer";
+import { cn } from "@/lib/utils";
 
 export interface BikeSpecSelection {
   label: string;
@@ -22,12 +27,6 @@ interface BikeSpecExplorePanelProps {
   bikeType?: string | null;
 }
 
-const THINKING_SHIMMER_STYLE: React.CSSProperties = {
-  backgroundImage:
-    "linear-gradient(90deg, #a3a3a3 0%, #a3a3a3 38%, #525252 50%, #a3a3a3 62%, #a3a3a3 100%)",
-  backgroundSize: "220% 100%",
-};
-
 const THINKING_MESSAGES = [
   "Thinking…",
   "Searching official manufacturer sites…",
@@ -36,6 +35,8 @@ const THINKING_MESSAGES = [
 ];
 
 const EASE = [0.04, 0.62, 0.23, 0.98] as const;
+const SHEET_CLOSE_MS = 360;
+const SHEET_HEIGHT = "min(85dvh, calc(100dvh - env(safe-area-inset-bottom)))";
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -66,8 +67,11 @@ function ExploreThinkingState({ messageIndex }: { messageIndex: number }) {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.35, ease: EASE }}
-            className="w-fit max-w-full whitespace-normal bg-clip-text text-[15px] leading-relaxed text-transparent animate-[agent-text-shimmer_5.5s_linear_infinite]"
-            style={THINKING_SHIMMER_STYLE}
+            className={cn(
+              "w-fit max-w-full whitespace-normal text-[15px] leading-relaxed text-gray-500",
+              genieProgressShimmerClassName,
+            )}
+            style={genieProgressShimmerStyle}
           >
             {message}
           </motion.p>
@@ -102,12 +106,7 @@ function ExploreThinkingState({ messageIndex }: { messageIndex: number }) {
 
 function ExploreResults({ result }: { result: BikeSpecExploreResult }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: EASE }}
-      className="space-y-9"
-    >
+    <div className="space-y-9 pb-4">
       {result.overview ? (
         <p className="text-[15px] leading-relaxed text-gray-600">{result.overview}</p>
       ) : null}
@@ -177,7 +176,7 @@ function ExploreResults({ result }: { result: BikeSpecExploreResult }) {
           </div>
         </section>
       ) : null}
-    </motion.div>
+    </div>
   );
 }
 
@@ -195,6 +194,40 @@ export function BikeSpecExplorePanel({
   const [result, setResult] = React.useState<BikeSpecExploreResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [retryToken, setRetryToken] = React.useState(0);
+  const [shouldRender, setShouldRender] = React.useState(isOpen);
+  const [isLeaving, setIsLeaving] = React.useState(false);
+  const [isMounted, setIsMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setShouldRender(true);
+      setIsLeaving(false);
+      return;
+    }
+
+    if (!shouldRender) return;
+
+    setIsLeaving(true);
+    const timer = window.setTimeout(() => {
+      setShouldRender(false);
+      setIsLeaving(false);
+    }, SHEET_CLOSE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [isOpen, shouldRender]);
+
+  React.useEffect(() => {
+    if (!shouldRender) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [shouldRender]);
 
   React.useEffect(() => {
     if (!isLoading) {
@@ -255,7 +288,7 @@ export function BikeSpecExplorePanel({
     return () => controller.abort();
   }, [isOpen, spec, productName, brand, model, bikeType, retryToken]);
 
-  const handleClose = () => {
+  const handleClose = React.useCallback(() => {
     onClose();
     window.setTimeout(() => {
       setResult(null);
@@ -263,26 +296,55 @@ export function BikeSpecExplorePanel({
       setIsLoading(false);
       setMessageIndex(0);
       setRetryToken(0);
-    }, 300);
-  };
+    }, SHEET_CLOSE_MS);
+  }, [onClose]);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") handleClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isOpen, handleClose]);
 
   const handleRetry = () => {
     setRetryToken((current) => current + 1);
   };
 
-  return (
-    <Sheet open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <SheetContent
-        side="right"
-        showCloseButton={false}
-        className="w-full gap-0 border-gray-200 p-0 sm:max-w-md"
-      >
-        <SheetTitle className="sr-only">
-          {spec ? `${spec.value} specifications` : "Explore specification"}
-        </SheetTitle>
+  if (!shouldRender || !isMounted) return null;
 
-        <div className="flex h-full flex-col bg-white">
-          <header className="flex items-start gap-3 border-b border-gray-100 px-6 pb-5 pt-6">
+  const panelState = isLeaving ? "closed" : "open";
+  const showFooter = !isLoading && !!result;
+
+  const panel = (
+    <div
+      data-state={panelState}
+      className="store-message-overlay fixed inset-0 z-[100] flex items-end justify-center bg-black/30 px-0"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) handleClose();
+      }}
+    >
+      <div
+        data-state={panelState}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bike-spec-explore-title"
+        className={cn(
+          "store-message-sheet grid w-full overflow-hidden rounded-t-2xl border border-gray-200/80 bg-white shadow-xl",
+          showFooter
+            ? "grid-rows-[auto_minmax(0,1fr)_auto]"
+            : "grid-rows-[auto_minmax(0,1fr)]",
+        )}
+        style={{
+          height: SHEET_HEIGHT,
+          maxHeight: SHEET_HEIGHT,
+        }}
+      >
+        <header className="min-h-0 overflow-hidden px-4 pt-3">
+          <div className="mb-3 mx-auto h-1 w-10 rounded-full bg-gray-200" aria-hidden />
+          <div className="flex w-full items-start justify-between gap-3 pb-4">
             <div className="min-w-0 flex-1">
               {spec ? (
                 <>
@@ -290,53 +352,63 @@ export function BikeSpecExplorePanel({
                     {spec.sectionTitle}
                     {spec.label ? ` · ${spec.label}` : ""}
                   </SectionLabel>
-                  <h2 className="mt-2 text-xl font-semibold leading-snug tracking-tight text-gray-900">
+                  <h2
+                    id="bike-spec-explore-title"
+                    className="mt-2 text-lg font-semibold leading-snug tracking-tight text-gray-900"
+                  >
                     {spec.value}
                   </h2>
                 </>
-              ) : null}
+              ) : (
+                <h2 id="bike-spec-explore-title" className="text-lg font-semibold text-gray-900">
+                  Explore specification
+                </h2>
+              )}
             </div>
             <button
               type="button"
               onClick={handleClose}
-              className="-mr-1 -mt-1 shrink-0 rounded-full p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
-              aria-label="Close panel"
+              className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+              aria-label="Close"
             >
-              <X className="h-5 w-5" />
+              <X className="h-4 w-4" />
             </button>
-          </header>
-
-          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-7 [scrollbar-width:thin]">
-            {isLoading ? <ExploreThinkingState messageIndex={messageIndex} /> : null}
-
-            {!isLoading && error ? (
-              <div className="rounded-xl border border-gray-200 bg-white p-6 text-center">
-                <p className="text-sm font-medium text-gray-900">Could not load this part</p>
-                <p className="mx-auto mt-1.5 max-w-xs text-sm leading-relaxed text-gray-500">
-                  {error}
-                </p>
-                <button
-                  type="button"
-                  onClick={handleRetry}
-                  className="mt-5 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
-                >
-                  Try again
-                </button>
-              </div>
-            ) : null}
-
-            {!isLoading && result ? <ExploreResults result={result} /> : null}
           </div>
+        </header>
 
-          {!isLoading && result ? (
-            <footer className="border-t border-gray-100 px-6 py-3">
-              <p className="text-xs text-gray-400">
-                Sourced from official manufacturer websites.
+        <div className="min-h-0 overflow-y-auto overscroll-contain touch-pan-y px-4 py-2 [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
+          {isLoading ? <ExploreThinkingState messageIndex={messageIndex} /> : null}
+
+          {!isLoading && error ? (
+            <div className="rounded-md border border-gray-200 bg-white p-5 text-center">
+              <p className="text-sm font-medium text-gray-900">Could not load this part</p>
+              <p className="mx-auto mt-1.5 max-w-xs text-sm leading-relaxed text-gray-500">
+                {error}
               </p>
-            </footer>
+              <button
+                type="button"
+                onClick={handleRetry}
+                className="mt-5 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+              >
+                Try again
+              </button>
+            </div>
           ) : null}
+
+          {!isLoading && result ? <ExploreResults result={result} /> : null}
         </div>
-      </SheetContent>
-    </Sheet>
+
+        {showFooter ? (
+          <footer
+            className="min-h-0 overflow-hidden border-t border-gray-100 px-4 py-3"
+            style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+          >
+            <p className="text-xs text-gray-400">Sourced from official manufacturer websites.</p>
+          </footer>
+        ) : null}
+      </div>
+    </div>
   );
+
+  return createPortal(panel, document.body);
 }

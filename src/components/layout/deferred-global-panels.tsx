@@ -2,7 +2,9 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
+import { usePathname } from "next/navigation";
 import { useCart } from "@/components/providers/cart-provider";
+import { useGenie } from "@/components/providers/genie-provider";
 import { useMessages } from "@/components/providers/messages-provider";
 import { useUpload } from "@/components/providers/upload-provider";
 
@@ -38,9 +40,20 @@ export function DeferredGlobalPanels() {
   const cart = useCart();
   const messages = useMessages();
   const upload = useUpload();
-  const [loadIdlePanels, setLoadIdlePanels] = React.useState(false);
+  const pathname = usePathname();
+  const { isOpen, productContext } = useGenie();
+  const isProductPage = pathname?.startsWith("/marketplace/product/") ?? false;
+  const [loadIdlePanels, setLoadIdlePanels] = React.useState(isProductPage);
 
   React.useEffect(() => {
+    if (isProductPage || isOpen || productContext) {
+      setLoadIdlePanels(true);
+    }
+  }, [isProductPage, isOpen, productContext]);
+
+  React.useEffect(() => {
+    if (isProductPage) return;
+
     const win = window as Window & {
       requestIdleCallback?: (cb: IdleRequestCallback, options?: IdleRequestOptions) => number;
       cancelIdleCallback?: (id: number) => void;
@@ -53,7 +66,7 @@ export function DeferredGlobalPanels() {
 
     const id = window.setTimeout(() => setLoadIdlePanels(true), 1500);
     return () => window.clearTimeout(id);
-  }, []);
+  }, [isProductPage]);
 
   return (
     <>

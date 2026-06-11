@@ -191,8 +191,6 @@ export function ProductDetailModal({ product, isOpen, onClose }: ProductDetailMo
                       productName={productTitle}
                       currentIndex={currentImageIndex}
                       onIndexChange={setCurrentImageIndex}
-                      onLikeToggle={() => setIsLiked(!isLiked)}
-                      isLiked={isLiked}
                     />
                   </div>
 

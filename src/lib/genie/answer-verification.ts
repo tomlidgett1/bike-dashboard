@@ -204,19 +204,20 @@ export function verifyQuestionAnswered(input: VerifyQuestionAnsweredInput): Veri
 
   const wantsRep = /\b(rep|representative|account manager|sales contact|first contact)\b/.test(q)
   if (wantsRep) {
-    const namesWarrantyAsAnswer =
-      /\b(first|earliest|our)\s+(apollo\s+)?rep\b/.test(q)
-      && /\bwarranty@|\bwarranty\b/.test(draft)
-      && !/\bnot the rep\b|\bwarranty is not\b|\bsupport inbox\b|\blikely sales\b|\bsales contact\b/i.test(
+    // Generic role-confusion check: a support/warranty/automated sender is not a
+    // sales rep unless the draft explicitly distinguishes the two.
+    const namesSupportAsAnswer =
+      /\b(warranty|support|noreply|no-reply|donotreply)\b/.test(draft)
+      && !/\bnot the rep\b|\bis not the\b|\bsupport inbox\b|\blikely sales\b|\bsales contact\b/i.test(
         input.draft_answer,
       )
 
-    if (namesWarrantyAsAnswer) {
+    if (namesSupportAsAnswer) {
       return notReady(
         [
-          'The draft treats warranty/support mail as the sales rep. Identify earliest_likely_sales_contact and distinguish it from warranty/support.',
+          'The draft leans on a warranty/support/automated sender for a sales-rep question. Identify the earliest likely sales contact and distinguish it from support mail.',
         ],
-        'Run the planned Gmail sales-contact search passes and answer with the earliest likely sales rep, noting warranty separately if relevant.',
+        'Run the planned Gmail sales-contact search passes and answer with the earliest likely sales rep, noting warranty/support senders separately if relevant.',
       )
     }
   }
@@ -365,4 +366,77 @@ function wantsCount(q: string): boolean {
 function totalHintMissing(draft: string, q: string): boolean {
   if (!wantsCount(q)) return false
   return !/\d+/.test(draft)
+}
+
+// ── LLM answer judge (high-stakes routes only) ────────────────────────────────
+//
+// The deterministic checks above are cheap but shallow — a model that wants to
+// finish can pass remaining_gaps=[] and sail through. For business_analysis and
+// planned mixed runs, a nano-model judge scores the draft against the question
+// and plan criteria. It only runs when the deterministic verdict is already
+// "ready", so it adds exactly one small serial call to the highest-stakes
+// answers and nothing anywhere else.
+
+const JUDGE_STATIC_INSTRUCTIONS = `You are a strict answer-completeness judge for a bike-store AI agent.
+Decide whether the draft answer fully and concretely answers the user's question with evidence (numbers, names, dates, periods) rather than vague filler.
+Return ready=false with specific, actionable gaps when: a sub-question is unanswered, a requested metric or period is missing, recommendations are generic and unconnected to the supplied numbers, or the draft asks the user for data the agent could fetch itself.
+Be pragmatic: return ready=true when the question is materially answered, even if more detail could exist. Do not invent gaps.`
+
+export async function verifyQuestionAnsweredWithJudge(
+  input: VerifyQuestionAnsweredInput,
+  options: { useJudge: boolean },
+): Promise<VerifyQuestionAnsweredResult> {
+  const deterministic = verifyQuestionAnswered(input)
+  if (!deterministic.ready || !options.useJudge) return deterministic
+
+  try {
+    const { Agent, Runner, user } = await import('@openai/agents')
+    const { z } = await import('zod')
+
+    const judgeAgent = new Agent({
+      name: 'Yellow Jersey Answer Judge',
+      model: 'gpt-5.4-nano',
+      instructions: JUDGE_STATIC_INSTRUCTIONS,
+      outputType: z.object({
+        ready: z.boolean(),
+        gaps: z.array(z.string().max(300)).max(6),
+      }),
+      modelSettings: {
+        parallelToolCalls: false,
+        store: false,
+        reasoning: { effort: 'none', summary: 'auto' },
+        text: { verbosity: 'low' },
+      },
+    })
+
+    const runner = new Runner({
+      tracingDisabled: process.env.GENIE_AGENT_TRACING?.toLowerCase() === 'off',
+      traceIncludeSensitiveData: false,
+      workflowName: 'Yellow Jersey Genie Answer Judge',
+    })
+
+    const criteria = (input.success_criteria ?? []).filter(Boolean)
+    const judgeInput = [
+      `USER QUESTION:\n${input.user_question}`,
+      criteria.length ? `PLAN SUCCESS CRITERIA:\n${criteria.map((c) => `- ${c}`).join('\n')}` : null,
+      `DRAFT ANSWER:\n${input.draft_answer}`,
+    ].filter(Boolean).join('\n\n')
+
+    const result = await runner.run(judgeAgent, [user(judgeInput)], { maxTurns: 1 })
+    const verdict = result.finalOutput
+    if (verdict && !verdict.ready && verdict.gaps.length > 0) {
+      return {
+        ready: false,
+        status: 'not_ready',
+        gaps: verdict.gaps,
+        instruction:
+          'An independent answer review found gaps. Close each gap with tool evidence, then call verify_question_answered again.',
+      }
+    }
+    return deterministic
+  } catch (error) {
+    // The judge is best-effort: never block an answer because the judge failed.
+    console.warn('[Genie verify] answer judge unavailable, using deterministic verdict:', error)
+    return deterministic
+  }
 }

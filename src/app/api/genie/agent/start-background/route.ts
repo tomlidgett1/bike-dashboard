@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { runGenieAgentBackgroundJob } from "@/lib/genie/run-genie-agent-background-job";
+import { runGenieAgentJob } from "@/lib/genie/run-genie-agent-background-job";
 import { ensureGenieConversation } from "@/lib/genie/ensure-genie-conversation";
+import type { Message } from "@/lib/genie/agent/context";
 import type { GenieJobMetadata, GenieJobSource } from "@/lib/genie/genie-job-types";
 
 export const dynamic = "force-dynamic";
@@ -52,6 +53,14 @@ function normalizeMessages(value: unknown): Record<string, unknown>[] {
     .slice(-40);
 }
 
+/**
+ * Starts a Genie agent job and streams its events live as SSE.
+ *
+ * The first event is `{event: 'job', job_id}`. The run itself is detached from
+ * the response: job-row persistence continues (and `after()` keeps the function
+ * alive) even if the client disconnects, so navigation/refresh degrades to the
+ * polling path instead of killing the run.
+ */
 export async function POST(request: NextRequest) {
   try {
     const auth = await requireStoreUser();
@@ -67,6 +76,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "prompt or messages are required." }, { status: 400 });
     }
 
+    const clientAssistantId =
+      typeof body.client_assistant_id === "string" ? body.client_assistant_id : null;
+
+    // Idempotency: a double-send with the same client assistant id reuses the
+    // in-flight job instead of spawning a duplicate run.
+    if (clientAssistantId) {
+      const { data: existingJobs } = await auth.supabase
+        .from("genie_background_jobs")
+        .select("id, status, metadata")
+        .eq("user_id", auth.user!.id)
+        .in("status", ["queued", "running"])
+        .order("created_at", { ascending: false })
+        .limit(10);
+      const duplicate = (existingJobs ?? []).find(
+        (job) => (job.metadata as GenieJobMetadata | null)?.client_assistant_id === clientAssistantId,
+      );
+      if (duplicate) {
+        return NextResponse.json({ jobId: duplicate.id, deduplicated: true }, { status: 200 });
+      }
+    }
+
     const requestedConversationId =
       typeof body.conversation_id === "string" ? body.conversation_id : null;
     const conversationId = await ensureGenieConversation(auth.supabase, {
@@ -79,8 +109,6 @@ export async function POST(request: NextRequest) {
       body.composio_session_ids && typeof body.composio_session_ids === "object"
         ? (body.composio_session_ids as Record<string, string>)
         : {};
-    const clientAssistantId =
-      typeof body.client_assistant_id === "string" ? body.client_assistant_id : null;
     const source =
       body.source === "homev2" || body.source === "panel"
         ? (body.source as GenieJobSource)
@@ -116,25 +144,88 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const origin = request.nextUrl.origin;
-    const cookieHeader = request.headers.get("cookie") ?? "";
+    const encoder = new TextEncoder();
+    let liveController: ReadableStreamDefaultController | null = null;
+    let liveClosed = false;
+    // Events emitted before the response stream attaches (the run starts first).
+    const pendingEvents: object[] = [];
 
-    after(async () => {
-      try {
-        await runGenieAgentBackgroundJob({
-          jobId: job.id,
-          origin,
-          cookieHeader,
-          conversationId,
-          composioSessionIds,
-          messages,
-        });
-      } catch (error) {
-        console.error("[genie/agent/start-background] background job failed", job.id, error);
+    const liveEmit = (data: object) => {
+      if (liveClosed) return;
+      if (!liveController) {
+        pendingEvents.push(data);
+        return;
       }
+      try {
+        liveController.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+      } catch {
+        liveClosed = true;
+      }
+    };
+
+    let closeOnAttach = false;
+    const closeLive = () => {
+      if (liveClosed) return;
+      if (!liveController) {
+        closeOnAttach = true;
+        return;
+      }
+      liveClosed = true;
+      try {
+        liveController.close();
+      } catch {
+        // Client already disconnected.
+      }
+    };
+
+    const runPromise = runGenieAgentJob({
+      jobId: job.id,
+      supabase: auth.supabase,
+      userId: auth.user!.id,
+      storeName: auth.profile!.business_name || "your store",
+      conversationId,
+      composioSessionIds,
+      messages: messages as unknown as Message[],
+      onEvent: (event) => {
+        liveEmit(event);
+        if (event.event === "done" || event.event === "error") {
+          closeLive();
+        }
+      },
+    }).catch((error) => {
+      console.error("[genie/agent/start-background] job run failed", job.id, error);
+    }).finally(() => {
+      closeLive();
     });
 
-    return NextResponse.json({ jobId: job.id }, { status: 202 });
+    // Keep the function alive past a client disconnect so the run finishes and
+    // the job row records the result (polling/resume path stays intact).
+    after(() => runPromise);
+
+    const stream = new ReadableStream({
+      start(controller) {
+        liveController = controller;
+        liveEmit({ event: "job", job_id: job.id, conversation_id: conversationId });
+        const buffered = pendingEvents.splice(0, pendingEvents.length);
+        for (const event of buffered) liveEmit(event);
+        if (closeOnAttach) closeLive();
+      },
+      cancel() {
+        // Client went away — stop teeing, let the run continue.
+        liveClosed = true;
+        liveController = null;
+      },
+    });
+
+    return new Response(stream, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      },
+    });
   } catch (error) {
     console.error("[genie/agent/start-background]", error);
     return NextResponse.json(

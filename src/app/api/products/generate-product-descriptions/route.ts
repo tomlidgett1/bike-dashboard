@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import OpenAI from 'openai'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceRoleClient } from '@/lib/supabase/server'
 import {
   brandWebsiteDomain,
   isOfficialBrandUrl,
@@ -231,14 +231,29 @@ function rankSources(
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    // Support internal auth from the batch runner (no browser cookies needed)
+    const internalSecret = request.headers.get('x-internal-secret')
+    const internalUserId = request.headers.get('x-internal-user-id')
+    const cronSecret = process.env.CRON_SECRET
 
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorised' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' },
-      })
+    let userId: string
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let supabase: any
+
+    if (cronSecret && internalSecret === cronSecret && internalUserId) {
+      userId = internalUserId
+      supabase = createServiceRoleClient()
+    } else {
+      const client = await createClient()
+      const { data: { user }, error: authError } = await client.auth.getUser()
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorised' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      userId = user.id
+      supabase = client
     }
 
     const body = await request.json()
@@ -266,7 +281,7 @@ export async function POST(request: NextRequest) {
     const { data: products, error: dbError } = await supabase
       .from('products')
       .select('id, description, display_name, brand, model, manufacturer_name, marketplace_category, price, bike_type, frame_size, condition_rating, is_bicycle, bike_specs, product_specs, product_spec_sources')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .in('id', productIds)
 
     if (dbError || !products?.length) {
@@ -352,7 +367,7 @@ export async function POST(request: NextRequest) {
                   .from('products')
                   .update(updateData)
                   .eq('id', product.id)
-                  .eq('user_id', user.id)
+                  .eq('user_id', userId)
 
                 if (dbSaveErr) saveError = 'Failed to save bicycle classification'
 
@@ -495,7 +510,7 @@ export async function POST(request: NextRequest) {
                   .from('products')
                   .update(updateData)
                   .eq('id', product.id)
-                  .eq('user_id', user.id)
+                  .eq('user_id', userId)
 
                 if (dbSaveErr) {
                   // Fallback: try description-only if combined save fails
@@ -504,7 +519,7 @@ export async function POST(request: NextRequest) {
                       .from('products')
                       .update({ product_description: description })
                       .eq('id', product.id)
-                      .eq('user_id', user.id)
+                      .eq('user_id', userId)
                     if (fallbackErr) saveError = 'Failed to save'
                   } else {
                     saveError = 'Failed to save'

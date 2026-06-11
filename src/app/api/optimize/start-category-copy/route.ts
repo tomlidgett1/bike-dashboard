@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { runCopyBatchJob } from "@/lib/optimize/run-copy-batch-job";
 import type { CopyBatchFields, CopyBatchJobMetadata } from "@/lib/optimize/copy-batch-job-types";
 import { fetchCategoryProductsNeedingCopy } from "@/lib/optimize/fetch-category-copy-products";
 
@@ -72,17 +71,20 @@ export async function POST(request: NextRequest) {
     }
 
     const origin = request.nextUrl.origin;
-    const cookieHeader = request.headers.get("cookie") ?? "";
+    const cronSecret = process.env.CRON_SECRET ?? "";
 
     after(async () => {
       try {
-        await runCopyBatchJob({
-          jobId: job.id,
-          origin,
-          cookieHeader,
+        await fetch(`${origin}/api/optimize/advance-copy-batch`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-internal-secret": cronSecret,
+          },
+          body: JSON.stringify({ jobId: job.id }),
         });
       } catch (error) {
-        console.error("[start-category-copy] background job failed", job.id, error);
+        console.error("[start-category-copy] failed to advance job", job.id, error);
       }
     });
 

@@ -42,10 +42,28 @@ function normalizeMessages(value: unknown): GenieBackgroundMessage[] {
     .slice(-40)
 }
 
+/** Jobs whose runner died (instance killed, deploy, crash) stay "running" forever
+ * without this: any active job not touched for this long is marked failed on read. */
+const STALE_ACTIVE_JOB_MS = 3 * 60 * 1000
+
 export async function GET() {
   try {
     const auth = await requireStoreUser()
     if (auth.error) return auth.error
+
+    const staleBefore = new Date(Date.now() - STALE_ACTIVE_JOB_MS).toISOString()
+    await auth.supabase
+      .from('genie_background_jobs')
+      .update({
+        status: 'failed',
+        error_message: 'Genie stopped responding (the run was interrupted). Please try again.',
+        message: 'Interrupted',
+        progress_phase: 'error',
+        completed_at: new Date().toISOString(),
+      })
+      .eq('user_id', auth.user.id)
+      .in('status', ['queued', 'running'])
+      .lt('updated_at', staleBefore)
 
     const { data, error } = await auth.supabase
       .from('genie_background_jobs')

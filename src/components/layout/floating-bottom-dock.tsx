@@ -27,6 +27,7 @@ const LazyFloatingGenieJobsPill = dynamic(
 
 const HOME_PATH = "/settings/store/home";
 const STORE_PAGE_PREFIX = "/marketplace/store/";
+const PRODUCT_PAGE_PREFIX = "/marketplace/product/";
 
 /** Matches GeniePortal / GenieButton visibility (orb is sm+ on marketplace-style pages). */
 function isGenieFloatingOrbVisible(
@@ -37,6 +38,7 @@ function isGenieFloatingOrbVisible(
 ) {
   if (!pathname || pathname.startsWith("/login")) return false;
   if (pathname.startsWith(STORE_PAGE_PREFIX)) return false;
+  if (pathname.startsWith(PRODUCT_PAGE_PREFIX)) return false;
   if (isStoreDashboardPath(pathname)) return false;
   if (productContext) return false;
   if (isOpen || isExpanded) return false;

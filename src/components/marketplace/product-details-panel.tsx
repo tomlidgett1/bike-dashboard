@@ -3,13 +3,10 @@
 import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Heart, Share2, Shield, Package, Clock, Eye, ExternalLink, Sparkles } from "lucide-react";
-import { useAuth } from "@/components/providers/auth-provider";
-import { useAuthModal } from "@/components/providers/auth-modal-provider";
+import { Heart, Share2, Shield, Package, Clock, Eye, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProductInquiryButton } from "./product-inquiry-button";
 import { MakeOfferButton } from "./make-offer-button";
-import { ProductLearnPanel } from "./product-learn-panel";
 import { resolveLivePrice } from "@/lib/marketplace/pricing";
 import { OverviewCard } from "./product-detail/overview-card";
 import {
@@ -32,11 +29,8 @@ interface ProductDetailsPanelProps {
 }
 
 export function ProductDetailsPanel({ product }: ProductDetailsPanelProps) {
-  const { user } = useAuth();
-  const { openAuthModal } = useAuthModal();
   const [isLiked, setIsLiked] = React.useState(false);
   const [logoError, setLogoError] = React.useState(false);
-  const [isLearnOpen, setIsLearnOpen] = React.useState(false);
 
   // Calculate trust indicators
   const hasTrustBadges =
@@ -230,19 +224,6 @@ export function ProductDetailsPanel({ product }: ProductDetailsPanelProps) {
               <Share2 className="h-5 w-5" />
               <span className="font-medium">Share</span>
             </button>
-            <button
-              onClick={() => {
-                if (!user) {
-                  openAuthModal();
-                  return;
-                }
-                setIsLearnOpen(true);
-              }}
-              className="flex items-center gap-2 px-3 py-1.5 bg-gray-900 text-white rounded-full hover:bg-gray-800 transition-colors"
-            >
-              <Sparkles className="h-4 w-4" />
-              <span className="text-sm font-medium">AI Research</span>
-            </button>
           </div>
         </div>
 
@@ -350,12 +331,6 @@ export function ProductDetailsPanel({ product }: ProductDetailsPanelProps) {
         </div>
       </div>
 
-      {/* AI Product Learn Panel */}
-      <ProductLearnPanel
-        product={product}
-        isOpen={isLearnOpen}
-        onClose={() => setIsLearnOpen(false)}
-      />
     </div>
   );
 }

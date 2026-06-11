@@ -8,6 +8,11 @@ import type {
   GenieJobMetadata,
   GenieJobStatus,
 } from "@/lib/genie/genie-job-types";
+import {
+  applyGenieSseEvent,
+  createEmptyGenieAssistant,
+} from "@/lib/genie/accumulate-genie-sse-event";
+import { readSSE } from "@/lib/optimize/read-sse";
 import { persistCompletedHomeV2Job } from "@/lib/genie/homev2-conversation-storage";
 import { loadGenieDismissedIds, saveGenieDismissedIds } from "@/lib/floating-panel-dismiss";
 
@@ -59,6 +64,27 @@ function isActive(job: GenieJob) {
   return job.status === "queued" || job.status === "running";
 }
 
+function buildOptimisticJob(jobId: string, options: StartBackgroundJobOptions): GenieJob {
+  return {
+    id: jobId,
+    status: "running",
+    prompt: options.prompt ?? "",
+    message: "Starting Genie…",
+    progressPhase: "setup",
+    errorMessage: null,
+    conversationId: options.conversationId ?? null,
+    metadata: {
+      composio_session_ids: options.composioSessionIds,
+      client_assistant_id: options.clientAssistantId,
+      source: options.source,
+      step_index: 0,
+    },
+    result: null,
+    updatedAt: new Date().toISOString(),
+    completedAt: null,
+  };
+}
+
 export function useGenieJobs() {
   const context = React.useContext(GenieJobsContext);
   if (!context) {
@@ -79,6 +105,9 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
   const [pillHidden, setPillHidden] = React.useState(true);
   const [nowMs, setNowMs] = React.useState(0);
   const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  // Jobs currently fed by a live SSE stream — polling must not clobber their
+  // streaming state with the (throttled, staler) job-row snapshots.
+  const liveJobIdsRef = React.useRef(new Set<string>());
 
   const dismissedRef = React.useRef(dismissedIds);
   dismissedRef.current = dismissedIds;
@@ -113,9 +142,13 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
       const json = (await response.json()) as { jobs?: Record<string, unknown>[] };
       const incoming = (json.jobs ?? []).map(mapJob);
       const dismissed = dismissedRef.current;
+      const live = liveJobIdsRef.current;
       const tracked = incoming.filter(
         (job) =>
           !dismissed.has(job.id) &&
+          // A polled snapshot of a live-streamed job is always staler than the
+          // stream — only accept it once the server says the job is terminal.
+          (!live.has(job.id) || !isActive(job)) &&
           (isActive(job) ||
             job.status === "failed" ||
             (job.status === "completed" &&
@@ -146,7 +179,13 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const intervalMs = isOnHome ? 900 : 2000;
+    // Live SSE streams carry the realtime updates now; polling is the resume /
+    // fallback path. Poll faster only when an active job has no live stream
+    // (e.g. resumed after navigation), otherwise just heartbeat-poll.
+    const hasNonLiveActive = jobs.some(
+      (job) => isActive(job) && !liveJobIdsRef.current.has(job.id),
+    );
+    const intervalMs = hasNonLiveActive ? (isOnHome ? 1500 : 2000) : 5000;
 
     if (pollRef.current) {
       clearInterval(pollRef.current);
@@ -178,6 +217,109 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
     [mergeJobs, refreshJobs],
   );
 
+  /**
+   * Consumes the live SSE stream for a just-started job: the first `job` event
+   * carries the job id (reported via onJobId so the caller can return it while
+   * consumption continues), then events are applied to the tracked job at
+   * streaming cadence (throttled to ~10 UI flushes/sec). If the stream drops,
+   * polling takes over — the job row is the durable source.
+   */
+  const consumeLiveJobStream = React.useCallback(
+    async (
+      body: ReadableStream<Uint8Array>,
+      options: StartBackgroundJobOptions,
+      onJobId: (jobId: string | null) => void,
+    ) => {
+      let jobId: string | null = null;
+      let assistant = createEmptyGenieAssistant();
+      let message: string | null = null;
+      let phase: string | null = null;
+      let terminal: { status: GenieJobStatus; errorMessage: string | null } | null = null;
+      let flushTimer: number | null = null;
+
+      const flush = () => {
+        const completedAt = terminal ? new Date().toISOString() : null;
+        setJobs((prev) =>
+          prev.map((job) => {
+            if (job.id !== jobId) return job;
+            const next: GenieJob = {
+              ...job,
+              status: terminal?.status ?? "running",
+              message: message ?? job.message,
+              progressPhase: phase ?? job.progressPhase,
+              errorMessage: terminal?.errorMessage ?? job.errorMessage,
+              result: { assistantMessage: assistant as unknown as Record<string, unknown> },
+              updatedAt: new Date().toISOString(),
+              completedAt: completedAt ?? job.completedAt,
+            };
+            if (next.status === "completed") {
+              persistCompletedHomeV2Job(next);
+            }
+            return next;
+          }),
+        );
+      };
+
+      const scheduleFlush = () => {
+        if (flushTimer != null) return;
+        flushTimer = window.setTimeout(() => {
+          flushTimer = null;
+          flush();
+        }, 100);
+      };
+
+      try {
+        await readSSE(body, (event) => {
+          if (event.event === "job") {
+            if (jobId == null && typeof event.job_id === "string") {
+              jobId = event.job_id;
+              liveJobIdsRef.current.add(jobId);
+              registerJob(buildOptimisticJob(jobId, options));
+              onJobId(jobId);
+            }
+            return;
+          }
+          if (jobId == null || event.event === "heartbeat") return;
+          if (event.event === "status") {
+            const text = String(event.text ?? "").trim();
+            if (text) message = text.slice(0, 240);
+            if (typeof event.phase === "string") phase = event.phase;
+            scheduleFlush();
+            return;
+          }
+          if (event.event === "done") {
+            terminal = { status: "completed", errorMessage: null };
+            scheduleFlush();
+            return;
+          }
+          if (event.event === "error") {
+            terminal = {
+              status: "failed",
+              errorMessage: String(event.message ?? "Genie request failed."),
+            };
+          }
+          assistant = applyGenieSseEvent(event, assistant);
+          scheduleFlush();
+        });
+      } catch {
+        // Stream dropped (navigation, network) — polling resumes ownership.
+      } finally {
+        onJobId(null); // No-op if the job id already resolved.
+        if (flushTimer != null) {
+          window.clearTimeout(flushTimer);
+          flushTimer = null;
+        }
+        if (jobId != null) {
+          if (terminal) flush();
+          liveJobIdsRef.current.delete(jobId);
+          // Reconcile with the authoritative job row.
+          void refreshJobs();
+        }
+      }
+    },
+    [refreshJobs, registerJob],
+  );
+
   const startAgentBackgroundJob = React.useCallback(
     async (options: StartBackgroundJobOptions) => {
       const response = await fetch("/api/genie/agent/start-background", {
@@ -198,34 +340,38 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
         throw new Error(errBody?.error || "Failed to start Genie background job");
       }
 
-      const json = (await response.json()) as { jobId?: string };
-      if (!json.jobId) {
+      const contentType = response.headers.get("content-type") ?? "";
+
+      // Deduplicated/legacy JSON response.
+      if (!contentType.includes("text/event-stream") || !response.body) {
+        const json = (await response.json()) as { jobId?: string };
+        if (!json.jobId) throw new Error("Genie job id missing");
+        registerJob(buildOptimisticJob(json.jobId, options));
+        return json.jobId;
+      }
+
+      // Live SSE response: a single consumer reads the whole stream; the first
+      // `job` event resolves the id so this call can return while events keep
+      // flowing into the tracked job in the background.
+      const jobId = await new Promise<string | null>((resolve) => {
+        let settled = false;
+        const settle = (value: string | null) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timeout);
+          resolve(value);
+        };
+        const timeout = window.setTimeout(() => settle(null), 15_000);
+        void consumeLiveJobStream(response.body!, options, settle);
+      });
+
+      if (!jobId) {
         throw new Error("Genie job id missing");
       }
 
-      const registeredJob: GenieJob = {
-        id: json.jobId,
-        status: "queued",
-        prompt: options.prompt ?? "",
-        message: "Queued…",
-        progressPhase: "queued",
-        errorMessage: null,
-        conversationId: options.conversationId ?? null,
-        metadata: {
-          composio_session_ids: options.composioSessionIds,
-          client_assistant_id: options.clientAssistantId,
-          source: options.source,
-          step_index: 0,
-        },
-        result: null,
-        updatedAt: new Date().toISOString(),
-        completedAt: null,
-      };
-      registerJob(registeredJob);
-
-      return json.jobId;
+      return jobId;
     },
-    [registerJob],
+    [registerJob, consumeLiveJobStream],
   );
 
   const cancelJob = React.useCallback(

@@ -128,19 +128,19 @@ function SpecAnnotation({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "pointer-events-none select-none text-[#ffde59]",
+        "pointer-events-none z-10 select-none text-[#ffde59]",
         className
       )}
       aria-hidden="true"
     >
-      <div className="-rotate-[7deg]">
-        <span className="block whitespace-nowrap font-handwriting text-2xl font-bold leading-none sm:text-[1.7rem]">
+      <div className="origin-top-right -rotate-[7deg] scale-[0.78] sm:scale-100">
+        <span className="block whitespace-nowrap font-handwriting text-lg font-bold leading-none sm:text-[1.7rem]">
           Click me to learn more!
         </span>
         <svg
           viewBox="0 0 150 60"
           fill="none"
-          className="ml-auto mr-6 mt-0.5 h-10 w-28"
+          className="ml-auto mr-2 mt-0.5 h-8 w-24 sm:mr-6 sm:h-10 sm:w-28"
         >
           <path
             d="M140 14 C 104 2, 44 4, 26 48"
@@ -202,12 +202,12 @@ export function BikeSpecsDisplay({
     return (
       <section className={cn("border-t border-gray-200 bg-white", className)}>
         <div className="relative mx-auto max-w-[1536px] px-4 py-10 sm:px-4 lg:px-4 xl:px-5">
-          <h2 className="mb-6 text-xl font-semibold tracking-tight text-gray-900">
+          <h2 className="relative z-0 mb-6 text-xl font-semibold tracking-tight text-gray-900">
             Specifications
           </h2>
 
           {interactive ? (
-            <SpecAnnotation className="absolute right-4 top-6 hidden sm:block xl:right-5" />
+            <SpecAnnotation className="absolute right-4 top-6 xl:right-5" />
           ) : null}
 
           <div className="grid grid-cols-1 gap-x-16 lg:grid-cols-2 xl:gap-x-24">

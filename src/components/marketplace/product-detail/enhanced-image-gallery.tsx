@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { ChevronLeft, ChevronRight, X, Heart, Share2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ============================================================
@@ -20,9 +20,6 @@ interface EnhancedImageGalleryProps {
   productName: string;
   currentIndex: number;
   onIndexChange: (index: number) => void;
-  onLikeToggle?: () => void;
-  isLiked?: boolean;
-  onShare?: () => void;
   /** Desktop only: place panel beside the main hero image (matched height). */
   sidePanel?: React.ReactNode;
 }
@@ -32,9 +29,6 @@ export function EnhancedImageGallery({
   productName,
   currentIndex,
   onIndexChange,
-  onLikeToggle,
-  isLiked = false,
-  onShare,
   sidePanel,
 }: EnhancedImageGalleryProps) {
   const [isFullscreen, setIsFullscreen] = React.useState(false);
@@ -199,38 +193,6 @@ export function EnhancedImageGallery({
       </div>
     );
   };
-
-  const renderActionButtons = (className?: string) => (
-    <div className={cn("absolute top-3 left-3 flex items-center gap-2 z-10", className)}>
-      {onLikeToggle && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onLikeToggle();
-          }}
-          className="p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-all"
-        >
-          <Heart
-            className={cn(
-              "h-5 w-5 transition-colors",
-              isLiked ? "fill-red-500 stroke-red-500" : "stroke-gray-700"
-            )}
-          />
-        </button>
-      )}
-      {onShare && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onShare();
-          }}
-          className="p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-all"
-        >
-          <Share2 className="h-5 w-5 stroke-gray-700" />
-        </button>
-      )}
-    </div>
-  );
 
   const renderFullscreenModal = () =>
     isFullscreen ? (
@@ -479,36 +441,6 @@ export function EnhancedImageGallery({
                 />
               </div>
 
-              <div className="absolute top-3 right-3 flex items-center gap-2 z-10">
-                {onLikeToggle && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onLikeToggle();
-                    }}
-                    className="p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-all"
-                  >
-                    <Heart
-                      className={cn(
-                        "h-5 w-5 transition-colors",
-                        isLiked ? "fill-red-500 stroke-red-500" : "stroke-gray-700"
-                      )}
-                    />
-                  </button>
-                )}
-                {onShare && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onShare();
-                    }}
-                    className="p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-all"
-                  >
-                    <Share2 className="h-5 w-5 stroke-gray-700" />
-                  </button>
-                )}
-              </div>
-
               {images.length > 1 && (
                 <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-10">
                   {images.map((_, index) => (
@@ -534,7 +466,6 @@ export function EnhancedImageGallery({
 
           <div className="hidden sm:block relative">
             {renderImageGrid()}
-            {renderActionButtons()}
           </div>
 
           {sidePanel}
@@ -545,7 +476,6 @@ export function EnhancedImageGallery({
           <div className="min-w-0 w-[62%]">
             <div ref={heroRef} className="relative">
               {renderMainHero()}
-              {renderActionButtons()}
             </div>
             {images.length > 1 ? (
               <div className="mt-6">{renderSecondaryGrid()}</div>
@@ -591,37 +521,6 @@ export function EnhancedImageGallery({
             />
           </div>
 
-          {/* Like and Share Buttons - Top Right */}
-          <div className="absolute top-3 right-3 flex items-center gap-2 z-10">
-            {onLikeToggle && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onLikeToggle();
-                }}
-                className="p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-all"
-              >
-                <Heart
-                  className={cn(
-                    "h-5 w-5 transition-colors",
-                    isLiked ? "fill-red-500 stroke-red-500" : "stroke-gray-700"
-                  )}
-                />
-              </button>
-            )}
-            {onShare && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onShare();
-                }}
-                className="p-2.5 bg-white rounded-full shadow-md hover:shadow-lg transition-all"
-              >
-                <Share2 className="h-5 w-5 stroke-gray-700" />
-              </button>
-            )}
-          </div>
-
           {/* Pagination Dots */}
           {images.length > 1 && (
             <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-10">
@@ -649,7 +548,6 @@ export function EnhancedImageGallery({
       {/* Desktop: Gallery Grid */}
       <div className="hidden sm:block relative">
         {renderImageGrid()}
-        {renderActionButtons()}
       </div>
 
       {renderFullscreenModal()}

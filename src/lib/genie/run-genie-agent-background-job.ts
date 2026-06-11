@@ -1,19 +1,28 @@
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import { readSSE } from "@/lib/optimize/read-sse";
 import {
   applyGenieSseEvent,
   createEmptyGenieAssistant,
   type AccumulatedGenieAssistant,
 } from "@/lib/genie/accumulate-genie-sse-event";
+import { executeGenieAgent } from "@/lib/genie/agent/execute";
+import type { ComposioSessionIds, Message } from "@/lib/genie/agent/context";
+import type { Supa } from "@/lib/genie/agent/tools";
 import type { GenieAssistantJobResult, GenieJobMetadata } from "@/lib/genie/genie-job-types";
 
-export type RunGenieAgentBackgroundJobParams = {
+export type RunGenieAgentJobParams = {
   jobId: string;
-  origin: string;
-  cookieHeader: string;
+  /** Request-scoped, RLS-bound Supabase client for the authenticated store user. */
+  supabase: Supa;
+  userId: string;
+  storeName: string;
   conversationId?: string | null;
   composioSessionIds?: Record<string, string>;
-  messages: Record<string, unknown>[];
+  messages: Message[];
+  /**
+   * Live tee: receives every agent event as it happens (for direct SSE streaming
+   * to the client). Job-row persistence below is the durable fallback path.
+   */
+  onEvent?: (event: Record<string, unknown>) => void;
 };
 
 async function updateJob(jobId: string, patch: Record<string, unknown>) {
@@ -41,7 +50,7 @@ async function syncCompletedConversation(
     .eq("id", conversationId);
 
   if (error) {
-    console.error("[runGenieAgentBackgroundJob] failed to sync conversation", conversationId, error);
+    console.error("[runGenieAgentJob] failed to sync conversation", conversationId, error);
   }
 }
 
@@ -62,11 +71,38 @@ function progressMessage(event: Record<string, unknown>) {
   return "Working…";
 }
 
-export async function runGenieAgentBackgroundJob(params: RunGenieAgentBackgroundJobParams) {
-  const now = new Date().toISOString();
+const CANCEL_CHECK_INTERVAL_MS = 2000;
+const PROGRESS_PERSIST_INTERVAL_MS = 1500;
+const RESULT_PERSIST_INTERVAL_MS = 700;
+
+const PARTIAL_RESULT_EVENTS = new Set([
+  "text_delta",
+  "chart",
+  "table",
+  "pivot_table",
+  "products",
+  "web_images",
+  "workorders",
+  "customer_profile",
+  "gmail_emails",
+  "gmail_agent_context",
+  "gmail_connect",
+  "proposal",
+  "analysis_plan",
+  "analysis_query",
+  "reasoning_done",
+  "sources",
+]);
+
+/**
+ * Runs the Genie agent in-process for a background job: no HTTP loopback, no
+ * cookie forwarding. The caller owns request lifetime (wrap the returned promise
+ * in `after()` so a client disconnect does not kill the run).
+ */
+export async function runGenieAgentJob(params: RunGenieAgentJobParams) {
   await updateJob(params.jobId, {
     status: "running",
-    started_at: now,
+    started_at: new Date().toISOString(),
     message: "Starting Genie…",
     progress_phase: "setup",
   });
@@ -75,15 +111,17 @@ export async function runGenieAgentBackgroundJob(params: RunGenieAgentBackground
   let stepIndex = 0;
   let lastPersistAt = 0;
   let lastResultPersistAt = 0;
-  let lastCancelCheckAt = 0;
   let jobWriteQueue: Promise<void> = Promise.resolve();
+  let cancelled = false;
+
+  const abortController = new AbortController();
 
   const queueJobUpdate = (patch: Record<string, unknown>) => {
     jobWriteQueue = jobWriteQueue
       .catch(() => undefined)
       .then(() => updateJob(params.jobId, patch))
       .catch((error) => {
-        console.error("[runGenieAgentBackgroundJob] queued job update failed", params.jobId, error);
+        console.error("[runGenieAgentJob] queued job update failed", params.jobId, error);
       });
   };
 
@@ -91,133 +129,94 @@ export async function runGenieAgentBackgroundJob(params: RunGenieAgentBackground
     await jobWriteQueue.catch(() => undefined);
   };
 
-  const assertNotCancelled = async (force = false) => {
-    const ts = Date.now();
-    if (!force && ts - lastCancelCheckAt < 2000) return;
-    lastCancelCheckAt = ts;
-    if (await isJobCancelled(params.jobId)) {
-      throw new Error("cancelled");
-    }
-  };
-
-  const shouldPersistPartialResult = (event: Record<string, unknown>) =>
-    [
-      "text_delta",
-      "chart",
-      "table",
-      "pivot_table",
-      "products",
-      "web_images",
-      "workorders",
-      "customer_profile",
-      "gmail_emails",
-      "gmail_agent_context",
-      "gmail_connect",
-      "proposal",
-      "analysis_plan",
-      "analysis_query",
-      "reasoning_done",
-      "sources",
-    ].includes(String(event.event));
-
-  const persistProgress = async (
-    event: Record<string, unknown>,
-    metadata: GenieJobMetadata,
-    force = false,
-  ) => {
-    const ts = Date.now();
-    if (!force && ts - lastPersistAt < 1500) return;
-    lastPersistAt = ts;
-
-    queueJobUpdate({
-      message: progressMessage(event),
-      progress_phase: typeof event.phase === "string" ? event.phase : "thinking",
-      metadata,
+  const cancelWatcher = setInterval(() => {
+    void isJobCancelled(params.jobId).then((isCancelled) => {
+      if (!isCancelled) return;
+      cancelled = true;
+      abortController.abort();
+      clearInterval(cancelWatcher);
     });
-  };
+  }, CANCEL_CHECK_INTERVAL_MS);
 
+  let metadata: GenieJobMetadata = {};
   try {
-    const response = await fetch(`${params.origin}/api/genie/agent`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(params.cookieHeader ? { cookie: params.cookieHeader } : {}),
-      },
-      body: JSON.stringify({
-        conversation_id: params.conversationId ?? undefined,
-        composio_session_ids: params.composioSessionIds ?? {},
-        messages: params.messages,
-      }),
-    });
-
-    if (!response.ok || !response.body) {
-      await updateJob(params.jobId, {
-        status: "failed",
-        error_message: `Agent request failed (${response.status})`,
-        completed_at: new Date().toISOString(),
-        message: "Failed",
-      });
-      return;
-    }
-
-    let metadata: GenieJobMetadata = {};
-    const supabase = createServiceRoleClient();
-    const { data: existing } = await supabase
+    const supabaseService = createServiceRoleClient();
+    const { data: existing } = await supabaseService
       .from("genie_background_jobs")
       .select("metadata")
       .eq("id", params.jobId)
       .maybeSingle();
     metadata = (existing?.metadata as GenieJobMetadata | null) ?? {};
+  } catch {
+    // Metadata enrichment is best-effort.
+  }
 
-    let finished = false;
+  const handleEvent = (event: Record<string, unknown>) => {
+    params.onEvent?.(event);
 
-    await readSSE(response.body, async (event) => {
-      await assertNotCancelled();
+    assistant = applyGenieSseEvent(event, assistant);
 
-      assistant = applyGenieSseEvent(event, assistant);
-
-      if (shouldPersistPartialResult(event)) {
-        const ts = Date.now();
-        if (ts - lastResultPersistAt >= 700) {
-          lastResultPersistAt = ts;
-          const result: GenieAssistantJobResult = { assistantMessage: assistant };
-          queueJobUpdate({ result });
-        }
+    if (PARTIAL_RESULT_EVENTS.has(String(event.event))) {
+      const ts = Date.now();
+      if (ts - lastResultPersistAt >= RESULT_PERSIST_INTERVAL_MS) {
+        lastResultPersistAt = ts;
+        const result: GenieAssistantJobResult = { assistantMessage: assistant };
+        queueJobUpdate({ result });
       }
+    }
 
-      if (event.event === "status" || event.event === "heartbeat") {
-        stepIndex += 1;
-        metadata = { ...metadata, step_index: stepIndex };
-        void persistProgress(event, metadata);
+    if (event.event === "status" || event.event === "heartbeat") {
+      stepIndex += 1;
+      metadata = { ...metadata, step_index: stepIndex };
+      const ts = Date.now();
+      if (ts - lastPersistAt >= PROGRESS_PERSIST_INTERVAL_MS) {
+        lastPersistAt = ts;
+        queueJobUpdate({
+          message: progressMessage(event),
+          progress_phase: typeof event.phase === "string" ? event.phase : "thinking",
+          metadata,
+        });
       }
+    }
 
-      if (event.event === "composio_session") {
-        const toolkit = typeof event.toolkit === "string" ? event.toolkit : "";
-        const sessionId = typeof event.session_id === "string" ? event.session_id : "";
-        if (toolkit && sessionId) {
-          metadata = {
-            ...metadata,
-            composio_session_ids: {
-              ...(metadata.composio_session_ids ?? {}),
-              [toolkit]: sessionId,
-            },
-          };
-          queueJobUpdate({ metadata });
-        }
+    if (event.event === "composio_session") {
+      const toolkit = typeof event.toolkit === "string" ? event.toolkit : "";
+      const sessionId = typeof event.session_id === "string" ? event.session_id : "";
+      if (toolkit && sessionId) {
+        metadata = {
+          ...metadata,
+          composio_session_ids: {
+            ...(metadata.composio_session_ids ?? {}),
+            [toolkit]: sessionId,
+          },
+        };
+        queueJobUpdate({ metadata });
       }
+    }
+  };
 
-      if (event.event === "done") {
-        finished = true;
-      }
-
-      if (event.event === "error") {
-        finished = true;
-      }
+  try {
+    await executeGenieAgent({
+      supabase: params.supabase,
+      userId: params.userId,
+      storeName: params.storeName,
+      messages: params.messages,
+      conversationId: params.conversationId ?? null,
+      composioSessionIds: (params.composioSessionIds ?? {}) as ComposioSessionIds,
+      emit: (data: object) => handleEvent(data as Record<string, unknown>),
+      signal: abortController.signal,
     });
+
+    clearInterval(cancelWatcher);
+    await flushJobUpdates();
+
+    if (cancelled) {
+      // The cancel endpoint already marked the job; leave its status alone.
+      return;
+    }
 
     const completedAt = new Date().toISOString();
     const result: GenieAssistantJobResult = { assistantMessage: assistant };
-    await flushJobUpdates();
 
     if (assistant.error) {
       await updateJob(params.jobId, {
@@ -232,19 +231,11 @@ export async function runGenieAgentBackgroundJob(params: RunGenieAgentBackground
       return;
     }
 
-    await syncCompletedConversation(params.conversationId, params.messages, assistant);
-
-    if (!finished) {
-      await updateJob(params.jobId, {
-        status: "completed",
-        result,
-        completed_at: completedAt,
-        message: "Complete",
-        progress_phase: "done",
-        metadata,
-      });
-      return;
-    }
+    await syncCompletedConversation(
+      params.conversationId,
+      params.messages as unknown as Record<string, unknown>[],
+      assistant,
+    );
 
     await updateJob(params.jobId, {
       status: "completed",
@@ -255,9 +246,10 @@ export async function runGenieAgentBackgroundJob(params: RunGenieAgentBackground
       metadata,
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "cancelled") {
-      return;
-    }
+    clearInterval(cancelWatcher);
+    await flushJobUpdates();
+
+    if (cancelled) return;
 
     await updateJob(params.jobId, {
       status: "failed",

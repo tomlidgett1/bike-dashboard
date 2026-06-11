@@ -23,7 +23,6 @@ import {
 } from "@/components/genie/genie-thinking-detail-sections";
 import type { GenieStoreProductPreview } from "@/lib/genie/store-product-previews";
 import { HomeV2MetricsCards } from "@/components/settings/homev2-metrics-cards";
-import { HomeV2SmartSuggestions } from "@/components/settings/homev2-smart-suggestions";
 import type {
   GenieAnalysisPlanPayload,
   GenieAnalysisQueryPayload,
@@ -1206,10 +1205,6 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
               onStop={stopGeneration}
               endAccessory={gmailConnectAccessory}
             />
-          </div>
-
-          <div className="w-full">
-            <HomeV2SmartSuggestions />
           </div>
         </div>
       ) : (

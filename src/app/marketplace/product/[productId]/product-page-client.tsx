@@ -7,6 +7,8 @@ import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { StoreProductContextHeader } from "@/components/marketplace/product-detail/store-product-context-header";
 import { ProductBreadcrumbs } from "@/components/marketplace/product-breadcrumbs";
 import { ProductDetailsPanelSimple } from "@/components/marketplace/product-details-panel-simple";
+import { ProductAskGenieFloatingPill } from "@/components/marketplace/product-ask-genie-floating-pill";
+import { ProductGeniePanel } from "@/components/genie/product-genie-panel";
 import { EnhancedImageGallery } from "@/components/marketplace/product-detail/enhanced-image-gallery";
 import { BikeSpecsDisplay } from "@/components/products/bike-specs-display";
 import { BrandAboutSection } from "@/components/marketplace/product-detail/brand-about-section";
@@ -86,7 +88,6 @@ export function ProductPageClient({
   const fromStoreId = searchParams.get('store');
   const { user } = useAuth();
   const [currentImageIndex, setCurrentImageIndex] = React.useState(0);
-  const [isLiked, setIsLiked] = React.useState(false);
   const [showBanner, setShowBanner] = React.useState(showUploadBanner);
   const [localProduct, setLocalProduct] = React.useState(product);
   const [exploreSpec, setExploreSpec] = React.useState<BikeSpecSelection | null>(null);
@@ -99,24 +100,6 @@ export function ProductPageClient({
     !isOwner && product.store_account_type === "bicycle_store" ? product.user_id : null,
     product.id,
   );
-
-  // Handle share functionality
-  const handleShare = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: product.display_name || product.description,
-          text: `Check out this ${product.marketplace_category} - $${product.price}`,
-          url: window.location.href,
-        });
-      } catch {
-        console.log("Share cancelled");
-      }
-    } else {
-      navigator.clipboard.writeText(window.location.href);
-      alert("Link copied to clipboard!");
-    }
-  };
 
   // Get all available images
   const images = React.useMemo(() => {
@@ -200,7 +183,7 @@ export function ProductPageClient({
       )}
       
       {/* Main Content */}
-      <div className="min-h-screen bg-white sm:bg-gray-50 pb-24 sm:pb-8">
+      <div className="min-h-screen bg-white sm:bg-gray-50 pb-28 sm:pb-8">
         {/* Upload Success Banner */}
         {showBanner && (
           <ProductUploadSuccessBanner
@@ -227,11 +210,8 @@ export function ProductPageClient({
               productName={product.display_name || product.description}
               currentIndex={currentImageIndex}
               onIndexChange={setCurrentImageIndex}
-              onLikeToggle={() => setIsLiked(!isLiked)}
-              isLiked={isLiked}
-              onShare={handleShare}
               sidePanel={
-                <div className="mx-3 mt-4 mb-2 flex h-full max-h-full min-h-0 flex-col overflow-hidden bg-white sm:rounded-xl sm:border sm:border-gray-200 sm:mx-5 sm:mt-6 sm:mb-4 lg:mx-0 lg:mt-0 lg:mb-0 lg:h-full">
+                <div className="flex h-full max-h-full min-h-0 w-full flex-col overflow-hidden border-t border-gray-100 bg-white sm:mx-5 sm:mt-6 sm:mb-4 sm:rounded-xl sm:border sm:border-gray-200 lg:mx-0 lg:mt-0 lg:mb-0 lg:h-full lg:border-t-0">
                   <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:thin]">
                     <ProductDetailsPanelSimple product={localProduct} />
                     {isOwner && (
@@ -322,6 +302,12 @@ export function ProductPageClient({
           </div>
         </div>
       </div>
+
+      <ProductGeniePanel />
+
+      {!isOwner && !((localProduct as { sold_at?: string | null }).sold_at || (localProduct as { listing_status?: string }).listing_status === "sold") && (
+        <ProductAskGenieFloatingPill product={localProduct} />
+      )}
     </>
   );
 }

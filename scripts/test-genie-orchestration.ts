@@ -16,7 +16,31 @@ import { renderGenieMarkdown } from '../src/lib/genie/render-markdown'
 import { summarizeGenieAgentRuns } from '../src/lib/genie/telemetry'
 
 const root = process.cwd()
-const agentRouteSource = readFileSync(join(root, 'src/app/api/genie/agent/route.ts'), 'utf8')
+// The agent was split from one 12.7k-line route file into lib modules; the
+// concatenation preserves whole-architecture assertions across the split.
+const agentModulePaths = [
+  'src/app/api/genie/agent/route.ts',
+  'src/lib/genie/agent/runtime.ts',
+  'src/lib/genie/agent/prompts.ts',
+  'src/lib/genie/agent/context.ts',
+  'src/lib/genie/agent/orchestrator.ts',
+  'src/lib/genie/agent/sql-constants.ts',
+  'src/lib/genie/agent/direct-paths.ts',
+  'src/lib/genie/agent/status.ts',
+  'src/lib/genie/agent/tools.ts',
+  'src/lib/genie/agent/execute.ts',
+]
+const agentRouteSource = agentModulePaths
+  .map((modulePath) => readFileSync(join(root, modulePath), 'utf8'))
+  .join('\n')
+const executeModuleSource = readFileSync(join(root, 'src/lib/genie/agent/execute.ts'), 'utf8')
+const orchestratorModuleSource = readFileSync(join(root, 'src/lib/genie/agent/orchestrator.ts'), 'utf8')
+const promptsModuleSource = readFileSync(join(root, 'src/lib/genie/agent/prompts.ts'), 'utf8')
+const directPathsModuleSource = readFileSync(join(root, 'src/lib/genie/agent/direct-paths.ts'), 'utf8')
+const startBackgroundRouteSource = readFileSync(join(root, 'src/app/api/genie/agent/start-background/route.ts'), 'utf8')
+const runGenieJobSource = readFileSync(join(root, 'src/lib/genie/run-genie-agent-background-job.ts'), 'utf8')
+const genieJobsProviderSource = readFileSync(join(root, 'src/components/providers/genie-jobs-provider.tsx'), 'utf8')
+const answerVerificationSource = readFileSync(join(root, 'src/lib/genie/answer-verification.ts'), 'utf8')
 const orchestrationSource = readFileSync(join(root, 'src/lib/genie/orchestration.ts'), 'utf8')
 const agentRuntimePolicySource = readFileSync(join(root, 'src/lib/genie/agent-runtime-policy.ts'), 'utf8')
 const storeProductPreviewSource = readFileSync(join(root, 'src/lib/genie/store-product-previews.ts'), 'utf8')
@@ -135,7 +159,7 @@ assert.match(
 )
 assert.match(
   agentRouteSource,
-  /This is the production routing gate\. There is no deterministic router before you\./,
+  /This is the production routing gate\. There is no deterministic router before you — and no keyword shortcuts after you\./,
   'router instructions must state that the LLM owns route selection',
 )
 assert.match(
@@ -379,9 +403,14 @@ assert.match(
   'Floating Genie requests must preserve customer profile payloads in conversation history',
 )
 assert.match(
+  genieJobsProviderSource,
+  /applyGenieSseEvent\(event, assistant\)/,
+  'Live job streaming must apply SSE events (incl. customer profile cards) via the shared accumulator',
+)
+assert.match(
   homeV2ChatSource,
-  /event\.event === "customer_profile"/,
-  'Home v2 Genie must handle streamed customer profile cards',
+  /mergeGenieJobIntoAssistantMessage/,
+  'Home v2 Genie must merge live job state (incl. customer profile cards) into assistant messages',
 )
 assert.match(
   geniePanelSource,
@@ -400,7 +429,7 @@ assert.match(
 )
 assert.match(
   homeV2ChatSource,
-  /renderGenieMarkdown\(content\)/,
+  /renderGenieMarkdown\(normalized\)/,
   'Home v2 Genie must use the shared Markdown renderer for assistant answers',
 )
 assert.match(
@@ -543,35 +572,42 @@ assert.match(
   /function buildLightspeedCustomerProfile/,
   'customer profile requests must use a dedicated profile builder',
 )
+// ── Direct paths are 100% LLM-routed: the router's structured decision owns the
+// fast-path gate; deterministic code only prefetches data and parses dates. ──
 assert.match(
+  orchestrationSource,
+  /direct_path: z\.enum\(\['customer_profile', 'customer_bikes', 'sales_summary', 'none'\]\)/,
+  'router schema must own the direct-path decision',
+)
+assert.match(
+  orchestrationSource,
+  /entity_query: z\.string\(\)\.max\(160\)\.nullable\(\)/,
+  'router schema must carry the direct-path entity',
+)
+assert.match(
+  promptsModuleSource,
+  /Direct-path doctrine/,
+  'router prompt must teach the direct-path doctrine',
+)
+assert.match(
+  executeModuleSource,
+  /orchestration\.route === 'lightspeed_sql' \? orchestration\.direct_path : 'none'/,
+  'executor must gate direct paths on the LLM router decision only',
+)
+assert.doesNotMatch(
   agentRouteSource,
-  /function extractCustomerProfileQuery\(text: string\): string \| null/,
-  'broad customer profile requests must have a deterministic query extractor',
+  /extractCustomerProfileQuery|resolveCustomerBikeOwnershipLookup|extractCustomerBikeOwnershipQuery/,
+  'regex direct-path extractors must not exist — routing is 100% LLM',
+)
+assert.match(
+  executeModuleSource,
+  /streamGroundedDirectAnswer/,
+  'direct paths must stream a grounded model answer instead of a canned template',
 )
 assert.match(
   agentRouteSource,
   /function customerProfileAnswer\(profile: GenieCustomerProfilePayload\): string/,
-  'direct customer profile requests must produce a useful textual summary',
-)
-assert.match(
-  agentRouteSource,
-  /const customerProfileQuery = extractCustomerProfileQuery\(latestUserMessage\)/,
-  'broad customer profile fast path must inspect the latest user request before generic agent execution',
-)
-assert.match(
-  agentRouteSource,
-  /direct_path: 'customer_profile'/,
-  'broad customer profile fast path must log direct customer profile execution',
-)
-assert.match(
-  agentRouteSource,
-  /function extractCustomerBikeOwnershipQuery/,
-  'customer bike ownership questions must have a deterministic extractor',
-)
-assert.match(
-  agentRouteSource,
-  /function cleanCustomerBikeOwnershipQueryCandidate/,
-  'customer bike ownership extraction must reject pronoun-only fragments such as "he currently"',
+  'direct customer profile requests must keep a deterministic fallback summary',
 )
 assert.match(
   agentRouteSource,
@@ -590,21 +626,6 @@ assert.match(
 )
 assert.match(
   agentRouteSource,
-  /function resolveCustomerBikeOwnershipLookup\(messages: Message\[\], latestUserMessage: string\)/,
-  'direct customer-bike fast path must use conversation-aware lookup resolution',
-)
-assert.match(
-  agentRouteSource,
-  /const customerBikeLookup = resolveCustomerBikeOwnershipLookup\(messages, latestUserMessage\)/,
-  'direct customer-bike fast path must not inspect only the latest user text',
-)
-assert.equal(
-  /const customerBikeLookupQuery = extractCustomerBikeOwnershipQuery\(latestUserMessage\)/.test(agentRouteSource),
-  false,
-  'direct customer-bike fast path must not bypass conversation context with latest-message-only extraction',
-)
-assert.match(
-  agentRouteSource,
   /direct_customer_profile/,
   'customer bike ownership questions must bypass generic agent exploration',
 )
@@ -614,18 +635,18 @@ assert.match(
   'direct customer bike lookups must use a bounded sales row cap for latency',
 )
 assert.match(
-  agentRouteSource,
-  /function resolveDirectSalesSummaryLookup/,
-  'single-day sales summary questions must have a narrow direct fast path',
+  directPathsModuleSource,
+  /function resolveDirectSalesSummaryPeriod/,
+  'router-provided period phrases must be parsed deterministically into date ranges',
 )
 assert.match(
-  agentRouteSource,
-  /const directSalesSummaryLookup = resolveDirectSalesSummaryLookup\(latestUserMessage\)/,
-  'direct sales summaries must execute after LLM routing but before generic agent exploration',
+  executeModuleSource,
+  /resolveDirectSalesSummaryPeriod\(entityQuery\)/,
+  'direct sales summaries must parse the router entity_query period',
 )
 assert.match(
-  agentRouteSource,
-  /direct_path: 'direct_sales_summary'/,
+  executeModuleSource,
+  /'direct_sales_summary'/,
   'direct sales summary path must be logged for latency analysis',
 )
 assert.match(
@@ -789,36 +810,136 @@ assert.match(
   'background job detail route must refresh background response state',
 )
 
+// ── Streaming architecture: live SSE + durable job fallback, no HTTP loopback ─
+assert.match(
+  runGenieJobSource,
+  /executeGenieAgent\(\{/,
+  'background jobs must run the agent in-process',
+)
+assert.doesNotMatch(
+  runGenieJobSource,
+  /fetch\(`\$\{params\.origin\}/,
+  'background jobs must not loopback-fetch the agent route over HTTP',
+)
+assert.doesNotMatch(
+  runGenieJobSource,
+  /cookieHeader/,
+  'background jobs must not forward cookies — auth happens once in the request',
+)
+assert.match(
+  startBackgroundRouteSource,
+  /text\/event-stream/,
+  'start-background must stream live agent events as SSE',
+)
+assert.match(
+  startBackgroundRouteSource,
+  /after\(\(\) => runPromise\)/,
+  'the agent run must survive client disconnects via after()',
+)
+assert.match(
+  startBackgroundRouteSource,
+  /deduplicated: true/,
+  'duplicate sends with the same client assistant id must reuse the in-flight job',
+)
+assert.match(
+  genieJobsProviderSource,
+  /readSSE\(body, /,
+  'jobs provider must consume the live SSE stream',
+)
+assert.match(
+  genieJobsProviderSource,
+  /liveJobIdsRef/,
+  'polling must not clobber live-streamed job state',
+)
+assert.match(
+  backgroundRouteSource,
+  /STALE_ACTIVE_JOB_MS/,
+  'stale running jobs must be failed on read so the UI never spins forever',
+)
+
+// ── Latency: planner streams reasoning; prompts keep static prefixes cacheable ─
+assert.match(
+  orchestratorModuleSource,
+  /stream: true,\s*maxTurns: 1/,
+  'planner must stream so planning is not dead air',
+)
+assert.match(
+  orchestratorModuleSource,
+  /toRouterInputMessages\(args\.messages\)/,
+  'router input must be trimmed for nano-model latency',
+)
+assert.match(
+  promptsModuleSource,
+  /ORCHESTRATOR_STATIC_INSTRUCTIONS/,
+  'router prompt must keep its static doctrine as a cacheable prefix',
+)
+assert.match(
+  promptsModuleSource,
+  /STORE CONTEXT\n- Store: "\$\{storeName\}"/,
+  'executor prompt must keep dynamic store/date content in a tail section',
+)
+assert.match(
+  promptsModuleSource,
+  /PLANNING CONTEXT\n- Store: "\$\{storeName\}"/,
+  'planner prompt must keep dynamic store/date content in a tail section',
+)
+
+// ── Verification: no scenario-overfit rules; judged on high-stakes routes ─────
+assert.doesNotMatch(
+  answerVerificationSource,
+  /apollo/i,
+  'answer verification must not hardcode vendor-specific scenarios',
+)
+assert.match(
+  answerVerificationSource,
+  /verifyQuestionAnsweredWithJudge/,
+  'high-stakes answers must support an LLM judge pass',
+)
+assert.match(
+  agentRouteSource,
+  /route === 'business_analysis' \|\| \(route === 'mixed' && executionPlan != null\)/,
+  'the LLM judge must be gated to high-stakes routes only',
+)
+
+// ── Time budget: long runs are told to wrap up before the platform kills them ─
+assert.match(
+  executeModuleSource,
+  /applyTimeBudgetToTools\(agentTools, requestStartedAt, RUN_TIME_BUDGET_MS\)/,
+  'tool results must carry wrap-up directives when the run nears its time budget',
+)
+
 const decisionFixtures: Array<{ name: string; decision: GenieOrchestrationDecision }> = [
   {
     name: 'general chat',
-    decision: { route: 'casual_chat', needs_plan: false, reason: 'Casual greeting/capability chat.' },
+    decision: { route: 'casual_chat', needs_plan: false, direct_path: 'none', entity_query: null, reason: 'Casual greeting/capability chat.' },
   },
   {
     name: 'internet search',
-    decision: { route: 'web_research', needs_plan: false, reason: 'Needs current public web facts.' },
+    decision: { route: 'web_research', needs_plan: false, direct_path: 'none', entity_query: null, reason: 'Needs current public web facts.' },
   },
   {
     name: 'inventory search',
-    decision: { route: 'lightspeed_sql', needs_plan: false, reason: 'Direct Lightspeed inventory lookup.' },
+    decision: { route: 'lightspeed_sql', needs_plan: false, direct_path: 'none', entity_query: null, reason: 'Direct Lightspeed inventory lookup.' },
   },
   {
     name: 'hard SQL',
-    decision: { route: 'lightspeed_sql', needs_plan: true, reason: 'Complex multi-pass Lightspeed analysis.' },
+    decision: { route: 'lightspeed_sql', needs_plan: true, direct_path: 'none', entity_query: null, reason: 'Complex multi-pass Lightspeed analysis.' },
   },
   {
     name: 'deep bike-store analysis',
-    decision: { route: 'business_analysis', needs_plan: true, reason: 'Broad profitability strategy analysis.' },
+    decision: { route: 'business_analysis', needs_plan: true, direct_path: 'none', entity_query: null, reason: 'Broad profitability strategy analysis.' },
   },
   {
     name: 'SQL plus internet',
-    decision: { route: 'mixed', needs_plan: true, reason: 'Needs private store data plus public market research.' },
+    decision: { route: 'mixed', needs_plan: true, direct_path: 'none', entity_query: null, reason: 'Needs private store data plus public market research.' },
   },
   {
     name: 'customer bike fitment plus internet compatibility',
     decision: {
       route: 'mixed',
       needs_plan: false,
+      direct_path: 'none',
+      entity_query: null,
       reason: 'Standard customer-bike compatibility flow: resolve private bike context, then check public technical evidence.',
     },
   },
@@ -827,20 +948,34 @@ const decisionFixtures: Array<{ name: string; decision: GenieOrchestrationDecisi
     decision: {
       route: 'mixed',
       needs_plan: true,
+      direct_path: 'none',
+      entity_query: null,
       reason: 'Needs private discount-candidate analysis plus public competitor pricing research.',
     },
   },
   {
     name: 'Lightspeed brand/category write-back',
-    decision: { route: 'storefront_action', needs_plan: false, reason: 'Direct approval-staged Lightspeed catalogue edit.' },
+    decision: { route: 'storefront_action', needs_plan: false, direct_path: 'none', entity_query: null, reason: 'Direct approval-staged Lightspeed catalogue edit.' },
   },
   {
     name: 'open work orders',
-    decision: { route: 'lightspeed_sql', needs_plan: false, reason: 'Direct live Lightspeed work order lookup.' },
+    decision: { route: 'lightspeed_sql', needs_plan: false, direct_path: 'none', entity_query: null, reason: 'Direct live Lightspeed work order lookup.' },
+  },
+  {
+    name: 'direct customer profile',
+    decision: { route: 'lightspeed_sql', needs_plan: false, direct_path: 'customer_profile', entity_query: 'Jack Lloyd', reason: 'Broad single-customer profile request.' },
+  },
+  {
+    name: 'direct customer bikes follow-up',
+    decision: { route: 'lightspeed_sql', needs_plan: false, direct_path: 'customer_bikes', entity_query: 'Sarah Down', reason: 'Bike ownership for previously-referenced customer.' },
+  },
+  {
+    name: 'direct sales summary',
+    decision: { route: 'lightspeed_sql', needs_plan: false, direct_path: 'sales_summary', entity_query: 'yesterday', reason: 'Simple single-period sales total.' },
   },
   {
     name: 'complex homepage campaign',
-    decision: { route: 'storefront_action', needs_plan: true, reason: 'Broad multi-step merchandising campaign.' },
+    decision: { route: 'storefront_action', needs_plan: true, direct_path: 'none', entity_query: null, reason: 'Broad multi-step merchandising campaign.' },
   },
 ]
 

@@ -540,59 +540,54 @@ export function MarketplaceHeader({
 
       {/* Mobile Space Navigator removed - now integrated into UnifiedFilterBar */}
 
-      {/* Mobile Floating List Item Button - Only shown on homepage and product pages */}
+      {/* Mobile floating action bar — single glass capsule, one primary action */}
       {showFloatingButton && mounted && !mobileUploadMethodOpen && !smartUploadModalOpen && !facebookModalOpen && !textUploadDialogOpen && !isUploading && (
         <div
-          className="sm:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-4 duration-300"
+          className="sm:hidden fixed inset-x-0 bottom-0 z-50 pointer-events-none animate-in fade-in slide-in-from-bottom-4 duration-300"
+          style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
         >
-          <div className="flex items-center gap-3 justify-center">
-            <button
-              onClick={() => {
-                setMobileUploadMethodOpen(true);
-              }}
-              className="relative transition-transform active:scale-95"
+          <div className="pointer-events-auto mx-auto w-full max-w-[340px] px-4">
+            <div
+              className="flex items-center gap-1.5 rounded-full border border-gray-200/80 bg-white/85 p-1.5 shadow-[0_4px_24px_rgba(17,17,17,0.10),0_1px_3px_rgba(17,17,17,0.06)] backdrop-blur-xl"
             >
-              {/* Main button */}
-              <div className="relative flex items-center gap-2.5 px-6 py-3.5 bg-[#ffde59] rounded-full border border-white/20 shadow-lg">
-                <div className="flex items-center justify-center w-6 h-6 bg-gray-900 rounded-full">
-                  <Plus className="h-4 w-4 text-white" strokeWidth={2.5} />
-                </div>
-                <span className="text-gray-900 font-semibold text-[15px] tracking-tight pr-1 whitespace-nowrap">
-                  {user ? 'List Item' : 'Sell Now'}
-                </span>
-              </div>
-            </button>
-
-            {showMobileBrowseFiltersFab && onOpenMobileBrowseFilters && (
               <button
                 type="button"
-                onClick={onOpenMobileBrowseFilters}
-                className="relative transition-transform active:scale-95"
-                aria-label="Filters"
+                onClick={() => setMobileUploadMethodOpen(true)}
+                className="flex min-w-0 flex-1 items-center justify-center gap-2 rounded-full bg-[#ffde59] px-4 py-2.5 text-[15px] font-semibold tracking-tight text-gray-900 transition-transform hover:bg-[#f0cf45] active:scale-[0.98]"
               >
-                <div className="relative flex items-center justify-center px-4 py-3.5 bg-[#ffde59] rounded-full border border-white/20 shadow-lg">
-                  <div className="flex items-center justify-center w-6 h-6 bg-gray-900 rounded-full">
-                    <SlidersHorizontal className="h-4 w-4 text-white" strokeWidth={2.5} />
-                  </div>
+                <Plus className="h-4 w-4 shrink-0" strokeWidth={2.25} />
+                <span className="truncate whitespace-nowrap">
+                  {user ? "List item" : "Sell"}
+                </span>
+              </button>
+
+              {showMobileBrowseFiltersFab && onOpenMobileBrowseFilters && (
+                <button
+                  type="button"
+                  onClick={onOpenMobileBrowseFilters}
+                  className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-600 transition-colors hover:bg-gray-100/80 active:scale-95"
+                  aria-label="Filters"
+                >
+                  <SlidersHorizontal className="h-[18px] w-[18px]" strokeWidth={2} />
                   {mobileBrowseFiltersBadge > 0 && (
-                    <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-md bg-gray-900 px-1 text-[10px] font-semibold text-white shadow-sm">
+                    <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-gray-900 px-1 text-[10px] font-semibold leading-none text-white">
                       {mobileBrowseFiltersBadge > 9 ? "9+" : mobileBrowseFiltersBadge}
                     </span>
                   )}
-                </div>
-              </button>
-            )}
+                </button>
+              )}
 
-            {/* Circular Search Button - Appears when sticky filters are visible */}
-            {showStickyFilters && (
-              <button
-                onClick={() => setMobileSearchOpen(true)}
-                className="flex items-center justify-center w-[54px] h-[54px] bg-[#ffde59] rounded-full border border-white/20 shadow-lg transition-transform active:scale-95 animate-in fade-in zoom-in-95 duration-200"
-                aria-label="Search"
-              >
-                <Search className="h-5 w-5 text-gray-900 stroke-[2]" />
-              </button>
-            )}
+              {showStickyFilters && (
+                <button
+                  type="button"
+                  onClick={() => setMobileSearchOpen(true)}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-600 transition-colors hover:bg-gray-100/80 active:scale-95 animate-in fade-in zoom-in-95 duration-200"
+                  aria-label="Search"
+                >
+                  <Search className="h-[18px] w-[18px]" strokeWidth={2} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

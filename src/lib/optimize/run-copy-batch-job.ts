@@ -5,10 +5,12 @@ import { readSSE } from "@/lib/optimize/read-sse";
 export type CopyBatchJobParams = {
   jobId: string;
   origin: string;
-  cookieHeader: string;
+  userId: string;
+  internalSecret: string;
+  maxProducts?: number;
 };
 
-type DescriptionMode = "both" | "description" | "specs" | "bicycle";
+const PRODUCT_TIMEOUT_MS = 90_000;
 
 async function updateJob(jobId: string, patch: Record<string, unknown>) {
   const supabase = createServiceRoleClient();
@@ -48,64 +50,82 @@ async function persistMetadata(jobId: string, metadata: CopyBatchJobMetadata) {
   await updateJob(jobId, { metadata });
 }
 
+function internalHeaders(internalSecret: string, userId: string): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    "x-internal-secret": internalSecret,
+    "x-internal-user-id": userId,
+  };
+}
+
 async function runTitlesForProduct(
   origin: string,
-  cookieHeader: string,
+  internalSecret: string,
+  userId: string,
   productId: string,
 ): Promise<boolean> {
-  const response = await fetch(`${origin}/api/products/generate-titles`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(cookieHeader ? { cookie: cookieHeader } : {}),
-    },
-    body: JSON.stringify({ productIds: [productId] }),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PRODUCT_TIMEOUT_MS);
 
-  if (!response.ok || !response.body) {
-    throw new Error("Title generation failed");
+  try {
+    const response = await fetch(`${origin}/api/products/generate-titles`, {
+      method: "POST",
+      headers: internalHeaders(internalSecret, userId),
+      body: JSON.stringify({ productIds: [productId] }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error("Title generation failed");
+    }
+
+    let success = true;
+    await readSSE(response.body, (event) => {
+      if (event.event !== "product_complete" || event.productId !== productId) return;
+      success = event.success === true;
+    });
+
+    return success;
+  } finally {
+    clearTimeout(timer);
   }
-
-  let success = true;
-  await readSSE(response.body, (event) => {
-    if (event.event !== "product_complete" || event.productId !== productId) return;
-    success = event.success === true;
-  });
-
-  return success;
 }
+
+type DescriptionMode = "both" | "description" | "specs" | "bicycle";
 
 async function runDescriptionsForProduct(
   origin: string,
-  cookieHeader: string,
+  internalSecret: string,
+  userId: string,
   productId: string,
   mode: DescriptionMode,
   bicycleOverrides: Record<string, boolean>,
 ): Promise<boolean> {
-  const response = await fetch(`${origin}/api/products/generate-product-descriptions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(cookieHeader ? { cookie: cookieHeader } : {}),
-    },
-    body: JSON.stringify({
-      productIds: [productId],
-      mode,
-      bicycleOverrides,
-    }),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PRODUCT_TIMEOUT_MS);
 
-  if (!response.ok || !response.body) {
-    throw new Error("Copy generation failed");
+  try {
+    const response = await fetch(`${origin}/api/products/generate-product-descriptions`, {
+      method: "POST",
+      headers: internalHeaders(internalSecret, userId),
+      body: JSON.stringify({ productIds: [productId], mode, bicycleOverrides }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error("Copy generation failed");
+    }
+
+    let success = true;
+    await readSSE(response.body, (event) => {
+      if (event.event !== "product_complete" || event.productId !== productId) return;
+      success = event.success === true;
+    });
+
+    return success;
+  } finally {
+    clearTimeout(timer);
   }
-
-  let success = true;
-  await readSSE(response.body, (event) => {
-    if (event.event !== "product_complete" || event.productId !== productId) return;
-    success = event.success === true;
-  });
-
-  return success;
 }
 
 function descriptionMode(copyFields: CopyBatchFields): DescriptionMode | null {
@@ -117,7 +137,8 @@ function descriptionMode(copyFields: CopyBatchFields): DescriptionMode | null {
 
 async function runProductCopy(
   origin: string,
-  cookieHeader: string,
+  internalSecret: string,
+  userId: string,
   productId: string,
   copyFields: CopyBatchFields,
   bicycleOverrides: Record<string, boolean>,
@@ -127,18 +148,18 @@ async function runProductCopy(
   const runsCopyContent = copyFields.description || copyFields.specs;
 
   if (copyFields.title) {
-    tasks.push(runTitlesForProduct(origin, cookieHeader, productId));
+    tasks.push(runTitlesForProduct(origin, internalSecret, userId, productId));
   }
 
   if (descMode) {
     tasks.push(
-      runDescriptionsForProduct(origin, cookieHeader, productId, descMode, bicycleOverrides),
+      runDescriptionsForProduct(origin, internalSecret, userId, productId, descMode, bicycleOverrides),
     );
   }
 
   if (!runsCopyContent) {
     tasks.push(
-      runDescriptionsForProduct(origin, cookieHeader, productId, "bicycle", bicycleOverrides),
+      runDescriptionsForProduct(origin, internalSecret, userId, productId, "bicycle", bicycleOverrides),
     );
   }
 
@@ -148,8 +169,12 @@ async function runProductCopy(
   return results.every(Boolean);
 }
 
-export async function runCopyBatchJob(params: CopyBatchJobParams): Promise<void> {
-  const { jobId, origin, cookieHeader } = params;
+/**
+ * Returns true when the job is fully complete (or cancelled/failed).
+ * Returns false when maxProducts was reached and more products remain.
+ */
+export async function runCopyBatchJob(params: CopyBatchJobParams): Promise<boolean> {
+  const { jobId, origin, userId, internalSecret, maxProducts } = params;
 
   try {
     const metadata = await loadJobMetadata(jobId);
@@ -157,15 +182,27 @@ export async function runCopyBatchJob(params: CopyBatchJobParams): Promise<void>
       throw new Error("Copy batch job is missing product IDs");
     }
 
-    const productIds = metadata.productIds;
-    const copyFields = metadata.copyFields;
-    const bicycleOverrides = metadata.bicycleOverrides ?? {};
+    const { productIds, copyFields, bicycleOverrides = {} } = metadata;
     const completedProductIds = new Set(metadata.completedProductIds ?? []);
     const failedProductIds = new Set(metadata.failedProductIds ?? []);
 
+    const pending = productIds.filter(
+      (id) => !completedProductIds.has(id) && !failedProductIds.has(id),
+    );
+
+    if (pending.length === 0) {
+      await updateJob(jobId, {
+        status: "completed",
+        done: completedProductIds.size,
+        failed: failedProductIds.size,
+        message: "Copy generation complete",
+        completed_at: new Date().toISOString(),
+      });
+      return true;
+    }
+
     await updateJob(jobId, {
       status: "running",
-      started_at: new Date().toISOString(),
       total: productIds.length,
       done: completedProductIds.size,
       failed: failedProductIds.size,
@@ -174,18 +211,25 @@ export async function runCopyBatchJob(params: CopyBatchJobParams): Promise<void>
 
     let done = completedProductIds.size;
     let failed = failedProductIds.size;
+    let processed = 0;
 
-    for (const productId of productIds) {
+    for (const productId of pending) {
+      if (maxProducts !== undefined && processed >= maxProducts) {
+        await persistMetadata(jobId, {
+          ...metadata,
+          completedProductIds: [...completedProductIds],
+          failedProductIds: [...failedProductIds],
+        });
+        await updateJob(jobId, { done, failed });
+        return false;
+      }
+
       if (await isJobCancelled(jobId)) {
         await updateJob(jobId, {
           message: "Copy generation cancelled",
           completed_at: new Date().toISOString(),
         });
-        return;
-      }
-
-      if (completedProductIds.has(productId) || failedProductIds.has(productId)) {
-        continue;
+        return true;
       }
 
       await updateJob(jobId, {
@@ -195,7 +239,8 @@ export async function runCopyBatchJob(params: CopyBatchJobParams): Promise<void>
       try {
         const success = await runProductCopy(
           origin,
-          cookieHeader,
+          internalSecret,
+          userId,
           productId,
           copyFields,
           bicycleOverrides,
@@ -218,12 +263,13 @@ export async function runCopyBatchJob(params: CopyBatchJobParams): Promise<void>
         );
       }
 
+      processed += 1;
+
       await persistMetadata(jobId, {
         ...metadata,
         completedProductIds: [...completedProductIds],
         failedProductIds: [...failedProductIds],
       });
-
       await updateJob(jobId, { done, failed });
     }
 
@@ -234,6 +280,7 @@ export async function runCopyBatchJob(params: CopyBatchJobParams): Promise<void>
       message: "Copy generation complete",
       completed_at: new Date().toISOString(),
     });
+    return true;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Copy generation failed";
     console.error("[copy-batch-job]", jobId, message);
@@ -243,5 +290,6 @@ export async function runCopyBatchJob(params: CopyBatchJobParams): Promise<void>
       message,
       completed_at: new Date().toISOString(),
     });
+    return true;
   }
 }

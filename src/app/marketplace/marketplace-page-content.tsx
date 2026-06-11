@@ -10,12 +10,10 @@ import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
 import { ListItemBanner } from "@/components/marketplace/list-item-banner";
 import { UnifiedFilterBar, ViewMode, ListingTypeFilter as ListingTypeFilterType } from "@/components/marketplace/unified-filter-bar";
-import { BrowseSortButton } from "@/components/marketplace/browse-filters-toolbar";
 import { SpaceNavigator, useMarketplaceSpace } from "@/components/marketplace/space-navigator";
 import { StoreCategoryPills } from "@/components/marketplace/store-category-pills";
 import type { MarketplaceSpace } from "@/lib/types/marketplace";
 import { AdvancedFilters, DEFAULT_ADVANCED_FILTERS, countActiveFilters, type AdvancedFiltersState } from "@/components/marketplace/advanced-filters";
-import { StoresGrid } from "@/components/marketplace/stores-grid";
 import { ImageDiscoveryModal } from "@/components/marketplace/image-discovery-modal";
 import { PromoBannerCarousel } from "@/components/marketplace/promo-banner-carousel";
 import { useUserVouchers } from "@/lib/hooks/use-user-vouchers";
@@ -585,12 +583,6 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     [selectedStoreId, stores]
   );
 
-  // Featured store for the Bike Stores tab (shown when browsing all stores)
-  const featuredStore = React.useMemo(
-    () => stores.find(s => s.store_name?.toLowerCase().includes('ashburton')) ?? null,
-    [stores]
-  );
-
   // Derive marketplace category pills from the currently loaded products
   const marketplaceCategories = React.useMemo(() => {
     if (isStoreInventoryView || !products?.length) return [];
@@ -1005,17 +997,6 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
         showMobileBrowseFiltersFab={(isMarketplaceView || isStoreInventoryView) && viewMode === "all"}
         mobileBrowseFiltersBadge={activeFilterCount}
         onOpenMobileBrowseFilters={() => setMobileBrowseSheetOpen(true)}
-        mobileBrowseSort={
-          (isMarketplaceView || isStoreInventoryView) && viewMode === "all" ? (
-            <BrowseSortButton
-              sortBy={advancedFilters.sortBy}
-              onSortChange={(sortBy) =>
-                setAdvancedFilters((prev) => ({ ...prev, sortBy }))
-              }
-              onApply={handleAdvancedFiltersApply}
-            />
-          ) : undefined
-        }
       />
 
       {/* Sticky Filter Header - Mobile Only (appears when category pills scroll out) */}
@@ -1298,74 +1279,41 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
               </div>
             )}
 
-            {/* Stores View - Products from Stores with Store Filter */}
-            {isStoresView && (
-              <div className="space-y-2">
-                {/* Store identity strip — shown when a specific store is selected */}
-                {selectedStore && (
-                  <div className="flex items-center justify-between gap-3 px-0.5">
-                    <button
-                      type="button"
-                      onClick={() => handleNavigateToStoreProfile(selectedStore)}
-                      className="flex items-center gap-2.5 min-w-0 group hover:opacity-80 transition-opacity cursor-pointer"
-                    >
-                      {selectedStore.logo_url ? (
-                        <div className="relative h-8 w-8 rounded-full overflow-hidden border border-gray-200 flex-shrink-0 shadow-sm">
-                          <Image
-                            src={selectedStore.logo_url}
-                            alt={selectedStore.store_name}
-                            fill
-                            className="object-cover"
-                          />
-                        </div>
-                      ) : (
-                        <div className="h-8 w-8 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center flex-shrink-0">
-                          <StoreIcon className="h-4 w-4 text-gray-400" />
-                        </div>
-                      )}
-                      <div className="min-w-0 text-left">
-                        <p className="text-sm font-semibold text-gray-900 truncate group-hover:underline">{selectedStore.store_name}</p>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleNavigateToAllStores}
-                      className="text-xs text-gray-500 hover:text-gray-700 underline flex-shrink-0"
-                    >
-                      All stores
-                    </button>
+            {/* Store identity strip — only when a specific store is selected */}
+            {isStoresView && selectedStore && (
+              <div className="flex items-center justify-between gap-3 px-0.5">
+                <button
+                  type="button"
+                  onClick={() => handleNavigateToStoreProfile(selectedStore)}
+                  className="group flex min-w-0 cursor-pointer items-center gap-2.5 transition-opacity hover:opacity-80"
+                >
+                  {selectedStore.logo_url ? (
+                    <div className="relative h-8 w-8 flex-shrink-0 overflow-hidden rounded-full border border-gray-200 shadow-sm">
+                      <Image
+                        src={selectedStore.logo_url}
+                        alt={selectedStore.store_name}
+                        fill
+                        className="object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-100">
+                      <StoreIcon className="h-4 w-4 text-gray-400" />
+                    </div>
+                  )}
+                  <div className="min-w-0 text-left">
+                    <p className="truncate text-sm font-semibold text-gray-900 group-hover:underline">
+                      {selectedStore.store_name}
+                    </p>
                   </div>
-                )}
-
-                {/* Featured Stores — compact single-line strip (no store selected) */}
-                {!selectedStoreId && featuredStore && (
-                  <button
-                    type="button"
-                    onClick={() => handleNavigateToStoreProfile(featuredStore)}
-                    className="group flex min-w-0 items-center gap-2 text-left transition-opacity hover:opacity-80 cursor-pointer"
-                  >
-                    <span className="flex-shrink-0 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                      Featured
-                    </span>
-                    {featuredStore.logo_url ? (
-                      <div className="relative h-6 w-6 flex-shrink-0 overflow-hidden rounded-full border border-gray-200">
-                        <Image
-                          src={featuredStore.logo_url}
-                          alt={featuredStore.store_name}
-                          fill
-                          className="object-cover"
-                        />
-                      </div>
-                    ) : (
-                      <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-100">
-                        <StoreIcon className="h-3.5 w-3.5 text-gray-400" />
-                      </div>
-                    )}
-                    <span className="truncate text-sm font-medium text-gray-700 group-hover:underline">
-                      {featuredStore.store_name}
-                    </span>
-                  </button>
-                )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNavigateToAllStores}
+                  className="flex-shrink-0 text-xs text-gray-500 underline hover:text-gray-700"
+                >
+                  All stores
+                </button>
               </div>
             )}
 
@@ -1458,33 +1406,27 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
 
                 <div className="space-y-3">
                     {isProductSearchActive && (
-                      <div className="flex items-center justify-between gap-3 rounded-md border border-gray-200 bg-white px-3 py-2.5 shadow-sm">
-                        <div className="flex min-w-0 items-center gap-2">
-                          <Search className="h-4 w-4 flex-shrink-0 text-gray-400" />
-                          <p className="min-w-0 truncate text-sm text-gray-600">
-                            {loading && gridProducts.length === 0 ? (
-                              <>Searching for “{searchQuery?.trim()}”…</>
-                            ) : gridProducts.length === 0 ? (
-                              <>No results for “{searchQuery?.trim()}”</>
-                            ) : (
-                              <>
-                                <span className="font-semibold text-gray-900 tabular-nums">
-                                  {totalCount > 0 ? totalCount : gridProducts.length}
-                                </span>
-                                {" "}
-                                {totalCount === 1 || gridProducts.length === 1 ? "result" : "results"} for “
-                                {searchQuery?.trim()}”
-                              </>
-                            )}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleClearSearch}
-                          className="flex-shrink-0 rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100"
-                        >
-                          Clear
-                        </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md bg-gray-100 px-2.5 py-1 text-sm font-medium text-gray-800">
+                          <span className="truncate">{searchQuery?.trim()}</span>
+                          <button
+                            type="button"
+                            onClick={handleClearSearch}
+                            className="flex-shrink-0 rounded-md p-0.5 text-gray-500 transition-colors hover:bg-gray-200/80 hover:text-gray-800"
+                            aria-label="Clear search"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </span>
+                        <span className="text-sm text-gray-500 tabular-nums">
+                          {loading && gridProducts.length === 0
+                            ? "Searching…"
+                            : `${totalCount > 0 ? totalCount : gridProducts.length} ${
+                                (totalCount > 0 ? totalCount : gridProducts.length) === 1
+                                  ? "result"
+                                  : "results"
+                              }`}
+                        </span>
                       </div>
                     )}
 

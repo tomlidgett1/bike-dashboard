@@ -4,7 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { MapPin, User, Sparkles, Pencil, Shield, ChevronRight, Truck, Globe, AlignLeft, ListChecks } from "lucide-react";
+import { MapPin, User, Pencil, Shield, ChevronRight, Truck, Globe, AlignLeft, ListChecks } from "lucide-react";
 import { UberDeliveryInlineBadge } from "./uber-delivery-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,6 @@ import { BuyNowButton } from "./buy-now-button";
 import { AddToCartButton } from "./add-to-cart-button";
 import { ProductAskGenieButton } from "./product-ask-genie-button";
 import { useAuth } from "@/components/providers/auth-provider";
-import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { resolveLivePrice } from "@/lib/marketplace/pricing";
 import { formatStockOnHandLabel } from "@/lib/marketplace/stock-display";
@@ -26,13 +25,8 @@ const PickupLocationMap = dynamic(
   () => import("./product-detail/pickup-location-map").then((mod) => mod.PickupLocationMap),
   {
     ssr: false,
-    loading: () => <div className="h-36 mx-3 mb-3 rounded-md bg-gray-100" />,
+    loading: () => <div className="mx-4 mb-3 h-36 rounded-md bg-gray-100 sm:mx-5" />,
   },
-);
-
-const ProductLearnPanel = dynamic(
-  () => import("./product-learn-panel").then((mod) => mod.ProductLearnPanel),
-  { ssr: false },
 );
 
 const EditProductDrawer = dynamic(
@@ -140,10 +134,8 @@ interface ProductDetailsPanelSimpleProps {
 
 export function ProductDetailsPanelSimple({ product: initialProduct, onProductUpdate }: ProductDetailsPanelSimpleProps) {
   const { user } = useAuth();
-  const { openAuthModal } = useAuthModal();
   const [product, setProduct] = React.useState(initialProduct);
   const [logoError, setLogoError] = React.useState(false);
-  const [isLearnOpen, setIsLearnOpen] = React.useState(false);
   const [isEditOpen, setIsEditOpen] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<'overview' | 'specs'>('overview');
 
@@ -178,7 +170,7 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
   return (
     <div className="bg-white pb-5 sm:pb-6">
       {/* Header: Title, Price, Meta */}
-      <div className="px-5 pt-5 pb-4">
+      <div className="px-4 pt-5 pb-4 sm:px-5">
         <h1 className="text-[22px] font-semibold leading-snug tracking-tight text-gray-900">
           {(product as any).display_name || product.description}
         </h1>
@@ -248,7 +240,7 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
       </div>
 
       {/* Action Buttons */}
-      <div className="px-5 pb-4 space-y-2">
+      <div className="space-y-2 px-4 pb-4 sm:px-5">
         {isSold ? (
           /* Sold View: Show sold banner */
           <div className="p-4 bg-gray-100 rounded-md text-center">
@@ -303,7 +295,9 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
               fullWidth
               className="h-11 bg-white"
             />
-            <ProductAskGenieButton product={product} />
+            <div className="hidden sm:block">
+              <ProductAskGenieButton product={product} />
+            </div>
             <div className="flex gap-2">
               <div className="flex-1">
                 <MakeOfferButton
@@ -340,7 +334,7 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
 
       {/* Buyer Protection — trust container */}
       {!isOwner && !isSold && (
-        <div className="px-5 pb-4">
+        <div className="px-4 pb-4 sm:px-5">
           <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3.5 py-3">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-200 bg-gray-50">
               <Shield className="h-4 w-4 text-gray-500" />
@@ -390,7 +384,7 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
       </div>
 
       {/* Tabs — pill design */}
-      <div className="px-5 pt-3">
+      <div className="px-4 pt-3 sm:px-5">
         <div className="flex w-fit items-center rounded-md bg-gray-100 p-0.5">
           <button
             onClick={() => setActiveTab('overview')}
@@ -422,7 +416,7 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
       </div>
 
       {/* Tab Content */}
-      <div className="px-5 py-4">
+      <div className="px-4 py-4 sm:px-5">
         {/* Overview Tab */}
         {activeTab === 'overview' && (
           <div className="space-y-4">
@@ -447,23 +441,6 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
                   </p>
                 </div>
               )}
-
-              {/* Research with AI */}
-              <div className="pt-1">
-                <button
-                  onClick={() => {
-                    if (!user) {
-                      openAuthModal();
-                      return;
-                    }
-                    setIsLearnOpen(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-50"
-                >
-                  <Sparkles className="h-4 w-4 text-gray-500" />
-                  Research with AI
-                </button>
-              </div>
 
               {/* Delivery Options */}
               {((product as any).shipping_available || (product as any).pickup_location) && (
@@ -502,7 +479,7 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
                         {/* Map with privacy circle */}
                         <PickupLocationMap 
                           location={(product as any).pickup_location} 
-                          className="h-36 mx-3 mb-3"
+                          className="mx-4 mb-3 h-36 sm:mx-5"
                         />
                       </div>
                     )}
@@ -567,19 +544,10 @@ export function ProductDetailsPanelSimple({ product: initialProduct, onProductUp
 
       {/* Official sources cited during AI copy generation */}
       {(product as any).product_spec_sources?.length ? (
-        <div className="border-t border-gray-100 px-5 pb-5 pt-4">
+        <div className="border-t border-gray-100 px-4 pb-5 pt-4 sm:px-5">
           <SpecSources sources={(product as any).product_spec_sources} />
         </div>
       ) : null}
-
-      {/* AI Product Learn Panel */}
-      {isLearnOpen && (
-        <ProductLearnPanel
-          product={product}
-          isOpen={isLearnOpen}
-          onClose={() => setIsLearnOpen(false)}
-        />
-      )}
 
       {/* Edit Product Drawer - Only for owners */}
       {isOwner && isEditOpen && (

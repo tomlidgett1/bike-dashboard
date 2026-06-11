@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import OpenAI from 'openai'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceRoleClient } from '@/lib/supabase/server'
 import { ensureTitlePreservesSizes } from '@/lib/product-title-size-guard'
 import { brandWebsiteDomain, resolveBrandWebsite } from '@/lib/bikes/brand-websites'
 
@@ -64,14 +64,29 @@ function extractOutputText(response: ResponseWithOutput): string {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    // Support internal auth from the batch runner (no browser cookies needed)
+    const internalSecret = request.headers.get('x-internal-secret')
+    const internalUserId = request.headers.get('x-internal-user-id')
+    const cronSecret = process.env.CRON_SECRET
 
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorised' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' },
-      })
+    let userId: string
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let supabase: any
+
+    if (cronSecret && internalSecret === cronSecret && internalUserId) {
+      userId = internalUserId
+      supabase = createServiceRoleClient()
+    } else {
+      const client = await createClient()
+      const { data: { user }, error: authError } = await client.auth.getUser()
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorised' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      userId = user.id
+      supabase = client
     }
 
     const body = await request.json()
@@ -88,7 +103,7 @@ export async function POST(request: NextRequest) {
     const { data: products, error: dbError } = await supabase
       .from('products')
       .select('id, description, display_name, brand, model, manufacturer_name, marketplace_category, price')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .in('id', productIds)
 
     if (dbError || !products?.length) {
@@ -147,7 +162,7 @@ export async function POST(request: NextRequest) {
                 .from('products')
                 .update({ display_name: title, updated_at: new Date().toISOString() })
                 .eq('id', product.id)
-                .eq('user_id', user.id)
+                .eq('user_id', userId)
 
               emit({
                 event: 'product_complete',
