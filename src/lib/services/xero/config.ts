@@ -31,7 +31,6 @@ export const XERO_CONFIG = {
     'accounting.payments.read',
     'accounting.invoices.read',
     'accounting.banktransactions.read',
-    'accounting.transactions.read',
     'accounting.manualjournals.read',
     'accounting.reports.aged.read',
     'accounting.reports.balancesheet.read',

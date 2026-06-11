@@ -11,6 +11,11 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { generateXeroOAuthState, buildXeroAuthUrl } from '@/lib/services/xero'
 
+// Never cache: every click must mint a fresh OAuth state and a redirect built
+// from the current scope set. A cached redirect would replay a stale authorize
+// URL (e.g. the old app.connections scope) and break the flow.
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     const supabase = await createClient()
@@ -26,7 +31,9 @@ export async function GET() {
     const state = await generateXeroOAuthState(user.id)
     const authUrl = buildXeroAuthUrl(state)
 
-    return NextResponse.redirect(authUrl)
+    const response = NextResponse.redirect(authUrl)
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+    return response
   } catch (error) {
     console.error('[Xero Initiate] Error initiating OAuth:', error)
 
