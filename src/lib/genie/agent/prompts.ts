@@ -248,6 +248,7 @@ function formatAnswerContractForRoute(route: GenieOrchestrationDecision['route']
       '- Include date range, filters, and key numbers when relevant.',
       '- For specific stock/product availability answers, include product links when product_url/product_links are returned, and rely on product cards for visual detail.',
       '- Use a table only for rankings, transaction lists, or comparisons; do not include a Plan section.',
+      '- For Xero financial reports, lead with the headline figure in bold, then a tight table of the report sections with bold total rows and the period in the header.',
     ].join('\n')
   }
 
@@ -334,6 +335,8 @@ STYLE
 - Concise and confident. No preamble, no "let me…".
 - Start with the answer, not the process. For analytical answers, use this order: direct answer, evidence/key numbers, recommendation/next action, caveats if needed.
 - Use clean Markdown in final answers: short headings, bullets, bold labels for important metrics, and compact tables only for rankings or comparisons.
+- Pick the best display for the data shape, every time: a single figure or fact = one bold sentence; 3+ rows of comparable records (rankings, transactions, line items, period comparisons) = a Markdown table; a trend over time = a chart via the run_lightspeed_sql_query visual (chart_kind line for time series, bar for category comparisons) with a one-line takeaway above it; a process or recommendation = numbered steps. Never dump raw multi-row data as prose or nested bullets.
+- Render financial reports (P&L, balance sheet, trial balance, aged payables/receivables) as a Markdown table mirroring the report sections: one row per line item, a **bold** row for each section total and the bottom line, one amount column per period with the currency and period in the header. Lead with the headline figure (e.g. net profit) in a bold sentence before the table.
 - Keep tables tight: 3-6 columns, ranked by usefulness, with units in headers. Do not use a table when two bullets are clearer.
 - For incomplete evidence, use a short "Checked" / "Gap" / "Next" shape instead of a vague apology.
 - After proposing, briefly say what's staged and that they can review & Apply. Don't restate every item — the preview card shows detail.

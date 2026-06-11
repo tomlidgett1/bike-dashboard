@@ -9513,6 +9513,8 @@ function buildAgentTools(
         }, { useJudge })
         if (!result.ready) {
           emitStatus(emit, 'rechecking', 'Answer incomplete — continuing lookup')
+        } else {
+          emitStatus(emit, 'responding', 'Verified — writing the final answer')
         }
         return result
       },

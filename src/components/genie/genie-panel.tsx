@@ -84,7 +84,10 @@ type StatusPhase =
   | 'tool'
   | 'responding'
   | 'gmail'
-  | 'gmail_done';
+  | 'gmail_done'
+  | 'xero'
+  | 'xero_done'
+  | 'verifying';
 
 interface StatusStep { phase: StatusPhase; text: string }
 interface ProcessStep {
@@ -215,6 +218,9 @@ const PHASE_LABELS: Partial<Record<StatusPhase, string>> = {
   responding: 'Answering',
   gmail: 'Gmail',
   gmail_done: 'Gmail',
+  xero: 'Xero',
+  xero_done: 'Xero',
+  verifying: 'Quality check',
 };
 
 function normalizeStartupStatusText(text: string, phase?: string): string {

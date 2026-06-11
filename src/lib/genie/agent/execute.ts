@@ -573,11 +573,22 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
           toolCallCount += 1
           toolCallNames[toolName] = (toolCallNames[toolName] ?? 0) + 1
           activeToolName = toolName
-          emit({ event: 'status', ...statusForTool(toolName) })
+          let toolArgs: Record<string, unknown> | undefined
+          const rawArguments = item.rawItem?.arguments
+          if (typeof rawArguments === 'string' && rawArguments.length > 1 && rawArguments.length < 20000) {
+            try {
+              const parsed: unknown = JSON.parse(rawArguments)
+              if (isRecord(parsed)) toolArgs = parsed
+            } catch { /* malformed args — fall back to the static status text */ }
+          }
+          emit({ event: 'status', ...statusForTool(toolName, toolArgs) })
         }
         if (event.name === 'tool_output') {
-          emit({ event: 'status', ...statusAfterTool(activeToolName ?? 'tool') })
-          emit({ event: 'status', phase: 'responding', text: 'Checking whether the answer is complete' })
+          // verify_question_answered emits its own result-aware status; a generic
+          // override here would mislabel the not-ready path.
+          if (activeToolName && activeToolName !== 'verify_question_answered') {
+            emit({ event: 'status', ...statusAfterTool(activeToolName) })
+          }
           activeToolName = null
         }
       }

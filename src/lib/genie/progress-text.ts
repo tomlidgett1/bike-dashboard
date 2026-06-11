@@ -59,6 +59,12 @@ function phaseFallback(phase?: string): string {
       return 'Checking Gmail'
     case 'gmail_done':
       return 'Gmail done'
+    case 'xero':
+      return 'Checking Xero'
+    case 'xero_done':
+      return 'Xero result ready'
+    case 'verifying':
+      return 'Quality check'
     case 'product_search':
       return 'Searching marketplace'
     case 'responding':

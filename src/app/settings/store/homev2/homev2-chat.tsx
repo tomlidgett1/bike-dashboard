@@ -143,6 +143,7 @@ const PHASE_LABELS: Record<string, string> = {
   gmail_done: "Gmail",
   xero: "Xero",
   xero_done: "Xero",
+  verifying: "Quality check",
 };
 
 function normalizeStartupStatusText(text: string, phase?: string): string {

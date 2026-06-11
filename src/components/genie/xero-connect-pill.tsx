@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Link2 } from "lucide-react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 interface XeroStatus {
@@ -61,7 +61,7 @@ export function XeroConnectPill({ className }: { className?: string }) {
       )}
       title="Connect Xero so the Genie can answer P&L, balance sheet, bills, and purchase order questions"
     >
-      <Link2 className="h-3.5 w-3.5" />
+      <XeroMark className="h-3.5 w-3.5" />
       Connect Xero
     </a>
   );
@@ -69,14 +69,8 @@ export function XeroConnectPill({ className }: { className?: string }) {
 
 function XeroMark({ className }: { className?: string }) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center justify-center rounded-full bg-sky-500 text-[8px] font-bold leading-none text-white",
-        className,
-      )}
-      aria-hidden
-    >
-      X
+    <span className={cn("inline-flex shrink-0 overflow-hidden rounded-full", className)} aria-hidden>
+      <Image src="/xero.png" alt="" width={14} height={14} className="h-full w-full object-cover" />
     </span>
   );
 }

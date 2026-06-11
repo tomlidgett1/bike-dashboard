@@ -45,6 +45,7 @@ interface StreamToolItem {
   rawItem?: {
     name?: string
     toolName?: string
+    arguments?: string
   }
 }
 
