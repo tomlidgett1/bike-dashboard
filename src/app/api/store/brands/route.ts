@@ -78,6 +78,8 @@ export async function POST(request: NextRequest) {
         user_id: user.id,
         name: body.name.trim(),
         logo_url: body.logo_url || null,
+        lightspeed_manufacturer_id: body.lightspeed_manufacturer_id || null,
+        lightspeed_manufacturer_name: body.lightspeed_manufacturer_name?.trim() || null,
         display_order: displayOrder,
         is_active: true,
       })
@@ -110,6 +112,12 @@ export async function PUT(request: NextRequest) {
     const updateData: Record<string, unknown> = {};
     if (body.name !== undefined) updateData.name = body.name;
     if (body.logo_url !== undefined) updateData.logo_url = body.logo_url;
+    if (body.lightspeed_manufacturer_id !== undefined) {
+      updateData.lightspeed_manufacturer_id = body.lightspeed_manufacturer_id;
+    }
+    if (body.lightspeed_manufacturer_name !== undefined) {
+      updateData.lightspeed_manufacturer_name = body.lightspeed_manufacturer_name;
+    }
     if (body.display_order !== undefined) updateData.display_order = body.display_order;
     if (body.is_active !== undefined) updateData.is_active = body.is_active;
 

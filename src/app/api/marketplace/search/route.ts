@@ -79,7 +79,11 @@ export async function GET(request: NextRequest) {
             resolved_image_source,
             resolved_external_url,
             resolved_cloudinary_url,
-            resolved_cloudinary_public_id
+            resolved_cloudinary_public_id,
+            sale_price,
+            discount_percent,
+            discount_active,
+            discount_ends_at
           `)
           .in('id', productIds)
       : { data: [] as any[] };
@@ -113,7 +117,11 @@ export async function GET(request: NextRequest) {
         return {
           id: product.product_id,
           name: product.display_name || product.description,
-          price: product.price,
+          price: parseFloat(product.price) || 0,
+          sale_price: readyProduct.sale_price != null ? parseFloat(readyProduct.sale_price) : null,
+          discount_percent: readyProduct.discount_percent != null ? parseFloat(readyProduct.discount_percent) : null,
+          discount_active: readyProduct.discount_active ?? false,
+          discount_ends_at: readyProduct.discount_ends_at ?? null,
           category: product.marketplace_category,
           imageUrl: thumbnailUrl || imageUrl, // Use thumbnail for search dropdown (smaller, faster)
           thumbnailUrl, // Pre-generated thumbnail for instant loading

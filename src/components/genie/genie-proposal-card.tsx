@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { GmailEmailActionCard } from "@/components/genie/gmail-email-action-card";
+import { LightspeedPurchaseOrderCard } from "@/components/genie/lightspeed-purchase-order-card";
 import { LightspeedCategoryCreateCard } from "@/components/genie/lightspeed-category-create-card";
 import { LightspeedProductEditCard } from "@/components/genie/lightspeed-product-edit-card";
 import type {
@@ -260,7 +261,10 @@ function DefaultGenieProposalCard({
 }: {
   proposal: Exclude<
     GenieProposal,
-    { kind: "product_brand_category_update" } | { kind: "lightspeed_category_create" } | { kind: "gmail_email_action" }
+    | { kind: "product_brand_category_update" }
+    | { kind: "lightspeed_category_create" }
+    | { kind: "gmail_email_action" }
+    | { kind: "lightspeed_purchase_order_create" }
   >;
 }) {
   const [status, setStatus] = React.useState<"idle" | "applying" | "applied" | "error">("idle");
@@ -361,6 +365,9 @@ function DefaultGenieProposalCard({
 export function GenieProposalCard({ proposal }: { proposal: GenieProposal }) {
   if (proposal.kind === "gmail_email_action") {
     return <GmailEmailActionCard proposal={proposal} />;
+  }
+  if (proposal.kind === "lightspeed_purchase_order_create") {
+    return <LightspeedPurchaseOrderCard proposal={proposal} />;
   }
   if (proposal.kind === "product_brand_category_update") {
     return <LightspeedProductEditCard proposal={proposal} />;

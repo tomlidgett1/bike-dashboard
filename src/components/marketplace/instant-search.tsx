@@ -12,6 +12,7 @@ import type { AISearchResult } from "@/types/ai-search";
 import { AISearchResponseDisplay } from "./ai-search-response";
 import { AISearchLoading } from "./ai-search-loading";
 import type { MarketplaceSpace } from "@/lib/types/marketplace";
+import { resolveLivePrice, formatPriceAUD, formatPriceAUDFull } from "@/lib/marketplace/pricing";
 
 // ============================================================
 // Enterprise-Level Instant Search
@@ -26,12 +27,39 @@ interface SearchProduct {
   id: string;
   name: string;
   price: number;
+  sale_price?: number | null;
+  discount_percent?: number | null;
+  discount_active?: boolean;
+  discount_ends_at?: string | null;
   category: string;
   imageUrl: string;
   thumbnailUrl?: string; // Pre-generated 100px thumbnail for instant loading
   storeName: string;
   inStock: boolean;
   listingType?: 'store_inventory' | 'private_listing';
+}
+
+function SearchProductPrice({ product }: { product: SearchProduct }) {
+  const live = resolveLivePrice(product);
+
+  if (live.onSale) {
+    return (
+      <div className="flex flex-col items-end gap-0.5">
+        <p className="text-sm font-semibold text-red-600 leading-tight">
+          {formatPriceAUDFull(live.price)}
+        </p>
+        <p className="text-xs text-gray-400 line-through leading-tight">
+          {formatPriceAUDFull(live.originalPrice as number)}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <p className="text-sm font-semibold text-gray-900">
+      {formatPriceAUD(live.price)}
+    </p>
+  );
 }
 
 // Product Image Thumbnail - uses Cloudinary thumbnailUrl when available
@@ -767,10 +795,8 @@ export function InstantSearch({
 
                     {/* Price */}
                     <div className="text-right flex-shrink-0">
-                      <p className="text-sm font-semibold text-gray-900">
-                        ${product.price.toFixed(2)}
-                      </p>
-                      <p className="text-xs text-gray-500">{product.category}</p>
+                      <SearchProductPrice product={product} />
+                      <p className="text-xs text-gray-500 mt-0.5">{product.category}</p>
                     </div>
                   </button>
                 ))}

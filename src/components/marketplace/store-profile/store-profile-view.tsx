@@ -21,12 +21,6 @@ import {
   Grip,
   ArrowUpDown,
   Tag,
-  Shield,
-  Zap,
-  Lock,
-  Shirt,
-  CircleDot,
-  Leaf,
   ImagePlus,
   Loader2 as SpinnerIcon,
   Eye,
@@ -42,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ProductCard } from "@/components/marketplace/product-card";
+import { BikeIcon, getCategoryIconName } from "@/components/ui/bike-icon";
 import { StoreCarouselRowControls } from "@/components/marketplace/store-profile/store-carousel-row-controls";
 import { StoreHomeTab } from "@/components/marketplace/store-profile/store-home-tab";
 import {
@@ -54,7 +49,7 @@ import {
 import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
 import type { StoreCategoryWithProducts, StoreProfile, OpeningHours, StoreSectionWithCategories } from "@/lib/types/store";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
-import { resolveLivePrice } from "@/lib/marketplace/pricing";
+import { resolveLivePrice, sortProductsSaleFirst } from "@/lib/marketplace/pricing";
 import { useProductImpressions, useStorePageView, useStoreSearchTracking } from "@/lib/tracking/store-analytics";
 
 // ============================================================
@@ -159,25 +154,103 @@ const WEEK_ORDER: (keyof OpeningHours)[] = [
   "sunday",
 ];
 
-const CATEGORY_ICON_MAP: [RegExp, typeof Package][] = [
-  [/bike|bicycle|cycling|road|mountain|bmx|gravel|enduro|trail/i, Bike],
-  [/e-?bike|electric/i, Zap],
-  [/helmet|safety|protection|head/i, Shield],
-  [/clothing|apparel|jersey|shorts|kit|wear/i, Shirt],
-  [/wheel|tyre|tire|tube|rim/i, CircleDot],
-  [/lock|security/i, Lock],
-  [/light|lighting|led/i, Zap],
-  [/nutrition|food|energy|gel|bar|drink/i, Leaf],
-  [/part|component|drivetrain|brake|gear|derailleur/i, Wrench],
-  [/tool/i, Wrench],
-  [/accessory|accessories|bag|pack|luggage/i, Tag],
-];
+function StoreProductCategoryPills({
+  categories,
+  selectedCategory,
+  onToggleCategory,
+  showSaleOnly,
+  onToggleSaleOnly,
+  saleCount,
+  searchQuery,
+  emptySearchMessage,
+  className,
+}: {
+  categories: StoreCategoryWithProducts[];
+  selectedCategory: string | null;
+  onToggleCategory: (name: string) => void;
+  showSaleOnly: boolean;
+  onToggleSaleOnly: () => void;
+  saleCount: number;
+  searchQuery: string;
+  emptySearchMessage?: string;
+  className?: string;
+}) {
+  const isSearchActive = searchQuery.trim().length > 0;
 
-function getCategoryIcon(name: string): typeof Package {
-  for (const [re, Icon] of CATEGORY_ICON_MAP) {
-    if (re.test(name)) return Icon;
+  const salePill = saleCount > 0 && (
+    <button
+      type="button"
+      onClick={onToggleSaleOnly}
+      className={cn(
+        "flex-shrink-0 cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap border",
+        showSaleOnly
+          ? "bg-red-600 text-white border-red-600"
+          : "bg-white text-red-600 border-red-200 hover:bg-red-50",
+      )}
+    >
+      <Tag className="h-3.5 w-3.5 flex-shrink-0" />
+      Sale
+      {!isSearchActive && (
+        <span
+          className={cn(
+            "text-[11px] font-semibold rounded-full px-1.5 py-0 leading-5",
+            showSaleOnly ? "bg-white/20 text-white" : "bg-red-100 text-red-600",
+          )}
+        >
+          {saleCount}
+        </span>
+      )}
+    </button>
+  );
+
+  if (isSearchActive) {
+    return (
+      <div className={cn("flex items-center gap-2 min-w-0", className)}>
+        {salePill}
+        {emptySearchMessage && (
+          <p className="min-w-0 text-sm text-gray-600 truncate">{emptySearchMessage}</p>
+        )}
+      </div>
+    );
   }
-  return Package;
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-1.5 overflow-x-auto overflow-y-hidden overscroll-x-contain scrollbar-hide min-w-0",
+        className,
+      )}
+    >
+      {salePill}
+      {categories.map((cat) => {
+        const isActive = selectedCategory === cat.name;
+        const iconName = getCategoryIconName(cat.name);
+        return (
+          <button
+            key={cat.id}
+            type="button"
+            onClick={() => onToggleCategory(cat.name)}
+            className={cn(
+              "flex-shrink-0 cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap border",
+              isActive
+                ? "bg-gray-900 text-white border-gray-900"
+                : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50",
+            )}
+          >
+            <BikeIcon
+              iconName={iconName}
+              size={18}
+              className={cn(
+                "h-[18px] w-[18px] flex-shrink-0 transition-opacity",
+                isActive ? "opacity-100 brightness-0 invert" : "opacity-60",
+              )}
+            />
+            {cat.name}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function getCollapsedCarouselLimit(
@@ -289,7 +362,7 @@ function CategoryScrollRow({
                 "snap-start flex-none min-h-0 overflow-hidden",
                 "w-[42vw] h-[calc(42vw+40px)] max-h-[calc(42vw+40px)]",
                 catSize === 'featured' &&
-                  "sm:w-[clamp(170px,18vw,260px)] sm:h-[calc(clamp(170px,18vw,260px)*0.75+2.75rem)] sm:max-h-[calc(clamp(170px,18vw,260px)*0.75+2.75rem)]",
+                  "sm:w-[clamp(170px,18vw,260px)] sm:h-[calc(clamp(170px,18vw,260px)+40px)] sm:max-h-[calc(clamp(170px,18vw,260px)+40px)]",
                 catSize === 'compact' &&
                   "sm:w-[clamp(118px,12vw,155px)] sm:h-[calc(clamp(118px,12vw,155px)+40px)] sm:max-h-[calc(clamp(118px,12vw,155px)+40px)]",
                 catSize === 'normal' &&
@@ -315,6 +388,95 @@ function CategoryScrollRow({
   );
 }
 
+function CarouselEditableTitle({
+  name,
+  categoryId,
+  canEdit,
+  onRename,
+}: {
+  name: string;
+  categoryId: string;
+  canEdit?: boolean;
+  onRename?: (categoryId: string, name: string) => Promise<boolean>;
+}) {
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(name);
+  const [saving, setSaving] = React.useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    setDraft(name);
+  }, [name]);
+
+  React.useEffect(() => {
+    if (!editing) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [editing]);
+
+  const commit = React.useCallback(async () => {
+    const trimmed = draft.trim();
+    if (!trimmed || trimmed === name) {
+      setDraft(name);
+      setEditing(false);
+      return;
+    }
+    if (!onRename) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    const ok = await onRename(categoryId, trimmed);
+    setSaving(false);
+    if (ok) {
+      setEditing(false);
+    } else {
+      setDraft(name);
+      setEditing(false);
+    }
+  }, [categoryId, draft, name, onRename]);
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        type="text"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => void commit()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            void commit();
+          }
+          if (e.key === "Escape") {
+            setDraft(name);
+            setEditing(false);
+          }
+        }}
+        disabled={saving}
+        className="min-w-[8rem] max-w-[min(100%,20rem)] rounded-md border border-gray-200 bg-white px-2 py-0.5 text-base font-semibold text-gray-900 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+        aria-label="Carousel name"
+      />
+    );
+  }
+
+  return (
+    <h3
+      className={cn(
+        "text-base font-semibold text-gray-900",
+        canEdit && "cursor-text rounded-md px-1 -mx-1 hover:bg-gray-100/80",
+      )}
+      onDoubleClick={() => {
+        if (canEdit) setEditing(true);
+      }}
+      title={canEdit ? "Double-click to rename" : undefined}
+    >
+      {name}
+    </h3>
+  );
+}
+
 // ── Single carousel row within a section or standalone ─────────────────────
 function CarouselRow({
   cat,
@@ -327,6 +489,7 @@ function CarouselRow({
   trackAnalytics,
   onBackgroundRemove,
   backgroundRemovingIds,
+  onCategoryRename,
 }: {
   cat: { id: string; name: string; products: MarketplaceProduct[]; carousel_size?: string; logo_url?: string | null; hide_title?: boolean; source?: string | null };
   rowIndex: number;
@@ -338,6 +501,7 @@ function CarouselRow({
   trackAnalytics?: boolean;
   onBackgroundRemove?: (product: MarketplaceProduct) => void;
   backgroundRemovingIds?: Set<string>;
+  onCategoryRename?: (categoryId: string, name: string) => Promise<boolean>;
 }) {
   const [logoUrl, setLogoUrl] = React.useState<string | null>(cat.logo_url ?? null);
   const [uploading, setUploading] = React.useState(false);
@@ -494,7 +658,14 @@ function CarouselRow({
               onChange={handleLogoUpload}
             />
           )}
-          {!cat.hide_title && <h3 className="text-base font-semibold text-gray-900">{cat.name}</h3>}
+          {!cat.hide_title && (
+            <CarouselEditableTitle
+              name={cat.name}
+              categoryId={cat.id}
+              canEdit={isOwnProfile}
+              onRename={onCategoryRename}
+            />
+          )}
         </div>
         {isExpanded ? (
           <button
@@ -565,7 +736,10 @@ function applyStoreProductFilters(
     default:
       break;
   }
-  return filtered;
+  if (options.showSaleOnly) {
+    return filtered;
+  }
+  return sortProductsSaleFirst(filtered);
 }
 
 function normaliseStoreSearchText(value: string | null | undefined): string {
@@ -660,6 +834,7 @@ function ProductsTab({
   trackAnalytics,
   onBackgroundRemove,
   backgroundRemovingIds,
+  onCategoryRename,
 }: {
   sortedCategories: StoreProductCategory[];
   sections: StoreSectionWithCategories[];
@@ -672,6 +847,7 @@ function ProductsTab({
   trackAnalytics?: boolean;
   onBackgroundRemove?: (product: MarketplaceProduct) => void;
   backgroundRemovingIds?: Set<string>;
+  onCategoryRename?: (categoryId: string, name: string) => Promise<boolean>;
 }) {
   const productsByCatId = new Map(sortedCategories.map((c) => [c.id, c.products]));
 
@@ -730,6 +906,7 @@ function ProductsTab({
               trackAnalytics={trackAnalytics}
               onBackgroundRemove={onBackgroundRemove}
               backgroundRemovingIds={backgroundRemovingIds}
+              onCategoryRename={onCategoryRename}
             />
           );
         })}
@@ -752,6 +929,7 @@ function ProductsTab({
         trackAnalytics={trackAnalytics}
         onBackgroundRemove={onBackgroundRemove}
         backgroundRemovingIds={backgroundRemovingIds}
+        onCategoryRename={onCategoryRename}
       />
     );
   };
@@ -1034,6 +1212,43 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
 
+  const handleCategoryRename = React.useCallback(
+    async (categoryId: string, name: string): Promise<boolean> => {
+      const previousName = store.categories.find((c) => c.id === categoryId)?.name;
+      try {
+        const response = await fetch("/api/store/categories", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: categoryId, name }),
+        });
+        if (!response.ok) return false;
+
+        const renameInList = (categories: StoreCategoryWithProducts[]) =>
+          categories.map((category) =>
+            category.id === categoryId ? { ...category, name } : category,
+          );
+
+        setStore((prev) => ({
+          ...prev,
+          categories: renameInList(prev.categories),
+          sections: prev.sections.map((section) => ({
+            ...section,
+            categories: renameInList(section.categories),
+          })),
+        }));
+
+        if (previousName) {
+          setSelectedCategory((current) => (current === previousName ? name : current));
+        }
+        return true;
+      } catch (error) {
+        console.error("[Store profile] Failed to rename carousel:", error);
+        return false;
+      }
+    },
+    [store.categories],
+  );
+
   const patchStoreProduct = React.useCallback(
     (productId: string, patch: Partial<MarketplaceProduct>) => {
       const patchCategories = (categories: StoreCategoryWithProducts[]) =>
@@ -1135,6 +1350,28 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
           setSelectedCategory(null);
         }}
         actionButtons={actionButtons}
+        immersive={immersive}
+        floatingBarExtra={
+          activeTab === "products" && allProducts.length > 0 ? (
+            <StoreProductCategoryPills
+              className="flex-1"
+              categories={store.categories}
+              selectedCategory={selectedCategory}
+              onToggleCategory={(name) =>
+                setSelectedCategory((cur) => (cur === name ? null : name))
+              }
+              showSaleOnly={showSaleOnly}
+              onToggleSaleOnly={() => setShowSaleOnly((v) => !v)}
+              saleCount={saleProductIds.size}
+              searchQuery={storeSearch}
+              emptySearchMessage={
+                isProductSearchActive && visibleProductCount === 0
+                  ? `No results for “${storeSearch.trim()}”`
+                  : undefined
+              }
+            />
+          ) : undefined
+        }
       />
       </div>
 
@@ -1158,74 +1395,23 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
             storeContentShell
           )}>
             <div className="flex items-center gap-2 sm:gap-3">
-              {isProductSearchActive ? (
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  {saleProductIds.size > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setShowSaleOnly((v) => !v)}
-                      className={cn(
-                        "flex-shrink-0 cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap border",
-                        showSaleOnly
-                          ? "bg-red-600 text-white border-red-600"
-                          : "bg-white text-red-600 border-red-200 hover:bg-red-50"
-                      )}
-                    >
-                      <Tag className="h-3.5 w-3.5 flex-shrink-0" />
-                      Sale
-                    </button>
-                  )}
-                  {visibleProductCount === 0 && (
-                    <p className="min-w-0 text-sm text-gray-600 truncate">
-                      {`No results for “${storeSearch.trim()}”`}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <div className="flex items-center gap-1.5 overflow-x-auto overflow-y-hidden overscroll-x-contain scrollbar-hide flex-1 min-w-0">
-                  {/* Sale pill — only when discounted products exist */}
-                  {saleProductIds.size > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setShowSaleOnly((v) => !v)}
-                      className={cn(
-                        "flex-shrink-0 cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap border",
-                        showSaleOnly
-                          ? "bg-red-600 text-white border-red-600"
-                          : "bg-white text-red-600 border-red-200 hover:bg-red-50"
-                      )}
-                    >
-                      <Tag className="h-3.5 w-3.5 flex-shrink-0" />
-                      Sale
-                      <span className={cn(
-                        "text-[11px] font-semibold rounded-full px-1.5 py-0 leading-5",
-                        showSaleOnly ? "bg-white/20 text-white" : "bg-red-100 text-red-600"
-                      )}>
-                        {saleProductIds.size}
-                      </span>
-                    </button>
-                  )}
-                  {store.categories.map((cat) => {
-                    const CatIcon = getCategoryIcon(cat.name);
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => setSelectedCategory((cur) => (cur === cat.name ? null : cat.name))}
-                        className={cn(
-                          "flex-shrink-0 cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap border",
-                          selectedCategory === cat.name
-                            ? "bg-gray-900 text-white border-gray-900"
-                            : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
-                        )}
-                      >
-                        <CatIcon className="h-3.5 w-3.5 flex-shrink-0" />
-                        {cat.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+              <StoreProductCategoryPills
+                className="flex-1"
+                categories={store.categories}
+                selectedCategory={selectedCategory}
+                onToggleCategory={(name) =>
+                  setSelectedCategory((cur) => (cur === name ? null : name))
+                }
+                showSaleOnly={showSaleOnly}
+                onToggleSaleOnly={() => setShowSaleOnly((v) => !v)}
+                saleCount={saleProductIds.size}
+                searchQuery={storeSearch}
+                emptySearchMessage={
+                  isProductSearchActive && visibleProductCount === 0
+                    ? `No results for “${storeSearch.trim()}”`
+                    : undefined
+                }
+              />
 
               <div className="flex items-center gap-2 flex-shrink-0">
                 <div className="md:hidden">
@@ -1324,6 +1510,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                     trackAnalytics={!isOwnProfile}
                     onBackgroundRemove={viewAsOwner ? handleBackgroundRemove : undefined}
                     backgroundRemovingIds={backgroundRemovingIds}
+                    onCategoryRename={viewAsOwner ? handleCategoryRename : undefined}
                   />
                 )
               ) : (

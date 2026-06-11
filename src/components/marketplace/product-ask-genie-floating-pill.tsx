@@ -9,9 +9,8 @@ import {
   genieProgressShimmerClassName,
   genieProgressShimmerDarkStyle,
 } from "@/lib/genie/shimmer";
+import { useProductAskGeniePillVisible } from "@/lib/hooks/use-product-ask-genie-pill-visible";
 import { cn } from "@/lib/utils";
-
-const SCROLL_SHOW_THRESHOLD_PX = 96;
 
 const PILL_ENTER_TRANSITION = {
   type: "spring" as const,
@@ -25,21 +24,8 @@ interface ProductAskGenieFloatingPillProps {
 }
 
 export function ProductAskGenieFloatingPill({ product, className }: ProductAskGenieFloatingPillProps) {
-  const { openForProduct, isOpen, productContext } = useGenie();
-  const panelOpen = isOpen && productContext?.id === product.id;
-  const [hasScrolled, setHasScrolled] = React.useState(false);
-
-  React.useEffect(() => {
-    const updateScroll = () => {
-      setHasScrolled(window.scrollY > SCROLL_SHOW_THRESHOLD_PX);
-    };
-
-    updateScroll();
-    window.addEventListener("scroll", updateScroll, { passive: true });
-    return () => window.removeEventListener("scroll", updateScroll);
-  }, []);
-
-  const visible = hasScrolled && !panelOpen;
+  const { openForProduct } = useGenie();
+  const { pillVisible: visible } = useProductAskGeniePillVisible(product.id);
 
   return (
     <AnimatePresence>

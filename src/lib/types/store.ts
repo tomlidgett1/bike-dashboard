@@ -88,10 +88,17 @@ export interface StoreBrand {
   user_id: string;
   name: string;
   logo_url: string | null;
+  lightspeed_manufacturer_id?: string | null;
+  lightspeed_manufacturer_name?: string | null;
   display_order: number;
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface LightspeedManufacturerOption {
+  id: string;
+  name: string;
 }
 
 export interface StoreProfile {
@@ -437,6 +444,8 @@ export interface UpdateRentalBookingRequest {
 export interface CreateBrandRequest {
   name: string;
   logo_url?: string;
+  lightspeed_manufacturer_id?: string | null;
+  lightspeed_manufacturer_name?: string | null;
   display_order?: number;
 }
 
@@ -444,6 +453,8 @@ export interface UpdateBrandRequest {
   id: string;
   name?: string;
   logo_url?: string;
+  lightspeed_manufacturer_id?: string | null;
+  lightspeed_manufacturer_name?: string | null;
   display_order?: number;
   is_active?: boolean;
 }

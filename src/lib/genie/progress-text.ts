@@ -39,6 +39,10 @@ function phaseFallback(phase?: string): string {
       return 'Finding images'
     case 'image_search_done':
       return 'Images ready'
+    case 'video_search':
+      return 'Finding video'
+    case 'video_search_done':
+      return 'Video ready'
     case 'lightspeed_sales':
       return 'Checking sales'
     case 'lightspeed_inventory':

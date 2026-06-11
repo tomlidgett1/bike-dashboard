@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ChevronLeft, ChevronRight, ArrowRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { cn } from "@/lib/utils";
@@ -106,15 +106,15 @@ export function RecommendationCarousel({
 
   return (
     <section
-      className={cn("py-4", className)}
+      className={cn("py-2.5 sm:py-3", className)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* Section Header */}
-      <div className="mb-4 flex items-end justify-between gap-3 sm:mb-5">
-        <div className="flex min-w-0 items-center gap-3">
+      <div className="mb-2.5 flex items-start justify-between gap-3 sm:mb-3">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
           {showSellerLogo && (
-            <div className="h-9 w-9 shrink-0 overflow-hidden rounded-full bg-gray-100 ring-1 ring-gray-200">
+            <div className="mt-0.5 h-9 w-9 shrink-0 overflow-hidden rounded-full bg-gray-100 ring-1 ring-gray-200">
               <Image
                 src={seller!.logo_url!}
                 alt={seller!.name}
@@ -126,31 +126,29 @@ export function RecommendationCarousel({
             </div>
           )}
 
-          {/* Title */}
-          <div className="min-w-0">
-            <h2 className="flex items-baseline gap-2 text-lg font-semibold tracking-tight text-gray-900 sm:text-xl">
-              <span className="truncate">{title}</span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-semibold leading-snug tracking-tight text-gray-900 sm:text-base break-words">
+              {title}
               {!isLoading && products.length > 0 && (
-                <span className="shrink-0 text-sm font-normal text-gray-400">
+                <span className="ml-1.5 text-sm font-normal text-gray-400 whitespace-nowrap">
                   {products.length}
                 </span>
               )}
             </h2>
             {subtitle && (
-              <p className="mt-0.5 truncate text-sm text-gray-500">{subtitle}</p>
+              <p className="mt-0.5 text-sm text-gray-500 break-words">{subtitle}</p>
             )}
           </div>
         </div>
 
-        {/* See All Link */}
+        {/* See All Link — pinned top-right; title wraps in the space to its left */}
         {seeAllHref && !isLoading && products.length > 4 && (
           <Link
             href={seeAllHref}
-            className="group flex shrink-0 items-center gap-1 text-sm font-medium text-gray-500 transition-colors hover:text-gray-900"
+            className="shrink-0 self-start pt-0.5 text-sm font-medium text-gray-500 transition-colors hover:text-gray-900 whitespace-nowrap"
           >
             <span className="hidden sm:inline">{seeAllLabel}</span>
             <span className="sm:hidden">View all</span>
-            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
           </Link>
         )}
       </div>
@@ -194,7 +192,7 @@ export function RecommendationCarousel({
             msOverflowStyle: 'none',
           }}
         >
-          <div className="flex gap-2.5 sm:gap-4 pb-2" style={{ minWidth: 'min-content' }}>
+          <div className="flex gap-2.5 sm:gap-3 md:gap-4" style={{ minWidth: 'min-content' }}>
             {isLoading ? (
               // Loading Skeletons
               Array.from({ length: 6 }).map((_, index) => (

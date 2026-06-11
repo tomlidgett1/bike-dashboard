@@ -1,13 +1,9 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
 import { ChevronRight, Home } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-// ============================================================
-// Product Breadcrumbs
-// Navigation hierarchy for product pages
-// ============================================================
 
 interface ProductBreadcrumbsProps {
   level1?: string | null;
@@ -17,6 +13,9 @@ interface ProductBreadcrumbsProps {
   className?: string;
 }
 
+const crumbLinkClassName =
+  "text-gray-500 transition-colors hover:text-gray-900";
+
 export function ProductBreadcrumbs({
   level1,
   level2,
@@ -25,75 +24,69 @@ export function ProductBreadcrumbs({
   className,
 }: ProductBreadcrumbsProps) {
   return (
-    <nav className={cn("flex items-center gap-2 text-sm", className)}>
-      {/* Home */}
+    <nav
+      aria-label="Breadcrumb"
+      className={cn(
+        "flex min-w-0 items-center gap-1.5 overflow-x-auto text-sm text-gray-500 scrollbar-hide sm:gap-2",
+        className,
+      )}
+    >
       <Link
         href="/marketplace"
-        className="flex items-center gap-1 text-gray-600 hover:text-gray-900 transition-colors"
+        className={cn(crumbLinkClassName, "inline-flex shrink-0 items-center gap-1")}
       >
         <Home className="h-3.5 w-3.5" />
         <span>Home</span>
       </Link>
 
-      {/* Level 1 */}
-      {level1 && (
+      {level1 ? (
         <>
-          <ChevronRight className="h-3.5 w-3.5 text-gray-400" />
+          <ChevronRight className="h-3 w-3 shrink-0 text-gray-300" aria-hidden />
           <Link
             href={`/marketplace?level1=${encodeURIComponent(level1)}`}
-            className="text-gray-600 hover:text-gray-900 transition-colors"
+            className={cn(crumbLinkClassName, "shrink-0")}
           >
             {level1}
           </Link>
         </>
-      )}
+      ) : null}
 
-      {/* Level 2 */}
-      {level2 && (
+      {level2 ? (
         <>
-          <ChevronRight className="h-3.5 w-3.5 text-gray-400" />
+          <ChevronRight className="h-3 w-3 shrink-0 text-gray-300" aria-hidden />
           <Link
-            href={`/marketplace?level1=${encodeURIComponent(level1 || '')}&level2=${encodeURIComponent(level2)}`}
-            className="text-gray-600 hover:text-gray-900 transition-colors"
+            href={`/marketplace?level1=${encodeURIComponent(level1 || "")}&level2=${encodeURIComponent(level2)}`}
+            className={cn(crumbLinkClassName, "shrink-0")}
           >
             {level2}
           </Link>
         </>
-      )}
+      ) : null}
 
-      {/* Level 3 */}
-      {level3 && (
+      {level3 ? (
         <>
-          <ChevronRight className="h-3.5 w-3.5 text-gray-400" />
+          <ChevronRight className="h-3 w-3 shrink-0 text-gray-300" aria-hidden />
           <Link
-            href={`/marketplace?level1=${encodeURIComponent(level1 || '')}&level2=${encodeURIComponent(level2 || '')}&level3=${encodeURIComponent(level3)}`}
-            className="text-gray-600 hover:text-gray-900 transition-colors"
+            href={`/marketplace?level1=${encodeURIComponent(level1 || "")}&level2=${encodeURIComponent(level2 || "")}&level3=${encodeURIComponent(level3)}`}
+            className={cn(crumbLinkClassName, "shrink-0")}
           >
             {level3}
           </Link>
         </>
-      )}
+      ) : null}
 
-      {/* Product Name */}
-      {productName && (
+      {productName ? (
         <>
-          <ChevronRight className="h-3.5 w-3.5 text-gray-400" />
-          <span className="text-gray-900 truncate max-w-[200px] sm:max-w-xs">
+          <ChevronRight className="h-3 w-3 shrink-0 text-gray-300" aria-hidden />
+          <span
+            aria-current="page"
+            className="min-w-0 truncate font-medium text-gray-900"
+            title={productName}
+          >
             {productName}
           </span>
         </>
-      )}
+      ) : null}
     </nav>
   );
 }
-
-
-
-
-
-
-
-
-
-
-

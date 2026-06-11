@@ -45,6 +45,8 @@ import type {
   LightspeedManufacturersResponse,
   LightspeedVendor,
   LightspeedVendorsResponse,
+  LightspeedOrder,
+  LightspeedOrderLine,
 } from './types'
 
 interface CursorPageProgress {
@@ -640,6 +642,151 @@ export class LightspeedClient {
     }
 
     return allVendors
+  }
+
+  /**
+   * Create a new vendor (supplier) in Lightspeed.
+   */
+  async createVendor(payload: { name: string; accountNumber?: string }): Promise<LightspeedVendor> {
+    const accountId = await this.getAccountId()
+    const response = await this.request<{ Vendor: LightspeedVendor }>(
+      `/Account/${accountId}/Vendor.json`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          name: payload.name.trim(),
+          ...(payload.accountNumber ? { accountNumber: payload.accountNumber } : {}),
+        }),
+      },
+    )
+    return response.Vendor
+  }
+
+  // ============================================================
+  // Purchase Order Methods
+  // ============================================================
+
+  /**
+   * Create a purchase order (Order) in Lightspeed. Lines are added separately
+   * via createPurchaseOrderLine.
+   */
+  async createPurchaseOrder(payload: {
+    vendorID: string
+    shopID?: string
+    orderedDate?: string
+    arrivalDate?: string
+    refNum?: string
+    shipCost?: number
+    otherCost?: number
+    discount?: number
+    shipInstructions?: string
+    stockInstructions?: string
+  }): Promise<LightspeedOrder> {
+    const accountId = await this.getAccountId()
+    const body: Record<string, string> = { vendorID: String(payload.vendorID) }
+    if (payload.shopID) body.shopID = String(payload.shopID)
+    if (payload.orderedDate) body.orderedDate = payload.orderedDate
+    if (payload.arrivalDate) body.arrivalDate = payload.arrivalDate
+    if (payload.refNum) body.refNum = payload.refNum
+    if (payload.shipCost != null) body.shipCost = String(payload.shipCost)
+    if (payload.otherCost != null) body.otherCost = String(payload.otherCost)
+    if (payload.discount != null) body.discount = String(payload.discount)
+    if (payload.shipInstructions) body.shipInstructions = payload.shipInstructions
+    if (payload.stockInstructions) body.stockInstructions = payload.stockInstructions
+
+    const response = await this.request<{ Order: LightspeedOrder }>(
+      `/Account/${accountId}/Order.json`,
+      { method: 'POST', body: JSON.stringify(body) },
+    )
+    return response.Order
+  }
+
+  /**
+   * Add a line to an existing purchase order.
+   */
+  async createPurchaseOrderLine(payload: {
+    orderID: string
+    itemID: string
+    quantity: number
+    price: number
+  }): Promise<LightspeedOrderLine> {
+    const accountId = await this.getAccountId()
+    const response = await this.request<{ OrderLine: LightspeedOrderLine }>(
+      `/Account/${accountId}/OrderLine.json`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          orderID: String(payload.orderID),
+          itemID: String(payload.itemID),
+          quantity: String(Math.max(1, Math.round(payload.quantity))),
+          price: String(payload.price),
+          originalPrice: String(payload.price),
+          numReceived: '0',
+        }),
+      },
+    )
+    return response.OrderLine
+  }
+
+  /**
+   * Update an existing purchase order (e.g. write shipCost/otherCost after the
+   * lines are added — Lightspeed recalculates totals on update).
+   */
+  async updatePurchaseOrder(
+    orderId: string,
+    payload: { shipCost?: number; otherCost?: number; refNum?: string; arrivalDate?: string },
+  ): Promise<LightspeedOrder> {
+    const accountId = await this.getAccountId()
+    const body: Record<string, string> = {}
+    if (payload.shipCost != null) body.shipCost = String(payload.shipCost)
+    if (payload.otherCost != null) body.otherCost = String(payload.otherCost)
+    if (payload.refNum) body.refNum = payload.refNum
+    if (payload.arrivalDate) body.arrivalDate = payload.arrivalDate
+    const response = await this.request<{ Order: LightspeedOrder }>(
+      `/Account/${accountId}/Order/${orderId}.json`,
+      { method: 'PUT', body: JSON.stringify(body) },
+    )
+    return response.Order
+  }
+
+  /**
+   * Create a new inventory item (used when a supplier-invoice line has no
+   * matching product). Sets cost + identifiers; retail price stays 0 for the
+   * store to set when the stock is received.
+   */
+  async createItem(payload: {
+    description: string
+    defaultCost?: number
+    upc?: string
+    manufacturerSku?: string
+    customSku?: string
+  }): Promise<LightspeedItem> {
+    const accountId = await this.getAccountId()
+    const body: Record<string, string> = { description: payload.description.trim().slice(0, 255) }
+    if (payload.defaultCost != null) body.defaultCost = String(payload.defaultCost)
+    if (payload.upc) body.upc = payload.upc
+    if (payload.manufacturerSku) body.manufacturerSku = payload.manufacturerSku.slice(0, 100)
+    if (payload.customSku) body.customSku = payload.customSku.slice(0, 100)
+    const response = await this.request<{ Item: LightspeedItem }>(
+      `/Account/${accountId}/Item.json`,
+      { method: 'POST', body: JSON.stringify(body) },
+    )
+    return response.Item
+  }
+
+  /**
+   * Fetch a purchase order (with lines/vendor) by ID.
+   */
+  async getPurchaseOrder(orderId: string): Promise<LightspeedOrder | null> {
+    const accountId = await this.getAccountId()
+    try {
+      const response = await this.request<{ Order: LightspeedOrder }>(
+        `/Account/${accountId}/Order/${orderId}.json?load_relations=${encodeURIComponent('["OrderLines","Vendor"]')}`,
+      )
+      return response.Order ?? null
+    } catch {
+      return null
+    }
   }
 
   // ============================================================
@@ -1357,4 +1504,13 @@ export class LightspeedClient {
  */
 export function createLightspeedClient(userId: string): LightspeedClient {
   return new LightspeedClient(userId)
+}
+
+/**
+ * Deep link to view a purchase order in the Lightspeed Retail (R-Series) web UI.
+ * Example: https://aus.merchantos.com/?name=purchase.views.purchase&form_name=view&id=4272&tab=main
+ */
+export function lightspeedPurchaseOrderUrl(orderId: string): string {
+  const base = process.env.LIGHTSPEED_WEB_BASE_URL?.replace(/\/$/, '') || 'https://aus.merchantos.com'
+  return `${base}/?name=purchase.views.purchase&form_name=view&id=${encodeURIComponent(orderId)}&tab=main`
 }

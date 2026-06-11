@@ -236,6 +236,52 @@ export interface LightspeedVendorsResponse {
 }
 
 // ============================================================
+// Purchase Order Types
+// ============================================================
+
+export interface LightspeedOrderLine {
+  orderLineID: string
+  quantity: string
+  price: string
+  originalPrice?: string
+  vendorCost?: string
+  checkedIn?: string
+  numReceived?: string
+  total?: string
+  orderID: string
+  itemID: string
+  timeStamp?: string
+  createTime?: string
+}
+
+export interface LightspeedOrder {
+  orderID: string
+  orderedDate?: string
+  receivedDate?: string
+  arrivalDate?: string
+  refNum?: string
+  shipInstructions?: string
+  stockInstructions?: string
+  shipCost?: string
+  otherCost?: string
+  complete?: string
+  archived?: string
+  discount?: string
+  totalDiscount?: string
+  totalQuantity?: string
+  subTotalCost?: string
+  totalCost?: string
+  vendorID: string
+  noteID?: string
+  shopID?: string
+  createdByEmployeeID?: string
+  timeStamp?: string
+  createTime?: string
+  OrderLines?: { OrderLine: LightspeedOrderLine | LightspeedOrderLine[] }
+  Vendor?: LightspeedVendor
+}
+
+// ============================================================
 // Category Types
 // ============================================================
 

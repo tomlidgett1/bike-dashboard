@@ -53,6 +53,20 @@ export function resolveLivePrice(product: DiscountInput, now: Date = new Date())
   };
 }
 
+/** Keep relative order within each group; sale items always lead carousels. */
+export function sortProductsSaleFirst<T extends DiscountInput>(products: T[]): T[] {
+  const onSale: T[] = [];
+  const regular: T[] = [];
+  for (const product of products) {
+    if (resolveLivePrice(product).onSale) {
+      onSale.push(product);
+    } else {
+      regular.push(product);
+    }
+  }
+  return [...onSale, ...regular];
+}
+
 /** Format a number as a whole-dollar AUD price string, e.g. 1235 -> "$1,235". */
 export function formatPriceAUD(value: number): string {
   return `$${value.toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;

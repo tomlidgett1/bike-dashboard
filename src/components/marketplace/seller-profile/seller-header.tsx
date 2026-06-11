@@ -11,12 +11,8 @@ import {
   Instagram,
   Facebook,
   ExternalLink,
-  UserPlus,
-  UserMinus,
   MessageCircle,
-  Users,
   CheckCircle,
-  Loader2,
   Settings
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -26,7 +22,7 @@ import type { StoreBrand } from "@/lib/types/store";
 
 // ============================================================
 // Seller Profile Header
-// Clean layout with profile photo, stats, Follow + Message buttons
+// Clean layout with profile photo, stats, and Message button
 // ============================================================
 
 // Strava icon component (not in lucide)
@@ -46,19 +42,14 @@ interface SellerHeaderProps {
   seller: SellerProfile;
   isOwnProfile?: boolean;
   onEditClick?: () => void;
-  onFollowToggle?: () => Promise<void>;
   brands?: StoreBrand[];
 }
 
-export function SellerHeader({ seller, isOwnProfile, onEditClick, onFollowToggle, brands }: SellerHeaderProps) {
+export function SellerHeader({ seller, isOwnProfile, onEditClick, brands }: SellerHeaderProps) {
   const router = useRouter();
   const [bioExpanded, setBioExpanded] = React.useState(false);
   const bioRef = React.useRef<HTMLParagraphElement>(null);
   const [showReadMore, setShowReadMore] = React.useState(false);
-  const [isFollowing, setIsFollowing] = React.useState(seller.is_following);
-  const [followerCount, setFollowerCount] = React.useState(seller.stats.follower_count);
-  const [isFollowLoading, setIsFollowLoading] = React.useState(false);
-
   // Check if bio needs "read more" button
   React.useEffect(() => {
     if (bioRef.current) {
@@ -84,31 +75,6 @@ export function SellerHeader({ seller, isOwnProfile, onEditClick, onFollowToggle
     seller.social_links.twitter ||
     seller.social_links.website
   );
-
-  // Handle follow/unfollow
-  const handleFollowClick = async () => {
-    if (isFollowLoading) return;
-    
-    setIsFollowLoading(true);
-    try {
-      const response = await fetch('/api/marketplace/follow', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: seller.id }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setIsFollowing(data.isFollowing);
-        setFollowerCount(data.followerCount);
-        if (onFollowToggle) await onFollowToggle();
-      }
-    } catch (error) {
-      console.error('Error toggling follow:', error);
-    } finally {
-      setIsFollowLoading(false);
-    }
-  };
 
   // Handle message click - navigate to messages with this seller
   const handleMessageClick = () => {
@@ -200,38 +166,15 @@ export function SellerHeader({ seller, isOwnProfile, onEditClick, onFollowToggle
                       Edit Profile
                     </Button>
                   ) : (
-                    <>
-                      <Button
-                        variant={isFollowing ? "outline" : "default"}
-                        size="sm"
-                        onClick={handleFollowClick}
-                        disabled={isFollowLoading}
-                        className="rounded-md min-w-[100px]"
-                      >
-                        {isFollowLoading ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : isFollowing ? (
-                          <>
-                            <CheckCircle className="h-4 w-4 mr-2" />
-                            Following
-                          </>
-                        ) : (
-                          <>
-                            <UserPlus className="h-4 w-4 mr-2" />
-                            Follow
-                          </>
-                        )}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleMessageClick}
-                        className="rounded-md"
-                      >
-                        <MessageCircle className="h-4 w-4 mr-2" />
-                        Message
-                      </Button>
-                    </>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleMessageClick}
+                      className="rounded-md"
+                    >
+                      <MessageCircle className="h-4 w-4 mr-2" />
+                      Message
+                    </Button>
                   )}
                 </div>
               </div>
@@ -251,38 +194,15 @@ export function SellerHeader({ seller, isOwnProfile, onEditClick, onFollowToggle
                 Edit Profile
               </Button>
             ) : (
-              <>
-                <Button
-                  variant={isFollowing ? "outline" : "default"}
-                  size="sm"
-                  onClick={handleFollowClick}
-                  disabled={isFollowLoading}
-                  className="rounded-md flex-1"
-                >
-                  {isFollowLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : isFollowing ? (
-                    <>
-                      <CheckCircle className="h-4 w-4 mr-1.5" />
-                      <span className="text-sm">Following</span>
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus className="h-4 w-4 mr-1.5" />
-                      <span className="text-sm">Follow</span>
-                    </>
-                  )}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleMessageClick}
-                  className="rounded-md flex-1"
-                >
-                  <MessageCircle className="h-4 w-4 mr-1.5" />
-                  <span className="text-sm">Message</span>
-                </Button>
-              </>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleMessageClick}
+                className="rounded-md w-full sm:flex-1"
+              >
+                <MessageCircle className="h-4 w-4 mr-1.5" />
+                <span className="text-sm">Message</span>
+              </Button>
             )}
           </div>
 
@@ -300,11 +220,6 @@ export function SellerHeader({ seller, isOwnProfile, onEditClick, onFollowToggle
                 <span className="text-gray-500 hidden xs:inline">sold</span>
               </div>
             )}
-            <div className="flex items-center gap-1.5 text-gray-600">
-              <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
-              <span className="font-medium">{followerCount}</span>
-              <span className="text-gray-500 hidden xs:inline">followers</span>
-            </div>
             <div className="flex items-center gap-1.5 text-gray-500">
               <Calendar className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
               <span className="hidden sm:inline">Joined {memberSince}</span>

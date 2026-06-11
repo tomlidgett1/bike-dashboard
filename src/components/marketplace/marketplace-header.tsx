@@ -602,13 +602,12 @@ export function MarketplaceHeader({
               {/* Header */}
               <div className="flex items-center justify-between pl-0 pr-4 h-14 border-b border-gray-200 flex-shrink-0">
                 <Image
-                  src="/yj.svg"
+                  src="/yjlogo.png"
                   alt="Yellow Jersey"
-                  width={180}
-                  height={32}
-                  className="ml-4 h-9 w-auto max-h-full object-contain"
+                  width={500}
+                  height={60}
+                  className="ml-4 h-5 w-auto"
                   priority
-                  unoptimized
                 />
                 <button
                   onClick={() => setMobileMenuOpen(false)}

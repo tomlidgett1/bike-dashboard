@@ -26,11 +26,13 @@ import type {
   OpeningHours,
 } from "@/lib/types/store";
 import { resolveHomepageConfig } from "@/lib/marketplace/homepage-config";
+import { sortProductsSaleFirst } from "@/lib/marketplace/pricing";
 import { getHomepageIcon } from "@/components/marketplace/store-profile/homepage-icons";
 import { ServiceCard } from "@/components/marketplace/store-profile/service-card";
 import { ProductCard } from "@/components/marketplace/product-card";
 import { useProductImpressions } from "@/lib/tracking/store-analytics";
 import { STORE_PAGE_CONTENT_SHELL } from "@/components/marketplace/store-profile/store-profile-chrome";
+import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
 
 // ============================================================
 // Store Home Tab — the public landing page for a bicycle store.
@@ -110,6 +112,15 @@ function useStoreHomeShell() {
   return React.useContext(StoreHomeShellContext);
 }
 
+function storeHasUberDelivery(store: StoreProfile): boolean {
+  if (store.categories.some((c) => c.source === "uber" && c.products.length > 0)) {
+    return true;
+  }
+  return store.categories.some((c) =>
+    c.products.some((p) => p.uber_delivery_enabled === true),
+  );
+}
+
 export function StoreHomeTab({
   store,
   isOwnProfile,
@@ -132,6 +143,17 @@ export function StoreHomeTab({
     if (!cta) return;
     onNavigate(cta.href);
   };
+
+  const handleUberDelivery = React.useCallback(() => {
+    const uberCategory = store.categories.find(
+      (c) => c.source === "uber" && c.products.length > 0,
+    );
+    if (uberCategory) {
+      onOpenCollection(uberCategory.name);
+      return;
+    }
+    onNavigate("products");
+  }, [onNavigate, onOpenCollection, store.categories]);
 
   const sectionRenderers: Record<string, () => React.ReactNode> = {
     highlights: () =>
@@ -212,6 +234,7 @@ export function StoreHomeTab({
           onSecondary={() => handleCta(config.hero.secondary_cta)}
           onMessageStore={() => setMessageOpen(true)}
           onOpenHours={onOpenHours}
+          onUberDelivery={storeHasUberDelivery(store) ? handleUberDelivery : undefined}
           isOwnProfile={isOwnProfile}
         />
 
@@ -232,6 +255,50 @@ export function StoreHomeTab({
         <HomeFooter store={store} accent={accent} onNavigate={onNavigate} />
       </div>
     </StoreHomeShellContext.Provider>
+  );
+}
+
+// ── Hero Uber delivery CTA ─────────────────────────────────
+function HeroUberDeliveryBanner({
+  onClick,
+  variant = "light",
+  centered = false,
+}: {
+  onClick: () => void;
+  variant?: "light" | "dark";
+  centered?: boolean;
+}) {
+  const isDark = variant === "dark";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "group inline-flex w-fit max-w-full items-center gap-2.5 rounded-full px-4 py-2.5 text-sm transition-colors cursor-pointer",
+        "focus:outline-none focus:ring-2 focus:ring-offset-2",
+        isDark
+          ? "border border-white/25 bg-white/10 text-white backdrop-blur-sm hover:bg-white/15 focus:ring-white/30 focus:ring-offset-transparent"
+          : "border border-gray-200 bg-white text-gray-900 shadow-sm hover:bg-gray-50 focus:ring-gray-900/10",
+        centered && "mx-auto",
+      )}
+    >
+      <UberCarouselLogo className="h-7 flex-shrink-0 px-2.5 shadow-none" />
+      <span
+        className={cn("h-4 w-px flex-shrink-0", isDark ? "bg-white/20" : "bg-gray-200")}
+        aria-hidden
+      />
+      <span className="min-w-0 text-left leading-snug">
+        <span className="font-semibold">1-hour delivery</span>
+        <span className={isDark ? "text-white/70" : "text-gray-500"}> via Uber</span>
+      </span>
+      <ChevronRight
+        className={cn(
+          "h-4 w-4 flex-shrink-0 transition-transform group-hover:translate-x-0.5",
+          isDark ? "text-white/55" : "text-gray-400",
+        )}
+      />
+    </button>
   );
 }
 
@@ -257,6 +324,7 @@ function Hero({
   onSecondary,
   onMessageStore,
   onOpenHours,
+  onUberDelivery,
   isOwnProfile,
 }: {
   store: StoreProfile;
@@ -267,6 +335,7 @@ function Hero({
   onSecondary: () => void;
   onMessageStore: () => void;
   onOpenHours?: () => void;
+  onUberDelivery?: () => void;
   isOwnProfile?: boolean;
 }) {
   const shell = useStoreHomeShell();
@@ -320,6 +389,17 @@ function Hero({
     </button>
   );
 
+  const UberBanner = (centered = false, variant: "light" | "dark" = "light") =>
+    onUberDelivery ? (
+      <div className={cn("mt-4", centered && "flex justify-center")}>
+        <HeroUberDeliveryBanner
+          onClick={onUberDelivery}
+          variant={variant}
+          centered={centered}
+        />
+      </div>
+    ) : null;
+
   // ── Split variant ──────────────────────────────────────
   if (hero.variant === "split") {
     return (
@@ -340,6 +420,7 @@ function Hero({
                 <span className="rounded-full border border-gray-200 hover:bg-gray-50">{SecondaryBtn}</span>
               )}
             </div>
+            {UberBanner()}
             {config.badges.show_hours_on_hero && (
               <div className="mt-5">
                 <HeroHoursCard store={store} status={status} onDark={false} onClick={onOpenHours} />
@@ -386,6 +467,7 @@ function Hero({
                 <span className="rounded-full border border-gray-200 hover:bg-gray-50">{SecondaryBtn}</span>
               )}
             </div>
+            {UberBanner(true, "light")}
             {config.badges.show_hours_on_hero && (
               <div className="mt-5 flex justify-center">
                 <HeroHoursCard store={store} status={status} onDark={false} onClick={onOpenHours} />
@@ -444,6 +526,7 @@ function Hero({
                 </button>
               )}
             </div>
+            {UberBanner(alignCenter, "dark")}
           </div>
         </div>
 
@@ -1135,7 +1218,7 @@ function FeaturedCarouselsSection({
   return (
     <section className={cn(shell, "space-y-8")}>
       {slots.map((cat) => {
-        const shown = cat!.products.slice(0, perRow);
+        const shown = sortProductsSaleFirst(cat!.products).slice(0, perRow);
         return (
           <FeaturedCarouselBlock
             key={cat!.id}
@@ -1198,8 +1281,18 @@ function FeaturedCarouselBlock({
     <Reveal>
       <div ref={impressionRef}>
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <h3 className="text-lg font-semibold text-gray-900">{category.name}</h3>
+          <div className="flex items-center gap-3 min-w-0">
+            {category.logo_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={category.logo_url}
+                alt={category.name}
+                className="h-8 w-auto max-w-[96px] flex-shrink-0 object-contain rounded-sm"
+              />
+            )}
+            {!category.hide_title && (
+              <h3 className="text-lg font-semibold text-gray-900 truncate">{category.name}</h3>
+            )}
           </div>
           <button
             type="button"

@@ -25,13 +25,22 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import type { StoreBrand } from "@/lib/types/store";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import type { LightspeedManufacturerOption, StoreBrand } from "@/lib/types/store";
 import type { BrandLogoSearchResult } from "@/lib/store/brand-logo-serper";
 import { cn } from "@/lib/utils";
 
 interface BrandFormData {
   name: string;
   logoUrl: string;
+  lightspeedManufacturerId: string;
+  lightspeedManufacturerName: string;
 }
 
 export function StoreBrandsManager({ addRequest = 0 }: { addRequest?: number }) {
@@ -43,13 +52,21 @@ export function StoreBrandsManager({ addRequest = 0 }: { addRequest?: number }) 
   const [isDialogOpen, setIsDialogOpen] = React.useState(false);
   const [editingBrand, setEditingBrand] = React.useState<StoreBrand | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = React.useState<string | null>(null);
-  const [formData, setFormData] = React.useState<BrandFormData>({ name: '', logoUrl: '' });
+  const [formData, setFormData] = React.useState<BrandFormData>({
+    name: '',
+    logoUrl: '',
+    lightspeedManufacturerId: '',
+    lightspeedManufacturerName: '',
+  });
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [logoSearchQuery, setLogoSearchQuery] = React.useState('');
   const [logoSearchResults, setLogoSearchResults] = React.useState<BrandLogoSearchResult[]>([]);
   const [logoSearching, setLogoSearching] = React.useState(false);
   const [logoSearchError, setLogoSearchError] = React.useState<string | null>(null);
   const [logoImportingUrl, setLogoImportingUrl] = React.useState<string | null>(null);
+  const [lightspeedBrands, setLightspeedBrands] = React.useState<LightspeedManufacturerOption[]>([]);
+  const [lightspeedBrandsLoading, setLightspeedBrandsLoading] = React.useState(false);
+  const [lightspeedBrandsError, setLightspeedBrandsError] = React.useState<string | null>(null);
 
   const resetLogoSearch = React.useCallback(() => {
     setLogoSearchQuery('');
@@ -64,6 +81,8 @@ export function StoreBrandsManager({ addRequest = 0 }: { addRequest?: number }) 
     setFormData({
       name: brand?.name ?? '',
       logoUrl: brand?.logo_url ?? '',
+      lightspeedManufacturerId: brand?.lightspeed_manufacturer_id ?? '',
+      lightspeedManufacturerName: brand?.lightspeed_manufacturer_name ?? '',
     });
     setSaveError(null);
     resetLogoSearch();
@@ -89,6 +108,52 @@ export function StoreBrandsManager({ addRequest = 0 }: { addRequest?: number }) 
   React.useEffect(() => {
     fetchBrands();
   }, [fetchBrands]);
+
+  const fetchLightspeedBrands = React.useCallback(async () => {
+    try {
+      setLightspeedBrandsLoading(true);
+      setLightspeedBrandsError(null);
+      const response = await fetch('/api/lightspeed/manufacturers');
+      const data = await response.json();
+      if (!response.ok) {
+        setLightspeedBrandsError(data.error || 'Could not load Lightspeed brands');
+        setLightspeedBrands([]);
+        return;
+      }
+      setLightspeedBrands(Array.isArray(data.manufacturers) ? data.manufacturers : []);
+    } catch (error) {
+      console.error('Error fetching Lightspeed brands:', error);
+      setLightspeedBrandsError('Could not load Lightspeed brands');
+      setLightspeedBrands([]);
+    } finally {
+      setLightspeedBrandsLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (isDialogOpen) {
+      void fetchLightspeedBrands();
+    }
+  }, [isDialogOpen, fetchLightspeedBrands]);
+
+  const handleLightspeedBrandChange = (manufacturerId: string) => {
+    if (manufacturerId === 'none') {
+      setFormData((prev) => ({
+        ...prev,
+        lightspeedManufacturerId: '',
+        lightspeedManufacturerName: '',
+      }));
+      return;
+    }
+
+    const selected = lightspeedBrands.find((brand) => brand.id === manufacturerId);
+    setFormData((prev) => ({
+      ...prev,
+      lightspeedManufacturerId: manufacturerId,
+      lightspeedManufacturerName: selected?.name ?? '',
+      name: prev.name.trim() || selected?.name || prev.name,
+    }));
+  };
 
   const handleAddNew = React.useCallback(() => {
     openBrandDialog(null);
@@ -209,8 +274,19 @@ export function StoreBrandsManager({ addRequest = 0 }: { addRequest?: number }) 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
           editingBrand
-            ? { id: editingBrand.id, name: formData.name, logo_url: formData.logoUrl || null }
-            : { name: formData.name, logo_url: formData.logoUrl || null }
+            ? {
+                id: editingBrand.id,
+                name: formData.name,
+                logo_url: formData.logoUrl || null,
+                lightspeed_manufacturer_id: formData.lightspeedManufacturerId || null,
+                lightspeed_manufacturer_name: formData.lightspeedManufacturerName || null,
+              }
+            : {
+                name: formData.name,
+                logo_url: formData.logoUrl || null,
+                lightspeed_manufacturer_id: formData.lightspeedManufacturerId || null,
+                lightspeed_manufacturer_name: formData.lightspeedManufacturerName || null,
+              }
         ),
       });
 
@@ -312,9 +388,13 @@ export function StoreBrandsManager({ addRequest = 0 }: { addRequest?: number }) 
 
                 <div className="min-w-0 flex-1">
                   <h4 className="truncate text-sm font-medium text-gray-900">{brand.name}</h4>
-                  {!brand.logo_url && (
-                    <p className="mt-0.5 text-xs text-gray-500">No logo uploaded</p>
-                  )}
+                  <p className="mt-0.5 truncate text-xs text-gray-500">
+                    {brand.lightspeed_manufacturer_name
+                      ? `Lightspeed: ${brand.lightspeed_manufacturer_name}`
+                      : !brand.logo_url
+                        ? 'No logo uploaded'
+                        : 'No Lightspeed brand linked'}
+                  </p>
                 </div>
 
                 <div className="flex flex-shrink-0 items-center gap-0.5">
@@ -498,9 +578,40 @@ export function StoreBrandsManager({ addRequest = 0 }: { addRequest?: number }) 
               </div>
             </div>
 
+            {/* Lightspeed brand link */}
+            <div className="space-y-2">
+              <Label>Lightspeed brand</Label>
+              <Select
+                value={formData.lightspeedManufacturerId || 'none'}
+                onValueChange={handleLightspeedBrandChange}
+                disabled={lightspeedBrandsLoading}
+              >
+                <SelectTrigger className="h-9 w-full rounded-md bg-white">
+                  <SelectValue placeholder="Select a Lightspeed brand" />
+                </SelectTrigger>
+                <SelectContent className="max-h-60">
+                  <SelectItem value="none">No Lightspeed brand linked</SelectItem>
+                  {lightspeedBrands.map((brand) => (
+                    <SelectItem key={brand.id} value={brand.id}>
+                      {brand.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {lightspeedBrandsLoading ? (
+                <p className="text-xs text-gray-500">Loading Lightspeed brands…</p>
+              ) : lightspeedBrandsError ? (
+                <p className="text-xs text-destructive">{lightspeedBrandsError}</p>
+              ) : (
+                <p className="text-xs text-gray-500">
+                  Link this logo to a Lightspeed brand so it appears on matching product pages.
+                </p>
+              )}
+            </div>
+
             {/* Name */}
             <div className="space-y-2">
-              <Label htmlFor="brandName">Brand Name *</Label>
+              <Label htmlFor="brandName">Display name *</Label>
               <Input
                 id="brandName"
                 value={formData.name}

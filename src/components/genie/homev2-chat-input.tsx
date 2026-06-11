@@ -15,6 +15,7 @@ export function HomeV2ChatInput({
   placeholder = "Ask anything",
   showDisclaimer = true,
   endAccessory,
+  onFileSelected,
 }: {
   value: string;
   isRunning?: boolean;
@@ -27,8 +28,11 @@ export function HomeV2ChatInput({
   showDisclaimer?: boolean;
   /** Renders inside the input row, before the send/stop control (e.g. Connect Gmail). */
   endAccessory?: React.ReactNode;
+  /** When set, the + button opens a PDF picker and selected files are passed here. */
+  onFileSelected?: (file: File) => void;
 }) {
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const hasText = value.trim().length > 0;
   const queueMode = isRunning && hasText;
   const canAct = isRunning || hasText;
@@ -63,14 +67,29 @@ export function HomeV2ChatInput({
       >
         <button
           type="button"
+          onClick={() => fileInputRef.current?.click()}
           className={cn(
             "mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-700 transition-colors",
             floating ? "hover:bg-gray-200/80" : "hover:bg-gray-100",
           )}
-          aria-label="Add"
+          aria-label={onFileSelected ? "Attach a supplier invoice PDF" : "Add"}
+          title={onFileSelected ? "Attach a supplier invoice PDF" : undefined}
         >
           <Plus className="h-5 w-5" />
         </button>
+        {onFileSelected ? (
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/pdf,.pdf"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) onFileSelected(file);
+              event.target.value = "";
+            }}
+          />
+        ) : null}
 
         <textarea
           ref={textareaRef}

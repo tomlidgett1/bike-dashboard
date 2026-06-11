@@ -30,6 +30,7 @@ import {
 } from '@/lib/genie/store-product-previews'
 import { searchWebImages } from '@/lib/genie/web-image-search'
 import { buildXeroTools } from '@/lib/genie/agent/xero-tools'
+import { buildPurchaseOrderTools } from '@/lib/genie/agent/purchase-order-tools'
 import { createLightspeedClient } from '@/lib/services/lightspeed'
 import { resolveCategoryCreationTarget } from '@/lib/services/lightspeed/category-helpers'
 import {
@@ -9398,6 +9399,7 @@ function buildAgentTools(
       ]
       : []),
     ...buildXeroTools(userId, emit),
+    ...buildPurchaseOrderTools(supabase, userId, emit),
     tool({
       name: 'search_web_images',
       description: 'Search the web for reference product or cycling photos when the user wants to see what something looks like. Use for specific bikes, parts, gear, colours, setup examples, or "what does X look like" — not for analytics, rankings, or abstract non-visual questions. Prefer show_product_images on store inventory tools when the user wants to see their own stock.',

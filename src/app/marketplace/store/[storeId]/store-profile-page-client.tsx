@@ -293,7 +293,7 @@ export function StoreProfilePageClient({
       <>
         <MarketplaceHeader />
         <MarketplaceLayout showFooter={false}>
-          <div className="pt-16 min-h-screen bg-gray-50">
+          <div className="min-h-screen bg-gray-50">
             <SellerHeader
               seller={seller}
               isOwnProfile={isOwnProfile}
@@ -302,7 +302,7 @@ export function StoreProfilePageClient({
 
             {/* For Sale / Sold tabs */}
             {isMobile ? (
-              <div className="bg-white border-b border-gray-100 sticky top-16 z-30">
+              <div className="bg-white border-b border-gray-100 sticky top-12 sm:top-14 z-30">
                 <div className="px-3">
                   <div className="py-3">
                     <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">

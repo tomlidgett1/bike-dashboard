@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createLightspeedClient } from '@/lib/services/lightspeed'
+import { lightspeedPurchaseOrderUrl } from '@/lib/services/lightspeed/lightspeed-client'
 import { buildFullPathName } from '@/lib/services/lightspeed/category-helpers'
 import type {
   GenieProposal,
@@ -510,6 +511,136 @@ export async function POST(request: NextRequest) {
         console.error('Apply gmail_email_action error:', error)
         return NextResponse.json(
           { error: error instanceof Error ? error.message : 'Gmail action failed.' },
+          { status: 502 },
+        )
+      }
+    }
+
+    // ── Lightspeed purchase order create (from supplier invoice) ─────────
+    if (proposal.kind === 'lightspeed_purchase_order_create') {
+      const po = proposal
+      const lines = Array.isArray(po.lines) ? po.lines : []
+      const orderableLines = lines.filter((line) => !line.skipped && (line.item_id || line.create_item))
+      const unresolvedLines = lines.filter((line) => !line.skipped && !line.item_id && !line.create_item)
+
+      if (unresolvedLines.length > 0) {
+        return NextResponse.json(
+          { error: `${unresolvedLines.length} line${unresolvedLines.length === 1 ? '' : 's'} still need an item match, a new product, or skip before the purchase order can be created.` },
+          { status: 400 },
+        )
+      }
+      if (orderableLines.length === 0) {
+        return NextResponse.json({ error: 'No matched lines to order — every line was skipped.' }, { status: 400 })
+      }
+      if (!po.vendor_id && !(po.create_vendor_name ?? '').trim()) {
+        return NextResponse.json({ error: 'Choose a Lightspeed vendor (or create one) before creating the purchase order.' }, { status: 400 })
+      }
+
+      const client = createLightspeedClient(user.id)
+
+      try {
+        let vendorId = po.vendor_id
+        let vendorName = po.vendor_name
+        if (!vendorId) {
+          const vendor = await client.createVendor({ name: (po.create_vendor_name ?? po.supplier_name).trim() })
+          vendorId = String(vendor.vendorID)
+          vendorName = vendor.name
+        }
+
+        const skipped = lines.filter((line) => line.skipped || (!line.item_id && !line.create_item))
+        const stockInstructions = [
+          `Created by Yellow Jersey Genie from supplier invoice${po.invoice_number ? ` ${po.invoice_number}` : ''} (${po.source_label}).`,
+          skipped.length > 0
+            ? `Skipped invoice lines (no Lightspeed item): ${skipped.map((line) => `${line.quantity}x ${line.description}`).join('; ')}`
+            : '',
+        ].filter(Boolean).join(' ')
+
+        const order = await client.createPurchaseOrder({
+          vendorID: vendorId,
+          shopID: po.shop_id ?? undefined,
+          orderedDate: po.invoice_date ?? new Date().toISOString().slice(0, 10),
+          refNum: po.invoice_number ?? undefined,
+          shipCost: po.shipping_cost ?? undefined,
+          otherCost: po.other_cost ?? undefined,
+          stockInstructions: stockInstructions.slice(0, 1000),
+        })
+
+        let lineCount = 0
+        let createdItemCount = 0
+        const lineErrors: string[] = []
+        for (const line of orderableLines) {
+          try {
+            let itemId = line.item_id
+            if (!itemId && line.create_item) {
+              const item = await client.createItem({
+                description: line.description,
+                defaultCost: line.unit_cost,
+                upc: line.upc?.replace(/\D/g, '') || undefined,
+                manufacturerSku: line.supplier_sku ?? undefined,
+              })
+              itemId = String(item.itemID)
+              createdItemCount++
+            }
+            if (!itemId) continue
+            await client.createPurchaseOrderLine({
+              orderID: String(order.orderID),
+              itemID: itemId,
+              quantity: line.quantity,
+              price: line.unit_cost,
+            })
+            lineCount++
+          } catch (lineError) {
+            console.error('Apply purchase order line failed:', lineError)
+            lineErrors.push(line.description)
+          }
+        }
+
+        // Write shipping/other costs again AFTER the lines exist — Lightspeed
+        // recalculates order totals on update, and shipCost set only at create
+        // time has been observed not to stick.
+        if (po.shipping_cost != null || po.other_cost != null) {
+          try {
+            await client.updatePurchaseOrder(String(order.orderID), {
+              shipCost: po.shipping_cost ?? undefined,
+              otherCost: po.other_cost ?? undefined,
+            })
+          } catch (shipError) {
+            console.warn('Apply purchase order shipping update failed:', shipError)
+          }
+        }
+
+        const orderUrl = lightspeedPurchaseOrderUrl(String(order.orderID))
+
+        if (po.invoice_id) {
+          await supabase
+            .from('store_supplier_invoices')
+            .update({
+              status: 'po_created',
+              lightspeed_order_id: String(order.orderID),
+              lightspeed_order_url: orderUrl,
+              error: lineErrors.length > 0 ? `Lines failed: ${lineErrors.join('; ')}` : null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('user_id', user.id)
+            .eq('id', po.invoice_id)
+        }
+
+        const result: ApplyResult = {
+          ok: true,
+          kind: 'lightspeed_purchase_order_create',
+          affected: lineCount,
+          message: [
+            `Created purchase order #${order.orderID} for ${vendorName ?? po.supplier_name} with ${lineCount} line${lineCount === 1 ? '' : 's'}.`,
+            createdItemCount > 0 ? `Created ${createdItemCount} new product${createdItemCount === 1 ? '' : 's'} in Lightspeed (cost set, retail price still 0).` : '',
+            lineErrors.length > 0 ? `${lineErrors.length} line${lineErrors.length === 1 ? '' : 's'} failed and need manual entry.` : '',
+          ].filter(Boolean).join(' '),
+          lightspeed_url: orderUrl,
+        }
+        return NextResponse.json(result)
+      } catch (error) {
+        console.error('Apply lightspeed_purchase_order_create error:', error)
+        return NextResponse.json(
+          { error: error instanceof Error ? error.message : 'Could not create the purchase order in Lightspeed.' },
           { status: 502 },
         )
       }

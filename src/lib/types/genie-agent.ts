@@ -195,6 +195,75 @@ export interface GmailEmailActionProposal {
   sharing_data: Array<{ label: string; value: string }>;
 }
 
+/** One Lightspeed vendor option for an ambiguous supplier match. */
+export interface PurchaseOrderVendorOption {
+  vendor_id: string;
+  name: string;
+  score: number;
+}
+
+/** One Lightspeed item option for an ambiguous invoice-line match. */
+export interface PurchaseOrderItemOption {
+  item_id: string;
+  name: string;
+  sku: string | null;
+  upc: string | null;
+  default_cost: number | null;
+  qoh: number | null;
+  confidence: number;
+  matched_on: 'barcode' | 'sku' | 'description';
+}
+
+/** One invoice line staged for the purchase order. */
+export interface PurchaseOrderLineDraft {
+  description: string;
+  supplier_sku: string | null;
+  /** Barcode from the invoice, used when creating a new item. */
+  upc: string | null;
+  quantity: number;
+  unit_cost: number;
+  /** Resolved Lightspeed item, when matched confidently or chosen by the user. */
+  item_id: string | null;
+  item_name: string | null;
+  /** Candidate items shown as clickable options when item_id is null. */
+  item_options: PurchaseOrderItemOption[];
+  /** User clicked "skip" — line is left off the PO and noted in stock instructions. */
+  skipped?: boolean;
+  /** User clicked "create new product" — a new Lightspeed item is created on apply. */
+  create_item?: boolean;
+}
+
+/**
+ * Stage a Lightspeed purchase order built from a supplier invoice (Gmail PDF or
+ * upload). Ambiguous vendor/line matches carry options the UI renders as
+ * buttons; Apply creates the Order + OrderLines in Lightspeed.
+ */
+export interface LightspeedPurchaseOrderCreateProposal {
+  kind: 'lightspeed_purchase_order_create';
+  summary: string;
+  /** store_supplier_invoices row this PO is built from (status tracking). */
+  invoice_id: string | null;
+  invoice_number: string | null;
+  invoice_date: string | null;
+  supplier_name: string;
+  currency: string | null;
+  /** Resolved vendor, or null when the user must pick/create one. */
+  vendor_id: string | null;
+  vendor_name: string | null;
+  /** Vendor candidates shown as buttons when vendor_id is null. */
+  vendor_options: PurchaseOrderVendorOption[];
+  /** Offer a "create new vendor" button with this name when no match fits. */
+  create_vendor_name: string | null;
+  shop_id: string | null;
+  shop_options: Array<{ shop_id: string; name: string }>;
+  lines: PurchaseOrderLineDraft[];
+  shipping_cost: number | null;
+  other_cost: number | null;
+  invoice_total: number | null;
+  /** Source context for the card header. */
+  source_label: string;
+}
+
 export type GmailSortOrder = 'newest' | 'oldest';
 
 export type GmailScanDepth = 'quick' | 'full';
@@ -347,7 +416,8 @@ export type GenieProposal =
   | PriceUpdateProposal
   | ProductBrandCategoryUpdateProposal
   | LightspeedCategoryCreateProposal
-  | GmailEmailActionProposal;
+  | GmailEmailActionProposal
+  | LightspeedPurchaseOrderCreateProposal;
 
 /** Read-only Lightspeed work order row streamed to the Genie UI. */
 export interface GenieWorkorderLineCard {
@@ -577,4 +647,6 @@ export interface ApplyResult {
   message: string;
   /** Resolved Lightspeed values written for brand/category updates (for undo). */
   applied_changes?: ProductBrandCategoryChange[];
+  /** Deep link to view the created record in Lightspeed (purchase orders). */
+  lightspeed_url?: string;
 }

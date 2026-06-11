@@ -3,14 +3,24 @@ import OpenAI from "openai";
 import type { Stream } from "openai/core/streaming";
 import type {
   Response as OpenAIResponse,
+  ResponseInput,
   ResponseStreamEvent,
+  Tool,
 } from "openai/resources/responses/responses";
+import { createClient } from "@/lib/supabase/server";
 import { compactGenieProgressText } from "@/lib/genie/progress-text";
-import type { ProductGenieContext } from "@/lib/genie/product-context";
+import { runMarketplaceSearch } from "@/lib/genie/marketplace-search";
+import {
+  formatProductGenieListingForModel,
+  hydrateProductGenieContext,
+  type ProductGenieContext,
+} from "@/lib/genie/product-context";
+import { createPublicSupabaseClient } from "@/lib/marketplace/public-card-feed";
 import {
   getOfficialSearchDomains,
 } from "@/lib/bikes/official-spec-sources";
 import { resolveBrandWebsite } from "@/lib/bikes/brand-websites";
+import { searchYoutubeVideos } from "@/lib/genie/youtube-video-search";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -18,25 +28,39 @@ export const maxDuration = 300;
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const MODEL = "gpt-5.4";
 const STREAM_HEARTBEAT_MS = 15_000;
+const MAX_ITERATIONS = 4;
 
-const SYSTEM_PROMPT = `You are a knowledgeable cycling and gear advisor on Yellow Jersey, Australia's bike marketplace.
+const SYSTEM_PROMPT_BASE = `You are a knowledgeable cycling and gear advisor on Yellow Jersey, Australia's bike marketplace.
 
-The shopper is viewing ONE specific listing and wants help deciding or understanding it. Answer questions about THIS product — specs, fit, compatibility, comparisons, value, maintenance, sizing, and how it suits their needs.
+The shopper is viewing ONE specific Yellow Jersey listing. Your instructions include the full listing data for that item — treat it as the source of truth for this conversation.
 
-RESEARCH (critical):
-- Use web search with official manufacturer and brand sources FIRST.
-- Prioritise the brand's official website, published spec sheets, and OEM documentation where relevant.
-- Prefer advanced, high-confidence sources over blogs, forums, and retailer copy.
-- Avoid third-party retailers unless official sources lack the answer.
-- When citing specs, prefer manufacturer-published details for this model or model year.
+LISTING vs MANUFACTURER (critical):
+- Listing questions — condition (new / used / like new), listed price, stock, seller notes, wear, what's included, store vs private listing — must be answered from the YELLOW JERSEY LISTING block in your instructions. Do NOT web search for these.
+- "Is this new?" almost always means the item condition on THIS listing (e.g. condition_rating New, Like New, used). Answer from listing data first. Only discuss manufacturer model-year recency if the shopper clearly means that — and distinguish it from item condition.
+- Never say the official website does not show this listing — the shopper is on Yellow Jersey, not the brand site. Manufacturer sites won't show this exact listing; that's expected.
+- Manufacturer web search is for OEM specs, geometry, compatibility, and reviews when listing data is insufficient — not for overriding listing condition or price.
+
+TOOLS (use silently — never say "let me search"):
+- search_marketplace_products → Yellow Jersey's live marketplace inventory. Use for alternatives, similar listings, or other in-stock options.
+- web search → official manufacturer specs, geometry, compatibility, reviews — only when listing data does not answer the question.
+- search_youtube_videos → optional. Use sparingly when one short YouTube video would clearly help more than text alone — e.g. setup/install, fit or sizing walkthrough, maintenance how-to, or an official product overview for an unfamiliar model. Do NOT use for listing condition, price, stock, simple spec lookups, marketplace alternatives, or generic questions that text answers well. At most once per answer; prefer one highly relevant video.
+
+YOUTUBE (when you use search_youtube_videos):
+- Videos appear below your reply — you may briefly mention them ("I've added a quick setup video below") but never paste YouTube URLs in the text.
+- Skip video search entirely if text, a table, or listing data is enough.
+
+MARKETPLACE ALTERNATIVES:
+- When they want similar or other listings on Yellow Jersey, search the marketplace with short keyword queries (brand, model, category, bike type).
+- Reference real in-stock results by name and price. Product cards are shown separately — never paste marketplace URLs in your reply.
 
 STYLE:
 - Warm, direct, helpful — like a great bike shop employee.
 - Concise: lead with the answer, then brief context.
 - **Bold** product and component names. Use simple bullets when listing options.
+- When comparing specs, sizes, or options side by side, use a Markdown pipe table (header row, optional separator row, data rows).
 - Never paste raw URLs in the reply — sources appear separately.
 - If listing details are ambiguous, say what you'd verify and still give useful guidance.
-- You can comment on value at the listed price when relevant, but do not invent listing details not provided in context.`;
+- Do not invent listing details not provided in the listing block.`;
 
 interface Message {
   role: "user" | "assistant";
@@ -77,20 +101,10 @@ function extractCitations(response: OpenAIResponse | null | undefined): Citation
   return citations;
 }
 
-function buildProductContextBlock(product: ProductGenieContext): string {
-  const lines = [
-    `Listing: ${product.name}`,
-    product.brand ? `Brand: ${product.brand}` : null,
-    product.model ? `Model: ${product.model}` : null,
-    product.bikeType ? `Type: ${product.bikeType}` : null,
-    product.price != null ? `Listed price: $${product.price.toLocaleString("en-AU")} AUD` : null,
-    product.condition ? `Condition: ${product.condition}` : null,
-    product.url ? `Yellow Jersey URL: ${product.url}` : null,
-    product.description ? `\nListing description:\n${product.description.slice(0, 1200)}` : null,
-    product.specsSummary ? `\nListing specifications:\n${product.specsSummary}` : null,
-  ].filter(Boolean);
+function buildInstructions(product: ProductGenieContext): string {
+  return `${SYSTEM_PROMPT_BASE}
 
-  return lines.join("\n");
+${formatProductGenieListingForModel(product)}`;
 }
 
 function buildOfficialSearchHints(product: ProductGenieContext): string {
@@ -134,7 +148,10 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const { messages, product } = body;
+    const { messages, product: clientProduct } = body;
+    const supabase = await createClient();
+    const publicSupabase = createPublicSupabaseClient();
+    const product = await hydrateProductGenieContext(publicSupabase, clientProduct);
     const encoder = new TextEncoder();
     const requestStartedAt = Date.now();
 
@@ -186,53 +203,196 @@ export async function POST(request: NextRequest) {
 
           const latestUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
 
-          const contextPrefix = `PRODUCT CONTEXT (the listing the shopper is viewing):
-${buildProductContextBlock(product)}
+          const userTurn = [
+            latestUserMessage,
+            "",
+            "Reminder: answer using the Yellow Jersey listing in your instructions first.",
+            "Use web search only for manufacturer specs not covered by the listing.",
+            "",
+            buildOfficialSearchHints(product),
+          ].join("\n");
 
-${buildOfficialSearchHints(product)}
-
-Shopper question: ${latestUserMessage}`;
-
-          const response: Stream<ResponseStreamEvent> = await openai.responses.create({
-            model: MODEL,
-            instructions: SYSTEM_PROMPT,
-            tools: [
-              {
-                type: "web_search_preview" as const,
-                search_context_size: "high" as const,
-                user_location: { type: "approximate" as const, country: "AU" },
+          const tools: Tool[] = [
+            {
+              type: "web_search_preview" as const,
+              search_context_size: "high" as const,
+              user_location: { type: "approximate" as const, country: "AU" },
+            },
+            {
+              type: "function" as const,
+              name: "search_marketplace_products",
+              description:
+                "Search Yellow Jersey's live marketplace inventory for alternatives, similar listings, or other options. Use when the shopper asks about other products on the marketplace, similar bikes/gear, or what's available besides the current listing.",
+              strict: null,
+              parameters: {
+                type: "object",
+                properties: {
+                  query: {
+                    type: "string",
+                    description:
+                      'Short keyword(s): brand, model, category, or bike type — e.g. "gravel bike", "Trek Fuel", "road helmet".',
+                  },
+                },
+                required: ["query"],
               },
-            ],
-            tool_choice: "required",
-            input: [
-              ...inputMessages.slice(0, -1),
-              { role: "user" as const, content: contextPrefix },
-            ],
-            stream: true,
-          });
+            },
+            {
+              type: "function" as const,
+              name: "search_youtube_videos",
+              description:
+                "Find 1–2 relevant YouTube videos when a visual walkthrough would genuinely help — setup/install, fit/sizing, maintenance how-to, or official product overview. Do NOT use for listing condition, price, stock, simple specs, or questions text answers well.",
+              strict: null,
+              parameters: {
+                type: "object",
+                properties: {
+                  query: {
+                    type: "string",
+                    description:
+                      'Focused YouTube search, e.g. "Trek Fuel EX setup guide", "Shimano Di2 battery install", "gravel bike tyre pressure guide".',
+                  },
+                },
+                required: ["query"],
+              },
+            },
+          ];
 
+          let previousResponseId: string | null = null;
+          let nextInput: ResponseInput = [
+            ...inputMessages.slice(0, -1),
+            { role: "user" as const, content: userTurn },
+          ];
           const citations: Citation[] = [];
 
-          for await (const event of response) {
-            const type = event.type;
+          for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+            const isLastIteration = iteration === MAX_ITERATIONS - 1;
 
-            if (type === "response.web_search_call.in_progress") {
-              emit({ event: "status", phase: "web_search", text: "Searching official sources" });
-            }
-            if (type === "response.web_search_call.searching") {
-              emit({ event: "status", phase: "web_search", text: "Searching official sources" });
-            }
-            if (type === "response.web_search_call.completed") {
-              emit({ event: "status", phase: "web_search_done", text: "Sources ready" });
+            const response: Stream<ResponseStreamEvent> = await openai.responses.create({
+              model: MODEL,
+              instructions: buildInstructions(product),
+              ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
+              ...(isLastIteration ? {} : { tools }),
+              input: nextInput,
+              stream: true,
+            });
+
+            const pendingFunctionCalls = new Map<
+              string,
+              { name: string; arguments: string; callId: string }
+            >();
+            let responseId: string | null = null;
+
+            for await (const event of response) {
+              const type = event.type;
+
+              if (type === "response.created") {
+                responseId = event.response?.id ?? null;
+              }
+
+              if (type === "response.web_search_call.in_progress") {
+                emit({ event: "status", phase: "web_search", text: "Searching official sources" });
+              }
+              if (type === "response.web_search_call.searching") {
+                emit({ event: "status", phase: "web_search", text: "Searching official sources" });
+              }
+              if (type === "response.web_search_call.completed") {
+                emit({ event: "status", phase: "web_search_done", text: "Sources ready" });
+              }
+
+              if (type === "response.output_item.added") {
+                const item = event.item;
+                if (item?.type === "function_call" && item.id && item.call_id) {
+                  pendingFunctionCalls.set(item.id, {
+                    name: item.name,
+                    arguments: "",
+                    callId: item.call_id,
+                  });
+                  if (item.name === "search_marketplace_products") {
+                    emit({ event: "status", phase: "product_search", text: "Searching marketplace" });
+                  }
+                  if (item.name === "search_youtube_videos") {
+                    emit({ event: "status", phase: "video_search", text: "Finding a helpful video" });
+                  }
+                }
+              }
+
+              if (type === "response.function_call_arguments.delta") {
+                const fc = pendingFunctionCalls.get(event.item_id);
+                if (fc) fc.arguments += event.delta ?? "";
+              }
+
+              if (type === "response.output_text.delta") {
+                emit({ event: "text_delta", text: event.delta ?? "" });
+              }
+
+              if (type === "response.completed") {
+                citations.push(...extractCitations(event.response));
+              }
             }
 
-            if (type === "response.output_text.delta") {
-              emit({ event: "text_delta", text: event.delta ?? "" });
+            previousResponseId = responseId;
+
+            if (pendingFunctionCalls.size === 0) break;
+
+            const toolOutputs: ResponseInput = [];
+            for (const fc of pendingFunctionCalls.values()) {
+              if (fc.name === "search_marketplace_products") {
+                try {
+                  const args = JSON.parse(fc.arguments || "{}") as { query?: unknown };
+                  const query = typeof args.query === "string" ? args.query.trim() : "";
+                  const { products, output } = await runMarketplaceSearch(supabase, query, {
+                    excludeProductId: product.id,
+                  });
+                  if (products.length > 0) {
+                    emit({ event: "products", products });
+                  }
+                  toolOutputs.push({
+                    type: "function_call_output",
+                    call_id: fc.callId,
+                    output: JSON.stringify(output),
+                  });
+                } catch {
+                  toolOutputs.push({
+                    type: "function_call_output",
+                    call_id: fc.callId,
+                    output: JSON.stringify({ error: "Search temporarily unavailable" }),
+                  });
+                }
+              }
+              if (fc.name === "search_youtube_videos") {
+                try {
+                  const args = JSON.parse(fc.arguments || "{}") as { query?: unknown };
+                  const query = typeof args.query === "string" ? args.query.trim() : "";
+                  const result = await searchYoutubeVideos(query, { limit: 2 });
+                  if (result.videos.length > 0) {
+                    emit({ event: "videos", videos: result.videos, query: result.query });
+                  }
+                  emit({ event: "status", phase: "video_search_done", text: "Video ready" });
+                  toolOutputs.push({
+                    type: "function_call_output",
+                    call_id: fc.callId,
+                    output: JSON.stringify({
+                      query: result.query,
+                      found: result.videos.length,
+                      videos: result.videos.map((video) => ({
+                        title: video.title,
+                        channel: video.channel,
+                        duration: video.duration,
+                      })),
+                      message: result.message,
+                    }),
+                  });
+                } catch {
+                  toolOutputs.push({
+                    type: "function_call_output",
+                    call_id: fc.callId,
+                    output: JSON.stringify({ error: "Video search temporarily unavailable" }),
+                  });
+                }
+              }
             }
 
-            if (type === "response.completed") {
-              citations.push(...extractCitations(event.response));
-            }
+            if (toolOutputs.length === 0) break;
+            nextInput = toolOutputs;
           }
 
           if (citations.length > 0) {

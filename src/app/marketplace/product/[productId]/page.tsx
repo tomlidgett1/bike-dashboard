@@ -18,6 +18,9 @@ import {
   transformPublicMarketplaceCard,
   type PublicMarketplaceCardRow,
 } from "@/lib/marketplace/public-card-feed";
+import { resolveProductBrandLogoUrl } from "@/lib/marketplace/resolve-product-brand-logo";
+import type { ProductSellerProfile } from "@/components/marketplace/product-detail/about-this-seller-section";
+import type { OpeningHours } from "@/lib/types/store";
 
 // ============================================================
 // Product Page - Server Component with Parallel Data Fetching
@@ -99,6 +102,7 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
         purchase_date,
         service_history,
         upgrades_modifications,
+        manufacturer_id,
         manufacturer_name,
         brand,
         model,
@@ -476,6 +480,42 @@ async function fetchBrandProducts(productId: string, brand: string): Promise<Mar
 }
 
 // Helper function to fetch seller products - DIRECTLY from Supabase (no API call)
+async function fetchSellerProfile(
+  supabase: ReturnType<typeof createPublicSupabaseClient>,
+  userId: string,
+): Promise<ProductSellerProfile | null> {
+  const { data: seller } = await supabase
+    .from('users')
+    .select(
+      'user_id, business_name, logo_url, account_type, bicycle_store, seller_display_name, first_name, last_name, store_type, address, website, bio, opening_hours',
+    )
+    .eq('user_id', userId)
+    .single();
+
+  if (!seller) return null;
+
+  const isBicycleStore = seller.account_type === 'bicycle_store' && seller.bicycle_store === true;
+  const displayName =
+    seller.seller_display_name ||
+    seller.business_name ||
+    (seller.first_name && seller.last_name
+      ? `${seller.first_name} ${seller.last_name}`.trim()
+      : 'Unknown Seller');
+
+  return {
+    id: seller.user_id,
+    name: displayName,
+    logo_url: seller.logo_url || null,
+    account_type: seller.account_type || null,
+    is_bicycle_store: isBicycleStore,
+    store_type: seller.store_type || null,
+    address: seller.address || null,
+    website: seller.website || null,
+    bio: seller.bio || null,
+    opening_hours: (seller.opening_hours as OpeningHours | null) ?? null,
+  };
+}
+
 async function fetchSellerProducts(product: MarketplaceProduct): Promise<{ products: MarketplaceProduct[]; seller: SellerInfo | null }> {
   const fastProducts = await fetchSellerProductsFromPublicCards(product);
   if (fastProducts) return fastProducts;
@@ -570,13 +610,23 @@ const fetchProductPageData = unstable_cache(
     if (!product) return null;
 
     const productBrand = product.brand?.trim() || null;
-    const [similarProducts, sellerData, brandProducts] = await Promise.all([
-      fetchSimilarProductsFromPublicCards(product).then((fastProducts) =>
-        fastProducts ?? fetchSimilarProductsFallback(product)
-      ),
-      fetchSellerProducts(product),
-      productBrand ? fetchBrandProducts(productId, productBrand) : Promise.resolve([]),
-    ]);
+    const supabase = createPublicSupabaseClient();
+    const [similarProducts, sellerData, brandProducts, brandLogoUrl, sellerProfile] =
+      await Promise.all([
+        fetchSimilarProductsFromPublicCards(product).then((fastProducts) =>
+          fastProducts ?? fetchSimilarProductsFallback(product)
+        ),
+        fetchSellerProducts(product),
+        productBrand ? fetchBrandProducts(productId, productBrand) : Promise.resolve([]),
+        product.user_id && product.store_bicycle_store
+          ? resolveProductBrandLogoUrl(supabase, product.user_id, {
+              manufacturer_id: (product as { manufacturer_id?: string | null }).manufacturer_id,
+              manufacturer_name: (product as { manufacturer_name?: string | null }).manufacturer_name,
+              brand: product.brand,
+            })
+          : Promise.resolve(null),
+        product.user_id ? fetchSellerProfile(supabase, product.user_id) : Promise.resolve(null),
+      ]);
 
     return {
       product,
@@ -584,9 +634,11 @@ const fetchProductPageData = unstable_cache(
       sellerData,
       brandProducts,
       productBrand,
+      brandLogoUrl,
+      sellerProfile,
     };
   },
-  ['marketplace-product-page-data-v1'],
+  ['marketplace-product-page-data-v2'],
   {
     revalidate: 60,
   },
@@ -619,8 +671,10 @@ export default async function ProductPage({
       similarProducts={data.similarProducts}
       sellerProducts={data.sellerData.products}
       sellerInfo={data.sellerData.seller}
+      sellerProfile={data.sellerProfile}
       brandProducts={data.brandProducts}
       brandName={data.productBrand ?? null}
+      brandLogoUrl={data.brandLogoUrl}
       showUploadBanner={fromUpload === 'true'}
     />
   );

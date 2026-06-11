@@ -201,7 +201,7 @@ export function BikeSpecsDisplay({
   if (variant === "fullWidth") {
     return (
       <section className={cn("border-t border-gray-200 bg-white", className)}>
-        <div className="relative mx-auto max-w-[1536px] px-4 py-10 sm:px-4 lg:px-4 xl:px-5">
+        <div className="relative mx-auto max-w-[1536px] px-4 pb-10 pt-6 sm:px-4 sm:pt-8 lg:px-4 xl:px-5">
           <h2 className="relative z-0 mb-6 text-xl font-semibold tracking-tight text-gray-900">
             Specifications
           </h2>

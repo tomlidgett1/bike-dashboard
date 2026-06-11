@@ -479,7 +479,7 @@ export function ImmersiveProductLayout({
 
       {/* ── Discovery carousels — light section under the dark hero ───── */}
       <div className="bg-white text-gray-900 rounded-t-[2.5rem]">
-        <div className="mx-auto max-w-[1500px] px-5 sm:px-8 lg:px-14 py-12 lg:py-16">
+        <div className="mx-auto max-w-[1500px] space-y-2 px-5 py-12 sm:px-8 lg:px-14 lg:py-16">
           <RecommendationCarousel
             title="Similar items"
             products={similarProducts}
@@ -493,7 +493,6 @@ export function ImmersiveProductLayout({
             icon="store"
             seeAllHref={storeHref}
             seeAllLabel="View all"
-            seller={sellerInfo}
           />
           {brandName && (
             <RecommendationCarousel

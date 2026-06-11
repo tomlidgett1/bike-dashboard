@@ -124,6 +124,9 @@ function statusForTool(toolName: string, args?: Record<string, unknown>): { phas
   if (toolName === 'propose_lightspeed_category_create') return { phase: 'tool', text: 'Preparing Lightspeed category' }
   if (toolName === 'verify_question_answered') return { phase: 'verifying', text: 'Quality check: reviewing draft answer' }
   if (toolName === 'record_answer_recheck') return { phase: 'rechecking', text: 'Alternate query' }
+  if (toolName === 'list_supplier_invoices') return { phase: 'invoice', text: 'Checking supplier invoices' }
+  if (toolName === 'extract_supplier_invoice') return { phase: 'invoice', text: 'Reading supplier invoice PDF' }
+  if (toolName === 'propose_lightspeed_purchase_order') return { phase: 'invoice', text: 'Preparing purchase order' }
   if (toolName === 'search_gmail') return { phase: 'gmail', text: 'Searching Gmail' }
   if (toolName === 'read_gmail_messages') return { phase: 'gmail', text: 'Reading email content' }
   if (toolName === 'propose_gmail_email') return { phase: 'gmail', text: 'Preparing Gmail action' }
@@ -142,6 +145,8 @@ function statusAfterTool(toolName: string): { phase: string; text: string } {
   if (toolName === 'get_lightspeed_customer_profile') return { phase: 'tool_done', text: 'Customer profile ready' }
   if (toolName === 'list_lightspeed_workorders' || toolName === 'get_lightspeed_workorder') return { phase: 'tool_done', text: 'Work order result ready' }
   if (toolName === 'search_gmail' || toolName === 'read_gmail_messages' || toolName === 'get_gmail_connection_status') return { phase: 'gmail_done', text: 'Gmail result ready' }
+  if (toolName === 'list_supplier_invoices' || toolName === 'extract_supplier_invoice') return { phase: 'invoice_done', text: 'Invoice result ready' }
+  if (toolName === 'propose_lightspeed_purchase_order') return { phase: 'invoice_done', text: 'Purchase order staged' }
   if (toolName.startsWith('get_xero_') || toolName.startsWith('list_xero_') || toolName === 'search_xero_contacts') return { phase: 'xero_done', text: 'Xero result ready' }
   if (toolName === 'search_web_images' || toolName === 'web_search' || toolName === 'web_search_preview' || toolName === 'web_search_call') return { phase: 'web_search_done', text: 'Web result ready' }
   // verify_question_answered emits its own result-aware status from the tool itself.

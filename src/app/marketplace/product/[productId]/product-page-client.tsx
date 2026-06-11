@@ -8,8 +8,13 @@ import { StoreProductContextHeader } from "@/components/marketplace/product-deta
 import { ProductBreadcrumbs } from "@/components/marketplace/product-breadcrumbs";
 import { ProductDetailsPanelSimple } from "@/components/marketplace/product-details-panel-simple";
 import { ProductAskGenieFloatingPill } from "@/components/marketplace/product-ask-genie-floating-pill";
+import { ProductAskGenieImageBadge } from "@/components/marketplace/product-ask-genie-image-badge";
 import { ProductGeniePanel } from "@/components/genie/product-genie-panel";
 import { EnhancedImageGallery } from "@/components/marketplace/product-detail/enhanced-image-gallery";
+import {
+  AboutThisSellerSection,
+  type ProductSellerProfile,
+} from "@/components/marketplace/product-detail/about-this-seller-section";
 import { BikeSpecsDisplay } from "@/components/products/bike-specs-display";
 import { BrandAboutSection } from "@/components/marketplace/product-detail/brand-about-section";
 import { hasBikeSpecs, parseBikeSpecs } from "@/lib/types/bike-specs";
@@ -63,6 +68,8 @@ interface ProductPageClientProps {
   sellerInfo: SellerInfo | null;
   brandProducts: MarketplaceProduct[];
   brandName: string | null;
+  brandLogoUrl?: string | null;
+  sellerProfile?: ProductSellerProfile | null;
   showUploadBanner?: boolean;
 }
 
@@ -82,6 +89,8 @@ export function ProductPageClient({
   sellerInfo,
   brandProducts,
   brandName,
+  brandLogoUrl = null,
+  sellerProfile = null,
   showUploadBanner = false
 }: ProductPageClientProps) {
   const searchParams = useSearchParams();
@@ -153,9 +162,55 @@ export function ProductPageClient({
   const showStoreHeader = !!fromStoreId && !!sellerInfo && sellerInfo.id === fromStoreId;
   const showFullWidthBikeSpecs =
     localProduct.is_bicycle && hasBikeSpecs(parseBikeSpecs(localProduct.bike_specs));
+  const isSold =
+    !!(localProduct as { sold_at?: string | null }).sold_at ||
+    (localProduct as { listing_status?: string }).listing_status === "sold";
+  const showAskGenie = !isOwner && !isSold;
   const featuredBrandAbout = React.useMemo(
     () => getFeaturedBrandAbout(localProduct.brand || brandName),
     [localProduct.brand, brandName],
+  );
+
+  const galleryProps = {
+    images,
+    productName: product.display_name || product.description,
+    currentIndex: currentImageIndex,
+    onIndexChange: setCurrentImageIndex,
+    heroOverlay: showAskGenie ? (
+      <ProductAskGenieImageBadge product={localProduct} />
+    ) : undefined,
+  };
+
+  const productBreadcrumbs = (
+    <ProductBreadcrumbs
+      level1={product.marketplace_category}
+      level2={product.marketplace_subcategory}
+      level3={product.marketplace_level_3_category}
+      productName={product.display_name || product.description}
+    />
+  );
+
+  const infoPanelContent = (
+    <>
+      <ProductDetailsPanelSimple
+        product={localProduct}
+        brandLogoUrl={brandLogoUrl}
+        brandName={localProduct.brand || brandName}
+      />
+      {sellerProfile && (
+        <AboutThisSellerSection seller={sellerProfile} embedded />
+      )}
+      {isOwner && (
+        <div className="border-t border-gray-200/80 px-4 py-3 sm:px-5 lg:px-0">
+          <ProductOptimizeDrawer
+            product={localProduct}
+            onProductUpdate={(updates) =>
+              setLocalProduct((prev) => ({ ...prev, ...updates }))
+            }
+          />
+        </div>
+      )}
+    </>
   );
 
   // Immersive layout — per-product opt-in (Store Settings → Products tab).
@@ -193,38 +248,29 @@ export function ProductPageClient({
         )}
         
         <div>
-          {/* Breadcrumbs - Hidden on mobile, shown on tablet+ */}
-          <div className="hidden sm:block max-w-[1536px] mx-auto px-4 sm:px-4 lg:px-3 xl:px-4 pt-4 sm:pt-6 mb-4 sm:mb-6">
-            <ProductBreadcrumbs
-              level1={product.marketplace_category}
-              level2={product.marketplace_subcategory}
-              level3={product.marketplace_level_3_category}
-              productName={product.display_name || product.description}
-            />
+          {/* Desktop: photos (white) + info (gray); white wrapper avoids gray dead space beside thumbnails */}
+          <div className="hidden bg-white lg:block">
+            <div className="mx-auto flex max-w-[1536px] items-start">
+              <div className="min-w-0 w-[62%] pl-3 pr-4 xl:pl-4 xl:pr-6">
+                <div className="pt-4 sm:pt-6 pb-4 sm:pb-6">{productBreadcrumbs}</div>
+                <EnhancedImageGallery {...galleryProps} />
+              </div>
+              <div className="sticky top-0 min-w-0 w-[38%] shrink-0 self-start bg-gray-50 px-4 max-h-screen overflow-y-auto overscroll-contain [scrollbar-width:thin] xl:px-5">
+                {infoPanelContent}
+              </div>
+            </div>
           </div>
 
-          {/* Hero + info panel */}
-          <div className="lg:max-w-[1536px] lg:mx-auto lg:pl-3 lg:pr-6 xl:pl-4 xl:pr-8">
+          {/* Mobile / tablet: stacked gallery + flat gray info */}
+          <div className="bg-white lg:hidden">
+            <div className="hidden sm:block max-w-[1536px] mx-auto px-4 sm:px-4 pt-4 sm:pt-6 mb-4 sm:mb-6">
+              {productBreadcrumbs}
+            </div>
             <EnhancedImageGallery
-              images={images}
-              productName={product.display_name || product.description}
-              currentIndex={currentImageIndex}
-              onIndexChange={setCurrentImageIndex}
+              {...galleryProps}
               sidePanel={
-                <div className="flex h-full max-h-full min-h-0 w-full flex-col overflow-hidden border-t border-gray-100 bg-white sm:mx-5 sm:mt-6 sm:mb-4 sm:rounded-xl sm:border sm:border-gray-200 lg:mx-0 lg:mt-0 lg:mb-0 lg:h-full lg:border-t-0">
-                  <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-width:thin]">
-                    <ProductDetailsPanelSimple product={localProduct} />
-                    {isOwner && (
-                      <div className="border-t border-gray-100 bg-gray-50 px-4 py-3">
-                        <ProductOptimizeDrawer
-                          product={localProduct}
-                          onProductUpdate={(updates) =>
-                            setLocalProduct((prev) => ({ ...prev, ...updates }))
-                          }
-                        />
-                      </div>
-                    )}
-                  </div>
+                <div className="border-t border-gray-200/80 bg-gray-50">
+                  {infoPanelContent}
                 </div>
               }
             />
@@ -234,7 +280,6 @@ export function ProductPageClient({
             <BikeSpecsDisplay
               variant="fullWidth"
               bikeSpecs={localProduct.bike_specs}
-              className="mt-6 sm:mt-8"
               interactive
               onSpecClick={setExploreSpec}
             />
@@ -260,7 +305,7 @@ export function ProductPageClient({
           {/* Recommendation Carousels */}
           <div
             className={cn(
-              "mx-auto max-w-[1536px] divide-y divide-gray-100 border-t border-gray-200 bg-gray-50 px-4 sm:px-4 lg:px-4 xl:px-5",
+              "mx-auto max-w-[1536px] space-y-2 border-t border-gray-200 bg-gray-50 px-4 py-4 sm:px-4 sm:py-5 lg:px-4 xl:px-5",
               showFullWidthBikeSpecs || featuredBrandAbout ? "mt-0" : "mt-8 sm:mt-12"
             )}
           >
@@ -272,7 +317,6 @@ export function ProductPageClient({
               icon="sparkles"
               seeAllHref={similarSeeAllHref}
               seeAllLabel="Browse Category"
-              className="py-8 sm:py-10"
             />
 
             {/* More from Seller Carousel */}
@@ -283,8 +327,6 @@ export function ProductPageClient({
               icon="store"
               seeAllHref={sellerSeeAllHref}
               seeAllLabel="View All Listings"
-              seller={sellerInfo}
-              className="py-8 sm:py-10"
             />
 
             {/* More from Brand Carousel */}
@@ -296,7 +338,6 @@ export function ProductPageClient({
                 icon="sparkles"
                 seeAllHref={`/marketplace?brand=${encodeURIComponent(brandName)}`}
                 seeAllLabel={`All ${brandName}`}
-                className="py-8 sm:py-10"
               />
             )}
           </div>
@@ -305,9 +346,7 @@ export function ProductPageClient({
 
       <ProductGeniePanel />
 
-      {!isOwner && !((localProduct as { sold_at?: string | null }).sold_at || (localProduct as { listing_status?: string }).listing_status === "sold") && (
-        <ProductAskGenieFloatingPill product={localProduct} />
-      )}
+      {showAskGenie && <ProductAskGenieFloatingPill product={localProduct} />}
     </>
   );
 }

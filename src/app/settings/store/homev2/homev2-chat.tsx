@@ -15,6 +15,7 @@ import { LightspeedWorkorderCards } from "@/components/genie/lightspeed-workorde
 import { LightspeedCustomerProfileCard } from "@/components/genie/lightspeed-customer-profile-card";
 import { GmailConnectCard } from "@/components/genie/gmail-connect-card";
 import { XeroConnectPill } from "@/components/genie/xero-connect-pill";
+import { SupplierInvoicePill } from "@/components/genie/supplier-invoice-pill";
 import { GenieStoreProductCards } from "@/components/genie/genie-store-product-cards";
 import { GenieWebImageCards } from "@/components/genie/genie-web-image-cards";
 import type { GenieWebImagePreview } from "@/lib/genie/web-image-search";
@@ -146,6 +147,8 @@ const PHASE_LABELS: Record<string, string> = {
   tool: "Working",
   gmail: "Gmail",
   gmail_done: "Gmail",
+  invoice: "Invoice",
+  invoice_done: "Invoice",
   xero: "Xero",
   xero_done: "Xero",
   verifying: "Quality check",
@@ -1162,6 +1165,10 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     });
   }, []);
 
+  const [isDraggingPdf, setIsDraggingPdf] = React.useState(false);
+  const [isUploadingInvoice, setIsUploadingInvoice] = React.useState(false);
+  const dragDepthRef = React.useRef(0);
+
   const submitPrompt = React.useCallback((rawText?: string) => {
     const text = (rawText ?? input).trim();
     if (!text) return;
@@ -1175,6 +1182,63 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     void runSend(text, rawText === undefined);
   }, [input, runSend]);
 
+  // Upload a dropped/picked PDF, then ask the Genie to turn it into a
+  // Lightspeed purchase order — auto-recognised, no typing needed.
+  const uploadInvoicePdf = React.useCallback(async (file: File) => {
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    if (!isPdf || isUploadingInvoice) return;
+    setIsUploadingInvoice(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch("/api/store/supplier-invoices/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const data = (await response.json().catch(() => null)) as
+        | { ok?: boolean; invoice_id?: string; filename?: string; error?: string }
+        | null;
+      if (!response.ok || !data?.ok || !data.invoice_id) {
+        submitPrompt(`I tried to upload a supplier invoice PDF ("${file.name}") but it failed${data?.error ? `: ${data.error}` : ""}. Let me know what to do.`);
+        return;
+      }
+      window.dispatchEvent(new Event("supplier-invoice-uploaded"));
+      submitPrompt(
+        `Process the supplier invoice from the uploaded PDF "${data.filename ?? file.name}" (invoice id: ${data.invoice_id}) — extract all the details and create a Lightspeed purchase order from it.`,
+      );
+    } finally {
+      setIsUploadingInvoice(false);
+    }
+  }, [isUploadingInvoice, submitPrompt]);
+
+  const dragHandlers = {
+    onDragEnter: (event: React.DragEvent) => {
+      if (!event.dataTransfer.types.includes("Files")) return;
+      event.preventDefault();
+      dragDepthRef.current += 1;
+      setIsDraggingPdf(true);
+    },
+    onDragOver: (event: React.DragEvent) => {
+      if (!event.dataTransfer.types.includes("Files")) return;
+      event.preventDefault();
+    },
+    onDragLeave: (event: React.DragEvent) => {
+      if (!event.dataTransfer.types.includes("Files")) return;
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+      if (dragDepthRef.current === 0) setIsDraggingPdf(false);
+    },
+    onDrop: (event: React.DragEvent) => {
+      if (!event.dataTransfer.types.includes("Files")) return;
+      event.preventDefault();
+      dragDepthRef.current = 0;
+      setIsDraggingPdf(false);
+      const file = Array.from(event.dataTransfer.files).find(
+        (candidate) => candidate.type === "application/pdf" || candidate.name.toLowerCase().endsWith(".pdf"),
+      );
+      if (file) void uploadInvoicePdf(file);
+    },
+  };
+
   const gmailConnectAccessory = gmailConnectBanner ? (
     <GmailConnectCard
       payload={gmailConnectBanner}
@@ -1184,7 +1248,25 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
   ) : null;
 
   return (
-    <div className="flex h-[calc(100svh-57px)] flex-col overflow-hidden bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.10),transparent_34%),linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)]">
+    <div
+      {...dragHandlers}
+      className="relative flex h-[calc(100svh-57px)] flex-col overflow-hidden bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.10),transparent_34%),linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)]"
+    >
+      {isDraggingPdf ? (
+        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm">
+          <div className="rounded-3xl border-2 border-dashed border-gray-400 bg-white px-8 py-6 text-center shadow-xl">
+            <p className="text-sm font-semibold text-foreground">Drop the invoice PDF</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Genie will read it and stage a Lightspeed purchase order
+            </p>
+          </div>
+        </div>
+      ) : null}
+      {isUploadingInvoice ? (
+        <div className="absolute left-1/2 top-3 z-50 -translate-x-1/2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-md">
+          Uploading invoice…
+        </div>
+      ) : null}
       {!hasStarted ? (
         <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center gap-7 px-6 py-10">
           <h1 className="max-w-2xl text-center text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
@@ -1200,7 +1282,10 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
                 activeConversationId={activeConversationId}
                 onSelect={loadConversation}
               />
-              <XeroConnectPill />
+              <div className="flex items-center gap-1.5">
+                <SupplierInvoicePill onProcess={(prompt) => submitPrompt(prompt)} />
+                <XeroConnectPill />
+              </div>
             </div>
             <PromptQueueList
               items={queuedPrompts}
@@ -1214,6 +1299,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
               onSubmit={() => submitPrompt()}
               onStop={stopGeneration}
               endAccessory={gmailConnectAccessory}
+              onFileSelected={(file) => void uploadInvoicePdf(file)}
             />
           </div>
         </div>
@@ -1317,7 +1403,10 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
                   showNewChat
                   onNewChat={startNewChat}
                 />
-                <XeroConnectPill />
+                <div className="flex items-center gap-1.5">
+                  <SupplierInvoicePill onProcess={(prompt) => submitPrompt(prompt)} />
+                  <XeroConnectPill />
+                </div>
               </div>
 
               <PromptQueueList
@@ -1334,6 +1423,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
                 onSubmit={() => submitPrompt()}
                 onStop={stopGeneration}
                 endAccessory={gmailConnectAccessory}
+                onFileSelected={(file) => void uploadInvoicePdf(file)}
               />
             </div>
           </div>

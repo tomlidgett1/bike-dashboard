@@ -144,6 +144,55 @@ export interface StoreProfileChromeProps {
   getTabHref?: (tab: StoreTab) => string;
   actionButtons?: React.ReactNode;
   storeHomeHref?: string;
+  /** Immersive mode — offsets the floating search bar below the back control */
+  immersive?: boolean;
+  /** Extra content below the search field in the desktop floating bar (e.g. category pills) */
+  floatingBarExtra?: React.ReactNode;
+}
+
+function StoreDesktopSearchField({
+  storeSearch,
+  onStoreSearchChange,
+  placeholder,
+  className,
+  compact = false,
+}: {
+  storeSearch: string;
+  onStoreSearchChange: (value: string) => void;
+  placeholder: string;
+  className?: string;
+  compact?: boolean;
+}) {
+  return (
+    <div className={cn("relative", className)}>
+      <Search
+        className={cn(
+          "pointer-events-none absolute top-1/2 -translate-y-1/2 text-gray-400",
+          compact ? "left-2.5 h-3.5 w-3.5" : "left-3 h-4 w-4",
+        )}
+      />
+      <input
+        type="text"
+        value={storeSearch}
+        onChange={(e) => onStoreSearchChange(e.target.value)}
+        placeholder={placeholder}
+        className={cn(
+          "w-full rounded-md border border-gray-200 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900/10 transition-colors",
+          compact ? "h-9 pl-8 pr-8" : "h-10 pl-9 pr-9",
+        )}
+      />
+      {storeSearch && (
+        <button
+          type="button"
+          onClick={() => onStoreSearchChange("")}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer text-gray-400 hover:text-gray-700"
+          aria-label="Clear search"
+        >
+          <X className={cn(compact ? "h-3.5 w-3.5" : "h-4 w-4")} />
+        </button>
+      )}
+    </div>
+  );
 }
 
 export function StoreProfileChrome({
@@ -161,10 +210,15 @@ export function StoreProfileChrome({
   getTabHref,
   actionButtons,
   storeHomeHref,
+  immersive = false,
+  floatingBarExtra,
 }: StoreProfileChromeProps) {
   const [scrolled, setScrolled] = React.useState(false);
+  const [showFloatingSearch, setShowFloatingSearch] = React.useState(false);
+  const chromeRef = React.useRef<HTMLDivElement>(null);
   const mobileSearchInputRef = React.useRef<HTMLInputElement>(null);
   const mobileSearchMode = mobileSearchOpen && showHeaderSearch;
+  const searchPlaceholder = `Search ${store.store_name}…`;
   const tabs = React.useMemo(
     () => buildStoreTabs(isStoreHomeEnabled(store)),
     [store.homepage_config?.enabled],
@@ -189,6 +243,32 @@ export function StoreProfileChrome({
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Desktop: once the full chrome (header + tabs) has scrolled away, show a fixed search bar
+  React.useEffect(() => {
+    const updateFloatingSearch = () => {
+      const isDesktop = window.matchMedia("(min-width: 768px)").matches;
+      if (!isDesktop || !showHeaderSearch || mobileSearchMode) {
+        setShowFloatingSearch(false);
+        return;
+      }
+      const el = chromeRef.current;
+      if (!el) {
+        setShowFloatingSearch(false);
+        return;
+      }
+      const pastChrome = window.scrollY > el.offsetTop + el.offsetHeight;
+      setShowFloatingSearch(pastChrome);
+    };
+
+    updateFloatingSearch();
+    window.addEventListener("scroll", updateFloatingSearch, { passive: true });
+    window.addEventListener("resize", updateFloatingSearch);
+    return () => {
+      window.removeEventListener("scroll", updateFloatingSearch);
+      window.removeEventListener("resize", updateFloatingSearch);
+    };
+  }, [showHeaderSearch, mobileSearchMode]);
+
   React.useEffect(() => {
     if (mobileSearchMode) {
       mobileSearchInputRef.current?.focus();
@@ -205,9 +285,16 @@ export function StoreProfileChrome({
 
   return (
     <>
+      <div
+        ref={chromeRef}
+        className={cn(
+          "sticky top-0 z-40 transition-transform duration-200 ease-out",
+          showFloatingSearch && "md:-translate-y-full md:pointer-events-none",
+        )}
+      >
       <header
         className={cn(
-          "sticky top-0 z-40 bg-white/95 backdrop-blur-md transition-all duration-200",
+          "bg-white/95 backdrop-blur-md transition-all duration-200",
           scrolled ? "border-b-2 border-[#ffde59]" : "border-b border-gray-200",
         )}
       >
@@ -382,25 +469,13 @@ export function StoreProfileChrome({
 
             <div className="flex flex-shrink-0 items-center gap-2">
               {showHeaderSearch && (
-                <div className="relative hidden md:block">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-                  <input
-                    type="text"
-                    value={storeSearch}
-                    onChange={(e) => onStoreSearchChange(e.target.value)}
-                    placeholder="Search products…"
-                    className="h-9 w-44 rounded-md border border-gray-200 bg-white pl-8 pr-8 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900/10 transition-colors lg:w-56"
-                  />
-                  {storeSearch && (
-                    <button
-                      type="button"
-                      onClick={() => onStoreSearchChange("")}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer text-gray-400 hover:text-gray-700"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                </div>
+                <StoreDesktopSearchField
+                  storeSearch={storeSearch}
+                  onStoreSearchChange={onStoreSearchChange}
+                  placeholder="Search products…"
+                  className="hidden md:block w-44 lg:w-56"
+                  compact
+                />
               )}
               {showHeaderSearch && (
                 <button
@@ -517,6 +592,37 @@ export function StoreProfileChrome({
           )}
         </div>
       </div>
+      </div>
+
+      {showFloatingSearch && showHeaderSearch && (
+        <div
+          className={cn(
+            "hidden md:block fixed left-0 right-0 z-50 border-b border-gray-200 bg-white/95 backdrop-blur-md shadow-sm",
+            "animate-in fade-in slide-in-from-top-4 duration-200",
+            immersive ? "top-14" : "top-0",
+          )}
+        >
+          <div
+            className={cn(
+              contentShell,
+              "flex items-center gap-2 py-2.5 sm:gap-3",
+              !floatingBarExtra && "justify-center",
+            )}
+          >
+            <StoreDesktopSearchField
+              storeSearch={storeSearch}
+              onStoreSearchChange={onStoreSearchChange}
+              placeholder={searchPlaceholder}
+              className={cn(
+                "flex-shrink-0",
+                floatingBarExtra ? "w-44 lg:w-56" : "w-full max-w-xl",
+              )}
+              compact
+            />
+            {floatingBarExtra ? <div className="min-w-0 flex-1">{floatingBarExtra}</div> : null}
+          </div>
+        </div>
+      )}
 
       <StoreHoursDialog
         open={hoursOpen}

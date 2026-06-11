@@ -35,7 +35,9 @@ const THINKING_MESSAGES = [
 ];
 
 const EASE = [0.04, 0.62, 0.23, 0.98] as const;
-const SHEET_CLOSE_MS = 360;
+const PANEL_CLOSE_MS = 420;
+const DESKTOP_PANEL_WIDTH_PX = 400;
+const DESKTOP_PANEL_SPRING = { type: "spring" as const, damping: 19, stiffness: 280, mass: 0.82 };
 const SHEET_HEIGHT = "min(85dvh, calc(100dvh - env(safe-area-inset-bottom)))";
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -180,6 +182,98 @@ function ExploreResults({ result }: { result: BikeSpecExploreResult }) {
   );
 }
 
+function BikeSpecExplorePanelBody({
+  spec,
+  isLoading,
+  messageIndex,
+  error,
+  result,
+  showFooter,
+  onClose,
+  onRetry,
+}: {
+  spec: BikeSpecSelection | null;
+  isLoading: boolean;
+  messageIndex: number;
+  error: string | null;
+  result: BikeSpecExploreResult | null;
+  showFooter: boolean;
+  onClose: () => void;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      className={cn(
+        "grid h-full min-h-0 overflow-hidden",
+        showFooter ? "grid-rows-[auto_minmax(0,1fr)_auto]" : "grid-rows-[auto_minmax(0,1fr)]",
+      )}
+    >
+      <header className="min-h-0 overflow-hidden px-4 pt-3 sm:pt-4">
+        <div className="mb-3 mx-auto h-1 w-10 rounded-full bg-gray-200 sm:hidden" aria-hidden />
+        <div className="flex w-full items-start justify-between gap-3 pb-4 sm:pb-3">
+          <div className="min-w-0 flex-1">
+            {spec ? (
+              <>
+                <SectionLabel>
+                  {spec.sectionTitle}
+                  {spec.label ? ` · ${spec.label}` : ""}
+                </SectionLabel>
+                <h2
+                  id="bike-spec-explore-title"
+                  className="mt-2 text-lg font-semibold leading-snug tracking-tight text-gray-900"
+                >
+                  {spec.value}
+                </h2>
+              </>
+            ) : (
+              <h2 id="bike-spec-explore-title" className="text-lg font-semibold text-gray-900">
+                Explore specification
+              </h2>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      </header>
+
+      <div className="min-h-0 overflow-y-auto overscroll-contain touch-pan-y px-4 py-2 [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
+        {isLoading ? <ExploreThinkingState messageIndex={messageIndex} /> : null}
+
+        {!isLoading && error ? (
+          <div className="rounded-md border border-gray-200 bg-white p-5 text-center">
+            <p className="text-sm font-medium text-gray-900">Could not load this part</p>
+            <p className="mx-auto mt-1.5 max-w-xs text-sm leading-relaxed text-gray-500">{error}</p>
+            <button
+              type="button"
+              onClick={onRetry}
+              className="mt-5 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+            >
+              Try again
+            </button>
+          </div>
+        ) : null}
+
+        {!isLoading && result ? <ExploreResults result={result} /> : null}
+      </div>
+
+      {showFooter ? (
+        <footer
+          className="min-h-0 overflow-hidden border-t border-gray-100 px-4 py-3"
+          style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+        >
+          <p className="text-xs text-gray-400">Sourced from official manufacturer websites.</p>
+        </footer>
+      ) : null}
+    </div>
+  );
+}
+
 export function BikeSpecExplorePanel({
   isOpen,
   onClose,
@@ -215,7 +309,7 @@ export function BikeSpecExplorePanel({
     const timer = window.setTimeout(() => {
       setShouldRender(false);
       setIsLeaving(false);
-    }, SHEET_CLOSE_MS);
+    }, PANEL_CLOSE_MS);
 
     return () => window.clearTimeout(timer);
   }, [isOpen, shouldRender]);
@@ -296,7 +390,7 @@ export function BikeSpecExplorePanel({
       setIsLoading(false);
       setMessageIndex(0);
       setRetryToken(0);
-    }, SHEET_CLOSE_MS);
+    }, PANEL_CLOSE_MS);
   }, [onClose]);
 
   React.useEffect(() => {
@@ -317,97 +411,78 @@ export function BikeSpecExplorePanel({
   const panelState = isLeaving ? "closed" : "open";
   const showFooter = !isLoading && !!result;
 
+  const bodyProps = {
+    spec,
+    isLoading,
+    messageIndex,
+    error,
+    result,
+    showFooter,
+    onClose: handleClose,
+    onRetry: handleRetry,
+  };
+
   const panel = (
-    <div
-      data-state={panelState}
-      className="store-message-overlay fixed inset-0 z-[100] flex items-end justify-center bg-black/30 px-0"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) handleClose();
-      }}
-    >
+    <>
+      {/* Mobile: bottom sheet */}
       <div
         data-state={panelState}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="bike-spec-explore-title"
-        className={cn(
-          "store-message-sheet grid w-full overflow-hidden rounded-t-2xl border border-gray-200/80 bg-white shadow-xl",
-          showFooter
-            ? "grid-rows-[auto_minmax(0,1fr)_auto]"
-            : "grid-rows-[auto_minmax(0,1fr)]",
-        )}
-        style={{
-          height: SHEET_HEIGHT,
-          maxHeight: SHEET_HEIGHT,
+        className="store-message-overlay fixed inset-0 z-[100] flex items-end justify-center bg-black/30 px-0 sm:hidden"
+        role="presentation"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) handleClose();
         }}
       >
-        <header className="min-h-0 overflow-hidden px-4 pt-3">
-          <div className="mb-3 mx-auto h-1 w-10 rounded-full bg-gray-200" aria-hidden />
-          <div className="flex w-full items-start justify-between gap-3 pb-4">
-            <div className="min-w-0 flex-1">
-              {spec ? (
-                <>
-                  <SectionLabel>
-                    {spec.sectionTitle}
-                    {spec.label ? ` · ${spec.label}` : ""}
-                  </SectionLabel>
-                  <h2
-                    id="bike-spec-explore-title"
-                    className="mt-2 text-lg font-semibold leading-snug tracking-tight text-gray-900"
-                  >
-                    {spec.value}
-                  </h2>
-                </>
-              ) : (
-                <h2 id="bike-spec-explore-title" className="text-lg font-semibold text-gray-900">
-                  Explore specification
-                </h2>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={handleClose}
-              className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-              aria-label="Close"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </header>
-
-        <div className="min-h-0 overflow-y-auto overscroll-contain touch-pan-y px-4 py-2 [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
-          {isLoading ? <ExploreThinkingState messageIndex={messageIndex} /> : null}
-
-          {!isLoading && error ? (
-            <div className="rounded-md border border-gray-200 bg-white p-5 text-center">
-              <p className="text-sm font-medium text-gray-900">Could not load this part</p>
-              <p className="mx-auto mt-1.5 max-w-xs text-sm leading-relaxed text-gray-500">
-                {error}
-              </p>
-              <button
-                type="button"
-                onClick={handleRetry}
-                className="mt-5 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
-              >
-                Try again
-              </button>
-            </div>
-          ) : null}
-
-          {!isLoading && result ? <ExploreResults result={result} /> : null}
+        <div
+          data-state={panelState}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="bike-spec-explore-title"
+          className="store-message-sheet flex w-full flex-col overflow-hidden rounded-t-2xl border border-gray-200/80 bg-white shadow-xl"
+          style={{
+            height: SHEET_HEIGHT,
+            maxHeight: SHEET_HEIGHT,
+          }}
+        >
+          <BikeSpecExplorePanelBody {...bodyProps} />
         </div>
-
-        {showFooter ? (
-          <footer
-            className="min-h-0 overflow-hidden border-t border-gray-100 px-4 py-3"
-            style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
-          >
-            <p className="text-xs text-gray-400">Sourced from official manufacturer websites.</p>
-          </footer>
-        ) : null}
       </div>
-    </div>
+
+      {/* Desktop: bottom-right popup */}
+      <div className="hidden sm:block">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: isLeaving ? 0 : 1 }}
+          transition={{ duration: 0.2, ease: "easeOut" }}
+          className="fixed inset-0 z-40 bg-black/20"
+          style={{ pointerEvents: isLeaving ? "none" : "auto" }}
+          onClick={handleClose}
+        />
+        <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="bike-spec-explore-title"
+          initial={{ opacity: 0, y: 36, scale: 0.88 }}
+          animate={
+            isLeaving ? { opacity: 0, y: 24, scale: 0.92 } : { opacity: 1, y: 0, scale: 1 }
+          }
+          transition={DESKTOP_PANEL_SPRING}
+          className={cn(
+            "fixed bottom-6 right-6 z-50 flex shrink-0 flex-col overflow-hidden",
+            "rounded-2xl border border-gray-200 bg-white shadow-2xl ring-1 ring-black/5",
+            "mb-[env(safe-area-inset-bottom)]",
+          )}
+          style={{
+            width: DESKTOP_PANEL_WIDTH_PX,
+            height: "min(85vh, 680px)",
+            transformOrigin: "bottom right",
+            pointerEvents: isLeaving ? "none" : "auto",
+          }}
+        >
+          <BikeSpecExplorePanelBody {...bodyProps} />
+        </motion.div>
+      </div>
+    </>
   );
 
   return createPortal(panel, document.body);

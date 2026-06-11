@@ -382,7 +382,10 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             isList
               ? "w-28 sm:w-32 flex-shrink-0 aspect-square mb-0"
               : "w-full mb-0.5",
-            !isList && (featuredMobile ? "aspect-square sm:aspect-[4/3]" : "aspect-square")
+            !isList &&
+              (featuredMobile && !inCarousel
+                ? "aspect-square sm:aspect-[4/3]"
+                : "aspect-square")
           )}
         >
           {shouldMountImage && (useCloudinaryLoader || useDirectImage) ? (
@@ -497,7 +500,11 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
 	          className={cn(
 	            isList && "flex flex-1 flex-col justify-center min-w-0 py-0",
 	            !isList && (featuredMobile ? "px-0.5 mb-1 sm:pt-1 sm:mb-2 md:mb-3" : "px-0.5 mb-1 sm:mb-2"),
-	            !isList && hideStoreMeta && (featuredMobile ? "h-9 sm:h-11 overflow-hidden mb-0.5" : "h-9 overflow-hidden mb-0.5")
+	            !isList &&
+	              hideStoreMeta &&
+	              (featuredMobile && !inCarousel
+	                ? "h-9 sm:h-11 overflow-hidden mb-0.5"
+	                : "h-9 overflow-hidden mb-0.5")
 	          )}
 	        >
           {/* Product Title - Enhanced typography */}

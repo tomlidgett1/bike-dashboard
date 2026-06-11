@@ -3,15 +3,22 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
-import { Loader2, Send, X } from "lucide-react";
+import { motion } from "framer-motion";
+import { Loader2, Maximize2, Minimize2, Send, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useGenie } from "@/components/providers/genie-provider";
+import { GenieMarketplaceProductCards } from "@/components/genie/genie-marketplace-product-cards";
+import { GenieYoutubeVideos } from "@/components/genie/genie-youtube-videos";
+import type { GenieMarketplaceProduct } from "@/lib/genie/marketplace-search";
+import type { GenieYoutubeVideoPreview } from "@/lib/genie/youtube-video-search";
 import { renderGenieMarkdown } from "@/lib/genie/render-markdown";
 import {
   genieProgressShimmerClassName,
   genieProgressShimmerStyle,
 } from "@/lib/genie/shimmer";
+import { pickRandomProductGenieTitle } from "@/lib/genie/product-genie-titles";
+import { FALLBACK_PRODUCT_GENIE_SUGGESTIONS } from "@/lib/genie/product-suggestions";
 import { cn } from "@/lib/utils";
 
 interface Citation {
@@ -26,12 +33,23 @@ interface ChatMessage {
   isStreaming?: boolean;
   statusText?: string;
   sources?: Citation[];
+  products?: GenieMarketplaceProduct[];
+  videos?: GenieYoutubeVideoPreview[];
   error?: string;
 }
 
-const SUGGESTIONS = ["Is this good value?", "What should I check?"];
+const SUGGESTION_SKELETON_WIDTHS = ["w-[7.5rem]", "w-[9rem]", "w-[8rem]"] as const;
 
-const PANEL_CLOSE_MS = 360;
+const ASSISTANT_MARKDOWN_CLASS =
+  "max-w-none text-left text-sm leading-relaxed text-gray-700 [&_a]:text-gray-700 [&_a]:underline [&_strong]:font-medium [&_strong]:text-gray-900 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-4 [&_ul]:text-left [&_table]:w-full [&_th]:whitespace-nowrap [&_td]:whitespace-normal [&_td]:break-words";
+
+const PANEL_CLOSE_MS = 420;
+const DESKTOP_PANEL_WIDTH_PX = 400;
+const DESKTOP_PANEL_EXPANDED_WIDTH = "clamp(400px, 40vw, calc(100vw - 3rem))";
+const DESKTOP_PANEL_HEIGHT = "min(85vh, 680px)";
+const DESKTOP_PANEL_EXPANDED_HEIGHT = "min(92vh, 920px)";
+const DESKTOP_EXPAND_STORAGE_KEY = "yj-product-genie-expanded";
+const DESKTOP_PANEL_SPRING = { type: "spring" as const, damping: 19, stiffness: 280, mass: 0.82 };
 const SHEET_HEIGHT = "min(85dvh, calc(100dvh - env(safe-area-inset-bottom)))";
 const MOBILE_KEYBOARD_THRESHOLD_PX = 80;
 
@@ -137,18 +155,47 @@ function SourcePill({ citation }: { citation: Citation }) {
   );
 }
 
-function AssistantMessage({ message }: { message: ChatMessage }) {
+function readDesktopExpandedPreference(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.sessionStorage.getItem(DESKTOP_EXPAND_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeDesktopExpandedPreference(expanded: boolean) {
+  try {
+    window.sessionStorage.setItem(DESKTOP_EXPAND_STORAGE_KEY, expanded ? "1" : "0");
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function AssistantMessage({
+  message,
+  isExpanded,
+}: {
+  message: ChatMessage;
+  isExpanded?: boolean;
+}) {
   const html = React.useMemo(
-    () => renderGenieMarkdown(message.content, { compact: true, linkMode: "text" }),
-    [message.content],
+    () => renderGenieMarkdown(message.content, { compact: !isExpanded, linkMode: "text" }),
+    [message.content, isExpanded],
+  );
+
+  const markdownClass = cn(
+    ASSISTANT_MARKDOWN_CLASS,
+    isExpanded && "text-base leading-relaxed [&_ul]:text-base",
   );
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 text-left">
       {message.isStreaming && message.statusText && (
         <p
           className={cn(
-            "text-xs leading-relaxed text-gray-500",
+            "text-left leading-relaxed text-gray-500",
+            isExpanded ? "text-sm" : "text-xs",
             genieProgressShimmerClassName,
           )}
           style={genieProgressShimmerStyle}
@@ -156,18 +203,16 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
           {message.statusText}
         </p>
       )}
-      {message.content && (
-        <div
-          className={cn(
-            "max-w-none text-sm leading-relaxed text-gray-700 [&_a]:text-gray-700 [&_a]:underline [&_strong]:font-medium [&_strong]:text-gray-900 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-4",
-            message.isStreaming ? "opacity-90" : "",
-          )}
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      )}
+      {message.content ? (
+        <div className={markdownClass} dangerouslySetInnerHTML={{ __html: html }} />
+      ) : null}
       {message.isStreaming && !message.content && !message.statusText && (
         <p
-          className={cn("text-xs leading-relaxed text-gray-500", genieProgressShimmerClassName)}
+          className={cn(
+            "leading-relaxed text-gray-500",
+            isExpanded ? "text-sm" : "text-xs",
+            genieProgressShimmerClassName,
+          )}
           style={genieProgressShimmerStyle}
         >
           Thinking…
@@ -177,6 +222,20 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
           {message.error}
         </p>
+      )}
+      {message.products && message.products.length > 0 && (
+        <GenieMarketplaceProductCards
+          products={message.products}
+          label="Similar on Yellow Jersey"
+          className="pt-1"
+        />
+      )}
+      {message.videos && message.videos.length > 0 && (
+        <GenieYoutubeVideos
+          videos={message.videos}
+          title={message.videos.length > 1 ? "Helpful videos" : "Helpful video"}
+          className="pt-1"
+        />
       )}
       {message.sources && message.sources.length > 0 && (
         <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1">
@@ -191,6 +250,9 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
 
 function ProductGeniePanelBody({
   productContext,
+  headerTitle,
+  suggestions,
+  suggestionsLoading,
   close,
   messages,
   isEmpty,
@@ -203,8 +265,14 @@ function ProductGeniePanelBody({
   handleSubmit,
   handleKeyDown,
   onInputFocus,
+  isExpanded,
+  onToggleExpand,
+  showExpandControl,
 }: {
   productContext: NonNullable<ReturnType<typeof useGenie>["productContext"]>;
+  headerTitle: string;
+  suggestions: string[];
+  suggestionsLoading: boolean;
   close: () => void;
   messages: ChatMessage[];
   isEmpty: boolean;
@@ -217,56 +285,99 @@ function ProductGeniePanelBody({
   handleSubmit: (event: React.FormEvent) => void;
   handleKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onInputFocus?: () => void;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
+  showExpandControl?: boolean;
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden text-left">
       <header className="shrink-0 px-4 pt-3 sm:pt-4">
         <div className="mb-3 mx-auto h-1 w-10 rounded-full bg-gray-200 sm:hidden" aria-hidden />
         <div className="flex w-full items-start justify-between gap-3 pb-3">
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-gray-900">Ask anything</p>
+            <p
+              className={cn(
+                "font-semibold text-gray-900 tracking-tight",
+                isExpanded ? "text-2xl" : "text-lg sm:text-xl",
+              )}
+            >
+              {headerTitle}
+            </p>
             <div className="mt-2 flex items-center gap-2.5">
-              <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-gray-100">
+              <div
+                className={cn(
+                  "relative shrink-0 overflow-hidden rounded-md bg-gray-100",
+                  isExpanded ? "h-12 w-12" : "h-10 w-10",
+                )}
+              >
                 {productContext.image ? (
                   <Image
                     src={productContext.image}
                     alt=""
                     fill
                     className="object-cover"
-                    sizes="40px"
+                    sizes={isExpanded ? "48px" : "40px"}
                   />
                 ) : null}
               </div>
               <div className="min-w-0">
-                <p className="truncate text-xs text-gray-600">{productContext.name}</p>
-                <p className="text-xs font-medium text-gray-900">{formatPrice(productContext.price)}</p>
+                <p className={cn("truncate text-gray-600", isExpanded ? "text-sm" : "text-xs")}>
+                  {productContext.name}
+                </p>
+                <p className={cn("font-medium text-gray-900", isExpanded ? "text-sm" : "text-xs")}>
+                  {formatPrice(productContext.price)}
+                </p>
               </div>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={close}
-            className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex shrink-0 items-center gap-0.5">
+            {showExpandControl ? (
+              <button
+                type="button"
+                onClick={onToggleExpand}
+                className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                aria-label={isExpanded ? "Use compact panel size" : "Expand panel for easier reading"}
+                title={isExpanded ? "Compact size" : "Expand for easier reading"}
+              >
+                {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={close}
+              className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </header>
 
       {isEmpty ? (
         <div className="shrink-0 border-b border-gray-100 px-4 pb-3">
-          <div className="flex flex-wrap gap-2">
-            {SUGGESTIONS.map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                onClick={() => sendMessage(suggestion)}
-                className="rounded-md bg-gray-100 px-3 py-1.5 text-xs text-gray-600 transition-colors hover:bg-gray-200/80 hover:text-gray-800"
-              >
-                {suggestion}
-              </button>
-            ))}
+          <div className="flex flex-col items-stretch gap-2">
+            {suggestionsLoading
+              ? SUGGESTION_SKELETON_WIDTHS.map((width, index) => (
+                  <div
+                    key={index}
+                    className={cn("h-7 animate-pulse rounded-md bg-gray-100", width)}
+                    aria-hidden
+                  />
+                ))
+              : suggestions.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    type="button"
+                    onClick={() => sendMessage(suggestion)}
+                    className={cn(
+                      "rounded-md bg-gray-100 px-3 py-1.5 text-left leading-snug text-gray-600 transition-colors hover:bg-gray-200/80 hover:text-gray-800",
+                      isExpanded ? "text-sm" : "text-xs",
+                    )}
+                  >
+                    {suggestion}
+                  </button>
+                ))}
           </div>
         </div>
       ) : null}
@@ -282,13 +393,18 @@ function ProductGeniePanelBody({
           ? messages.map((message) =>
               message.role === "user" ? (
                 <div key={message.id} className="flex justify-end">
-                  <div className="max-w-[88%] rounded-md bg-gray-100 px-3 py-2 text-sm leading-snug text-gray-900 sm:max-w-[80%]">
+                  <div
+                    className={cn(
+                      "max-w-[88%] rounded-md bg-gray-100 px-3 py-2 text-left leading-snug text-gray-900 sm:max-w-[80%]",
+                      isExpanded ? "text-base" : "text-sm",
+                    )}
+                  >
                     {message.content}
                   </div>
                 </div>
               ) : (
                 <div key={message.id}>
-                  <AssistantMessage message={message} />
+                  <AssistantMessage message={message} isExpanded={isExpanded} />
                 </div>
               ),
             )
@@ -300,7 +416,7 @@ function ProductGeniePanelBody({
         style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
       >
         <form onSubmit={handleSubmit}>
-          <div className="relative rounded-md border border-gray-200 bg-white">
+          <div className="relative rounded-xl border border-gray-200 bg-white">
             <Textarea
               ref={inputRef}
               value={input}
@@ -310,7 +426,10 @@ function ProductGeniePanelBody({
               placeholder="Ask anything about this…"
               rows={1}
               disabled={isLoading}
-              className="min-h-[44px] max-h-[120px] resize-none border-0 bg-transparent px-3 py-2.5 pr-11 text-sm leading-relaxed text-foreground shadow-none focus-visible:ring-0"
+              className={cn(
+                "max-h-[120px] resize-none rounded-xl border-0 bg-transparent px-3 py-2.5 pr-11 text-left leading-relaxed text-foreground shadow-none focus-visible:ring-0",
+                isExpanded ? "min-h-[52px] text-base" : "min-h-[44px] text-sm",
+              )}
             />
             <Button
               type="submit"
@@ -340,14 +459,76 @@ export function ProductGeniePanel() {
   const [shouldRender, setShouldRender] = React.useState(isOpen && !!productContext);
   const [isLeaving, setIsLeaving] = React.useState(false);
   const [isMounted, setIsMounted] = React.useState(false);
+  const [headerTitle, setHeaderTitle] = React.useState(pickRandomProductGenieTitle);
+  const [suggestions, setSuggestions] = React.useState<string[]>([
+    ...FALLBACK_PRODUCT_GENIE_SUGGESTIONS,
+  ]);
+  const [suggestionsLoading, setSuggestionsLoading] = React.useState(false);
+  const [isDesktopExpanded, setIsDesktopExpanded] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsDesktopExpanded(readDesktopExpandedPreference());
+  }, []);
 
   React.useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  const toggleDesktopExpand = React.useCallback(() => {
+    setIsDesktopExpanded((current) => {
+      const next = !current;
+      writeDesktopExpandedPreference(next);
+      return next;
+    });
+  }, []);
+
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
   const abortRef = React.useRef<AbortController | null>(null);
   const panelActive = isOpen && !!productContext;
+
+  React.useEffect(() => {
+    if (panelActive) {
+      setHeaderTitle(pickRandomProductGenieTitle());
+    }
+  }, [panelActive, productContext?.id]);
+
+  React.useEffect(() => {
+    if (!panelActive || !productContext?.id) return;
+
+    let cancelled = false;
+    const controller = new AbortController();
+
+    setSuggestions([...FALLBACK_PRODUCT_GENIE_SUGGESTIONS]);
+    setSuggestionsLoading(true);
+
+    fetch("/api/genie/product-suggestions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ product: productContext }),
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as { suggestions?: string[] };
+        if (cancelled) return;
+        if (Array.isArray(data.suggestions) && data.suggestions.length >= 3) {
+          setSuggestions(data.suggestions.slice(0, 3));
+        }
+      })
+      .catch((error) => {
+        if (cancelled || (error as Error).name === "AbortError") return;
+        setSuggestions([...FALLBACK_PRODUCT_GENIE_SUGGESTIONS]);
+      })
+      .finally(() => {
+        if (!cancelled) setSuggestionsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [panelActive, productContext]);
 
   React.useEffect(() => {
     if (panelActive) {
@@ -436,7 +617,7 @@ export function ProductGeniePanel() {
           role: "assistant",
           content: "",
           isStreaming: true,
-          statusText: "Searching official sources…",
+          statusText: "Thinking…",
         },
       ]);
       setInput("");
@@ -445,7 +626,22 @@ export function ProductGeniePanel() {
       const controller = new AbortController();
       abortRef.current = controller;
 
-      let pending = "";
+      const streamState = { pending: "", rafId: null as number | null };
+
+      const flush = () => {
+        if (!streamState.pending) {
+          streamState.rafId = null;
+          return;
+        }
+        const chunk = streamState.pending;
+        streamState.pending = "";
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId ? { ...m, content: m.content + chunk, statusText: undefined } : m,
+          ),
+        );
+        streamState.rafId = null;
+      };
 
       try {
         const history = [...messages, userMsg].map((m) => ({
@@ -465,17 +661,6 @@ export function ProductGeniePanel() {
         const reader = res.body!.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
-
-        const flush = () => {
-          if (!pending) return;
-          const chunk = pending;
-          pending = "";
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantId ? { ...m, content: m.content + chunk, statusText: undefined } : m,
-            ),
-          );
-        };
 
         while (true) {
           const { done, value } = await reader.read();
@@ -499,8 +684,28 @@ export function ProductGeniePanel() {
                 );
               }
               if (parsed.event === "text_delta" && typeof parsed.text === "string") {
-                pending += parsed.text;
-                flush();
+                streamState.pending += parsed.text;
+                if (streamState.rafId === null) {
+                  streamState.rafId = requestAnimationFrame(flush);
+                }
+              }
+              if (parsed.event === "products" && Array.isArray(parsed.products)) {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? { ...m, products: parsed.products as GenieMarketplaceProduct[] }
+                      : m,
+                  ),
+                );
+              }
+              if (parsed.event === "videos" && Array.isArray(parsed.videos)) {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? { ...m, videos: parsed.videos as GenieYoutubeVideoPreview[] }
+                      : m,
+                  ),
+                );
               }
               if (parsed.event === "sources" && Array.isArray(parsed.sources)) {
                 setMessages((prev) =>
@@ -519,6 +724,9 @@ export function ProductGeniePanel() {
           }
         }
 
+        if (streamState.rafId !== null) {
+          cancelAnimationFrame(streamState.rafId);
+        }
         flush();
         setMessages((prev) =>
           prev.map((m) =>
@@ -526,6 +734,9 @@ export function ProductGeniePanel() {
           ),
         );
       } catch (err) {
+        if (streamState.rafId !== null) {
+          cancelAnimationFrame(streamState.rafId);
+        }
         if ((err as Error).name === "AbortError") return;
         setMessages((prev) =>
           prev.map((m) =>
@@ -572,6 +783,9 @@ export function ProductGeniePanel() {
 
   const bodyProps = {
     productContext,
+    headerTitle,
+    suggestions,
+    suggestionsLoading,
     close,
     messages,
     isEmpty,
@@ -584,6 +798,13 @@ export function ProductGeniePanel() {
     handleSubmit,
     handleKeyDown,
     onInputFocus: handleMobileInputFocus,
+  };
+
+  const desktopBodyProps = {
+    ...bodyProps,
+    isExpanded: isDesktopExpanded,
+    onToggleExpand: toggleDesktopExpand,
+    showExpandControl: true,
   };
 
   const panel = (
@@ -616,34 +837,50 @@ export function ProductGeniePanel() {
         </div>
       </div>
 
-      {/* Desktop: side panel */}
-      <div className="hidden sm:contents">
-        <div
+      {/* Desktop: bottom-right popup */}
+      <div className="hidden sm:block">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: isLeaving ? 0 : 1 }}
+          transition={{ duration: 0.2, ease: "easeOut" }}
           className="fixed inset-0 z-40 bg-black/20"
-          style={{
-            opacity: isLeaving ? 0 : 1,
-            pointerEvents: isLeaving ? "none" : "auto",
-            transition: "opacity 0.2s ease",
-          }}
+          style={{ pointerEvents: isLeaving ? "none" : "auto" }}
           onClick={close}
         />
-        <div
+        <motion.div
           role="dialog"
           aria-modal="true"
           aria-label="Ask about this product"
+          initial={{ opacity: 0, y: 36, scale: 0.88 }}
+          animate={
+            isLeaving
+              ? { opacity: 0, y: 24, scale: 0.92 }
+              : {
+                  opacity: 1,
+                  y: 0,
+                  scale: 1,
+                  width: isDesktopExpanded ? DESKTOP_PANEL_EXPANDED_WIDTH : DESKTOP_PANEL_WIDTH_PX,
+                  height: isDesktopExpanded ? DESKTOP_PANEL_EXPANDED_HEIGHT : DESKTOP_PANEL_HEIGHT,
+                }
+          }
+          transition={{
+            ...DESKTOP_PANEL_SPRING,
+            width: { type: "spring", damping: 22, stiffness: 260, mass: 0.82 },
+            height: { type: "spring", damping: 22, stiffness: 260, mass: 0.82 },
+          }}
           className={cn(
-            "fixed right-3 top-[1.5%] z-50 flex w-[min(420px,calc(100vw-24px))] max-w-[calc(100vw-24px)] flex-col overflow-hidden",
-            "rounded-md border border-gray-200 bg-white shadow-lg",
+            "fixed bottom-6 right-6 z-50 flex shrink-0 flex-col overflow-hidden",
+            "rounded-2xl border border-gray-200 bg-white shadow-2xl ring-1 ring-black/5",
+            "mb-[env(safe-area-inset-bottom)]",
+            "max-w-[calc(100vw-3rem)]",
           )}
           style={{
-            height: "min(92vh, 720px)",
-            transform: isLeaving ? "translateX(calc(100% + 24px))" : "translateX(0)",
-            transition: "transform 0.38s cubic-bezier(0.32, 0.72, 0, 1)",
+            transformOrigin: "bottom right",
             pointerEvents: isLeaving ? "none" : "auto",
           }}
         >
-          <ProductGeniePanelBody {...bodyProps} />
-        </div>
+          <ProductGeniePanelBody {...desktopBodyProps} />
+        </motion.div>
       </div>
     </>
   );

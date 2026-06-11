@@ -22,6 +22,8 @@ interface EnhancedImageGalleryProps {
   onIndexChange: (index: number) => void;
   /** Desktop only: place panel beside the main hero image (matched height). */
   sidePanel?: React.ReactNode;
+  /** Top-right overlay on the primary hero image (e.g. Ask Genie badge). */
+  heroOverlay?: React.ReactNode;
 }
 
 export function EnhancedImageGallery({
@@ -30,10 +32,10 @@ export function EnhancedImageGallery({
   currentIndex,
   onIndexChange,
   sidePanel,
+  heroOverlay,
 }: EnhancedImageGalleryProps) {
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [fullscreenIndex, setFullscreenIndex] = React.useState(0);
-  const [mobileImageIndex, setMobileImageIndex] = React.useState(0);
   const [heroHeight, setHeroHeight] = React.useState<number | undefined>();
   const touchStartXRef = React.useRef<number | null>(null);
   const heroRef = React.useRef<HTMLDivElement>(null);
@@ -61,12 +63,24 @@ export function EnhancedImageGallery({
   const isOptimizableHost = (src: string) =>
     src.includes("res.cloudinary.com") || src.includes("supabase.co");
 
+  const goToPrevImage = React.useCallback(() => {
+    onIndexChange(currentIndex === 0 ? images.length - 1 : currentIndex - 1);
+  }, [currentIndex, images.length, onIndexChange]);
+
+  const goToNextImage = React.useCallback(() => {
+    onIndexChange(currentIndex === images.length - 1 ? 0 : currentIndex + 1);
+  }, [currentIndex, images.length, onIndexChange]);
+
   const handlePrev = () => {
-    setFullscreenIndex(fullscreenIndex === 0 ? images.length - 1 : fullscreenIndex - 1);
+    const next = fullscreenIndex === 0 ? images.length - 1 : fullscreenIndex - 1;
+    setFullscreenIndex(next);
+    onIndexChange(next);
   };
 
   const handleNext = () => {
-    setFullscreenIndex(fullscreenIndex === images.length - 1 ? 0 : fullscreenIndex + 1);
+    const next = fullscreenIndex === images.length - 1 ? 0 : fullscreenIndex + 1;
+    setFullscreenIndex(next);
+    onIndexChange(next);
   };
 
   const openFullscreen = (index: number) => {
@@ -89,7 +103,7 @@ export function EnhancedImageGallery({
 
   if (images.length === 0) {
     return (
-      <div className="flex items-center justify-center bg-gray-100 sm:rounded-xl h-[400px]">
+      <div className="flex items-center justify-center bg-gray-100 h-[400px]">
         <p className="text-gray-500">No images available</p>
       </div>
     );
@@ -102,21 +116,17 @@ export function EnhancedImageGallery({
     className,
     showOverlay = false,
     overlayCount = 0,
-    isFirstImage = false
   }: { 
     src: string; 
     index: number; 
     className?: string;
     showOverlay?: boolean;
     overlayCount?: number;
-    isFirstImage?: boolean;
   }) => (
     <div
       onClick={() => openFullscreen(index)}
       className={cn(
         "relative bg-gray-100 overflow-hidden cursor-pointer transition-all duration-200",
-        // No border radius on mobile for first image, rounded on tablet+
-        isFirstImage ? "sm:rounded-xl sm:border sm:border-gray-200" : "rounded-md sm:rounded-xl border border-gray-200",
         className
       )}
     >
@@ -140,59 +150,169 @@ export function EnhancedImageGallery({
     </div>
   );
 
-  const renderMainHero = () => (
-    <div className="aspect-[4/3]">
-      <GridImage src={images[0]} index={0} className="w-full h-full" isFirstImage />
+  const handleCarouselTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    const startX = touchStartXRef.current;
+    touchStartXRef.current = null;
+    if (startX == null) return;
+
+    const endX = event.changedTouches[0]?.clientX;
+    if (typeof endX !== "number") return;
+
+    const swipeThreshold = 50;
+    const offsetX = endX - startX;
+    if (Math.abs(offsetX) > swipeThreshold) {
+      if (offsetX > 0) {
+        goToPrevImage();
+      } else {
+        goToNextImage();
+      }
+    }
+  };
+
+  const renderImageCarousel = ({
+    mobileSquare = false,
+  }: {
+    mobileSquare?: boolean;
+  } = {}) => (
+    <div
+      className={cn(
+        "relative bg-gray-100 overflow-hidden",
+        mobileSquare ? "aspect-square sm:aspect-[4/3]" : "aspect-[4/3]",
+      )}
+    >
+      <div
+        key={currentIndex}
+        className="absolute inset-0 cursor-pointer"
+        onClick={() => openFullscreen(currentIndex)}
+        onTouchStart={(event) => {
+          touchStartXRef.current = event.touches[0]?.clientX ?? null;
+        }}
+        onTouchEnd={handleCarouselTouchEnd}
+      >
+        <Image
+          src={images[currentIndex]}
+          alt={`${productName} - Image ${currentIndex + 1}`}
+          fill
+          unoptimized={!isOptimizableHost(images[currentIndex])}
+          className="object-cover"
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 800px"
+          priority={currentIndex === 0}
+          quality={85}
+        />
+      </div>
+
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          goToPrevImage();
+        }}
+        className="absolute left-2 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-gray-100 bg-white/70 text-gray-400 transition-colors hover:bg-gray-50 hover:text-gray-600 sm:left-3"
+        aria-label="Previous image"
+      >
+        <ChevronLeft className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          goToNextImage();
+        }}
+        className="absolute right-2 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-gray-100 bg-white/70 text-gray-400 transition-colors hover:bg-gray-50 hover:text-gray-600 sm:right-3"
+        aria-label="Next image"
+      >
+        <ChevronRight className="h-3.5 w-3.5" />
+      </button>
+
+      <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-2">
+        <span className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium tabular-nums text-gray-800 shadow-sm">
+          {currentIndex + 1} / {images.length}
+        </span>
+        <div className="flex items-center gap-1.5">
+          {images.map((_, index) => (
+            <button
+              key={index}
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onIndexChange(index);
+              }}
+              className={cn(
+                "rounded-full transition-all",
+                index === currentIndex
+                  ? "h-2 w-6 bg-white shadow-sm"
+                  : "h-2 w-2 bg-white/60 hover:bg-white/90",
+              )}
+              aria-label={`View image ${index + 1}`}
+              aria-current={index === currentIndex}
+            />
+          ))}
+        </div>
+      </div>
     </div>
   );
 
-  const renderSecondaryGrid = () => {
-    const count = images.length;
-    if (count <= 1) return null;
-
-    if (count === 2) {
-      return (
-        <div className="aspect-[4/3]">
-          <GridImage src={images[1]} index={1} className="w-full h-full" />
-        </div>
-      );
-    }
-
-    if (count === 3) {
-      return (
-        <div className="grid grid-cols-2 gap-0.5 sm:gap-2">
-          <div className="aspect-square">
-            <GridImage src={images[1]} index={1} className="w-full h-full" />
-          </div>
-          <div className="aspect-square">
-            <GridImage src={images[2]} index={2} className="w-full h-full" />
-          </div>
-        </div>
-      );
-    }
-
-    const extraCount = count > 4 ? count - 4 : 0;
+  const renderThumbnailStrip = () => {
+    if (images.length <= 1) return null;
 
     return (
-      <div className="grid grid-cols-3 gap-0.5 sm:gap-2">
-        <div className="aspect-square">
-          <GridImage src={images[1]} index={1} className="w-full h-full" />
-        </div>
-        <div className="aspect-square">
-          <GridImage src={images[2]} index={2} className="w-full h-full" />
-        </div>
-        <div className="aspect-square">
-          <GridImage
-            src={images[3]}
-            index={3}
-            className="w-full h-full"
-            showOverlay={extraCount > 0}
-            overlayCount={extraCount}
-          />
-        </div>
+      <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
+        {images.map((image, index) => (
+          <button
+            key={index}
+            type="button"
+            onClick={() => onIndexChange(index)}
+            className={cn(
+              "relative h-16 w-16 shrink-0 overflow-hidden rounded-md border-2 transition-all sm:h-[72px] sm:w-[72px]",
+              index === currentIndex
+                ? "border-gray-900"
+                : "border-gray-200 opacity-75 hover:opacity-100",
+            )}
+            aria-label={`View image ${index + 1}`}
+            aria-current={index === currentIndex}
+          >
+            <Image
+              src={image}
+              alt={`${productName} thumbnail ${index + 1}`}
+              fill
+              unoptimized={!isOptimizableHost(image)}
+              className="object-cover"
+              sizes="72px"
+              quality={60}
+            />
+          </button>
+        ))}
       </div>
     );
   };
+
+  const renderHeroBlock = ({
+    heroRefProp,
+    showThumbnails = false,
+    mobileSquare = false,
+  }: {
+    heroRefProp?: React.Ref<HTMLDivElement>;
+    showThumbnails?: boolean;
+    mobileSquare?: boolean;
+  }) => (
+    <div className="relative">
+      <div ref={heroRefProp} className="relative">
+        {images.length === 1 ? (
+          <div
+            className={cn(
+              mobileSquare ? "aspect-square sm:aspect-[4/3]" : "aspect-[4/3]",
+            )}
+          >
+            <GridImage src={images[0]} index={0} className="h-full w-full" />
+          </div>
+        ) : (
+          renderImageCarousel({ mobileSquare })
+        )}
+        {renderHeroOverlays()}
+      </div>
+      {showThumbnails && renderThumbnailStrip()}
+    </div>
+  );
 
   const renderFullscreenModal = () =>
     isFullscreen ? (
@@ -283,203 +403,38 @@ export function EnhancedImageGallery({
       </>
     ) : null;
 
-  // Render grid based on image count
-  const renderImageGrid = () => {
-    const count = images.length;
-
-    // 1 image: Single full-width image
-    if (count === 1) {
-      return (
-        <div className="aspect-[4/3]">
-          <GridImage src={images[0]} index={0} className="w-full h-full" isFirstImage />
-        </div>
-      );
-    }
-
-    // 2 images: Two images stacked vertically
-    if (count === 2) {
-      return (
-        <div className="flex flex-col gap-0.5 sm:gap-2">
-          <div className="aspect-[4/3]">
-            <GridImage src={images[0]} index={0} className="w-full h-full" isFirstImage />
-          </div>
-          <div className="aspect-[4/3]">
-            <GridImage src={images[1]} index={1} className="w-full h-full" isFirstImage />
-          </div>
-        </div>
-      );
-    }
-
-    // 3 images: First row: 1 large, Second row: 2 squares
-    if (count === 3) {
-      return (
-        <div className="flex flex-col gap-0.5 sm:gap-2">
-          {/* First row: 1 large image */}
-          <div className="aspect-[4/3]">
-            <GridImage src={images[0]} index={0} className="w-full h-full" isFirstImage />
-          </div>
-          {/* Second row: 2 squares */}
-          <div className="grid grid-cols-2 gap-0.5 sm:gap-2">
-            <div className="aspect-square">
-              <GridImage src={images[1]} index={1} className="w-full h-full" />
-            </div>
-            <div className="aspect-square">
-              <GridImage src={images[2]} index={2} className="w-full h-full" />
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // 4 images: First row: 1 large, Second row: 3 squares
-    if (count === 4) {
-      return (
-        <div className="flex flex-col gap-0.5 sm:gap-2">
-          {/* First row: 1 large image */}
-          <div className="aspect-[4/3]">
-            <GridImage src={images[0]} index={0} className="w-full h-full" isFirstImage />
-          </div>
-          {/* Second row: 3 squares */}
-          <div className="grid grid-cols-3 gap-0.5 sm:gap-2">
-            <div className="aspect-square">
-              <GridImage src={images[1]} index={1} className="w-full h-full" />
-            </div>
-            <div className="aspect-square">
-              <GridImage src={images[2]} index={2} className="w-full h-full" />
-            </div>
-            <div className="aspect-square">
-              <GridImage src={images[3]} index={3} className="w-full h-full" />
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // 5+ images: First row: 1 large, Second row: 3 squares (with +X more overlay on last)
-    const extraCount = count > 4 ? count - 4 : 0;
-    
-    return (
-      <div className="flex flex-col gap-0.5 sm:gap-2">
-        {/* First row: 1 large image */}
-        <div className="aspect-[4/3]">
-          <GridImage src={images[0]} index={0} className="w-full h-full" isFirstImage />
-        </div>
-        {/* Second row: 3 squares */}
-        <div className="grid grid-cols-3 gap-0.5 sm:gap-2">
-          <div className="aspect-square">
-            <GridImage src={images[1]} index={1} className="w-full h-full" />
-          </div>
-          <div className="aspect-square">
-            <GridImage src={images[2]} index={2} className="w-full h-full" />
-          </div>
-          <div className="aspect-square">
-            <GridImage 
-              src={images[3]} 
-              index={3} 
-              className="w-full h-full"
-              showOverlay={extraCount > 0}
-              overlayCount={extraCount}
-            />
-          </div>
-        </div>
+  const renderHeroOverlay = () =>
+    heroOverlay ? (
+      <div className="pointer-events-none absolute top-3 right-3 z-20 sm:hidden">
+        <div className="pointer-events-auto">{heroOverlay}</div>
       </div>
-    );
-  };
+    ) : null;
 
-  const handleMobilePrev = () => {
-    setMobileImageIndex(mobileImageIndex === 0 ? images.length - 1 : mobileImageIndex - 1);
-  };
-
-  const handleMobileNext = () => {
-    setMobileImageIndex(mobileImageIndex === images.length - 1 ? 0 : mobileImageIndex + 1);
-  };
-
-  const handleMobileTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
-    const startX = touchStartXRef.current;
-    touchStartXRef.current = null;
-    if (startX == null) return;
-
-    const endX = event.changedTouches[0]?.clientX;
-    if (typeof endX !== "number") return;
-
-    const swipeThreshold = 50;
-    const offsetX = endX - startX;
-    if (Math.abs(offsetX) > swipeThreshold) {
-      if (offsetX > 0) {
-        handleMobilePrev();
-      } else {
-        handleMobileNext();
-      }
-    }
-  };
+  const renderHeroOverlays = () => renderHeroOverlay();
 
   if (sidePanel) {
     return (
       <>
         {/* Mobile / tablet: stacked gallery + panel */}
         <div className="lg:hidden">
-          <div className="sm:hidden relative">
-            <div className="relative aspect-square bg-gray-100 overflow-hidden">
-              <div
-                key={mobileImageIndex}
-                className="absolute inset-0 cursor-grab active:cursor-grabbing"
-                onClick={() => openFullscreen(mobileImageIndex)}
-                onTouchStart={(event) => {
-                  touchStartXRef.current = event.touches[0]?.clientX ?? null;
-                }}
-                onTouchEnd={handleMobileTouchEnd}
-              >
-                <Image
-                  src={images[mobileImageIndex]}
-                  alt={`${productName} - Image ${mobileImageIndex + 1}`}
-                  fill
-                  unoptimized={!isOptimizableHost(images[mobileImageIndex])}
-                  className="object-cover"
-                  sizes="100vw"
-                  priority={mobileImageIndex === 0}
-                  quality={85}
-                />
-              </div>
-
-              {images.length > 1 && (
-                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-10">
-                  {images.map((_, index) => (
-                    <button
-                      key={index}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setMobileImageIndex(index);
-                      }}
-                      className={cn(
-                        "rounded-full transition-all",
-                        index === mobileImageIndex
-                          ? "w-6 h-2 bg-white"
-                          : "w-2 h-2 bg-white/50"
-                      )}
-                      aria-label={`Go to image ${index + 1}`}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
+          <div className="sm:hidden">
+            {renderHeroBlock({ mobileSquare: true })}
           </div>
 
-          <div className="hidden sm:block relative">
-            {renderImageGrid()}
+          <div className="hidden sm:block">
+            {renderHeroBlock({ showThumbnails: images.length > 1 })}
           </div>
 
           {sidePanel}
         </div>
 
-        {/* Desktop: info panel locked to hero height; extra images stay in left column */}
+        {/* Desktop: info panel locked to hero height */}
         <div className="hidden lg:flex lg:items-start lg:gap-x-3 xl:gap-x-4">
           <div className="min-w-0 w-[62%]">
-            <div ref={heroRef} className="relative">
-              {renderMainHero()}
-            </div>
-            {images.length > 1 ? (
-              <div className="mt-6">{renderSecondaryGrid()}</div>
-            ) : null}
+            {renderHeroBlock({
+              heroRefProp: heroRef,
+              showThumbnails: images.length > 1,
+            })}
           </div>
 
           <div
@@ -497,57 +452,12 @@ export function EnhancedImageGallery({
 
   return (
     <>
-      {/* Mobile: Swipeable Single Image */}
-      <div className="sm:hidden relative">
-        <div className="relative aspect-square bg-gray-100 overflow-hidden">
-          <div
-            key={mobileImageIndex}
-            className="absolute inset-0 cursor-grab active:cursor-grabbing"
-            onClick={() => openFullscreen(mobileImageIndex)}
-            onTouchStart={(event) => {
-              touchStartXRef.current = event.touches[0]?.clientX ?? null;
-            }}
-            onTouchEnd={handleMobileTouchEnd}
-          >
-            <Image
-              src={images[mobileImageIndex]}
-              alt={`${productName} - Image ${mobileImageIndex + 1}`}
-              fill
-              unoptimized={!isOptimizableHost(images[mobileImageIndex])}
-              className="object-cover"
-              sizes="100vw"
-              priority={mobileImageIndex === 0}
-              quality={85}
-            />
-          </div>
-
-          {/* Pagination Dots */}
-          {images.length > 1 && (
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-10">
-              {images.map((_, index) => (
-                <button
-                  key={index}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setMobileImageIndex(index);
-                  }}
-                  className={cn(
-                    "rounded-full transition-all",
-                    index === mobileImageIndex
-                      ? "w-6 h-2 bg-white"
-                      : "w-2 h-2 bg-white/50"
-                  )}
-                  aria-label={`Go to image ${index + 1}`}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+      <div className="sm:hidden">
+        {renderHeroBlock({ mobileSquare: true })}
       </div>
 
-      {/* Desktop: Gallery Grid */}
-      <div className="hidden sm:block relative">
-        {renderImageGrid()}
+      <div className="hidden sm:block">
+        {renderHeroBlock({ showThumbnails: images.length > 1 })}
       </div>
 
       {renderFullscreenModal()}

@@ -71,8 +71,10 @@ function renderInlineMarkdown(value: string, linkMode: LinkMode): string {
 }
 
 function splitTableRow(line: string): string[] {
-  return line
-    .trim()
+  const trimmed = line.trim()
+  if (!trimmed.includes('|')) return []
+
+  return trimmed
     .replace(/^\|/, '')
     .replace(/\|$/, '')
     .split('|')
@@ -80,8 +82,7 @@ function splitTableRow(line: string): string[] {
 }
 
 function isTableRow(line: string): boolean {
-  const trimmed = line.trim()
-  return trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.slice(1, -1).includes('|')
+  return splitTableRow(line).length >= 2
 }
 
 function isTableSeparator(line: string): boolean {
@@ -97,15 +98,15 @@ function renderTable(rows: string[][], options: Required<RenderGenieMarkdownOpti
   const containerMargin = options.compact ? 'my-2' : 'my-3'
 
   return [
-    `<div class="${containerMargin} overflow-x-auto rounded-md border border-border/70 bg-background/70">`,
+    `<div class="${containerMargin} max-w-full overflow-x-auto rounded-md border border-gray-200 bg-white">`,
     `<table class="min-w-full table-auto border-collapse ${tableTextSize}">`,
     '<thead><tr>',
-    ...head.map(cell => `<th class="border-b border-border/70 ${cellPadding} text-left font-semibold text-foreground whitespace-nowrap">${renderInlineMarkdown(cell, options.linkMode)}</th>`),
+    ...head.map(cell => `<th class="border-b border-gray-200 ${cellPadding} text-left font-semibold text-gray-900 whitespace-nowrap">${renderInlineMarkdown(cell, options.linkMode)}</th>`),
     '</tr></thead>',
     '<tbody>',
     ...body.map(row => [
-      '<tr class="border-t border-border/50">',
-      ...row.map(cell => `<td class="${cellPadding} max-w-[18rem] align-top text-muted-foreground whitespace-normal break-words">${renderInlineMarkdown(cell, options.linkMode)}</td>`),
+      '<tr class="border-t border-gray-100">',
+      ...row.map(cell => `<td class="${cellPadding} max-w-[18rem] align-top text-gray-700 whitespace-normal break-words">${renderInlineMarkdown(cell, options.linkMode)}</td>`),
       '</tr>',
     ].join('')),
     '</tbody></table></div>',
@@ -131,17 +132,29 @@ export function renderGenieMarkdown(text: string, options: RenderGenieMarkdownOp
     const line = lines[index]
     const trimmed = line.trimStart()
 
-    if (isTableRow(line) && index + 1 < lines.length && isTableSeparator(lines[index + 1])) {
-      closeList()
+    if (isTableRow(line)) {
       const rows = [splitTableRow(line)]
-      index += 2
-      while (index < lines.length && isTableRow(lines[index])) {
-        rows.push(splitTableRow(lines[index]))
-        index++
+      let nextIndex = index + 1
+
+      if (nextIndex < lines.length && isTableSeparator(lines[nextIndex])) {
+        nextIndex += 1
       }
-      index--
-      html.push(renderTable(rows, resolved))
-      continue
+
+      while (
+        nextIndex < lines.length
+        && isTableRow(lines[nextIndex])
+        && !isTableSeparator(lines[nextIndex])
+      ) {
+        rows.push(splitTableRow(lines[nextIndex]))
+        nextIndex += 1
+      }
+
+      if (rows.length >= 2) {
+        closeList()
+        index = nextIndex - 1
+        html.push(renderTable(rows, resolved))
+        continue
+      }
     }
 
     const unordered = /^[•\-*]\s+/.test(trimmed)

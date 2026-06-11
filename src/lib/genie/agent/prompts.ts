@@ -83,6 +83,15 @@ function routeUsesXero(
     planMentionsTool(plan, /\bxero\b|get_xero|list_xero|search_xero|profit_and_loss|balance_sheet|trial_balance|aged_payable|aged_receivable|purchase_order/i)
 }
 
+function routeUsesPurchaseOrders(
+  route: GenieOrchestrationDecision['route'],
+  plan: GenieExecutionPlan | null,
+): boolean {
+  return route === 'lightspeed_sql' ||
+    route === 'storefront_action' ||
+    planMentionsTool(plan, /supplier_invoice|purchase_order|list_supplier_invoices|extract_supplier_invoice|propose_lightspeed_purchase_order|\binvoice\b/i)
+}
+
 function routeUsesLightspeedSql(
   route: GenieOrchestrationDecision['route'],
   plan: GenieExecutionPlan | null,
@@ -115,6 +124,7 @@ function formatCapabilitiesForRoute(args: {
   includeStorefront: boolean
   includeWeb: boolean
   includeXero: boolean
+  includePurchaseOrders: boolean
 }): string {
   const capabilities: string[] = []
 
@@ -152,6 +162,12 @@ function formatCapabilitiesForRoute(args: {
     )
   }
 
+  if (args.includePurchaseOrders) {
+    capabilities.push(
+      '10. Supplier invoices → Lightspeed purchase orders — detect PDF invoices in the connected Gmail inbox (or uploaded by the store), extract supplier and line details, match them to Lightspeed vendors/items, and stage a purchase order the store approves with one click. After approval the card links straight to the PO in Lightspeed.',
+    )
+  }
+
   if (capabilities.length === 0) {
     capabilities.push('1. Answer directly from conversation context. Do not pretend to use tools that are not available on this route.')
   }
@@ -166,6 +182,7 @@ function formatWorkRulesForRoute(args: {
   includeStorefront: boolean
   includeWeb: boolean
   includeXero: boolean
+  includePurchaseOrders: boolean
 }): string {
   const rules = [
     '- Context first: every request may be a continuation. Read the recent conversation and any private structured context from previous Genie tool results before calling tools. If current context answers the question, answer directly instead of re-running slow tools. Resolve pronouns like "she", "he", "that bike", "those items", "that email", and "reply to them" against the most recent relevant structured context.',
@@ -217,6 +234,15 @@ function formatWorkRulesForRoute(args: {
       '- For purchase orders ("what have we ordered", open POs, incoming stock value), use list_xero_purchase_orders with status/date filters.',
       '- Report figures are exact strings from Xero in the organisation base currency — quote them as returned, never recompute or invent values. State the basis (accrual/cash) and exact date range used.',
       '- If any Xero tool returns connected:false, do not guess numbers. Tell the user Xero is not connected and that they can connect it with the "Connect Xero" pill on the Home page, then answer whatever part is possible from Lightspeed.',
+    )
+  }
+
+  if (args.includePurchaseOrders) {
+    rules.push(
+      '- Supplier invoice → purchase order workflow (PDF invoices from Gmail or uploads): 1) list_supplier_invoices (rescan:true if the user expects something new) to get invoice ids; 2) extract_supplier_invoice for the chosen id — it reads the PDF and returns vendor + per-line item match candidates; 3) propose_lightspeed_purchase_order immediately after. Pass auto-matched vendor/item ids as resolved; for ambiguous matches pass the candidates as vendor_options/item_options so the card shows clickable buttons. NEVER ask the user to resolve matches by typing — the card buttons handle every choice, and the user clicks Create to write the PO to Lightspeed.',
+      '- When the user message references a specific invoice id (e.g. "invoice id: ..."), skip listing and go straight to extract_supplier_invoice with that id.',
+      '- Do not invent Lightspeed itemIDs or vendorIDs — only use ids returned by extract_supplier_invoice. Lines with no candidates stay unresolved: the card lets the user create a new Lightspeed product for the line (one click) or skip it. Always pass each line\'s upc and supplier_sku through so new products get the right identifiers.',
+      '- Use Xero purchase-order tools for READING what was ordered historically; use propose_lightspeed_purchase_order for CREATING a new PO in Lightspeed from a supplier invoice.',
     )
   }
 
@@ -290,6 +316,7 @@ function buildSystemPrompt(
   const includeStorefront = routeUsesStorefront(route, executionPlan)
   const includeWeb = routeUsesWeb(route, executionPlan)
   const includeXero = routeUsesXero(route, executionPlan)
+  const includePurchaseOrders = routeUsesPurchaseOrders(route, executionPlan)
   const routeCapabilities = formatCapabilitiesForRoute({
     route,
     includeGmail,
@@ -297,6 +324,7 @@ function buildSystemPrompt(
     includeStorefront,
     includeWeb,
     includeXero,
+    includePurchaseOrders,
   })
   const routeWorkRules = formatWorkRulesForRoute({
     route,
@@ -305,6 +333,7 @@ function buildSystemPrompt(
     includeStorefront,
     includeWeb,
     includeXero,
+    includePurchaseOrders,
   })
   const gmailPlaybook = includeGmail ? `\n\nGMAIL PLANNING REFERENCE\n${GMAIL_SEARCH_PLAYBOOK}` : ''
   const lightspeedInstructions = includeLightspeedSql
@@ -376,7 +405,7 @@ Decision process:
 Routes:
 - casual_chat: greetings, thanks, basic capability questions, or normal chat that does not need store data, Lightspeed data, web search, Gmail, or a storefront proposal. Do not use casual_chat for any customer, bike, work-order, sales, inventory, email, pricing, compatibility, or action request.
 - lightspeed_sql: any request about Lightspeed sales, customers, customer profiles/history/lifetime spend/service history/bikes, sold products, sale transactions, revenue, profit, margin, cost, services sold, product purchasers, current inventory/stock availability, or live/historical work orders, repairs, service jobs, public notes, internal notes, labour lines, parts, statuses, or dates. Also any narrow Xero accounting lookup: P&L / profit and loss / income statement, balance sheet, trial balance, net profit, expenses/overheads, cash position, GST/tax figures, accounts payable/receivable, what we owe a supplier / who owes us, invoices, supplier bills, bill/invoice payment status, bank transactions, payments, purchase orders, or connect/check Xero. The Xero tools are available on this route.
-- storefront_action: requests to read/change Yellow Jersey storefront carousels, discounts, product prices, store product lists, stage Lightspeed product brand/category write-back proposals, create new Lightspeed categories, connect/check Gmail/Composio email, search inbox, draft email, or send email.
+- storefront_action: requests to read/change Yellow Jersey storefront carousels, discounts, product prices, store product lists, stage Lightspeed product brand/category write-back proposals, create new Lightspeed categories, connect/check Gmail/Composio email, search inbox, draft email, or send email. Also supplier-invoice → purchase-order work: processing a detected/uploaded supplier invoice PDF, extracting an invoice, creating/uploading a purchase order in Lightspeed from an invoice, or checking for new supplier invoices.
 - web_research: requests requiring current public external information, market facts, product compatibility for a known public bike/product, standards, events, suppliers, recalls, MSRP/RRP, manuals, or internet lookup.
 - business_analysis: broad strategy requests about making the bike store more profitable, making more money, improving revenue, improving margin, ranking opportunities, reducing wasted cash, reducing stale stock, or deciding what actions would improve the business.
 - mixed: requests combining multiple non-casual routes, especially private store/customer data plus public web research.
@@ -401,6 +430,7 @@ Critical routing doctrine:
 - Business report email: requests to email/send/draft a sales, business performance, profit, inventory, customer, or Lightspeed report require both private store data and Gmail. Use route=mixed with needs_plan=true. The executor must gather the store/Lightspeed evidence first, then stage the Gmail email; this is not a Gmail-search-only task.
 - Storefront operations: make/create/rename/reorder/show/hide/move/feature a carousel, collection, homepage section, discount, sale, markdown, retail price, brand, category, product list, or approval proposal = storefront_action. Use needs_plan=false for a concrete single action; true for broad campaigns/homepage strategy.
 - Gmail/email without private store/report data: connect Gmail/Composio, check connection, search/summarise inbox, find supplier/customer emails, earliest/latest contact, invoices, issue/warranty correspondence, draft, reply, respond, write back, follow up, or send a simple message = storefront_action with needs_plan=true. "Respond to {name}" or "reply to {name}" without saying Gmail/email is still a Gmail task.
+- Supplier invoices / purchase orders: "process this supplier invoice", "turn this invoice into a purchase order", "upload this invoice to Lightspeed", "any new supplier invoices?", or a message referencing an uploaded invoice/PDF or invoice id = storefront_action with needs_plan=false. Reading historical/open POs ("what have we ordered") stays lightspeed_sql (Xero tools).
 - Market/competitor pricing: private "our price/stock/products" plus competitors/market/online/web price = mixed. Pure public market question without store data = web_research.
 - Visual lookup: "show me/photo/picture/what does it look like" for our stock/inventory = lightspeed_sql; for an external bike/product = web_research.
 - Current external facts: latest/current/new model/2025/2026/released/recall/supplier/distributor/MSRP/RRP/manual/standard = web_research unless private store data is also required.
