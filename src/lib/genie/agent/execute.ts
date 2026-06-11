@@ -541,134 +541,169 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
       stage: 'executor',
       workflowName: 'Yellow Jersey Genie Executor',
     })
-    const agentStream = await executorRunner.run(agent, inputMessages, {
-      stream: true,
-      maxTurns: maxTurnsForRoute(orchestration.route, orchestration.needs_plan),
-      signal,
-      toolExecution: { maxFunctionToolConcurrency: maxToolConcurrencyForRoute(orchestration.route) },
-      toolNotFoundBehavior: 'return_error_to_model',
-      reasoningItemIdPolicy: 'omit',
-      errorHandlers: {
-        maxTurns: () => ({
-          finalOutput: 'I hit the analysis turn limit before I could finish. I can continue with a narrower follow-up, or this should be moved to a background analysis job for a full long-running report.',
-          includeInHistory: true,
-        }),
-      },
-    })
+    const runExecutorStream = async () => {
+      const agentStream = await executorRunner.run(agent, inputMessages, {
+        stream: true,
+        maxTurns: maxTurnsForRoute(orchestration.route, orchestration.needs_plan),
+        signal,
+        toolExecution: { maxFunctionToolConcurrency: maxToolConcurrencyForRoute(orchestration.route) },
+        toolNotFoundBehavior: 'return_error_to_model',
+        reasoningItemIdPolicy: 'omit',
+        errorHandlers: {
+          maxTurns: () => ({
+            finalOutput: 'I hit the analysis turn limit before I could finish. I can continue with a narrower follow-up, or this should be moved to a background analysis job for a full long-running report.',
+            includeInHistory: true,
+          }),
+        },
+      })
 
-    emit({
-      event: 'status',
-      phase: 'thinking',
-      text: statusForExecutionStart(orchestration.route, agentTools.length),
-    })
+      emit({
+        event: 'status',
+        phase: 'thinking',
+        text: statusForExecutionStart(orchestration.route, agentTools.length),
+      })
 
-    for await (const event of agentStream) {
-      if (event.type === 'run_item_stream_event') {
-        const item = event.item as StreamToolItem
-        const toolName = item.rawItem?.name || item.rawItem?.toolName || item.name
-        if (event.name === 'reasoning_item_created' && lastStatusKey === '') {
-          emit({ event: 'status', phase: 'thinking', text: compactGenieProgressText('Thinking', 'thinking') })
-        }
-        if (event.name === 'tool_called' && toolName) {
-          toolCallCount += 1
-          toolCallNames[toolName] = (toolCallNames[toolName] ?? 0) + 1
-          activeToolName = toolName
-          let toolArgs: Record<string, unknown> | undefined
-          const rawArguments = item.rawItem?.arguments
-          if (typeof rawArguments === 'string' && rawArguments.length > 1 && rawArguments.length < 20000) {
-            try {
-              const parsed: unknown = JSON.parse(rawArguments)
-              if (isRecord(parsed)) toolArgs = parsed
-            } catch { /* malformed args — fall back to the static status text */ }
+      for await (const event of agentStream) {
+        if (event.type === 'run_item_stream_event') {
+          const item = event.item as StreamToolItem
+          const toolName = item.rawItem?.name || item.rawItem?.toolName || item.name
+          if (event.name === 'reasoning_item_created' && lastStatusKey === '') {
+            emit({ event: 'status', phase: 'thinking', text: compactGenieProgressText('Thinking', 'thinking') })
           }
-          emit({ event: 'status', ...statusForTool(toolName, toolArgs) })
-        }
-        if (event.name === 'tool_output') {
-          // verify_question_answered emits its own result-aware status; a generic
-          // override here would mislabel the not-ready path.
-          if (activeToolName && activeToolName !== 'verify_question_answered') {
-            emit({ event: 'status', ...statusAfterTool(activeToolName) })
+          if (event.name === 'tool_called' && toolName) {
+            toolCallCount += 1
+            toolCallNames[toolName] = (toolCallNames[toolName] ?? 0) + 1
+            activeToolName = toolName
+            let toolArgs: Record<string, unknown> | undefined
+            const rawArguments = item.rawItem?.arguments
+            if (typeof rawArguments === 'string' && rawArguments.length > 1 && rawArguments.length < 20000) {
+              try {
+                const parsed: unknown = JSON.parse(rawArguments)
+                if (isRecord(parsed)) toolArgs = parsed
+              } catch { /* malformed args — fall back to the static status text */ }
+            }
+            emit({ event: 'status', ...statusForTool(toolName, toolArgs) })
           }
-          activeToolName = null
+          if (event.name === 'tool_output') {
+            // verify_question_answered emits its own result-aware status; a generic
+            // override here would mislabel the not-ready path.
+            if (activeToolName && activeToolName !== 'verify_question_answered') {
+              emit({ event: 'status', ...statusAfterTool(activeToolName) })
+            }
+            activeToolName = null
+          }
+        }
+
+        if (event.type === 'raw_model_stream_event') {
+          const raw = event.data as RawModelDeltaEvent
+          const rawType = raw.type ?? raw.event?.type
+          const rawRecord = raw as unknown as Record<string, unknown>
+          const rawItem = isRecord(rawRecord.item) ? rawRecord.item : null
+          const rawEvent = isRecord(rawRecord.event) ? rawRecord.event : null
+          const rawEventItem = rawEvent && isRecord(rawEvent.item) ? rawEvent.item : null
+          const rawItemType =
+            typeof rawItem?.type === 'string'
+              ? rawItem.type
+              : typeof rawEventItem?.type === 'string'
+                ? rawEventItem.type
+                : ''
+          const delta =
+            typeof raw.delta === 'string'
+              ? raw.delta
+              : typeof raw.event?.delta === 'string'
+                ? raw.event.delta
+                : ''
+          const reasoningText =
+            typeof raw.text === 'string'
+              ? raw.text
+              : typeof raw.event?.text === 'string'
+                ? raw.event.text
+                : typeof raw.part?.text === 'string'
+                  ? raw.part.text
+                  : typeof raw.event?.part?.text === 'string'
+                    ? raw.event.part.text
+                    : ''
+
+          if (rawType === 'response.reasoning_summary_text.delta' && delta) {
+            emit({ event: 'reasoning_delta', text: delta })
+          }
+
+          if (rawType === 'response.web_search_call.in_progress' || rawItemType === 'web_search_call') {
+            emit({ event: 'status', phase: 'web_search', text: compactGenieProgressText('Searching web', 'web_search') })
+          }
+
+          if (rawType === 'response.web_search_call.searching') {
+            emit({ event: 'status', phase: 'web_search', text: compactGenieProgressText('Searching web', 'web_search') })
+          }
+
+          if (rawType === 'response.web_search_call.completed') {
+            emit({ event: 'status', phase: 'web_search_done', text: compactGenieProgressText('Web search done', 'web_search_done') })
+          }
+
+          if (
+            (rawType === 'response.reasoning_summary_text.done' ||
+              rawType === 'response.reasoning_summary_part.done') &&
+            reasoningText
+          ) {
+            emit({ event: 'reasoning_done', text: reasoningText })
+          }
+
+          if (rawType === 'output_text_delta' || rawType === 'response.output_text.delta') {
+            if (firstTextAt == null && delta) {
+              firstTextAt = Date.now()
+              console.info('[Genie Agent] first_text', {
+                requestId,
+                route: finalRoute,
+                ms: firstTextAt - requestStartedAt,
+              })
+            }
+            emit({ event: 'text_delta', text: delta })
+          }
         }
       }
 
-      if (event.type === 'raw_model_stream_event') {
-        const raw = event.data as RawModelDeltaEvent
-        const rawType = raw.type ?? raw.event?.type
-        const rawRecord = raw as unknown as Record<string, unknown>
-        const rawItem = isRecord(rawRecord.item) ? rawRecord.item : null
-        const rawEvent = isRecord(rawRecord.event) ? rawRecord.event : null
-        const rawEventItem = rawEvent && isRecord(rawEvent.item) ? rawEvent.item : null
-        const rawItemType =
-          typeof rawItem?.type === 'string'
-            ? rawItem.type
-            : typeof rawEventItem?.type === 'string'
-              ? rawEventItem.type
-              : ''
-        const delta =
-          typeof raw.delta === 'string'
-            ? raw.delta
-            : typeof raw.event?.delta === 'string'
-              ? raw.event.delta
-              : ''
-        const reasoningText =
-          typeof raw.text === 'string'
-            ? raw.text
-            : typeof raw.event?.text === 'string'
-              ? raw.event.text
-              : typeof raw.part?.text === 'string'
-                ? raw.part.text
-                : typeof raw.event?.part?.text === 'string'
-                  ? raw.event.part.text
-                  : ''
-
-        if (rawType === 'response.reasoning_summary_text.delta' && delta) {
-          emit({ event: 'reasoning_delta', text: delta })
-        }
-
-        if (rawType === 'response.web_search_call.in_progress' || rawItemType === 'web_search_call') {
-          emit({ event: 'status', phase: 'web_search', text: compactGenieProgressText('Searching web', 'web_search') })
-        }
-
-        if (rawType === 'response.web_search_call.searching') {
-          emit({ event: 'status', phase: 'web_search', text: compactGenieProgressText('Searching web', 'web_search') })
-        }
-
-        if (rawType === 'response.web_search_call.completed') {
-          emit({ event: 'status', phase: 'web_search_done', text: compactGenieProgressText('Web search done', 'web_search_done') })
-        }
-
-        if (
-          (rawType === 'response.reasoning_summary_text.done' ||
-            rawType === 'response.reasoning_summary_part.done') &&
-          reasoningText
-        ) {
-          emit({ event: 'reasoning_done', text: reasoningText })
-        }
-
-        if (rawType === 'output_text_delta' || rawType === 'response.output_text.delta') {
-          if (firstTextAt == null && delta) {
-            firstTextAt = Date.now()
-            console.info('[Genie Agent] first_text', {
-              requestId,
-              route: finalRoute,
-              ms: firstTextAt - requestStartedAt,
-            })
-          }
-          emit({ event: 'text_delta', text: delta })
-        }
-      }
+      await agentStream.completed
     }
 
-    await agentStream.completed
+    // The model stream can occasionally end a turn without producing a final
+    // response (SDK ModelBehaviorError) or drop mid-flight. Retry once from the
+    // top so the user still gets an answer instead of an error — but never after
+    // answer text has already reached the client, which would duplicate content.
+    const EXECUTOR_TRANSIENT_ERROR = /did not produce a final response|premature close|terminated|econnreset|socket hang up|fetch failed|network/i
+    let executorAttempt = 0
+    while (true) {
+      executorAttempt += 1
+      try {
+        await runExecutorStream()
+        break
+      } catch (executorError) {
+        const message = executorError instanceof Error ? executorError.message : String(executorError)
+        const retryable =
+          executorAttempt < 2 &&
+          !signal.aborted &&
+          firstTextAt == null &&
+          EXECUTOR_TRANSIENT_ERROR.test(message)
+        if (!retryable) throw executorError
+        console.warn('[Genie Agent] transient executor failure, retrying', {
+          requestId,
+          attempt: executorAttempt,
+          error: message,
+        })
+        activeToolName = null
+        emit({ event: 'status', phase: 'rechecking', text: 'Hit a snag — retrying the lookup' })
+      }
+    }
 
     emit({ event: 'done' })
   } catch (err) {
     runStatus = signal.aborted ? 'cancelled' : 'error'
     runErrorMessage = err instanceof Error ? err.message : 'Unknown error'
     try {
-      emit({ event: 'error', message: runErrorMessage })
+      // The raw error goes to telemetry/logs only — users get a human message.
+      emit({
+        event: 'error',
+        message: 'I hit a technical snag and could not finish that answer. Please send the question again — it usually works on a retry.',
+      })
     } catch {
       // Emit channel already closed.
     }
