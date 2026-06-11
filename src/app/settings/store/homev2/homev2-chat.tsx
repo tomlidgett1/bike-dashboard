@@ -113,8 +113,13 @@ const APP_HEADER_OFFSET_PX = 57;
 
 const THINKING_SHIMMER_STYLE: React.CSSProperties = {
   backgroundImage:
-    "linear-gradient(90deg, #a3a3a3 0%, #a3a3a3 38%, #525252 50%, #a3a3a3 62%, #a3a3a3 100%)",
+    "linear-gradient(90deg, #9ca3af 0%, #9ca3af 35%, #111827 50%, #9ca3af 65%, #9ca3af 100%)",
   backgroundSize: "220% 100%",
+  // Force a transparent text fill so the moving gradient shows through bg-clip-text.
+  // Without this, a competing text-* color utility wins the cascade and the
+  // shimmer silently renders as flat gray.
+  color: "transparent",
+  WebkitTextFillColor: "transparent",
 };
 
 const PHASE_LABELS: Record<string, string> = {
@@ -457,7 +462,7 @@ function ProcessTimelineBox({
           className={cn(
             "whitespace-normal text-[15px] leading-relaxed",
             live
-              ? "text-transparent bg-clip-text animate-[agent-text-shimmer_2.2s_linear_infinite] text-gray-500"
+              ? "bg-clip-text animate-[agent-text-shimmer_2.2s_linear_infinite]"
               : "text-gray-400",
           )}
           style={live ? THINKING_SHIMMER_STYLE : undefined}
