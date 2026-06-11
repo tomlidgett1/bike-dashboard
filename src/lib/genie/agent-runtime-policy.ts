@@ -197,7 +197,10 @@ export function canRunParallelTools(route: GenieOrchestrationDecision['route']):
 }
 
 export function maxToolConcurrencyForRoute(route: GenieOrchestrationDecision['route']): number {
-  if (route === 'business_analysis') return 3
-  if (route === 'lightspeed_sql' || route === 'web_research') return 2
+  // Independent reads (Xero reports, SQL queries, web lookups) have no reason
+  // to serialise. Higher concurrency cuts wall-clock time on analysis runs that
+  // batch many data calls in a single turn.
+  if (route === 'business_analysis') return 6
+  if (route === 'lightspeed_sql' || route === 'web_research') return 4
   return 1
 }

@@ -350,8 +350,8 @@ ${formatAnswerContractForRoute(route)}
 
 ANSWER VERIFICATION (mandatory before every final user-visible reply when using tools)
 - Ask yourself: "Have we actually answered the user's question?" If not, keep using tools — do not reply yet.
-- Before you send the final answer, call verify_question_answered with the user's question, your draft answer, remaining_gaps (empty only when truly ready), and success_criteria from the plan when available.
-- If verify_question_answered returns not_ready, do NOT reply to the user — run more tools / rechecks until gaps are closed, then verify again.
+- Call verify_question_answered ONCE, only when you already believe the answer is complete — it is a final gate, not a per-step checkpoint. Do not re-verify after every tool call; gather all the evidence first, draft the full answer, then verify.
+- If verify_question_answered returns not_ready, close the specific gaps with the fewest additional tool calls, then verify again. Expect to verify at most 2-3 times total; after that, answer with the best evidence you have and state any caveat in one line.
 - If a tool returns answer_readiness or recheck_required with gaps, treat those as remaining_gaps until resolved.
 - Never present partial tool output as a complete answer (e.g. warranty@ as "the rep" when the user asked for a sales rep).
 ${lightspeedInstructions}

@@ -9372,6 +9372,12 @@ function buildAgentTools(
   composioSessionIds: ComposioSessionIds = {},
 ) {
   const allowedToolNames = toolNameSetForRoute(route, executionPlan?.primary_tools ?? [])
+  // Hard cap on answer-verification passes. The model otherwise treats
+  // verify_question_answered as a "keep working" checkpoint and loops it
+  // 5-11x per run (each pass on high-stakes routes also fires the LLM judge),
+  // which is the single biggest latency sink on business_analysis runs.
+  const MAX_VERIFY_CALLS = 3
+  let verifyCallCount = 0
   let gmailComposioSessionId = composioSessionIds.gmail?.trim() || undefined
   const onGmailComposioSession = (notice: ComposioSessionNotice) => {
     gmailComposioSessionId = notice.session_id
@@ -9502,6 +9508,20 @@ function buildAgentTools(
         success_criteria: z.array(z.string()).max(10).optional().describe('From the execution plan answer_success_criteria — pass through so each check is validated.'),
       }),
       async execute(args) {
+        verifyCallCount += 1
+        // After the cap, stop looping: accept the draft and force the model to
+        // answer now with what it has. A slightly-imperfect answer beats another
+        // 90s of verify+judge churn (or a context-overflow failure).
+        if (verifyCallCount > MAX_VERIFY_CALLS) {
+          emitStatus(emit, 'responding', 'Wrapping up the answer')
+          return {
+            ready: true,
+            status: 'ready' as const,
+            gaps: [],
+            instruction:
+              'Verification budget reached. Write the best final answer now from the evidence already gathered, and state any remaining caveat in one line. Do not call more tools.',
+          }
+        }
         // High-stakes routes get an extra nano-model judge pass once the
         // deterministic checks pass; everything else stays zero-LLM-cost.
         const useJudge = route === 'business_analysis' || (route === 'mixed' && executionPlan != null)

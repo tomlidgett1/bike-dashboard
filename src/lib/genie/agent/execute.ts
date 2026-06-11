@@ -670,6 +670,10 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
     // top so the user still gets an answer instead of an error — but never after
     // answer text has already reached the client, which would duplicate content.
     const EXECUTOR_TRANSIENT_ERROR = /did not produce a final response|premature close|terminated|econnreset|socket hang up|fetch failed|network/i
+    // Only retry a failure that happened EARLY. Re-running a multi-minute
+    // analysis run that already burned its budget just doubles the wait before
+    // the same failure — better to surface the error immediately in that case.
+    const RETRY_MAX_ELAPSED_MS = 45_000
     let executorAttempt = 0
     while (true) {
       executorAttempt += 1
@@ -678,10 +682,12 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
         break
       } catch (executorError) {
         const message = executorError instanceof Error ? executorError.message : String(executorError)
+        const elapsedMs = Date.now() - requestStartedAt
         const retryable =
           executorAttempt < 2 &&
           !signal.aborted &&
           firstTextAt == null &&
+          elapsedMs < RETRY_MAX_ELAPSED_MS &&
           EXECUTOR_TRANSIENT_ERROR.test(message)
         if (!retryable) throw executorError
         console.warn('[Genie Agent] transient executor failure, retrying', {

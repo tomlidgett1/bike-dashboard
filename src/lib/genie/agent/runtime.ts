@@ -16,7 +16,10 @@ const STRATEGIC_EXECUTOR_MODEL = 'gpt-5.5'
 const EXECUTOR_MODEL = FAST_EXECUTOR_MODEL
 const ORCHESTRATOR_MODEL = 'gpt-5.4-nano'
 const SMART_AGENT_MAX_TURNS = 40
-const STRATEGIC_AGENT_MAX_TURNS = 60
+// Trimmed from 60: runs that reach for 60 turns balloon to 8+ minutes and tend
+// to overflow context and fail without ever answering. 40 still covers a deep
+// multi-query analysis while bounding the worst case.
+const STRATEGIC_AGENT_MAX_TURNS = 40
 const STREAM_HEARTBEAT_MS = 15_000
 const STORE_TIME_ZONE = 'Australia/Brisbane'
 const STORE_UTC_OFFSET = '+10:00'

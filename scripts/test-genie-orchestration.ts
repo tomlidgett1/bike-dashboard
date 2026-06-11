@@ -1173,7 +1173,7 @@ const toolPolicyFixtures: Array<Parameters<typeof assertToolPolicy>[0]> = [
     excludes: ['get_store_carousels', 'search_gmail', 'search_web_images'],
     hostedWeb: false,
     parallel: true,
-    concurrency: 2,
+    concurrency: 4,
   },
   {
     name: 'web research',
@@ -1183,7 +1183,7 @@ const toolPolicyFixtures: Array<Parameters<typeof assertToolPolicy>[0]> = [
     excludes: ['run_lightspeed_sql_query', 'get_store_carousels', 'search_gmail'],
     hostedWeb: true,
     parallel: true,
-    concurrency: 2,
+    concurrency: 4,
   },
   {
     name: 'customer workorder compatibility research',
@@ -1236,7 +1236,7 @@ const toolPolicyFixtures: Array<Parameters<typeof assertToolPolicy>[0]> = [
     excludes: ['search_gmail', 'propose_discount', 'search_web_images'],
     hostedWeb: false,
     parallel: true,
-    concurrency: 3,
+    concurrency: 6,
   },
 ]
 
