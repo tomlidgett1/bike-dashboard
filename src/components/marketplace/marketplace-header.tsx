@@ -670,7 +670,7 @@ export function MarketplaceHeader({
                   onClick={() => {
                     setMobileMenuOpen(false);
                     if (user) {
-                      setSmartUploadModalOpen(true);
+                      setMobileUploadMethodOpen(true);
                     } else {
                       setSellRequirementModalOpen(true);
                     }
@@ -896,9 +896,16 @@ export function MarketplaceHeader({
       <MobileUploadMethodDialog
         isOpen={mobileUploadMethodOpen}
         onClose={() => setMobileUploadMethodOpen(false)}
-        onSelectQuick={() => {
+        onSelectGuided={() => {
           if (user) {
-            router.push('/marketplace/sell');
+            router.push('/marketplace/sell?mode=guided');
+          } else {
+            setSellRequirementModalOpen(true);
+          }
+        }}
+        onSelectForm={() => {
+          if (user) {
+            router.push('/marketplace/sell?mode=form');
           } else {
             setSellRequirementModalOpen(true);
           }
