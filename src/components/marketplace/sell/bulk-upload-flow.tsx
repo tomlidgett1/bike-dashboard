@@ -104,9 +104,11 @@ interface ProductData {
 interface BulkUploadFlowProps {
   onComplete?: (listingIds: string[]) => void;
   onSwitchToManual?: () => void;
+  /** Hydrate photos from an iMessage text upload session instead of manual upload */
+  textUploadToken?: string;
 }
 
-export function BulkUploadFlow({ onComplete, onSwitchToManual }: BulkUploadFlowProps) {
+export function BulkUploadFlow({ onComplete, onSwitchToManual, textUploadToken }: BulkUploadFlowProps) {
   const router = useRouter();
   const [stage, setStage] = React.useState<FlowStage>("upload");
   const [photos, setPhotos] = React.useState<UploadedPhoto[]>([]);
@@ -125,6 +127,63 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual }: BulkUploadFlowP
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Hydrate photos from an iMessage text upload session
+  const loadedTextUploadTokenRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!textUploadToken) return;
+    if (loadedTextUploadTokenRef.current === textUploadToken) return;
+    loadedTextUploadTokenRef.current = textUploadToken;
+
+    let cancelled = false;
+
+    const loadSessionPhotos = async () => {
+      try {
+        const response = await fetch(
+          `/api/marketplace/text-upload/sessions/${encodeURIComponent(textUploadToken)}`,
+          { cache: "no-store" },
+        );
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(
+            typeof data?.error === "string" ? data.error : "Could not load this text upload.",
+          );
+        }
+
+        const uploadedImages = Array.isArray(data?.uploadedImages) ? data.uploadedImages : [];
+        const sessionPhotos: UploadedPhoto[] = uploadedImages
+          .filter((image: any) => image && typeof image.url === "string")
+          .map((image: any, index: number) => ({
+            id: image.publicId || `text-upload-${index}`,
+            url: image.url,
+            cardUrl: image.cardUrl || image.url,
+            thumbnailUrl: image.thumbnailUrl || image.url,
+            mobileCardUrl: image.mobileCardUrl || image.url,
+            galleryUrl: image.galleryUrl,
+            detailUrl: image.detailUrl,
+          }));
+
+        if (cancelled) return;
+        if (sessionPhotos.length === 0) {
+          throw new Error("This text upload has no photos.");
+        }
+
+        setPhotos(sessionPhotos);
+        setStage("grouping");
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not load this text upload.");
+        }
+      }
+    };
+
+    void loadSessionPhotos();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [textUploadToken]);
 
   // Upload photos complete
   const handlePhotosUploaded = (uploadedPhotos: UploadedPhoto[]) => {
@@ -419,10 +478,17 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual }: BulkUploadFlowP
   // Render current stage
   if (stage === "upload") {
     return (
-      <BulkPhotoUploadStep
-        onComplete={handlePhotosUploaded}
-        onBack={onSwitchToManual}
-      />
+      <>
+        {textUploadToken && error && (
+          <div className="mx-auto mt-4 max-w-2xl rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error} You can still add photos below.
+          </div>
+        )}
+        <BulkPhotoUploadStep
+          onComplete={handlePhotosUploaded}
+          onBack={onSwitchToManual}
+        />
+      </>
     );
   }
 

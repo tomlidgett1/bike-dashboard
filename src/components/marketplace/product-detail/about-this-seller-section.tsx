@@ -139,7 +139,7 @@ export function AboutThisSellerSection({
 
   if (embedded) {
     return (
-      <div className={cn("border-t border-gray-100 px-4 py-5 sm:px-5 lg:px-0", className)}>
+      <div className={cn("border-t border-gray-100 px-4 pt-5 pb-3 sm:px-5 lg:px-0", className)}>
         {content}
       </div>
     );

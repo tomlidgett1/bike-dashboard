@@ -278,26 +278,6 @@ async function fetchPublicCardProducts(
   return ((data || []) as PublicMarketplaceCardRow[]).map(transformPublicMarketplaceCard);
 }
 
-async function fetchSimilarProductsFromPublicCards(product: MarketplaceProduct): Promise<MarketplaceProduct[] | null> {
-  if (!product.marketplace_category) return [];
-
-  return fetchPublicCardProducts((supabase) => {
-    let query = supabase
-      .from('public_marketplace_cards')
-      .select(PUBLIC_MARKETPLACE_CARD_FIELDS)
-      .eq('marketplace_category', product.marketplace_category)
-      .neq('id', product.id);
-
-    if (product.marketplace_subcategory) {
-      query = query.eq('marketplace_subcategory', product.marketplace_subcategory);
-    }
-
-    return query
-      .order('created_at', { ascending: false })
-      .limit(12);
-  });
-}
-
 async function fetchBrandProductsFromPublicCards(productId: string, brand: string): Promise<MarketplaceProduct[] | null> {
   const normalizedBrand = brand.trim();
   if (!normalizedBrand) return [];
@@ -339,73 +319,6 @@ async function fetchSellerProductsFromPublicCards(
       account_type: product.store_account_type || null,
     },
   };
-}
-
-// Helper function to fetch similar products - DIRECTLY from Supabase (no API call)
-async function fetchSimilarProductsFallback(product: MarketplaceProduct): Promise<MarketplaceProduct[]> {
-  try {
-    const supabase = createPublicSupabaseClient();
-    
-    if (!product.marketplace_category) return [];
-    
-    // Fetch similar ready products from same category
-    const { data: products } = await supabase
-      .from('marketplace_ready_products')
-      .select(`
-        id, description, display_name, price, discount_percent, discount_active, discount_ends_at, sale_price, qoh, model_year, marketplace_category, marketplace_subcategory,
-        marketplace_level_3_category, created_at, user_id,
-        resolved_image_id, resolved_image_source, resolved_external_url, resolved_cloudinary_url, resolved_cloudinary_public_id
-      `)
-      .eq('marketplace_category', product.marketplace_category)
-      .neq('id', product.id)
-      .limit(12);
-
-    if (!products) return [];
-
-    return products.map((p: any) => {
-      const effectivePid = toCurrentHeroPublicId(
-        p.resolved_cloudinary_public_id,
-        p.resolved_image_source
-      );
-      const resolved = resolveProductImage({
-        id: p.resolved_image_id,
-        cloudinary_public_id: effectivePid,
-        cloudinary_url: p.resolved_cloudinary_url,
-        external_url: p.resolved_external_url,
-        approval_status: 'approved',
-      });
-      const imageUrl = resolved?.card_url || resolved?.original_url || null;
-
-      return {
-        id: p.id,
-        description: p.description,
-        display_name: p.display_name,
-        price: p.price,
-        discount_percent: p.discount_percent,
-        discount_active: p.discount_active,
-        discount_ends_at: p.discount_ends_at,
-        sale_price: p.sale_price,
-        marketplace_category: p.marketplace_category,
-        marketplace_subcategory: p.marketplace_subcategory,
-        marketplace_level_3_category: p.marketplace_level_3_category,
-        qoh: p.qoh || 1,
-        model_year: p.model_year || null,
-        created_at: p.created_at,
-        user_id: p.user_id,
-        primary_image_url: imageUrl,
-        card_url: imageUrl,
-        cloudinary_public_id: effectivePid,
-        thumbnail_url: resolved?.thumbnail_url || imageUrl,
-        detail_url: resolved?.detail_url || resolved?.gallery_url || imageUrl,
-        store_name: 'Bike Store',
-        store_logo_url: null,
-        store_account_type: null,
-      } as MarketplaceProduct;
-    });
-  } catch (error) {
-    console.error('Error fetching similar products:', error);
-    return [];
-  }
 }
 
 // Helper function to fetch products from the same brand
@@ -611,11 +524,8 @@ const fetchProductPageData = unstable_cache(
 
     const productBrand = product.brand?.trim() || null;
     const supabase = createPublicSupabaseClient();
-    const [similarProducts, sellerData, brandProducts, brandLogoUrl, sellerProfile] =
+    const [sellerData, brandProducts, brandLogoUrl, sellerProfile] =
       await Promise.all([
-        fetchSimilarProductsFromPublicCards(product).then((fastProducts) =>
-          fastProducts ?? fetchSimilarProductsFallback(product)
-        ),
         fetchSellerProducts(product),
         productBrand ? fetchBrandProducts(productId, productBrand) : Promise.resolve([]),
         product.user_id && product.store_bicycle_store
@@ -630,7 +540,6 @@ const fetchProductPageData = unstable_cache(
 
     return {
       product,
-      similarProducts,
       sellerData,
       brandProducts,
       productBrand,
@@ -668,7 +577,6 @@ export default async function ProductPage({
   return (
     <ProductPageClient
       product={data.product}
-      similarProducts={data.similarProducts}
       sellerProducts={data.sellerData.products}
       sellerInfo={data.sellerData.seller}
       sellerProfile={data.sellerProfile}

@@ -8,7 +8,7 @@ import { useListingForm } from "@/lib/hooks/use-listing-form";
 import { UploadMethodChoice } from "./upload-method-choice";
 import { SmartUploadFlow } from "./smart-upload-flow";
 import { FacebookImportFlow } from "./facebook-import-flow";
-import { BulkUploadFlow } from "./bulk-upload-flow";
+import { BulkUploadSheet } from "./bulk-upload-sheet";
 import { WizardNavigation } from "./wizard-navigation";
 import { Step1ItemType } from "./step-1-item-type";
 // New granular step components
@@ -345,6 +345,7 @@ export function SellWizard() {
 
   React.useEffect(() => {
     if (!textUploadToken) return;
+    if (mode === 'bulk') return; // bulk sessions hydrate inside BulkUploadSheet
     if (authLoading) return;
 
     if (!user) {
@@ -402,7 +403,7 @@ export function SellWizard() {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, goToStep, openAuthModal, textUploadToken, updateFormData, user]);
+  }, [authLoading, goToStep, mode, openAuthModal, textUploadToken, updateFormData, user]);
 
   // Get total steps based on item type
   const getTotalSteps = () => {
@@ -1302,14 +1303,8 @@ export function SellWizard() {
 
   if (textUploadToken && (authLoading || textUploadLoading)) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-        <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white p-6 text-center shadow-sm">
-          <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-gray-900" />
-          <h1 className="text-lg font-semibold text-gray-900">Loading your listing</h1>
-          <p className="mt-2 text-sm text-gray-600">
-            Pulling in the photos and details from your text upload.
-          </p>
-        </div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-gray-900" />
       </div>
     );
   }
@@ -1349,21 +1344,20 @@ export function SellWizard() {
     );
   }
 
-  // Handle Bulk Upload mode
+  // Handle Bulk Upload mode (including iMessage / Nest text upload links)
   if (mode === 'bulk') {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col">
-        <BulkUploadFlow
-          onComplete={(listingIds) => {
-            console.log('🎯 [WIZARD] Bulk upload complete - Created listings:', listingIds);
-            // BulkUploadFlow handles navigation to marketplace
-          }}
-          onSwitchToManual={() => {
-            window.history.pushState({}, '', '/marketplace/sell?mode=manual');
-            router.push('/marketplace/sell?mode=manual');
-          }}
-        />
-      </div>
+      <BulkUploadSheet
+        isOpen
+        textUploadToken={textUploadToken}
+        onClose={() => router.push("/marketplace/sell")}
+        onComplete={(listingIds) => {
+          console.log(
+            "🎯 [WIZARD] Bulk upload complete - Created listings:",
+            listingIds,
+          );
+        }}
+      />
     );
   }
 

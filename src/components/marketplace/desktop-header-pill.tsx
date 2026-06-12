@@ -98,7 +98,7 @@ function DesktopHeaderPillContent() {
               href="/marketplace"
               className={cn(
                 "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
-                pathname === "/marketplace"
+                pathname === "/marketplace" && spaceParam !== "for-you"
                   ? "text-gray-900 bg-gray-100"
                   : "text-gray-700 hover:bg-gray-100"
               )}
@@ -106,10 +106,10 @@ function DesktopHeaderPillContent() {
               Home
             </Link>
             <Link
-              href="/for-you"
+              href="/marketplace?space=for-you"
               className={cn(
                 "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
-                pathname === "/for-you"
+                pathname === "/marketplace" && spaceParam === "for-you"
                   ? "text-gray-900 bg-gray-100"
                   : "text-gray-700 hover:bg-gray-100"
               )}
@@ -262,7 +262,8 @@ function DesktopHeaderPillContent() {
                       "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
                       pathname === "/marketplace" &&
                         spaceParam !== "stores" &&
-                        spaceParam !== "uber"
+                        spaceParam !== "uber" &&
+                        spaceParam !== "for-you"
                         ? "text-gray-900 bg-gray-100"
                         : "text-gray-700 hover:bg-gray-100"
                     )}
@@ -270,10 +271,10 @@ function DesktopHeaderPillContent() {
                     Browse
                   </Link>
                   <Link
-                    href="/for-you"
+                    href="/marketplace?space=for-you"
                     className={cn(
                       "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
-                      pathname === "/for-you"
+                      pathname === "/marketplace" && spaceParam === "for-you"
                         ? "text-gray-900 bg-gray-100"
                         : "text-gray-700 hover:bg-gray-100"
                     )}

@@ -340,40 +340,13 @@ export function LightspeedPurchaseOrderCard({
 
                     {!choice.skipped && !choice.create ? (() => {
                       const search = lineSearches[index];
-                      const autoChips = line.item_options.filter((opt) => opt.item_id !== choice.item_id || !search?.open);
-                      // Options to show in the chips row: either from auto-match or from search results
-                      const searchChips = search?.open && search.results.length > 0 ? search.results : [];
-                      const showAutoChips = !search?.open || line.item_options.length > 0;
+                      const searchOpen = Boolean(search?.open);
+                      const searchChips = searchOpen && search.results.length > 0 ? search.results : [];
                       return (
                         <div className="mt-1.5 space-y-1.5">
-                          {/* Auto-match chips (hide when search is open and has results) */}
-                          {showAutoChips && !search?.open ? (
-                            <div className="flex flex-wrap gap-1.5">
-                              {line.item_options.map((option) => (
-                                <ChoiceChip
-                                  key={option.item_id}
-                                  selected={choice.item_id === option.item_id}
-                                  onClick={() => setLine(index, { item_id: option.item_id, skipped: false, create: false })}
-                                  title={`Matched on ${option.matched_on} · ${Math.round(option.confidence * 100)}%${option.qoh != null ? ` · ${option.qoh} on hand` : ""}`}
-                                >
-                                  {itemOptionLabel(option)}
-                                </ChoiceChip>
-                              ))}
-                            </div>
-                          ) : null}
-
-                          {/* Search input toggle */}
-                          {!search?.open ? (
-                            <button
-                              type="button"
-                              onClick={() => setLineSearch(index, { open: true, query: "", results: [] })}
-                              className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-400 hover:text-gray-700"
-                            >
-                              <Search className="h-3 w-3" />
-                              {line.item_options.length > 0 ? "Search for a different product" : "Search Lightspeed…"}
-                            </button>
-                          ) : (
-                            <div className="space-y-1.5">
+                          {searchOpen ? (
+                            /* Search mode: full-width input, then results + action chips on one row */
+                            <>
                               <div className="relative">
                                 <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
                                 {search.loading ? (
@@ -384,11 +357,11 @@ export function LightspeedPurchaseOrderCard({
                                   autoFocus
                                   placeholder="Search Lightspeed products…"
                                   value={search.query}
-                                  onChange={(e) => setLineSearch(index, { query: e.target.value, results: search.query !== e.target.value ? [] : search.results })}
+                                  onChange={(e) => setLineSearch(index, { query: e.target.value, results: [] })}
                                   className="w-full rounded-md border border-gray-200 bg-white py-1.5 pl-7 pr-6 text-[11px] text-gray-900 placeholder-gray-400 outline-none ring-0 focus:border-gray-400 focus:ring-1 focus:ring-gray-200"
                                 />
                               </div>
-                              {/* Search results */}
+                              {/* Search result chips */}
                               {searchChips.length > 0 ? (
                                 <div className="flex flex-wrap gap-1.5">
                                   {searchChips.map((option) => (
@@ -408,34 +381,52 @@ export function LightspeedPurchaseOrderCard({
                               ) : search.query.length >= 2 && !search.loading ? (
                                 <p className="text-[10px] text-gray-400">No products found</p>
                               ) : null}
-                              {/* Dismiss search link */}
-                              {line.item_options.length > 0 || choice.item_id ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setLineSearch(index, { open: false, query: "", results: [] })}
-                                  className="text-[10px] font-medium text-gray-400 hover:text-gray-700"
-                                >
-                                  ← Back to suggestions
+                              {/* Action row */}
+                              <div className="flex items-center gap-3">
+                                <button type="button" onClick={() => setLine(index, { item_id: null, skipped: false, create: true })} className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-500 hover:text-gray-900">
+                                  <Plus className="h-3 w-3" /> New product
                                 </button>
+                                <button type="button" onClick={() => setLine(index, { item_id: null, skipped: true, create: false })} className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-500 hover:text-gray-900">
+                                  <SkipForward className="h-3 w-3" /> Skip
+                                </button>
+                                {line.item_options.length > 0 || choice.item_id ? (
+                                  <button type="button" onClick={() => setLineSearch(index, { open: false, query: "", results: [] })} className="text-[10px] font-medium text-gray-400 hover:text-gray-700">
+                                    ← Back
+                                  </button>
+                                ) : null}
+                              </div>
+                            </>
+                          ) : (
+                            /* Normal mode: match chips wrap freely, action row stays on one line */
+                            <>
+                              {line.item_options.length > 0 ? (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {line.item_options.map((option) => (
+                                    <ChoiceChip
+                                      key={option.item_id}
+                                      selected={choice.item_id === option.item_id}
+                                      onClick={() => setLine(index, { item_id: option.item_id, skipped: false, create: false })}
+                                      title={`Matched on ${option.matched_on} · ${Math.round(option.confidence * 100)}%${option.qoh != null ? ` · ${option.qoh} on hand` : ""}`}
+                                    >
+                                      {itemOptionLabel(option)}
+                                    </ChoiceChip>
+                                  ))}
+                                </div>
                               ) : null}
-                            </div>
+                              {/* Action row — short items, always fits one line */}
+                              <div className="flex items-center gap-3">
+                                <button type="button" onClick={() => setLine(index, { item_id: null, skipped: false, create: true })} className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-500 hover:text-gray-900">
+                                  <Plus className="h-3 w-3" /> New product
+                                </button>
+                                <button type="button" onClick={() => setLine(index, { item_id: null, skipped: true, create: false })} className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-500 hover:text-gray-900">
+                                  <SkipForward className="h-3 w-3" /> Skip
+                                </button>
+                                <button type="button" onClick={() => setLineSearch(index, { open: true, query: "", results: [] })} className="inline-flex items-center gap-1 text-[10px] font-medium text-gray-400 hover:text-gray-700">
+                                  <Search className="h-3 w-3" /> {line.item_options.length > 0 ? "Search" : "Search Lightspeed…"}
+                                </button>
+                              </div>
+                            </>
                           )}
-
-                          {/* Create / Skip chips */}
-                          <div className="flex flex-wrap gap-1.5">
-                            <ChoiceChip
-                              selected={choice.create}
-                              onClick={() => setLine(index, { item_id: null, skipped: false, create: true })}
-                            >
-                              <Plus className="h-3 w-3 shrink-0" /> New product
-                            </ChoiceChip>
-                            <ChoiceChip
-                              selected={false}
-                              onClick={() => setLine(index, { item_id: null, skipped: true, create: false })}
-                            >
-                              <SkipForward className="h-3 w-3 shrink-0" /> Skip
-                            </ChoiceChip>
-                          </div>
                         </div>
                       );
                     })() : null}

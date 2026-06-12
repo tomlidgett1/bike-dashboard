@@ -12,6 +12,7 @@ import { MakeOfferButton } from "@/components/marketplace/make-offer-button";
 import { ProductInquiryButton } from "@/components/marketplace/product-inquiry-button";
 import { ProductDescription } from "@/components/marketplace/product-details-panel-simple";
 import { RecommendationCarousel } from "@/components/marketplace/product-detail/recommendation-carousel";
+import { SimilarProductsCarousel } from "@/components/marketplace/product-detail/similar-products-carousel";
 import { resolveLivePrice } from "@/lib/marketplace/pricing";
 import { formatStockOnHandLabel } from "@/lib/marketplace/stock-display";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
@@ -28,7 +29,6 @@ interface ImmersiveProductLayoutProps {
   product: MarketplaceProduct;
   images: string[];
   sellerInfo: SellerInfo | null;
-  similarProducts: MarketplaceProduct[];
   sellerProducts: MarketplaceProduct[];
   brandProducts: MarketplaceProduct[];
   brandName: string | null;
@@ -49,7 +49,6 @@ export function ImmersiveProductLayout({
   product,
   images,
   sellerInfo,
-  similarProducts,
   sellerProducts,
   brandProducts,
   brandName,
@@ -69,6 +68,12 @@ export function ImmersiveProductLayout({
   const storeHref = sellerInfo
     ? `/marketplace/${sellerInfo.account_type === "bicycle_store" ? "store" : "seller"}/${sellerInfo.id}`
     : `/marketplace/store/${product.user_id}`;
+
+  const similarSeeAllHref = product.marketplace_subcategory
+    ? `/marketplace?level1=${encodeURIComponent(product.marketplace_category || "")}&level2=${encodeURIComponent(product.marketplace_subcategory)}`
+    : product.marketplace_category
+      ? `/marketplace?level1=${encodeURIComponent(product.marketplace_category)}`
+      : undefined;
 
   const handleShare = async () => {
     if (typeof navigator !== "undefined" && (navigator as any).share) {
@@ -478,13 +483,12 @@ export function ImmersiveProductLayout({
       </section>
 
       {/* ── Discovery carousels — light section under the dark hero ───── */}
-      <div className="bg-white text-gray-900 rounded-t-[2.5rem]">
-        <div className="mx-auto max-w-[1500px] space-y-2 px-5 py-12 sm:px-8 lg:px-14 lg:py-16">
-          <RecommendationCarousel
-            title="Similar items"
-            products={similarProducts}
-            isLoading={false}
-            icon="sparkles"
+      <div className="overflow-x-hidden bg-white text-gray-900 rounded-t-[2.5rem]">
+        <div className="mx-auto min-w-0 max-w-[1500px] space-y-2 overflow-x-hidden px-5 py-12 sm:px-8 lg:px-14 lg:py-16">
+          <SimilarProductsCarousel
+            productId={product.id}
+            seeAllHref={similarSeeAllHref}
+            seeAllLabel="Browse category"
           />
           <RecommendationCarousel
             title={sellerName ? `More from ${sellerName}` : "More from this seller"}

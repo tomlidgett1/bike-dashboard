@@ -26,11 +26,16 @@ import {
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
-import { useProductView } from "@/lib/tracking/interaction-tracker";
+import { useProductView, trackGalleryView } from "@/lib/tracking/interaction-tracker";
 import { useStoreProductView } from "@/lib/tracking/store-analytics";
 
 const RecommendationCarousel = dynamic(
   () => import("@/components/marketplace/product-detail/recommendation-carousel").then((mod) => mod.RecommendationCarousel),
+  { ssr: false },
+);
+
+const SimilarProductsCarousel = dynamic(
+  () => import("@/components/marketplace/product-detail/similar-products-carousel").then((mod) => mod.SimilarProductsCarousel),
   { ssr: false },
 );
 
@@ -63,7 +68,6 @@ interface SellerInfo {
 
 interface ProductPageClientProps {
   product: MarketplaceProduct;
-  similarProducts: MarketplaceProduct[];
   sellerProducts: MarketplaceProduct[];
   sellerInfo: SellerInfo | null;
   brandProducts: MarketplaceProduct[];
@@ -84,7 +88,6 @@ type ProductPageImage = {
 
 export function ProductPageClient({
   product,
-  similarProducts,
   sellerProducts,
   sellerInfo,
   brandProducts,
@@ -105,6 +108,14 @@ export function ProductPageClient({
 
   // Track product view with dwell time
   useProductView(product.id, user?.id);
+
+  // Gallery engagement is a strong buying-intent signal — track image browsing
+  // past the hero image.
+  React.useEffect(() => {
+    if (currentImageIndex > 0) {
+      trackGalleryView(product.id, currentImageIndex, user?.id);
+    }
+  }, [currentImageIndex, product.id, user?.id]);
   useStoreProductView(
     !isOwner && product.store_account_type === "bicycle_store" ? product.user_id : null,
     product.id,
@@ -220,7 +231,6 @@ export function ProductPageClient({
         product={localProduct}
         images={images}
         sellerInfo={sellerInfo}
-        similarProducts={similarProducts}
         sellerProducts={sellerProducts}
         brandProducts={brandProducts}
         brandName={brandName}
@@ -238,7 +248,7 @@ export function ProductPageClient({
       )}
       
       {/* Main Content */}
-      <div className="min-h-screen bg-white sm:bg-gray-50 pb-28 sm:pb-8">
+      <div className="min-h-screen overflow-x-hidden bg-white sm:bg-gray-50 pb-28 sm:pb-8">
         {/* Upload Success Banner */}
         {showBanner && (
           <ProductUploadSuccessBanner
@@ -305,16 +315,13 @@ export function ProductPageClient({
           {/* Recommendation Carousels */}
           <div
             className={cn(
-              "mx-auto max-w-[1536px] space-y-2 border-t border-gray-200 bg-gray-50 px-4 py-4 sm:px-4 sm:py-5 lg:px-4 xl:px-5",
-              showFullWidthBikeSpecs || featuredBrandAbout ? "mt-0" : "mt-8 sm:mt-12"
+              "mx-auto min-w-0 max-w-[1536px] space-y-2 overflow-x-hidden border-t border-gray-200 bg-gray-50 px-4 pt-3 pb-4 sm:px-4 sm:py-5 lg:px-4 xl:px-5",
+              showFullWidthBikeSpecs || featuredBrandAbout ? "mt-0" : "mt-0 lg:mt-8"
             )}
           >
-            {/* Similar Items Carousel */}
-            <RecommendationCarousel
-              title="Similar Items"
-              products={similarProducts}
-              isLoading={false}
-              icon="sparkles"
+            {/* Similar Items Carousel — LLM-ranked in real time */}
+            <SimilarProductsCarousel
+              productId={product.id}
               seeAllHref={similarSeeAllHref}
               seeAllLabel="Browse Category"
             />

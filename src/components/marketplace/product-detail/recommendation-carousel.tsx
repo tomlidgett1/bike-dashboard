@@ -106,7 +106,7 @@ export function RecommendationCarousel({
 
   return (
     <section
-      className={cn("py-2.5 sm:py-3", className)}
+      className={cn("min-w-0 max-w-full overflow-hidden py-2.5 sm:py-3", className)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -153,8 +153,8 @@ export function RecommendationCarousel({
         )}
       </div>
 
-      {/* Carousel Container */}
-      <div className="relative">
+      {/* Carousel Container — clip horizontal track so wide rows don't expand page width on mobile */}
+      <div className="relative w-full min-w-0 overflow-hidden">
         {/* Left Navigation Arrow */}
         {canScrollLeft && (
           <button
@@ -186,34 +186,36 @@ export function RecommendationCarousel({
         {/* Scrollable Container */}
         <div
           ref={scrollContainerRef}
-          className="overflow-x-auto scrollbar-hide scroll-smooth snap-x snap-mandatory"
+          className="overflow-x-auto overflow-y-hidden overscroll-x-contain scroll-smooth scrollbar-hide touch-pan-x sm:snap-x sm:snap-mandatory"
           style={{
             scrollbarWidth: 'none',
             msOverflowStyle: 'none',
+            WebkitOverflowScrolling: 'touch',
           }}
         >
-          <div className="flex gap-2.5 sm:gap-3 md:gap-4" style={{ minWidth: 'min-content' }}>
+          <div className="inline-flex w-max max-w-none items-start gap-2.5 sm:gap-3 md:gap-4">
             {isLoading ? (
               // Loading Skeletons
               Array.from({ length: 6 }).map((_, index) => (
                 <div
                   key={`skeleton-${index}`}
-                  className="flex-shrink-0 w-[160px] sm:w-[180px] md:w-[200px] lg:w-[210px] snap-start"
+                  className="h-[204px] w-[160px] flex-shrink-0 snap-start overflow-hidden sm:h-[224px] sm:w-[180px] md:h-[244px] md:w-[200px] lg:h-[254px] lg:w-[210px]"
                 >
                   <ProductCardSkeleton />
                 </div>
               ))
             ) : (
-              // Products with staggered animation
+              // Products — fixed slots + inCarousel avoid the 300px content-visibility placeholder
               products.map((product, index) => (
                 <div
                   key={product.id}
-                  className="flex-shrink-0 w-[160px] sm:w-[180px] md:w-[200px] lg:w-[210px] snap-start"
+                  className="h-[204px] w-[160px] flex-shrink-0 snap-start overflow-hidden sm:h-[224px] sm:w-[180px] md:h-[244px] md:w-[200px] lg:h-[254px] lg:w-[210px]"
                 >
-                  <ProductCard product={product} priority={index < 4} />
+                  <ProductCard product={product} priority={index < 4} inCarousel />
                 </div>
               ))
             )}
+            <div className="w-1 flex-shrink-0 sm:hidden" aria-hidden />
           </div>
         </div>
       </div>

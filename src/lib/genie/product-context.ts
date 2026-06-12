@@ -199,10 +199,11 @@ export function buildProductGenieContext(product: MarketplaceProduct): ProductGe
 
 export function formatProductGenieListingForModel(product: ProductGenieContext): string {
   const lines = [
-    "=== YELLOW JERSEY LISTING (authoritative for this chat) ===",
+    "=== YELLOW JERSEY LISTING (authoritative for sale facts) ===",
     "This is the actual item for sale on Yellow Jersey — not the manufacturer catalogue page.",
     "Answer listing questions (new/used condition, price, stock, seller claims, what's included) from this block FIRST.",
     "Do NOT use web search for listing-specific facts when they appear here or in the shopper's listing view.",
+    "Brand/model/year/category/spec metadata may be imperfect. If those fields conflict with the title or credible OEM info, briefly flag the inconsistency and say what to verify.",
     "",
     `Listing ID: ${product.id}`,
     `Title: ${product.name}`,
@@ -234,7 +235,7 @@ export function formatProductGenieListingForModel(product: ProductGenieContext):
     product.productSpecs ? `\nEnriched product specs:\n${product.productSpecs.slice(0, 1400)}` : null,
     product.specsSummary ? `\nStructured listing specifications:\n${product.specsSummary}` : null,
     "",
-    'Interpretation guide: "Is this new?" usually means item condition on THIS listing — use Condition (as listed) above. Only discuss manufacturer model-year "newness" if the shopper clearly means that, and say it is separate from listing condition.',
+    'Interpretation guide: "Is this new?" usually means item condition on THIS listing — use Condition (as listed) above. Only discuss manufacturer model-year "newness" if the shopper clearly means that, and say it is separate from listing condition. If the listing year/specs look suspicious from the title/model, call that out cautiously.',
   ].filter((line) => line !== null);
 
   return lines.join("\n");

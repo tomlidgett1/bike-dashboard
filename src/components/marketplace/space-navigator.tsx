@@ -214,6 +214,7 @@ export function useMarketplaceSpace() {
   
   // Support legacy 'view' param for backwards compatibility
   const currentSpace: MarketplaceSpace = React.useMemo(() => {
+    if (spaceParam === 'for-you' || viewParam === 'for-you') return 'for-you';
     if (spaceParam === 'stores' || viewParam === 'stores') return 'stores';
     if (spaceParam === 'uber' || viewParam === 'uber') return 'uber';
     return 'marketplace';

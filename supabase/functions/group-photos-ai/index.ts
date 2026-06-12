@@ -8,6 +8,14 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const INTERNAL_EDGE_SHARED_SECRET =
+  Deno.env.get('INTERNAL_EDGE_SHARED_SECRET') ||
+  Deno.env.get('NEST_INTERNAL_EDGE_SHARED_SECRET') ||
+  Deno.env.get('NEST_SUPABASE_SECRET_KEY') ||
+  Deno.env.get('SUPABASE_SECRET_KEY') ||
+  Deno.env.get('SUPABASE_SECRET_KEYS') ||
+  Deno.env.get('NEW_SUPABASE_SECRET_KEY') ||
+  '';
 
 // ============================================================
 // CORS Headers
@@ -16,8 +24,27 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-internal-secret, x-client-info, apikey, content-type',
 };
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
+function isInternalRequest(req: Request): boolean {
+  const received = req.headers.get('x-internal-secret')?.trim() ||
+    (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '').trim();
+  return Boolean(
+    received &&
+    INTERNAL_EDGE_SHARED_SECRET &&
+    timingSafeEqual(received, INTERNAL_EDGE_SHARED_SECRET),
+  );
+}
 
 // ============================================================
 // Types
@@ -51,32 +78,38 @@ Deno.serve(async (req) => {
   try {
     console.log('🤖 [PHOTO GROUPING] === Request started ===');
 
+    const internalRequest = isInternalRequest(req);
+
     // Get auth header
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
+    if (!authHeader && !internalRequest) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Verify user with Supabase
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      global: {
-        headers: { Authorization: authHeader },
-      },
-    });
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      console.error('❌ [PHOTO GROUPING] Auth error:', authError);
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    if (internalRequest) {
+      console.log('✓ [PHOTO GROUPING] Internal request authenticated');
+    } else {
+      // Verify user with Supabase
+      const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+        global: {
+          headers: { Authorization: authHeader! },
+        },
       });
-    }
 
-    console.log('✓ [PHOTO GROUPING] User authenticated:', user.id);
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        console.error('❌ [PHOTO GROUPING] Auth error:', authError);
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      console.log('✓ [PHOTO GROUPING] User authenticated:', user.id);
+    }
 
     // Parse request body
     const body: GroupingRequest = await req.json();

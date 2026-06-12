@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 import { addProductImages } from "@/lib/services/product-images";
+import {
+  finalizeListingForMarketplace,
+  refreshPublicMarketplaceAfterMutation,
+} from "@/lib/server/refresh-public-marketplace";
 
 // Helper function to find or create canonical product with AI categorisation
 async function ensureCanonicalProduct(
@@ -129,6 +133,7 @@ export async function POST(request: NextRequest) {
 
       // Basic info
       description: body.title || "", // description field is the display name/title
+      display_name: body.title || null,
       brand: body.brand,
       model: body.model,
       model_year: body.modelYear,
@@ -336,14 +341,12 @@ export async function POST(request: NextRequest) {
       );
       
       console.log(`✅ [LISTINGS API] ${insertedImages.length} images inserted via shared helper`);
-      
-      // Update has_displayable_image flag for marketplace visibility
+
       if (insertedImages.length > 0) {
-        await supabase
-          .from('products')
-          .update({ has_displayable_image: true })
-          .eq('id', listing.id);
-        console.log(`✅ [LISTINGS API] Set has_displayable_image=true for product ${listing.id}`);
+        await finalizeListingForMarketplace(supabase, listing.id, insertedImages, {
+          displayName: body.title,
+        });
+        console.log(`✅ [LISTINGS API] Finalised marketplace images for product ${listing.id}`);
       }
     } else {
       console.log('⚠️ [LISTINGS API] Skipping image insertion - no images or no listing ID');
@@ -385,6 +388,11 @@ export async function POST(request: NextRequest) {
     } catch (voucherCheckError) {
       console.error('[LISTINGS API] Error checking for awarded voucher:', voucherCheckError);
       // Don't fail the request if voucher check fails
+    }
+
+    const listingStatus = body.listingStatus || "draft";
+    if (listingStatus === "active") {
+      await refreshPublicMarketplaceAfterMutation();
     }
 
     return NextResponse.json({ 

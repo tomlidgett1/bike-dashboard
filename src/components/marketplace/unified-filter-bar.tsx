@@ -53,6 +53,8 @@ interface UnifiedFilterBarProps {
 
   onNavigateToStores?: () => void;
   onNavigateToUber?: () => void;
+  /** Switch to the For You space in place. Falls back to marketplace route nav. */
+  onNavigateToForYou?: () => void;
 
   selectedStoreId?: string | null;
   onStoreSelect?: (storeId: string) => void;
@@ -99,6 +101,7 @@ export function UnifiedFilterBar({
   onLevel2Change,
   onNavigateToStores,
   onNavigateToUber,
+  onNavigateToForYou,
   selectedStoreId,
   onStoreSelect,
   onLevel3Change,
@@ -142,6 +145,18 @@ export function UnifiedFilterBar({
   const isBrowseActive = optimisticTab ? optimisticTab === "marketplace" : currentSpace === "marketplace";
   const isStoresActive = optimisticTab ? optimisticTab === "stores" : isStoresMode;
   const isUberActive = optimisticTab ? optimisticTab === "uber" : isUberMode;
+  const isForYouActive = optimisticTab ? optimisticTab === "for-you" : currentSpace === "for-you";
+
+  // In-place space switch when the marketplace owns the For You space; otherwise
+  // navigate to the marketplace For You tab.
+  const goForYou = () => {
+    if (onNavigateToForYou) {
+      setOptimisticTab("for-you");
+      onNavigateToForYou();
+    } else {
+      router.push("/marketplace?space=for-you");
+    }
+  };
 
   const clearAllCategories = () => {
     onLevel1Change(null);
@@ -167,8 +182,9 @@ export function UnifiedFilterBar({
   }
 
   const isOnBrowseMode = viewMode === "all";
-  // Show the filter section for both Marketplace and Bike Stores tabs
-  const showBrowseChrome = isOnBrowseMode;
+  const isForYouMode = currentSpace === "for-you";
+  // Show browse filters for Marketplace / Stores / Uber — not on For You
+  const showBrowseChrome = isOnBrowseMode && !isForYouMode;
   const activeFilterCount = countActiveFilters(browseFilters);
 
   return (
@@ -187,8 +203,11 @@ export function UnifiedFilterBar({
         <div className="grid grid-cols-4 gap-0.5 rounded-full bg-gray-100 p-0.5">
           <button
             type="button"
-            onClick={() => router.push("/for-you")}
-            className="flex h-8 min-w-0 cursor-pointer items-center justify-center rounded-full px-1.5 text-[13px] font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 text-gray-500"
+            onClick={goForYou}
+            className={cn(
+              "flex h-8 min-w-0 cursor-pointer items-center justify-center rounded-full px-1.5 text-[13px] font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+              isForYouActive ? "bg-white text-gray-900 shadow-sm" : "text-gray-500",
+            )}
           >
             <span className="truncate">For You</span>
           </button>
@@ -232,8 +251,11 @@ export function UnifiedFilterBar({
         <div className="h-11 rounded-full bg-white border border-gray-200 shadow-sm p-1 inline-flex flex-shrink-0">
           <button
             type="button"
-            onClick={() => router.push("/for-you")}
-            className="flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 text-gray-500 hover:text-gray-700"
+            onClick={goForYou}
+            className={cn(
+              "flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+              isForYouActive ? "bg-gray-100 text-gray-900" : "text-gray-500 hover:text-gray-700",
+            )}
           >
             <Sparkles className="h-4 w-4" />
             For You

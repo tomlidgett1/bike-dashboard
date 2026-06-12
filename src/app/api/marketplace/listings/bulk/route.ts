@@ -2,6 +2,10 @@ import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import type { ListingFormData } from '@/lib/types/listing';
 import { addProductImages } from '@/lib/services/product-images';
+import {
+  finalizeListingForMarketplace,
+  refreshPublicMarketplaceAfterMutation,
+} from '@/lib/server/refresh-public-marketplace';
 
 // ============================================================
 // Bulk Listing Creation API
@@ -40,6 +44,7 @@ async function createSingleListing(
       
       // Basic info
       description: listing.title || '', // description field stores the title/name
+      display_name: listing.title || null,
       brand: listing.brand || null,
       model: listing.model || null,
       model_year: listing.modelYear || null,
@@ -149,14 +154,12 @@ async function createSingleListing(
       });
       
       const insertedImages = await addProductImages(supabase, data.id, imageData);
-      
-      // Update has_displayable_image flag for marketplace visibility
+
       if (insertedImages.length > 0) {
-        await supabase
-          .from('products')
-          .update({ has_displayable_image: true })
-          .eq('id', data.id);
-        console.log(`✅ [BULK API] Set has_displayable_image=true for product ${data.id}`);
+        await finalizeListingForMarketplace(supabase, data.id, insertedImages, {
+          displayName: listing.title,
+        });
+        console.log(`✅ [BULK API] Finalised marketplace images for product ${data.id}`);
       }
     }
     
@@ -245,6 +248,10 @@ export async function POST(request: NextRequest) {
     const failed = results.filter(r => !r.success);
 
     console.log(`[BULK API] Complete: ${created.length} succeeded, ${failed.length} failed`);
+
+    if (created.length > 0) {
+      await refreshPublicMarketplaceAfterMutation();
+    }
 
     return NextResponse.json({
       success: true,

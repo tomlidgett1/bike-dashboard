@@ -1,28 +1,25 @@
 "use client";
 
 import * as React from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  Upload,
   X,
   Camera,
   Image as ImageIcon,
   Plus,
   Loader2,
   CheckCircle2,
-  ChevronLeft,
   ChevronRight,
+  ChevronLeft,
   ChevronDown,
   Trash2,
-  Edit,
   Sparkles,
   Truck,
   MapPin,
-  DollarSign,
   RotateCw,
 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -44,20 +41,23 @@ import { rotateCloudinaryUrlClockwise } from "@/lib/utils/cloudinary-rotation";
 import { CONDITION_RATINGS, type ConditionRating } from "@/lib/types/listing";
 
 // ============================================================
-// Bulk Upload Sheet
-// Complete bulk upload flow within a single bottom sheet
-// Stages: photos → uploading → grouping → reviewing → final → publishing → success
+// Bulk Upload Sheet — "Guided" mobile flow
+// One task per full screen with a 3-step progress bar:
+//   Photos → (uploading + analysing) → Review (one item per screen)
+//   → Publish (summary) → success
 // ============================================================
 
 const UPLOAD_CONCURRENCY = 3;
+const BRAND = "#ffde59";
+const BRAND_INK = "#1c1c1e";
+const STEP_LABELS = ["Photos", "Review", "Publish"];
 
 type BulkUploadStage =
   | "photos"
   | "uploading"
   | "grouping"
-  | "assigning"      // NEW: Assign photos to products
-  | "reviewing"
-  | "final"
+  | "review"
+  | "summary"
   | "publishing"
   | "success";
 
@@ -108,7 +108,6 @@ interface ProductFormData {
   conditionDetails: string;
   price: number;
   originalRrp: number;
-  // Shipping options
   shippingAvailable: boolean;
   shippingCost: number;
   pickupLocation: string;
@@ -119,24 +118,24 @@ interface BulkUploadSheetProps {
   isOpen: boolean;
   onClose: () => void;
   onComplete?: (listingIds: string[]) => void;
+  /** Hydrate photos from an iMessage / Nest text upload session */
+  textUploadToken?: string;
 }
 
 export function BulkUploadSheet({
   isOpen,
   onClose,
   onComplete,
+  textUploadToken,
 }: BulkUploadSheetProps) {
   const router = useRouter();
 
-  // Stage management
   const [stage, setStage] = React.useState<BulkUploadStage>("photos");
 
-  // Photo selection state
   const [photos, setPhotos] = React.useState<{ file: File; preview: string }[]>(
     []
   );
 
-  // Upload state
   const [uploadedPhotos, setUploadedPhotos] = React.useState<UploadedPhoto[]>(
     []
   );
@@ -146,48 +145,43 @@ export function BulkUploadSheet({
   });
   const [isCompressing, setIsCompressing] = React.useState(false);
 
-  // Grouping state
   const [groups, setGroups] = React.useState<PhotoGroup[]>([]);
-
-  // Products state
   const [products, setProducts] = React.useState<ProductData[]>([]);
-  const [currentProductIndex, setCurrentProductIndex] = React.useState(0);
-  const [showDetails, setShowDetails] = React.useState(true); // Open by default
+  const [currentIndex, setCurrentIndex] = React.useState(0);
+  const [generatingId, setGeneratingId] = React.useState<string | null>(null);
 
-  // Success state
   const [successListingIds, setSuccessListingIds] = React.useState<string[]>(
     []
   );
-
-  // Error state
   const [error, setError] = React.useState<string | null>(null);
+  const [showExitConfirm, setShowExitConfirm] = React.useState(false);
 
-  // Description generation state
-  const [isGeneratingDescription, setIsGeneratingDescription] = React.useState(false);
-
-  // Refs
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const cameraInputRef = React.useRef<HTMLInputElement>(null);
-  const carouselRef = React.useRef<HTMLDivElement>(null);
   const blobUrlsRef = React.useRef<Set<string>>(new Set());
+  const loadedTextUploadTokenRef = React.useRef<string | null>(null);
 
-  // Reset state when sheet opens/closes
+  // Reset on open (manual flow only — text upload sessions hydrate below)
   React.useEffect(() => {
-    if (isOpen) {
-      setStage("photos");
-      setPhotos([]);
-      setUploadedPhotos([]);
-      setGroups([]);
-      setProducts([]);
-      setCurrentProductIndex(0);
-      setSuccessListingIds([]);
-      setError(null);
-      setUploadProgress({ current: 0, total: 0 });
-      setShowDetails(false);
-    }
-  }, [isOpen]);
+    if (!isOpen) return;
 
-  // Cleanup blob URLs on unmount
+    setSuccessListingIds([]);
+    setShowExitConfirm(false);
+    setUploadProgress({ current: 0, total: 0 });
+    setGeneratingId(null);
+    setCurrentIndex(0);
+
+    if (textUploadToken) return;
+
+    setStage("photos");
+    setPhotos([]);
+    setUploadedPhotos([]);
+    setGroups([]);
+    setProducts([]);
+    setError(null);
+    loadedTextUploadTokenRef.current = null;
+  }, [isOpen, textUploadToken]);
+
   React.useEffect(() => {
     return () => {
       blobUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
@@ -195,7 +189,6 @@ export function BulkUploadSheet({
     };
   }, []);
 
-  // Prevent body scroll when sheet is open
   React.useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden";
@@ -206,13 +199,12 @@ export function BulkUploadSheet({
   }, [isOpen]);
 
   // ============================================================
-  // Photo Selection Handlers
+  // Photo selection
   // ============================================================
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     addPhotos(files);
-    // Reset input to allow selecting same files again
     e.target.value = "";
   };
 
@@ -236,7 +228,7 @@ export function BulkUploadSheet({
   };
 
   // ============================================================
-  // Upload Handler
+  // Upload → Group → Analyse
   // ============================================================
 
   const handleUpload = async () => {
@@ -248,7 +240,6 @@ export function BulkUploadSheet({
     setUploadProgress({ current: 0, total: photos.length });
 
     try {
-      // Get Supabase session
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
       const {
@@ -259,47 +250,36 @@ export function BulkUploadSheet({
         throw new Error("You must be logged in to upload photos");
       }
 
-      // Phase 1: Compress images
-      console.log("🗜️ [BULK SHEET] Compressing", photos.length, "photos...");
-
+      // Compress
       const compressedFiles: File[] = [];
       for (let i = 0; i < photos.length; i++) {
         const photo = photos[i];
         let fileToUpload: File;
-
         if (shouldCompress(photo.file)) {
           const compressed = await compressImage(photo.file, {
             maxDimension: 1920,
             quality: 0.8,
           });
           fileToUpload = compressedToFile(compressed, photo.file.name);
-          console.log(
-            `[BULK SHEET] Compressed: ${(photo.file.size / 1024).toFixed(0)}KB → ${(fileToUpload.size / 1024).toFixed(0)}KB`
-          );
         } else {
           fileToUpload = photo.file;
         }
-
         compressedFiles.push(fileToUpload);
         setUploadProgress({ current: i + 1, total: photos.length });
       }
 
-      // Phase 2: Upload to Cloudinary
+      // Upload to Cloudinary
       setIsCompressing(false);
       setUploadProgress({ current: 0, total: compressedFiles.length });
-
-      console.log("📤 [BULK SHEET] Uploading to Cloudinary...");
 
       const uploaded: UploadedPhoto[] = [];
       const listingId = `bulk-${Date.now()}`;
 
       for (let i = 0; i < compressedFiles.length; i += UPLOAD_CONCURRENCY) {
         const batch = compressedFiles.slice(i, i + UPLOAD_CONCURRENCY);
-
         const batchResults = await Promise.all(
           batch.map(async (file, batchIndex) => {
             const globalIndex = i + batchIndex;
-
             const formData = new FormData();
             formData.append("file", file);
             formData.append("listingId", listingId);
@@ -309,23 +289,17 @@ export function BulkUploadSheet({
               `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/upload-to-cloudinary`,
               {
                 method: "POST",
-                headers: {
-                  Authorization: `Bearer ${session.access_token}`,
-                },
+                headers: { Authorization: `Bearer ${session.access_token}` },
                 body: formData,
               }
             );
 
             if (!response.ok) {
-              const error = await response.json();
-              throw new Error(error.error || "Upload failed");
+              const err = await response.json();
+              throw new Error(err.error || "Upload failed");
             }
 
             const result = await response.json();
-            console.log(
-              `✅ [BULK SHEET] Image ${globalIndex + 1} uploaded to Cloudinary`
-            );
-
             return {
               id: result.data.id,
               url: result.data.url,
@@ -335,7 +309,6 @@ export function BulkUploadSheet({
             };
           })
         );
-
         uploaded.push(...batchResults);
         setUploadProgress({
           current: uploaded.length,
@@ -343,10 +316,7 @@ export function BulkUploadSheet({
         });
       }
 
-      console.log("✅ [BULK SHEET] All photos uploaded successfully");
       setUploadedPhotos(uploaded);
-
-      // Move to grouping stage
       await handleGrouping(uploaded, session.access_token);
     } catch (err) {
       console.error("❌ [BULK SHEET] Upload error:", err);
@@ -356,18 +326,13 @@ export function BulkUploadSheet({
     }
   };
 
-  // ============================================================
-  // Grouping Handler
-  // ============================================================
-
   const handleGrouping = async (
-    photos: UploadedPhoto[],
+    uploaded: UploadedPhoto[],
     accessToken: string
   ) => {
     setStage("grouping");
 
     try {
-      // Call AI grouping edge function
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/group-photos-ai`,
         {
@@ -376,60 +341,43 @@ export function BulkUploadSheet({
             Authorization: `Bearer ${accessToken}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            imageUrls: photos.map((p) => p.url),
-          }),
+          body: JSON.stringify({ imageUrls: uploaded.map((p) => p.url) }),
         }
       );
 
-      if (!response.ok) {
-        throw new Error("Failed to group photos");
-      }
+      if (!response.ok) throw new Error("Failed to group photos");
 
       const data = await response.json();
-      console.log("✅ [BULK SHEET] AI grouping complete:", data);
       setGroups(data.groups);
-
-      // Analyse each group
-      await handleAnalysis(photos, data.groups, accessToken);
+      await handleAnalysis(uploaded, data.groups, accessToken);
     } catch (err) {
       console.error("❌ [BULK SHEET] Grouping error:", err);
-
-      // Fallback: Create one group per photo
-      const fallbackGroups: PhotoGroup[] = photos.map((_, index) => ({
+      const fallbackGroups: PhotoGroup[] = uploaded.map((_, index) => ({
         id: `group-${index + 1}`,
         photoIndexes: [index],
         suggestedName: `Product ${index + 1}`,
         confidence: 50,
       }));
       setGroups(fallbackGroups);
-
-      // Continue with fallback groups
       const { createClient } = await import("@/lib/supabase/client");
       const supabase = createClient();
       const {
         data: { session },
       } = await supabase.auth.getSession();
       if (session) {
-        await handleAnalysis(photos, fallbackGroups, session.access_token);
+        await handleAnalysis(uploaded, fallbackGroups, session.access_token);
       }
     }
   };
 
-  // ============================================================
-  // Analysis Handler
-  // ============================================================
-
   const handleAnalysis = async (
-    photos: UploadedPhoto[],
+    uploaded: UploadedPhoto[],
     photoGroups: PhotoGroup[],
     accessToken: string
   ) => {
     try {
-      // Analyse each product group
       const analysisPromises = photoGroups.map(async (group) => {
-        const imageUrls = group.photoIndexes.map((idx) => photos[idx].url);
-
+        const imageUrls = group.photoIndexes.map((idx) => uploaded[idx].url);
         try {
           const response = await fetch(
             `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/analyze-listing-ai`,
@@ -439,34 +387,24 @@ export function BulkUploadSheet({
                 Authorization: `Bearer ${accessToken}`,
                 "Content-Type": "application/json",
               },
-              body: JSON.stringify({
-                imageUrls,
-                userHints: {},
-              }),
+              body: JSON.stringify({ imageUrls, userHints: {} }),
             }
           );
-
-          if (!response.ok) {
-            throw new Error("Analysis failed");
-          }
-
+          if (!response.ok) throw new Error("Analysis failed");
           const result = await response.json();
           return { groupId: group.id, success: true, analysis: result.analysis };
-        } catch (error) {
-          console.error(`Failed to analyse group ${group.id}:`, error);
+        } catch (err) {
+          console.error(`Failed to analyse group ${group.id}:`, err);
           return { groupId: group.id, success: false, analysis: null };
         }
       });
 
       const results = await Promise.all(analysisPromises);
-      console.log("✅ [BULK SHEET] AI analysis complete:", results);
 
-      // Map results to products
       const analysedProducts: ProductData[] = photoGroups.map((group) => {
         const result = results.find((r) => r.groupId === group.id);
         const analysis = result?.success ? result.analysis : null;
 
-        // Generate title from AI data, preferring web-clean product titles.
         const titleParts = [
           analysis?.brand,
           analysis?.model,
@@ -477,62 +415,62 @@ export function BulkUploadSheet({
           analysis?.title ||
           (titleParts.length > 0 ? titleParts.join(" ") : group.suggestedName);
 
-        // Get details
         const bikeDetails = analysis?.bike_details || {};
         const partDetails = analysis?.part_details || {};
         const apparelDetails = analysis?.apparel_details || {};
         const priceEstimate = analysis?.price_estimate || {};
 
-        const groupPhotos = group.photoIndexes.map((idx) => photos[idx]);
+        const groupPhotos = group.photoIndexes.map((idx) => uploaded[idx]);
+
+        const formData: ProductFormData = {
+          title: generatedTitle,
+          description: analysis?.description || "",
+          sellerNotes: analysis?.seller_notes || "",
+          brand: analysis?.brand || "",
+          model: analysis?.model || "",
+          modelYear: analysis?.model_year || "",
+          itemType: analysis?.item_type || "bike",
+          bikeType: bikeDetails.bike_type || "",
+          frameSize: bikeDetails.frame_size || "",
+          frameMaterial: bikeDetails.frame_material || "",
+          groupset: bikeDetails.groupset || "",
+          wheelSize: bikeDetails.wheel_size || "",
+          colorPrimary: bikeDetails.color_primary || "",
+          partTypeDetail: partDetails.part_category || "",
+          compatibilityNotes: partDetails.compatibility || "",
+          size: apparelDetails.size || "",
+          genderFit: apparelDetails.gender_fit || "",
+          conditionRating: (analysis?.condition_rating ||
+            "Good") as ConditionRating,
+          conditionDetails:
+            analysis?.condition_details || analysis?.condition_notes || "",
+          price: priceEstimate.min_aud
+            ? Math.round(
+                priceEstimate.target_aud ||
+                  (priceEstimate.min_aud + priceEstimate.max_aud) / 2
+              )
+            : 0,
+          originalRrp: priceEstimate.max_aud || 0,
+          shippingAvailable: false,
+          shippingCost: 0,
+          pickupLocation: "",
+          pickupAvailable: true,
+        };
 
         return {
           groupId: group.id,
-          imageUrls: groupPhotos.map((photo) => photo.url),
-          thumbnailUrls: groupPhotos.map(
-            (photo) => photo.thumbnailUrl || photo.cardUrl
-          ),
+          imageUrls: groupPhotos.map((p) => p.url),
+          thumbnailUrls: groupPhotos.map((p) => p.thumbnailUrl || p.cardUrl),
           suggestedName: generatedTitle,
           aiData: analysis,
-          formData: {
-            title: generatedTitle,
-            description: analysis?.description || "",
-            sellerNotes: analysis?.seller_notes || "",
-            brand: analysis?.brand || "",
-            model: analysis?.model || "",
-            modelYear: analysis?.model_year || "",
-            itemType: analysis?.item_type || "bike",
-            bikeType: bikeDetails.bike_type || "",
-            frameSize: bikeDetails.frame_size || "",
-            frameMaterial: bikeDetails.frame_material || "",
-            groupset: bikeDetails.groupset || "",
-            wheelSize: bikeDetails.wheel_size || "",
-            colorPrimary: bikeDetails.color_primary || "",
-            partTypeDetail: partDetails.part_category || "",
-            compatibilityNotes: partDetails.compatibility || "",
-            size: apparelDetails.size || "",
-            genderFit: apparelDetails.gender_fit || "",
-            conditionRating: (analysis?.condition_rating ||
-              "Good") as ConditionRating,
-            conditionDetails: analysis?.condition_details || analysis?.condition_notes || "",
-            price: priceEstimate.min_aud
-              ? Math.round(
-                  priceEstimate.target_aud ||
-                  (priceEstimate.min_aud + priceEstimate.max_aud) / 2
-                )
-              : 0,
-            originalRrp: priceEstimate.max_aud || 0,
-            shippingAvailable: false,
-            shippingCost: 0,
-            pickupLocation: "",
-            pickupAvailable: true,
-          },
-          isValid: true,
+          formData,
+          isValid: validateProduct(formData),
         };
       });
 
       setProducts(analysedProducts);
-      setCurrentProductIndex(0);
-      setStage("assigning"); // Go to photo assignment first
+      setCurrentIndex(0);
+      setStage("review");
     } catch (err) {
       console.error("❌ [BULK SHEET] Analysis error:", err);
       setError(err instanceof Error ? err.message : "Failed to analyse products");
@@ -540,41 +478,88 @@ export function BulkUploadSheet({
     }
   };
 
+  // Hydrate photos from an iMessage / Nest text upload link
+  React.useEffect(() => {
+    if (!isOpen || !textUploadToken) return;
+    if (loadedTextUploadTokenRef.current === textUploadToken) return;
+    loadedTextUploadTokenRef.current = textUploadToken;
+
+    let cancelled = false;
+
+    const loadSessionPhotos = async () => {
+      setError(null);
+      setStage("grouping");
+
+      try {
+        const response = await fetch(
+          `/api/marketplace/text-upload/sessions/${encodeURIComponent(textUploadToken)}`,
+          { cache: "no-store" },
+        );
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(
+            typeof data?.error === "string"
+              ? data.error
+              : "Could not load this text upload.",
+          );
+        }
+
+        const uploadedImages = Array.isArray(data?.uploadedImages)
+          ? data.uploadedImages
+          : [];
+        const sessionPhotos: UploadedPhoto[] = uploadedImages
+          .filter(
+            (image: { url?: string }) => image && typeof image.url === "string",
+          )
+          .map((image: Record<string, string>, index: number) => ({
+            id: image.publicId || `text-upload-${index}`,
+            url: image.url,
+            cardUrl: image.cardUrl || image.url,
+            thumbnailUrl: image.thumbnailUrl || image.url,
+            mobileCardUrl: image.mobileCardUrl || image.url,
+          }));
+
+        if (cancelled) return;
+        if (sessionPhotos.length === 0) {
+          throw new Error("This text upload has no photos.");
+        }
+
+        setUploadedPhotos(sessionPhotos);
+
+        const { createClient } = await import("@/lib/supabase/client");
+        const supabase = createClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!session) {
+          throw new Error("You must be logged in to continue");
+        }
+
+        await handleGrouping(sessionPhotos, session.access_token);
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Could not load this text upload.",
+          );
+          setStage("photos");
+        }
+      }
+    };
+
+    void loadSessionPhotos();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, textUploadToken]);
+
   // ============================================================
-  // Product Review Handlers
+  // Per-product editing
   // ============================================================
-
-  const updateProductField = (field: keyof ProductFormData, value: any) => {
-    setProducts((prev) =>
-      prev.map((p, idx) =>
-        idx === currentProductIndex
-          ? {
-              ...p,
-              formData: { ...p.formData, [field]: value },
-              isValid: validateProduct({ ...p.formData, [field]: value }),
-            }
-          : p
-      )
-    );
-  };
-
-  const rotateProductPhoto = (photoIndex: number) => {
-    setProducts((prev) =>
-      prev.map((product, productIndex) => {
-        if (productIndex !== currentProductIndex) return product;
-
-        return {
-          ...product,
-          imageUrls: product.imageUrls.map((url, index) =>
-            index === photoIndex ? rotateCloudinaryUrlClockwise(url) || url : url
-          ),
-          thumbnailUrls: product.thumbnailUrls.map((url, index) =>
-            index === photoIndex ? rotateCloudinaryUrlClockwise(url) || url : url
-          ),
-        };
-      })
-    );
-  };
 
   const validateProduct = (data: ProductFormData): boolean => {
     return !!(
@@ -586,189 +571,152 @@ export function BulkUploadSheet({
     );
   };
 
-  // Generate description using AI with web search
-  const handleGenerateDescription = async () => {
-    const currentProduct = products[currentProductIndex];
-    if (!currentProduct) return;
-
-    const formData = currentProduct.formData;
-    if (!formData.title && !formData.brand && !formData.model) {
-      return; // Need at least some info to generate
-    }
-
-    setIsGeneratingDescription(true);
-    try {
-      const response = await fetch('/api/generate-description', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: formData.title || `${formData.brand || ''} ${formData.model || ''}`.trim(),
-          brand: formData.brand,
-          model: formData.model,
-          itemType: formData.itemType,
-          bikeType: formData.bikeType,
-          frameSize: formData.frameSize,
-          frameMaterial: formData.frameMaterial,
-          groupset: formData.groupset,
-          wheelSize: formData.wheelSize,
-          conditionRating: formData.conditionRating,
-          partTypeDetail: formData.partTypeDetail,
-          size: formData.size,
-          genderFit: formData.genderFit,
-        }),
-      });
-
-      const data = await response.json();
-      
-      if (data.success && data.description) {
-        updateProductField('description', data.description);
-      } else {
-        console.error('Failed to generate description:', data.error);
-      }
-    } catch (error) {
-      console.error('Error generating description:', error);
-    } finally {
-      setIsGeneratingDescription(false);
-    }
+  const updateProductFieldAt = (
+    index: number,
+    field: keyof ProductFormData,
+    value: any
+  ) => {
+    setProducts((prev) =>
+      prev.map((p, i) =>
+        i === index
+          ? {
+              ...p,
+              formData: { ...p.formData, [field]: value },
+              isValid: validateProduct({ ...p.formData, [field]: value }),
+            }
+          : p
+      )
+    );
   };
 
-  const goToNextProduct = () => {
-    if (currentProductIndex < products.length - 1) {
-      setCurrentProductIndex((prev) => prev + 1);
-      // Keep showDetails state as user prefers
-      // Scroll carousel
-      if (carouselRef.current) {
-        const nextIndex = currentProductIndex + 1;
-        carouselRef.current.scrollTo({
-          left: nextIndex * carouselRef.current.offsetWidth,
-          behavior: "smooth",
-        });
-      }
-    } else {
-      // Last product - go to final review
-      setStage("final");
-    }
+  const rotateProductPhotoAt = (productIndex: number, photoIndex: number) => {
+    setProducts((prev) =>
+      prev.map((p, i) =>
+        i !== productIndex
+          ? p
+          : {
+              ...p,
+              imageUrls: p.imageUrls.map((url, idx) =>
+                idx === photoIndex
+                  ? rotateCloudinaryUrlClockwise(url) || url
+                  : url
+              ),
+              thumbnailUrls: p.thumbnailUrls.map((url, idx) =>
+                idx === photoIndex
+                  ? rotateCloudinaryUrlClockwise(url) || url
+                  : url
+              ),
+            }
+      )
+    );
   };
 
-  const goToPrevProduct = () => {
-    if (currentProductIndex > 0) {
-      setCurrentProductIndex((prev) => prev - 1);
-      // Keep showDetails state as user prefers
-      // Scroll carousel
-      if (carouselRef.current) {
-        const prevIndex = currentProductIndex - 1;
-        carouselRef.current.scrollTo({
-          left: prevIndex * carouselRef.current.offsetWidth,
-          behavior: "smooth",
-        });
-      }
-    } else {
-      // Go back to photo assignment
-      setStage("assigning");
-    }
+  const setCoverPhotoAt = (productIndex: number, photoIndex: number) => {
+    if (photoIndex === 0) return;
+    const reorder = <T,>(arr: T[]): T[] => {
+      const copy = [...arr];
+      const [picked] = copy.splice(photoIndex, 1);
+      copy.unshift(picked);
+      return copy;
+    };
+    setProducts((prev) =>
+      prev.map((p, i) =>
+        i !== productIndex
+          ? p
+          : {
+              ...p,
+              imageUrls: reorder(p.imageUrls),
+              thumbnailUrls: reorder(p.thumbnailUrls),
+            }
+      )
+    );
   };
 
   const deleteProduct = (groupId: string) => {
-    setProducts((prev) => prev.filter((p) => p.groupId !== groupId));
-    if (currentProductIndex >= products.length - 1) {
-      setCurrentProductIndex(Math.max(0, currentProductIndex - 1));
+    const next = products.filter((p) => p.groupId !== groupId);
+    setProducts(next);
+    if (next.length === 0) {
+      setCurrentIndex(0);
+      setStage("photos");
+      return;
+    }
+    setCurrentIndex((i) => Math.min(i, next.length - 1));
+  };
+
+  const handleGenerateDescriptionAt = async (index: number) => {
+    const product = products[index];
+    if (!product) return;
+    const fd = product.formData;
+    if (!fd.title && !fd.brand && !fd.model) return;
+
+    setGeneratingId(product.groupId);
+    try {
+      const response = await fetch("/api/generate-description", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: fd.title || `${fd.brand || ""} ${fd.model || ""}`.trim(),
+          brand: fd.brand,
+          model: fd.model,
+          itemType: fd.itemType,
+          bikeType: fd.bikeType,
+          frameSize: fd.frameSize,
+          frameMaterial: fd.frameMaterial,
+          groupset: fd.groupset,
+          wheelSize: fd.wheelSize,
+          conditionRating: fd.conditionRating,
+          partTypeDetail: fd.partTypeDetail,
+          size: fd.size,
+          genderFit: fd.genderFit,
+        }),
+      });
+      const data = await response.json();
+      if (data.success && data.description) {
+        setProducts((prev) =>
+          prev.map((p) =>
+            p.groupId === product.groupId
+              ? {
+                  ...p,
+                  formData: { ...p.formData, description: data.description },
+                  isValid: validateProduct({
+                    ...p.formData,
+                    description: data.description,
+                  }),
+                }
+              : p
+          )
+        );
+      }
+    } catch (err) {
+      console.error("Error generating description:", err);
+    } finally {
+      setGeneratingId(null);
     }
   };
 
+  // ============================================================
+  // Navigation
+  // ============================================================
+
+  const goNext = () => {
+    if (currentIndex < products.length - 1) {
+      setCurrentIndex((i) => i + 1);
+    } else {
+      setStage("summary");
+    }
+  };
+
+  const goPrev = () => {
+    setCurrentIndex((i) => Math.max(0, i - 1));
+  };
+
   const editProduct = (index: number) => {
-    setCurrentProductIndex(index);
-    setStage("reviewing");
+    setCurrentIndex(index);
+    setStage("review");
   };
 
   // ============================================================
-  // Photo Assignment Handlers
-  // ============================================================
-
-  const movePhotoToProduct = (photoUrl: string, fromProductIndex: number, toProductIndex: number) => {
-    if (fromProductIndex === toProductIndex) return;
-    
-    setProducts((prev) => {
-      const updated = [...prev];
-      
-      // Remove from source product
-      const fromProduct = { ...updated[fromProductIndex] };
-      const photoIndex = fromProduct.imageUrls.indexOf(photoUrl);
-      if (photoIndex === -1) return prev;
-      
-      fromProduct.imageUrls = fromProduct.imageUrls.filter((_, i) => i !== photoIndex);
-      fromProduct.thumbnailUrls = fromProduct.thumbnailUrls.filter((_, i) => i !== photoIndex);
-      updated[fromProductIndex] = fromProduct;
-      
-      // Add to target product
-      const toProduct = { ...updated[toProductIndex] };
-      toProduct.imageUrls = [...toProduct.imageUrls, photoUrl];
-      toProduct.thumbnailUrls = [...toProduct.thumbnailUrls, photoUrl];
-      updated[toProductIndex] = toProduct;
-      
-      return updated;
-    });
-  };
-
-  const createNewProductFromPhoto = (photoUrl: string, fromProductIndex: number) => {
-    setProducts((prev) => {
-      const updated = [...prev];
-      
-      // Remove from source product
-      const fromProduct = { ...updated[fromProductIndex] };
-      const photoIndex = fromProduct.imageUrls.indexOf(photoUrl);
-      if (photoIndex === -1) return prev;
-      
-      fromProduct.imageUrls = fromProduct.imageUrls.filter((_, i) => i !== photoIndex);
-      fromProduct.thumbnailUrls = fromProduct.thumbnailUrls.filter((_, i) => i !== photoIndex);
-      updated[fromProductIndex] = fromProduct;
-      
-      // Create new product
-      const newProduct: ProductData = {
-        groupId: `new-${Date.now()}`,
-        imageUrls: [photoUrl],
-        thumbnailUrls: [photoUrl],
-        suggestedName: `Product ${updated.length + 1}`,
-        aiData: null,
-        formData: {
-          title: "",
-          description: "",
-          sellerNotes: "",
-          brand: "",
-          model: "",
-          modelYear: "",
-          itemType: "bike",
-          bikeType: "",
-          frameSize: "",
-          frameMaterial: "",
-          groupset: "",
-          wheelSize: "",
-          colorPrimary: "",
-          partTypeDetail: "",
-          compatibilityNotes: "",
-          size: "",
-          genderFit: "",
-          conditionRating: "Good",
-          conditionDetails: "",
-          price: 0,
-          originalRrp: 0,
-          shippingAvailable: false,
-          shippingCost: 0,
-          pickupLocation: "",
-          pickupAvailable: true,
-        },
-        isValid: false,
-      };
-      
-      return [...updated, newProduct];
-    });
-  };
-
-  const removeEmptyProducts = () => {
-    setProducts((prev) => prev.filter((p) => p.imageUrls.length > 0));
-  };
-
-  // ============================================================
-  // Publish Handler
+  // Publish
   // ============================================================
 
   const handlePublish = async () => {
@@ -781,11 +729,8 @@ export function BulkUploadSheet({
         data: { session },
       } = await supabase.auth.getSession();
 
-      if (!session) {
-        throw new Error("You must be logged in");
-      }
+      if (!session) throw new Error("You must be logged in");
 
-      // Build listing data for each product
       const listings = products.map((product) => {
         const imageData = product.imageUrls.map((url, index) => ({
           id: `${product.groupId}-${index}`,
@@ -794,7 +739,6 @@ export function BulkUploadSheet({
           isPrimary: index === 0,
         }));
 
-        // Map item type to marketplace category
         const categoryMap: { [key: string]: string } = {
           bike: "Bicycles",
           part: "Parts",
@@ -803,8 +747,8 @@ export function BulkUploadSheet({
 
         return {
           title: product.formData.title || product.suggestedName,
-          productDescription: product.formData.description, // AI-generated product description
-          sellerNotes: product.formData.sellerNotes, // Seller's personal notes
+          productDescription: product.formData.description,
+          sellerNotes: product.formData.sellerNotes,
           brand: product.formData.brand,
           model: product.formData.model,
           modelYear: product.formData.modelYear,
@@ -828,35 +772,31 @@ export function BulkUploadSheet({
             categoryMap[product.formData.itemType] || "Bicycles",
           isNegotiable: true,
           shippingAvailable: product.formData.shippingAvailable,
-          shippingCost: product.formData.shippingAvailable ? product.formData.shippingCost : null,
-          pickupLocation: product.formData.pickupAvailable ? product.formData.pickupLocation : null,
-          pickupOnly: !product.formData.shippingAvailable && product.formData.pickupAvailable,
+          shippingCost: product.formData.shippingAvailable
+            ? product.formData.shippingCost
+            : null,
+          pickupLocation: product.formData.pickupAvailable
+            ? product.formData.pickupLocation
+            : null,
+          pickupOnly:
+            !product.formData.shippingAvailable &&
+            product.formData.pickupAvailable,
         };
       });
 
-      // Call bulk create API
       const response = await fetch("/api/marketplace/listings/bulk", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ listings }),
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to create listings");
-      }
+      if (!response.ok) throw new Error("Failed to create listings");
 
       const result = await response.json();
-      console.log("✅ [BULK SHEET] Listings created:", result);
-
       setSuccessListingIds(result.created || []);
       setStage("success");
-
-      // Call completion callback
       onComplete?.(result.created || []);
 
-      // Auto-close and navigate after delay
       setTimeout(() => {
         onClose();
         router.push("/marketplace");
@@ -864,22 +804,51 @@ export function BulkUploadSheet({
     } catch (err) {
       console.error("❌ [BULK SHEET] Publishing error:", err);
       setError(err instanceof Error ? err.message : "Failed to publish listings");
-      setStage("final");
+      setStage("summary");
     }
   };
 
   // ============================================================
-  // Render Helpers
+  // Close handling (with exit confirmation)
   // ============================================================
 
-  const canClose =
-    stage === "photos" ||
-    stage === "success" ||
-    (stage === "final" && !error);
+  const isBusy =
+    stage === "uploading" || stage === "grouping" || stage === "publishing";
 
-  const currentProduct = products[currentProductIndex];
-  const totalValue = products.reduce((sum, p) => sum + (p.formData?.price || 0), 0);
-  const validProducts = products.filter((p) => p.isValid);
+  const requestClose = () => {
+    if (stage === "success") {
+      onClose();
+      return;
+    }
+    if (isBusy) return; // can't interrupt an in-flight operation
+    if (
+      stage === "photos" &&
+      photos.length === 0 &&
+      uploadedPhotos.length === 0
+    ) {
+      onClose();
+      return;
+    }
+    setShowExitConfirm(true);
+  };
+
+  const confirmExit = () => {
+    setShowExitConfirm(false);
+    onClose();
+  };
+
+  const stepNumber =
+    stage === "photos"
+      ? 0
+      : stage === "uploading" || stage === "grouping" || stage === "review"
+        ? 1
+        : 2;
+
+  const totalValue = products.reduce(
+    (sum, p) => sum + (p.formData?.price || 0),
+    0
+  );
+  const current = products[currentIndex];
 
   // ============================================================
   // Render
@@ -888,158 +857,104 @@ export function BulkUploadSheet({
   return (
     <Sheet
       open={isOpen}
-      onOpenChange={(open) => !open && canClose && onClose()}
+      onOpenChange={(open) => {
+        if (!open) requestClose();
+      }}
     >
       <SheetContent
         side="bottom"
-        className="rounded-t-2xl p-0 overflow-hidden gap-0 max-h-[80vh] flex flex-col"
+        className="flex max-h-[96dvh] flex-col gap-0 overflow-hidden rounded-t-xl p-0 sm:mx-auto sm:max-w-[480px]"
+        style={{ height: "96dvh" }}
         showCloseButton={false}
       >
-        {/* Handle Bar */}
-        <div className="flex justify-center pt-3 pb-2 flex-shrink-0">
-          <div className="w-10 h-1 bg-gray-300 rounded-full" />
+        {/* Handle bar */}
+        <div className="flex flex-shrink-0 justify-center pb-1 pt-3">
+          <div className="h-1 w-10 rounded-full bg-gray-300" />
         </div>
 
-        {/* ============================================================ */}
-        {/* STAGE: Photo Selection */}
-        {/* ============================================================ */}
+        {/* Progress header for the interactive steps */}
+        {(stage === "photos" ||
+          stage === "uploading" ||
+          stage === "grouping" ||
+          stage === "review" ||
+          stage === "summary") && (
+          <ProgressHeader
+            step={stepNumber}
+            onClose={requestClose}
+            closeable={!isBusy}
+          />
+        )}
+
+        {/* ---------------- PHOTOS ---------------- */}
         {stage === "photos" && (
-          <div className="flex flex-col flex-1 overflow-hidden">
-            {/* Header */}
-            <div className="px-5 pb-3 flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="h-10 w-10 rounded-xl bg-gray-100 flex items-center justify-center">
-                  <Upload className="h-5 w-5 text-gray-600" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900">
-                    Bulk Upload
-                  </h2>
-                  <p className="text-xs text-gray-500">
-                    Upload photos of multiple items
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Photo Grid - Scrollable */}
+          <div className="flex flex-1 flex-col overflow-hidden">
             <div className="flex-1 overflow-y-auto px-4 pb-4">
+              <h1 className="px-1 text-[24px] font-bold leading-tight text-gray-900">
+                Add your photos
+              </h1>
+              <p className="mb-4 mt-1.5 px-1 text-[15px] leading-relaxed text-gray-500">
+                Snap or upload everything you want to sell. We&apos;ll sort them
+                into separate listings for you.
+              </p>
+
               {photos.length === 0 ? (
-                /* Empty state - upload buttons */
-                <div className="space-y-3">
-                  {/* Camera */}
+                <div className="grid grid-cols-2 gap-3">
                   <button
+                    type="button"
                     onClick={() => cameraInputRef.current?.click()}
-                    className="w-full active:scale-[0.98] transition-transform"
+                    className="flex h-28 flex-col items-center justify-center gap-2 rounded-md border border-gray-200 bg-white text-gray-700 transition-transform active:scale-[0.98]"
                   >
-                    <div className="bg-white border border-gray-300 rounded-xl p-5 flex items-center gap-4">
-                      <div className="h-14 w-14 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
-                        <Camera className="h-7 w-7 text-gray-700" />
-                      </div>
-                      <div className="flex-1 text-left">
-                        <h3 className="text-base font-semibold text-gray-900">
-                          Take Photos
-                        </h3>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          Capture multiple items
-                        </p>
-                      </div>
-                    </div>
+                    <Camera className="h-7 w-7" />
+                    <span className="text-[14px] font-semibold">Camera</span>
                   </button>
-                  <input
-                    ref={cameraInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    multiple
-                    onChange={handleFileSelect}
-                    className="hidden"
-                  />
-
-                  {/* Gallery */}
                   <button
+                    type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-full active:scale-[0.98] transition-transform"
+                    className="flex h-28 flex-col items-center justify-center gap-2 rounded-md border border-gray-200 bg-white text-gray-700 transition-transform active:scale-[0.98]"
                   >
-                    <div className="bg-white border border-gray-200 rounded-xl p-5 flex items-center gap-4 active:bg-gray-50">
-                      <div className="h-14 w-14 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
-                        <ImageIcon className="h-7 w-7 text-gray-600" />
-                      </div>
-                      <div className="flex-1 text-left">
-                        <h3 className="text-base font-semibold text-gray-900">
-                          Choose from Gallery
-                        </h3>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          Select existing photos
-                        </p>
-                      </div>
-                    </div>
+                    <ImageIcon className="h-7 w-7" />
+                    <span className="text-[14px] font-semibold">
+                      Photo library
+                    </span>
                   </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleFileSelect}
-                    className="hidden"
-                  />
-
-                  <p className="text-center text-xs text-gray-400 pt-2">
-                    Upload photos of all items you want to list
-                  </p>
                 </div>
               ) : (
-                /* Photo previews */
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-gray-700">
-                      {photos.length} photo{photos.length !== 1 ? "s" : ""}{" "}
-                      selected
+                <div>
+                  <div className="mb-3 flex items-center justify-between px-1">
+                    <p className="text-[14px] font-semibold text-gray-900">
+                      {photos.length} photo{photos.length !== 1 ? "s" : ""} added
                     </p>
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="text-sm font-medium text-gray-900 flex items-center gap-1"
-                    >
-                      <Plus className="h-4 w-4" />
-                      Add more
-                    </button>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={handleFileSelect}
-                      className="hidden"
-                    />
+                    <span className="inline-flex items-center gap-1.5 rounded-md bg-gray-100 px-2 py-1 text-[12px] font-medium text-gray-600">
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Auto-sorted next
+                    </span>
                   </div>
-
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     {photos.map((photo, index) => (
                       <div
                         key={index}
-                        className="relative aspect-square rounded-xl overflow-hidden bg-gray-100"
+                        className="relative aspect-square overflow-hidden rounded-md bg-gray-100"
                       >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={photo.preview}
                           alt={`Photo ${index + 1}`}
-                          className="w-full h-full object-cover"
+                          className="h-full w-full object-cover"
                         />
                         <button
+                          type="button"
                           onClick={() => removePhoto(index)}
-                          className="absolute top-1.5 right-1.5 h-6 w-6 bg-black/60 rounded-full flex items-center justify-center z-10"
+                          className="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full bg-black/60"
+                          aria-label="Remove photo"
                         >
                           <X className="h-3.5 w-3.5 text-white" />
                         </button>
-                        <div className="absolute bottom-1 left-1 bg-black/60 px-1.5 py-0.5 rounded text-[10px] text-white font-medium">
-                          {index + 1}
-                        </div>
                       </div>
                     ))}
-
-                    {/* Add more button */}
                     <button
+                      type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className="aspect-square rounded-xl border-2 border-dashed border-gray-300 flex items-center justify-center bg-gray-50 active:bg-gray-100"
+                      className="grid aspect-square place-items-center rounded-md border-2 border-dashed border-gray-300 bg-gray-50 active:bg-gray-100"
                     >
                       <Plus className="h-6 w-6 text-gray-400" />
                     </button>
@@ -1047,1006 +962,970 @@ export function BulkUploadSheet({
                 </div>
               )}
 
-              {/* Error Message */}
-              {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+              {error && (
+                <p className="mt-3 px-1 text-[12px] text-rose-600">{error}</p>
+              )}
+
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                multiple
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleFileSelect}
+                className="hidden"
+              />
             </div>
 
-            {/* Bottom Actions */}
-            <div className="px-4 pb-8 pt-3 border-t border-gray-100 flex-shrink-0 bg-white">
-              <div className="flex gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={onClose}
-                  className="flex-1 h-12 rounded-xl border-gray-200"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleUpload}
-                  disabled={photos.length === 0}
-                  className="flex-1 h-12 rounded-xl bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold disabled:opacity-40"
-                >
-                  Continue with {photos.length} Photo
-                  {photos.length !== 1 ? "s" : ""}
-                </Button>
-              </div>
-            </div>
+            <BottomBar>
+              <BrandButton
+                onClick={handleUpload}
+                disabled={photos.length === 0}
+              >
+                <Sparkles className="h-5 w-5" />
+                {photos.length === 0
+                  ? "Add photos to continue"
+                  : `Analyse ${photos.length} photo${photos.length !== 1 ? "s" : ""}`}
+              </BrandButton>
+            </BottomBar>
           </div>
         )}
 
-        {/* ============================================================ */}
-        {/* STAGE: Uploading */}
-        {/* ============================================================ */}
+        {/* ---------------- UPLOADING ---------------- */}
         {stage === "uploading" && (
-          <div className="px-5 py-12 flex flex-col items-center">
-            <div className="relative mb-6">
-              <div className="h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center">
-                <Upload className="h-7 w-7 text-gray-600" />
-              </div>
-              <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-[#FFC72C] animate-spin" />
-            </div>
-
-            <p className="text-base font-medium text-gray-900 mb-1">
-              {isCompressing ? "Optimising photos..." : "Uploading photos..."}
+          <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+            <Loader2 className="h-8 w-8 animate-spin text-gray-900" />
+            <p className="mt-4 text-[15px] font-medium text-gray-900">
+              {isCompressing ? "Optimising photos…" : "Uploading photos…"}
             </p>
-            <p className="text-sm text-gray-500">
+            <p className="mt-1 text-[13px] text-gray-500">
               {uploadProgress.current} of {uploadProgress.total}
             </p>
-
-            <div className="w-48 h-1.5 bg-gray-200 rounded-full mt-4 overflow-hidden">
+            <div className="mt-4 h-1.5 w-48 overflow-hidden rounded-full bg-gray-200">
               <div
-                className="h-full bg-[#FFC72C] rounded-full transition-all duration-300"
+                className="h-full rounded-full transition-all duration-300"
                 style={{
-                  width: `${(uploadProgress.current / uploadProgress.total) * 100}%`,
+                  width: `${
+                    uploadProgress.total
+                      ? (uploadProgress.current / uploadProgress.total) * 100
+                      : 0
+                  }%`,
+                  backgroundColor: BRAND,
                 }}
               />
             </div>
           </div>
         )}
 
-        {/* ============================================================ */}
-        {/* STAGE: Grouping */}
-        {/* ============================================================ */}
+        {/* ---------------- GROUPING / ANALYSING ---------------- */}
         {stage === "grouping" && (
-          <div className="px-5 py-12 flex flex-col items-center">
-            <div className="relative mb-6">
-              <div className="h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center">
-                <Sparkles className="h-7 w-7 text-gray-600" />
-              </div>
-              <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-[#FFC72C] animate-spin" />
+          <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+            <div
+              className="grid h-20 w-20 place-items-center rounded-full"
+              style={{ backgroundColor: "#fff7d6" }}
+            >
+              <Loader2 className="h-8 w-8 animate-spin text-gray-900" />
             </div>
-
-            <p className="text-base font-medium text-gray-900 mb-1">
-              Yellow Jersey is analysing...
-            </p>
-            <p className="text-sm text-gray-500 text-center">
-              Grouping photos and detecting products
+            <h2 className="mt-6 flex items-center gap-2 text-[18px] font-bold text-gray-900">
+              <Sparkles className="h-4 w-4" />
+              Analysing your photos
+            </h2>
+            <p className="mt-1 text-[14px] text-gray-500">
+              Grouping items and identifying makes, models &amp; prices
             </p>
           </div>
         )}
 
-        {/* ============================================================ */}
-        {/* STAGE: Photo Assignment */}
-        {/* ============================================================ */}
-        {stage === "assigning" && (
-          <div className="flex flex-col flex-1 overflow-hidden">
-            {/* Header */}
-            <div className="px-5 py-3 border-b border-gray-200 flex-shrink-0">
-              <div className="flex items-center justify-between">
-                <button
-                  onClick={() => setStage("photos")}
-                  className="p-2 -ml-2 rounded-lg text-gray-600 active:bg-gray-100"
-                >
-                  <ChevronLeft className="h-5 w-5" />
-                </button>
-                <div className="text-center">
-                  <h2 className="text-lg font-semibold text-gray-900">
-                    Organise Photos
-                  </h2>
-                  <p className="text-xs text-gray-500">
-                    Tap a photo to move it to another product
-                  </p>
-                </div>
-                <div className="w-9" />
-              </div>
-            </div>
-
-            {/* Products with their photos - Scrollable */}
-            <div className="flex-1 overflow-y-auto px-4 py-3">
-              <div className="space-y-4">
-                {products.map((product, productIndex) => (
-                  <div
-                    key={product.groupId}
-                    className="bg-white rounded-xl border border-gray-200 overflow-hidden"
-                  >
-                    {/* Product Header */}
-                    <div className="px-3 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="h-6 w-6 rounded-full bg-gray-900 text-white flex items-center justify-center text-xs font-bold">
-                          {productIndex + 1}
-                        </span>
-                        <span className="text-sm font-medium text-gray-900">
-                          {product.formData.title || product.suggestedName || `Product ${productIndex + 1}`}
-                        </span>
-                      </div>
-                      <span className="text-xs text-gray-500">
-                        {product.imageUrls.length} photo{product.imageUrls.length !== 1 ? "s" : ""}
-                      </span>
-                    </div>
-
-                    {/* Photos Grid */}
-                    <div className="p-2">
-                      {product.imageUrls.length > 0 ? (
-                        <div className="grid grid-cols-4 gap-1.5">
-                          {product.imageUrls.map((url, photoIndex) => (
-                            <div key={photoIndex} className="relative">
-                              <button
-                                onClick={() => {
-                                  // Show action sheet to move photo
-                                  const targetProduct = prompt(
-                                    `Move to which product? (1-${products.length}, or "new" for new product)`,
-                                    ""
-                                  );
-                                  if (targetProduct === "new") {
-                                    createNewProductFromPhoto(url, productIndex);
-                                  } else if (targetProduct) {
-                                    const targetIndex = parseInt(targetProduct) - 1;
-                                    if (targetIndex >= 0 && targetIndex < products.length) {
-                                      movePhotoToProduct(url, productIndex, targetIndex);
-                                    }
-                                  }
-                                }}
-                                className="aspect-square w-full rounded-lg overflow-hidden bg-gray-100 active:opacity-70"
-                              >
-                                <img
-                                  src={url}
-                                  alt={`Photo ${photoIndex + 1}`}
-                                  className="w-full h-full object-cover"
-                                />
-                              </button>
-                              {photoIndex === 0 && (
-                                <div className="absolute top-1 left-1 bg-[#FFC72C] px-1.5 py-0.5 rounded text-[9px] font-bold text-gray-900">
-                                  COVER
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="py-6 text-center text-xs text-gray-400">
-                          No photos assigned
-                        </div>
-                      )}
-                    </div>
-                  </div>
+        {/* ---------------- REVIEW (one item per screen) ---------------- */}
+        {stage === "review" && current && (
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="flex flex-shrink-0 items-center justify-between px-4 pb-2">
+              <h2 className="text-[18px] font-bold text-gray-900">
+                Item {currentIndex + 1} of {products.length}
+              </h2>
+              <div className="flex gap-1.5">
+                {products.map((_, i) => (
+                  <span
+                    key={i}
+                    className={cn(
+                      "h-1.5 rounded-full transition-all",
+                      i === currentIndex ? "w-5" : "w-1.5 bg-gray-200"
+                    )}
+                    style={
+                      i === currentIndex ? { backgroundColor: BRAND } : undefined
+                    }
+                  />
                 ))}
               </div>
-
-              {/* Tip */}
-              <div className="mt-4 bg-gray-50 rounded-xl p-3 border border-gray-100">
-                <p className="text-xs text-gray-600 text-center">
-                  💡 Tap any photo to move it to a different product
-                </p>
-              </div>
             </div>
 
-            {/* Bottom Actions */}
-            <div className="px-4 pb-8 pt-3 border-t border-gray-100 flex-shrink-0 bg-white">
-              <Button
-                onClick={() => {
-                  removeEmptyProducts();
-                  setStage("reviewing");
-                }}
-                disabled={products.every((p) => p.imageUrls.length === 0)}
-                className="w-full h-12 rounded-xl bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold disabled:opacity-40"
-              >
-                Continue
-                <ChevronRight className="h-5 w-5 ml-1" />
-              </Button>
+            <div className="flex-1 overflow-y-auto px-4 pb-4">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={current.groupId}
+                  initial={{ opacity: 0, x: 24 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -24 }}
+                  transition={{ duration: 0.25 }}
+                >
+                  <ProductEditorFields
+                    product={current}
+                    isGenerating={generatingId === current.groupId}
+                    onPatch={(field, value) =>
+                      updateProductFieldAt(currentIndex, field, value)
+                    }
+                    onRotate={(photoIndex) =>
+                      rotateProductPhotoAt(currentIndex, photoIndex)
+                    }
+                    onSetCover={(photoIndex) =>
+                      setCoverPhotoAt(currentIndex, photoIndex)
+                    }
+                    onGenerate={() => handleGenerateDescriptionAt(currentIndex)}
+                    onDelete={() => deleteProduct(current.groupId)}
+                  />
+                </motion.div>
+              </AnimatePresence>
             </div>
-          </div>
-        )}
 
-        {/* ============================================================ */}
-        {/* STAGE: Product Review */}
-        {/* ============================================================ */}
-        {stage === "reviewing" && currentProduct && (
-          <div className="flex flex-col flex-1 overflow-hidden">
-            {/* Header with progress */}
-            <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
-              <button
-                onClick={goToPrevProduct}
-                className="p-2 rounded-lg text-gray-700 active:bg-gray-100"
-              >
-                <ChevronLeft className="h-5 w-5" />
-              </button>
-
+            <BottomBar>
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-gray-900">
-                  Product {currentProductIndex + 1}
-                </span>
-                <span className="text-sm text-gray-400">of</span>
-                <span className="text-sm text-gray-600">{products.length}</span>
-              </div>
-
-              <button
-                onClick={() => deleteProduct(currentProduct.groupId)}
-                className="p-2 rounded-lg text-red-500 active:bg-red-50"
-              >
-                <Trash2 className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Progress dots */}
-            <div className="flex justify-center gap-1.5 py-2 flex-shrink-0">
-              {products.map((_, idx) => (
-                <div
-                  key={idx}
-                  className={cn(
-                    "h-1.5 rounded-full transition-all duration-200",
-                    idx === currentProductIndex
-                      ? "w-6 bg-[#FFC72C]"
-                      : idx < currentProductIndex
-                        ? "w-1.5 bg-gray-400"
-                        : "w-1.5 bg-gray-200"
-                  )}
-                />
-              ))}
-            </div>
-
-            {/* Product Form - Scrollable */}
-            <div className="flex-1 overflow-y-auto">
-              {/* Photo */}
-              <div className="relative aspect-square bg-gray-100">
-                <Image
-                  src={currentProduct.imageUrls[0]}
-                  alt="Product"
-                  fill
-                  className="object-contain"
-                  priority
-                />
                 <button
                   type="button"
-                  onClick={() => rotateProductPhoto(0)}
-                  className="absolute bottom-3 left-3 h-10 w-10 rounded-full bg-white shadow-md border border-gray-200 flex items-center justify-center active:bg-gray-100"
-                  aria-label="Rotate cover photo clockwise"
-                  title="Rotate photo"
-                >
-                  <RotateCw className="h-5 w-5 text-gray-800" />
-                </button>
-                {currentProduct.imageUrls.length > 1 && (
-                  <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-sm rounded-lg px-2.5 py-1.5">
-                    <span className="text-xs font-medium text-white">
-                      {currentProduct.imageUrls.length} photos
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Thumbnail Strip */}
-              {currentProduct.imageUrls.length > 1 && (
-                <div className="flex gap-2 p-3 overflow-x-auto border-b border-gray-100">
-                  {currentProduct.imageUrls.map((url, index) => (
-                    <div
-                      key={index}
-                      className={cn(
-                        "relative flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden border-2",
-                        index === 0 ? "border-[#FFC72C]" : "border-gray-200"
-                      )}
-                    >
-                      <Image
-                        src={url}
-                        alt={`Photo ${index + 1}`}
-                        fill
-                        className="object-cover"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => rotateProductPhoto(index)}
-                        className="absolute bottom-1 left-1 h-6 w-6 rounded-full bg-white/95 shadow-sm border border-gray-200 flex items-center justify-center"
-                        aria-label={`Rotate photo ${index + 1} clockwise`}
-                        title="Rotate photo"
-                      >
-                        <RotateCw className="h-3 w-3 text-gray-800" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Form Fields */}
-              <div className="p-4 space-y-4">
-                {/* Title */}
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Title
-                  </label>
-                  <Input
-                    value={currentProduct.formData.title}
-                    onChange={(e) => updateProductField("title", e.target.value)}
-                    placeholder="Product name"
-                    className="h-11 text-base rounded-xl"
-                  />
-                </div>
-
-                {/* Price & Condition */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Price (AUD)
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                        $
-                      </span>
-                      <Input
-                        type="number"
-                        value={currentProduct.formData.price}
-                        onChange={(e) =>
-                          updateProductField(
-                            "price",
-                            parseFloat(e.target.value) || 0
-                          )
-                        }
-                        placeholder="0"
-                        className="pl-7 h-11 text-base rounded-xl"
-                        min="0"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Condition
-                    </label>
-                    <Select
-                      value={currentProduct.formData.conditionRating}
-                      onValueChange={(value) =>
-                        updateProductField("conditionRating", value)
-                      }
-                    >
-                      <SelectTrigger className="!h-11 w-full text-base py-1 rounded-xl">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {CONDITION_RATINGS.map((rating) => (
-                          <SelectItem key={rating} value={rating}>
-                            {rating}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {/* Delivery Options */}
-                <div className="space-y-3 pt-3 border-t border-gray-200">
-                  <label className="block text-xs font-medium text-gray-700">
-                    Delivery Options
-                  </label>
-                  
-                  {/* Shipping Toggle */}
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                    <div className="flex items-center gap-2">
-                      <Truck className="h-4 w-4 text-gray-500" />
-                      <span className="text-sm text-gray-700">Shipping</span>
-                    </div>
-                    <Switch
-                      checked={currentProduct.formData.shippingAvailable}
-                      onCheckedChange={(checked) =>
-                        updateProductField("shippingAvailable", checked)
-                      }
-                    />
-                  </div>
-                  
-                  {/* Shipping Cost */}
-                  {currentProduct.formData.shippingAvailable && (
-                    <div className="relative">
-                      <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <Input
-                        type="number"
-                        value={currentProduct.formData.shippingCost || ""}
-                        onChange={(e) =>
-                          updateProductField(
-                            "shippingCost",
-                            parseFloat(e.target.value) || 0
-                          )
-                        }
-                        placeholder="Shipping cost (0 for free)"
-                        className="pl-9 h-10 text-sm rounded-xl"
-                      />
-                    </div>
-                  )}
-                  
-                  {/* Pickup Toggle */}
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                    <div className="flex items-center gap-2">
-                      <MapPin className="h-4 w-4 text-gray-500" />
-                      <span className="text-sm text-gray-700">Pickup</span>
-                    </div>
-                    <Switch
-                      checked={currentProduct.formData.pickupAvailable}
-                      onCheckedChange={(checked) =>
-                        updateProductField("pickupAvailable", checked)
-                      }
-                    />
-                  </div>
-                  
-                  {/* Pickup Location */}
-                  {currentProduct.formData.pickupAvailable && (
-                    <div className="relative">
-                      <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <Input
-                        value={currentProduct.formData.pickupLocation || ""}
-                        onChange={(e) =>
-                          updateProductField("pickupLocation", e.target.value)
-                        }
-                        placeholder="Suburb or area"
-                        className="pl-10 h-10 text-sm rounded-xl"
-                      />
-                    </div>
-                  )}
-                  
-                  {/* Validation */}
-                  {!currentProduct.formData.shippingAvailable && !currentProduct.formData.pickupAvailable && (
-                    <p className="text-xs text-red-500">Select at least one delivery option</p>
-                  )}
-                </div>
-
-                {/* Brand & Model */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Brand
-                    </label>
-                    <Input
-                      value={currentProduct.formData.brand}
-                      onChange={(e) =>
-                        updateProductField("brand", e.target.value)
-                      }
-                      placeholder="Brand"
-                      className="h-11 text-base rounded-xl"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Model
-                    </label>
-                    <Input
-                      value={currentProduct.formData.model}
-                      onChange={(e) =>
-                        updateProductField("model", e.target.value)
-                      }
-                      placeholder="Model"
-                      className="h-11 text-base rounded-xl"
-                    />
-                  </div>
-                </div>
-
-                {/* Type */}
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Type
-                  </label>
-                  <Select
-                    value={currentProduct.formData.itemType}
-                    onValueChange={(value) =>
-                      updateProductField("itemType", value)
-                    }
-                  >
-                    <SelectTrigger className="!h-11 w-full text-base py-1 rounded-xl">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="bike">Bike</SelectItem>
-                      <SelectItem value="part">Part/Component</SelectItem>
-                      <SelectItem value="apparel">Apparel</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Seller Notes */}
-                <div className="pt-2 border-t border-gray-100">
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Seller Notes
-                  </label>
-                  <div className="relative">
-                    <Textarea
-                      value={currentProduct.formData.sellerNotes}
-                      onChange={(e) =>
-                        updateProductField("sellerNotes", e.target.value)
-                      }
-                      placeholder="Your notes about condition, wear, why selling..."
-                      className="text-base rounded-xl resize-none border-gray-200 pr-10"
-                      rows={2}
-                    />
-                    {currentProduct.formData.sellerNotes && (
-                      <button
-                        type="button"
-                        onClick={() => updateProductField("sellerNotes", "")}
-                        className="absolute top-2 right-2 p-1 rounded-md hover:bg-gray-100 transition-colors"
-                        aria-label="Clear notes"
-                      >
-                        <X className="h-4 w-4 text-gray-400" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Expandable Details */}
-                <div className="border-t border-gray-100 pt-3">
-                  <button
-                    onClick={() => setShowDetails(!showDetails)}
-                    className="w-full flex items-center justify-between py-2"
-                  >
-                    <span className="text-sm font-medium text-gray-900">
-                      More Details
-                    </span>
-                    <ChevronDown
-                      className={cn(
-                        "h-5 w-5 text-gray-400 transition-transform duration-200",
-                        showDetails && "rotate-180"
-                      )}
-                    />
-                  </button>
-
-                  <div
-                    className={cn(
-                      "overflow-hidden transition-all duration-300",
-                      showDetails ? "max-h-[600px] opacity-100" : "max-h-0 opacity-0"
-                    )}
-                  >
-                    <div className="space-y-3 pt-2 pb-4">
-                      {/* Description */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <label className="block text-xs font-medium text-gray-700">
-                            Description
-                          </label>
-                          <button
-                            type="button"
-                            onClick={handleGenerateDescription}
-                            disabled={isGeneratingDescription || (!currentProduct.formData.title && !currentProduct.formData.brand && !currentProduct.formData.model)}
-                            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            {isGeneratingDescription ? (
-                              <>
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                Generating...
-                              </>
-                            ) : (
-                              <>
-                                <Sparkles className="h-3 w-3" />
-                                Generate
-                              </>
-                            )}
-                          </button>
-                        </div>
-                        <div className="relative">
-                          <Textarea
-                            value={currentProduct.formData.description}
-                            onChange={(e) =>
-                              updateProductField("description", e.target.value)
-                            }
-                            placeholder="Describe your product..."
-                            className="text-base rounded-xl resize-none pr-10"
-                            rows={3}
-                          />
-                          {currentProduct.formData.description && (
-                            <button
-                              type="button"
-                              onClick={() => updateProductField("description", "")}
-                              className="absolute top-2 right-2 p-1 rounded-md hover:bg-gray-100 transition-colors"
-                              aria-label="Clear description"
-                            >
-                              <X className="h-4 w-4 text-gray-400" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Bike-specific fields */}
-                      {currentProduct.formData.itemType === "bike" && (
-                        <>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label className="block text-xs font-medium text-gray-700 mb-1">
-                                Year
-                              </label>
-                              <Input
-                                value={currentProduct.formData.modelYear}
-                                onChange={(e) =>
-                                  updateProductField("modelYear", e.target.value)
-                                }
-                                placeholder="2023"
-                                className="h-11 text-base rounded-xl"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-gray-700 mb-1">
-                                Frame Size
-                              </label>
-                              <Input
-                                value={currentProduct.formData.frameSize}
-                                onChange={(e) =>
-                                  updateProductField("frameSize", e.target.value)
-                                }
-                                placeholder="Medium"
-                                className="h-11 text-base rounded-xl"
-                              />
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label className="block text-xs font-medium text-gray-700 mb-1">
-                                Material
-                              </label>
-                              <Input
-                                value={currentProduct.formData.frameMaterial}
-                                onChange={(e) =>
-                                  updateProductField(
-                                    "frameMaterial",
-                                    e.target.value
-                                  )
-                                }
-                                placeholder="Carbon"
-                                className="h-11 text-base rounded-xl"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-gray-700 mb-1">
-                                Groupset
-                              </label>
-                              <Input
-                                value={currentProduct.formData.groupset}
-                                onChange={(e) =>
-                                  updateProductField("groupset", e.target.value)
-                                }
-                                placeholder="Shimano"
-                                className="h-11 text-base rounded-xl"
-                              />
-                            </div>
-                          </div>
-                        </>
-                      )}
-
-                      {/* Part-specific fields */}
-                      {currentProduct.formData.itemType === "part" && (
-                        <>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">
-                              Part Type
-                            </label>
-                            <Input
-                              value={currentProduct.formData.partTypeDetail}
-                              onChange={(e) =>
-                                updateProductField(
-                                  "partTypeDetail",
-                                  e.target.value
-                                )
-                              }
-                              placeholder="e.g., Rear Derailleur"
-                              className="h-11 text-base rounded-xl"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">
-                              Compatibility
-                            </label>
-                            <Textarea
-                              value={currentProduct.formData.compatibilityNotes}
-                              onChange={(e) =>
-                                updateProductField(
-                                  "compatibilityNotes",
-                                  e.target.value
-                                )
-                              }
-                              placeholder="Compatible with..."
-                              className="text-base rounded-xl resize-none"
-                              rows={2}
-                            />
-                          </div>
-                        </>
-                      )}
-
-                      {/* Apparel-specific fields */}
-                      {currentProduct.formData.itemType === "apparel" && (
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">
-                              Size
-                            </label>
-                            <Input
-                              value={currentProduct.formData.size}
-                              onChange={(e) =>
-                                updateProductField("size", e.target.value)
-                              }
-                              placeholder="Medium"
-                              className="h-11 text-base rounded-xl"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">
-                              Fit
-                            </label>
-                            <Select
-                              value={currentProduct.formData.genderFit}
-                              onValueChange={(value) =>
-                                updateProductField("genderFit", value)
-                              }
-                            >
-                              <SelectTrigger className="!h-11 w-full text-base py-1 rounded-xl">
-                                <SelectValue placeholder="Select..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="Men's">Men's</SelectItem>
-                                <SelectItem value="Women's">Women's</SelectItem>
-                                <SelectItem value="Unisex">Unisex</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Bottom Actions */}
-            <div className="px-4 pb-8 pt-3 border-t border-gray-100 flex-shrink-0 bg-white">
-              <Button
-                onClick={goToNextProduct}
-                className="w-full h-12 rounded-xl bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold"
-              >
-                {currentProductIndex < products.length - 1 ? (
-                  <>
-                    Next Product
-                    <ChevronRight className="h-5 w-5 ml-1" />
-                  </>
-                ) : (
-                  "Review All"
-                )}
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* ============================================================ */}
-        {/* STAGE: Final Review */}
-        {/* ============================================================ */}
-        {stage === "final" && (
-          <div className="flex flex-col flex-1 overflow-hidden">
-            {/* Header */}
-            <div className="px-5 py-3 border-b border-gray-200 flex-shrink-0">
-              <div className="flex items-center justify-between">
-                <button
-                  onClick={() => setStage("reviewing")}
-                  className="p-2 -ml-2 rounded-lg text-gray-600 active:bg-gray-100"
+                  onClick={goPrev}
+                  disabled={currentIndex === 0}
+                  className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-md border border-gray-200 bg-white text-gray-700 transition-all active:scale-[0.97] disabled:opacity-40"
+                  aria-label="Previous item"
                 >
                   <ChevronLeft className="h-5 w-5" />
                 </button>
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Review & Publish
-                </h2>
-                <div className="w-9" />
+                <BrandButton onClick={goNext}>
+                  {currentIndex < products.length - 1
+                    ? "Looks good · Next"
+                    : "Review all"}
+                  <ChevronRight className="h-5 w-5" />
+                </BrandButton>
               </div>
+            </BottomBar>
+          </div>
+        )}
+
+        {/* ---------------- SUMMARY ---------------- */}
+        {stage === "summary" && (
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="flex-shrink-0 px-4 pb-2">
+              <h2 className="text-[22px] font-bold text-gray-900">
+                Ready to publish
+              </h2>
+              <p className="mt-0.5 text-[14px] text-gray-500">
+                {products.length} listing{products.length !== 1 ? "s" : ""} · $
+                {totalValue.toLocaleString()} total value
+              </p>
             </div>
 
-            {/* Summary Stats */}
-            <div className="flex gap-2 px-4 py-3 overflow-x-auto border-b border-gray-100 flex-shrink-0">
-              <div className="bg-white rounded-xl px-4 py-2.5 border border-gray-200 flex-shrink-0">
-                <p className="text-[10px] uppercase tracking-wider text-gray-500">
-                  Products
-                </p>
-                <p className="text-lg font-bold text-gray-900">
-                  {products.length}
-                </p>
-              </div>
-              <div className="bg-white rounded-xl px-4 py-2.5 border border-gray-200 flex-shrink-0">
-                <p className="text-[10px] uppercase tracking-wider text-gray-500">
-                  Ready
-                </p>
-                <p className="text-lg font-bold text-green-600">
-                  {validProducts.length}
-                </p>
-              </div>
-              <div className="bg-white rounded-xl px-4 py-2.5 border border-gray-200 flex-shrink-0">
-                <p className="text-[10px] uppercase tracking-wider text-gray-500">
-                  Total Value
-                </p>
-                <p className="text-lg font-bold text-gray-900">
-                  ${totalValue.toLocaleString()}
-                </p>
-              </div>
-            </div>
-
-            {/* Products List - Scrollable */}
-            <div className="flex-1 overflow-y-auto px-4 py-3">
-              <div className="space-y-3">
-                {products.map((product, index) => (
-                  <div
-                    key={product.groupId}
-                    className={cn(
-                      "bg-white rounded-xl border-2 overflow-hidden",
-                      product.isValid ? "border-gray-200" : "border-yellow-300"
-                    )}
-                  >
-                    <div className="flex gap-3 p-3">
-                      {/* Thumbnail */}
-                      <div className="relative w-20 h-20 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
-                        <Image
-                          src={
-                            product.thumbnailUrls[0] || product.imageUrls[0]
-                          }
-                          alt={product.formData.title}
-                          fill
-                          className="object-cover"
-                        />
-                        {product.imageUrls.length > 1 && (
-                          <div className="absolute bottom-1 right-1 bg-black/60 px-1.5 py-0.5 rounded text-[10px] text-white font-medium">
-                            +{product.imageUrls.length - 1}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-sm font-semibold text-gray-900 truncate">
-                          {product.formData.title || "Untitled"}
-                        </h3>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          {product.formData.brand} {product.formData.model}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1.5">
-                          <span className="text-sm font-bold text-gray-900">
-                            ${product.formData.price.toLocaleString()}
-                          </span>
-                          <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
-                            {product.formData.conditionRating}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Edit Button */}
-                      <button
-                        onClick={() => editProduct(index)}
-                        className="p-2 rounded-lg text-gray-400 active:bg-gray-100 flex-shrink-0 self-center"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </button>
-                    </div>
-
-                    {/* Validation warning */}
+            <div className="flex-1 space-y-2.5 overflow-y-auto px-4 py-2">
+              {products.map((product, index) => (
+                <div
+                  key={product.groupId}
+                  className="flex items-center gap-3 rounded-md border border-gray-200 bg-white p-2.5"
+                >
+                  <div className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-md bg-gray-100">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={product.thumbnailUrls[0] || product.imageUrls[0]}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[14px] font-semibold text-gray-900">
+                      {product.formData.title || "Untitled item"}
+                    </p>
+                    <p className="text-[13px] text-gray-500">
+                      ${(product.formData.price || 0).toLocaleString()} ·{" "}
+                      {product.formData.conditionRating}
+                    </p>
                     {!product.isValid && (
-                      <div className="px-3 pb-3">
-                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 flex items-center gap-2">
-                          <div className="h-1.5 w-1.5 rounded-full bg-yellow-500" />
-                          <p className="text-xs text-yellow-800">
-                            Missing required fields
-                          </p>
-                        </div>
-                      </div>
+                      <span className="mt-1 inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2 py-0.5 text-[12px] font-medium text-amber-700">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                        Add details
+                      </span>
                     )}
                   </div>
-                ))}
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => editProduct(index)}
+                    className="rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-700 hover:bg-gray-100"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteProduct(product.groupId)}
+                    className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-rose-600"
+                    aria-label="Delete item"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
 
-              {/* Error Message */}
-              {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+              {error && (
+                <div className="rounded-xl border border-gray-200 bg-white p-3 text-center text-[13px] text-rose-600">
+                  {error}
+                </div>
+              )}
             </div>
 
-            {/* Bottom Actions */}
-            <div className="px-4 pb-8 pt-3 border-t border-gray-100 flex-shrink-0 bg-white">
-              <Button
+            <BottomBar>
+              <BrandButton
                 onClick={handlePublish}
-                disabled={validProducts.length === 0}
-                className="w-full h-12 rounded-xl bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold disabled:opacity-40"
+                disabled={products.length === 0}
               >
-                Publish {validProducts.length} Listing
-                {validProducts.length !== 1 ? "s" : ""}
-              </Button>
-            </div>
+                Publish {products.length} listing
+                {products.length !== 1 ? "s" : ""} · $
+                {totalValue.toLocaleString()}
+              </BrandButton>
+            </BottomBar>
           </div>
         )}
 
-        {/* ============================================================ */}
-        {/* STAGE: Publishing */}
-        {/* ============================================================ */}
+        {/* ---------------- PUBLISHING ---------------- */}
         {stage === "publishing" && (
-          <div className="px-5 py-12 flex flex-col items-center">
-            <div className="relative mb-6">
-              <div className="h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center">
-                <Loader2 className="h-7 w-7 text-gray-600 animate-spin" />
-              </div>
-            </div>
-
-            <p className="text-base font-medium text-gray-900 mb-1">
-              Publishing your listings...
+          <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+            <Loader2 className="h-8 w-8 animate-spin text-gray-900" />
+            <p className="mt-4 text-[15px] font-medium text-gray-900">
+              Publishing your listings…
             </p>
-            <p className="text-sm text-gray-500 text-center">
-              {products.length} product{products.length !== 1 ? "s" : ""} going
-              live
+            <p className="mt-1 text-[13px] text-gray-500">
+              {products.length} item{products.length !== 1 ? "s" : ""} going live
             </p>
           </div>
         )}
 
-        {/* ============================================================ */}
-        {/* STAGE: Success */}
-        {/* ============================================================ */}
+        {/* ---------------- SUCCESS ---------------- */}
         {stage === "success" && (
-          <div className="px-5 py-10 flex flex-col items-center">
-            {/* Success Icon */}
-            <div className="h-20 w-20 rounded-full bg-[#FFC72C] flex items-center justify-center mb-6 animate-in zoom-in-50 duration-300">
+          <div className="flex flex-1 flex-col items-center px-6 py-10">
+            <div
+              className="grid h-20 w-20 animate-in zoom-in-50 place-items-center rounded-full duration-300"
+              style={{ backgroundColor: BRAND }}
+            >
               <CheckCircle2 className="h-10 w-10 text-gray-900" />
             </div>
-
-            {/* Title */}
-            <h2 className="text-2xl font-bold text-gray-900 mb-2 animate-in fade-in slide-in-from-bottom-2 duration-300 delay-100">
+            <h2 className="mt-6 text-[24px] font-bold text-gray-900">
               {successListingIds.length === 1
-                ? "Listing Published!"
-                : "Listings Published!"}
+                ? "Listing published!"
+                : "You're live!"}
             </h2>
-
-            {/* Subtitle */}
-            <p className="text-base text-gray-600 mb-6 animate-in fade-in slide-in-from-bottom-2 duration-300 delay-150">
+            <p className="mt-1.5 text-[15px] text-gray-600">
               {successListingIds.length}{" "}
-              {successListingIds.length === 1 ? "item is" : "items are"} now
-              live
+              {successListingIds.length === 1 ? "item is" : "items are"} now live
             </p>
 
-            {/* Stats */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4 w-full max-w-xs mb-6 animate-in fade-in slide-in-from-bottom-2 duration-300 delay-200">
-              <div className="flex justify-between items-center">
+            <div className="mt-6 w-full max-w-xs rounded-md border border-gray-200 bg-white p-4">
+              <div className="flex items-center justify-between">
                 <div className="text-left">
-                  <p className="text-xs text-gray-500 mb-1">Total Items</p>
-                  <p className="text-2xl font-bold text-gray-900">
+                  <p className="mb-1 text-[12px] text-gray-500">Total items</p>
+                  <p className="text-[22px] font-bold text-gray-900">
                     {successListingIds.length}
                   </p>
                 </div>
                 <div className="h-10 w-px bg-gray-200" />
                 <div className="text-right">
-                  <p className="text-xs text-gray-500 mb-1">Total Value</p>
-                  <p className="text-2xl font-bold text-gray-900">
+                  <p className="mb-1 text-[12px] text-gray-500">Total value</p>
+                  <p className="text-[22px] font-bold text-gray-900">
                     ${totalValue.toLocaleString()}
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* Actions */}
-            <div className="space-y-3 w-full max-w-xs animate-in fade-in slide-in-from-bottom-2 duration-300 delay-300">
-              <Button
+            <div className="mt-6 w-full max-w-xs space-y-3">
+              <button
+                type="button"
                 onClick={() => {
                   onClose();
                   router.push("/marketplace");
                 }}
-                className="w-full h-12 rounded-xl bg-[#FFC72C] hover:bg-[#E6B328] text-gray-900 font-semibold"
+                className="flex h-12 w-full items-center justify-center rounded-md text-[15px] font-semibold"
+                style={{ backgroundColor: BRAND, color: BRAND_INK }}
               >
-                View on Marketplace
-              </Button>
-              <Button
+                View on marketplace
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   onClose();
                   router.push("/settings/my-listings");
                 }}
-                variant="outline"
-                className="w-full h-12 rounded-xl"
+                className="flex h-12 w-full items-center justify-center rounded-md border border-gray-200 bg-white text-[15px] font-semibold text-gray-900"
               >
-                Manage My Listings
-              </Button>
+                Manage my listings
+              </button>
             </div>
 
-            {/* Auto-redirect notice */}
-            <p className="text-xs text-gray-400 mt-6 animate-in fade-in duration-500 delay-500">
-              Redirecting to marketplace in 3 seconds...
+            <p className="mt-6 text-[12px] text-gray-400">
+              Redirecting to marketplace…
             </p>
           </div>
         )}
 
-        {/* Safe area padding for iOS */}
-        <div className="h-safe-area-inset-bottom flex-shrink-0" />
+        {/* ---------------- EXIT CONFIRMATION ---------------- */}
+        <ExitConfirmDialog
+          open={showExitConfirm}
+          onKeepEditing={() => setShowExitConfirm(false)}
+          onExit={confirmExit}
+        />
       </SheetContent>
     </Sheet>
+  );
+}
+
+// ============================================================
+// Shared bits
+// ============================================================
+
+function BottomBar({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex-shrink-0 border-t border-gray-100 bg-white px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-3">
+      {children}
+    </div>
+  );
+}
+
+function BrandButton({
+  children,
+  onClick,
+  disabled,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex h-12 w-full items-center justify-center gap-1.5 rounded-md text-[15px] font-semibold transition-all active:scale-[0.99] disabled:opacity-40"
+      style={{ backgroundColor: BRAND, color: BRAND_INK }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ProgressHeader({
+  step,
+  onClose,
+  closeable,
+}: {
+  step: number;
+  onClose: () => void;
+  closeable: boolean;
+}) {
+  return (
+    <div className="flex-shrink-0 px-4 pb-3 pt-1">
+      <div className="flex items-center gap-3">
+        <div className="flex flex-1 items-center gap-1.5">
+          {STEP_LABELS.map((label, i) => (
+            <div
+              key={label}
+              className={cn(
+                "h-1.5 flex-1 rounded-full transition-colors",
+                i <= step ? "" : "bg-gray-200"
+              )}
+              style={i <= step ? { backgroundColor: BRAND } : undefined}
+            />
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={!closeable}
+          className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 disabled:opacity-30"
+          aria-label="Close"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+      <p className="mt-1.5 text-[12px] font-medium text-gray-500">
+        Step {step + 1} of 3 · {STEP_LABELS[step]}
+      </p>
+    </div>
+  );
+}
+
+// ============================================================
+// Exit confirmation dialog (popup animation per project conventions)
+// ============================================================
+
+function ExitConfirmDialog({
+  open,
+  onKeepEditing,
+  onExit,
+}: {
+  open: boolean;
+  onKeepEditing: () => void;
+  onExit: () => void;
+}) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={onKeepEditing}
+            className="absolute inset-0 z-40 bg-black/40"
+          />
+          <motion.div
+            initial={{ opacity: 0, y: 16, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 16, scale: 0.95 }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
+            className="absolute left-1/2 top-1/2 z-50 w-[88%] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-5"
+          >
+            <h3 className="text-[17px] font-bold text-gray-900">
+              Are you sure you want to exit?
+            </h3>
+            <p className="mt-1.5 text-[14px] leading-relaxed text-gray-500">
+              Your photos and the details you&apos;ve added won&apos;t be saved.
+            </p>
+            <div className="mt-5 space-y-2.5">
+              <button
+                type="button"
+                onClick={onKeepEditing}
+                className="flex h-12 w-full items-center justify-center rounded-md text-[15px] font-semibold transition-all active:scale-[0.99]"
+                style={{ backgroundColor: BRAND, color: BRAND_INK }}
+              >
+                Keep editing
+              </button>
+              <button
+                type="button"
+                onClick={onExit}
+                className="flex h-12 w-full items-center justify-center rounded-md text-[15px] font-semibold text-rose-600 transition-colors hover:bg-rose-50"
+              >
+                Discard &amp; exit
+              </button>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}
+
+// ============================================================
+// Full product editor (used by the Review step)
+// ============================================================
+
+interface ProductEditorFieldsProps {
+  product: ProductData;
+  isGenerating: boolean;
+  onPatch: (field: keyof ProductFormData, value: any) => void;
+  onRotate: (photoIndex: number) => void;
+  onSetCover: (photoIndex: number) => void;
+  onGenerate: () => void;
+  onDelete: () => void;
+}
+
+function ProductEditorFields({
+  product,
+  isGenerating,
+  onPatch,
+  onRotate,
+  onSetCover,
+  onGenerate,
+  onDelete,
+}: ProductEditorFieldsProps) {
+  const [detailsOpen, setDetailsOpen] = React.useState(false);
+  const fd = product.formData;
+  const itemType = fd.itemType;
+  const inputCls = "h-12 rounded-md text-[16px]";
+
+  return (
+    <div className="space-y-4">
+      {/* Cover photo + rotate */}
+      <div className="relative overflow-hidden rounded-md bg-gray-100">
+        <div className="relative aspect-[4/3] w-full">
+          <Image
+            src={product.imageUrls[0]}
+            alt="Cover"
+            fill
+            className="object-contain"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => onRotate(0)}
+          className="absolute bottom-3 left-3 grid h-10 w-10 place-items-center rounded-full border border-gray-200 bg-white text-gray-800 shadow-sm active:bg-gray-100"
+          aria-label="Rotate cover photo"
+        >
+          <RotateCw className="h-5 w-5" />
+        </button>
+      </div>
+
+      {/* Thumbnail strip */}
+      {product.imageUrls.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {product.imageUrls.map((url, photoIndex) => (
+            <div
+              key={`${url}-${photoIndex}`}
+              className={cn(
+                "relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-md border-2",
+                photoIndex === 0 ? "border-gray-900" : "border-transparent"
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => onSetCover(photoIndex)}
+                className="absolute inset-0"
+                aria-label={`Use photo ${photoIndex + 1} as cover`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt="" className="h-full w-full object-cover" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onRotate(photoIndex)}
+                className="absolute bottom-0.5 left-0.5 grid h-6 w-6 place-items-center rounded-full border border-gray-200 bg-white/95 text-gray-800 shadow-sm"
+                aria-label={`Rotate photo ${photoIndex + 1}`}
+              >
+                <RotateCw className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Title */}
+      <div>
+        <label className="mb-1 block text-[13px] font-medium text-gray-700">
+          Title
+        </label>
+        <Input
+          value={fd.title}
+          onChange={(e) => onPatch("title", e.target.value)}
+          placeholder="Product name"
+          className={inputCls}
+        />
+      </div>
+
+      {/* Price + Condition */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="mb-1 block text-[13px] font-medium text-gray-700">
+            Price (AUD)
+          </label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+              $
+            </span>
+            <Input
+              type="number"
+              inputMode="numeric"
+              value={fd.price}
+              onChange={(e) => onPatch("price", parseFloat(e.target.value) || 0)}
+              placeholder="0"
+              min="0"
+              className={cn(inputCls, "pl-7")}
+            />
+          </div>
+        </div>
+        <div>
+          <label className="mb-1 block text-[13px] font-medium text-gray-700">
+            Condition
+          </label>
+          <Select
+            value={fd.conditionRating}
+            onValueChange={(v) => onPatch("conditionRating", v)}
+          >
+            <SelectTrigger className="!h-12 w-full rounded-md py-1 text-[16px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CONDITION_RATINGS.map((rating) => (
+                <SelectItem key={rating} value={rating}>
+                  {rating}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* Brand + Model */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="mb-1 block text-[13px] font-medium text-gray-700">
+            Brand
+          </label>
+          <Input
+            value={fd.brand}
+            onChange={(e) => onPatch("brand", e.target.value)}
+            placeholder="Brand"
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[13px] font-medium text-gray-700">
+            Model
+          </label>
+          <Input
+            value={fd.model}
+            onChange={(e) => onPatch("model", e.target.value)}
+            placeholder="Model"
+            className={inputCls}
+          />
+        </div>
+      </div>
+
+      {/* Type */}
+      <div>
+        <label className="mb-1 block text-[13px] font-medium text-gray-700">
+          Type
+        </label>
+        <Select value={fd.itemType} onValueChange={(v) => onPatch("itemType", v)}>
+          <SelectTrigger className="!h-12 w-full rounded-md py-1 text-[16px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="bike">Bike</SelectItem>
+            <SelectItem value="part">Part/Component</SelectItem>
+            <SelectItem value="apparel">Apparel</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Description + generate */}
+      <div>
+        <div className="mb-1 flex items-center justify-between">
+          <label className="block text-[13px] font-medium text-gray-700">
+            Description
+          </label>
+          <button
+            type="button"
+            onClick={onGenerate}
+            disabled={isGenerating || (!fd.title && !fd.brand && !fd.model)}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Generating…
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-3 w-3" />
+                Generate
+              </>
+            )}
+          </button>
+        </div>
+        <div className="relative">
+          <Textarea
+            value={fd.description}
+            onChange={(e) => onPatch("description", e.target.value)}
+            placeholder="Describe your product…"
+            rows={3}
+            className="resize-none rounded-md pr-10 text-[16px]"
+          />
+          {fd.description && (
+            <button
+              type="button"
+              onClick={() => onPatch("description", "")}
+              className="absolute right-2 top-2 rounded-md p-1 hover:bg-gray-100"
+              aria-label="Clear description"
+            >
+              <X className="h-4 w-4 text-gray-400" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Seller notes */}
+      <div>
+        <label className="mb-1 block text-[13px] font-medium text-gray-700">
+          Seller notes
+        </label>
+        <Textarea
+          value={fd.sellerNotes}
+          onChange={(e) => onPatch("sellerNotes", e.target.value)}
+          placeholder="Your notes about condition, wear, why selling…"
+          rows={2}
+          className="resize-none rounded-md text-[16px]"
+        />
+      </div>
+
+      {/* More details */}
+      <div className="rounded-md border border-gray-200">
+        <button
+          type="button"
+          onClick={() => setDetailsOpen((s) => !s)}
+          className="flex w-full items-center justify-between px-3 py-3 text-left"
+        >
+          <span className="text-[14px] font-medium text-gray-900">
+            {itemType === "bike"
+              ? "Bike details"
+              : itemType === "part"
+                ? "Part details"
+                : "Apparel details"}
+          </span>
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 text-gray-400 transition-transform duration-200",
+              detailsOpen && "rotate-180"
+            )}
+          />
+        </button>
+        <AnimatePresence initial={false}>
+          {detailsOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+              className="overflow-hidden"
+            >
+              <div className="space-y-3 px-3 pb-3">
+                {itemType === "bike" && (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1 block text-[13px] font-medium text-gray-700">
+                          Year
+                        </label>
+                        <Input
+                          value={fd.modelYear}
+                          onChange={(e) => onPatch("modelYear", e.target.value)}
+                          placeholder="2023"
+                          className={inputCls}
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[13px] font-medium text-gray-700">
+                          Frame size
+                        </label>
+                        <Input
+                          value={fd.frameSize}
+                          onChange={(e) => onPatch("frameSize", e.target.value)}
+                          placeholder="Medium"
+                          className={inputCls}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1 block text-[13px] font-medium text-gray-700">
+                          Material
+                        </label>
+                        <Input
+                          value={fd.frameMaterial}
+                          onChange={(e) =>
+                            onPatch("frameMaterial", e.target.value)
+                          }
+                          placeholder="Carbon"
+                          className={inputCls}
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[13px] font-medium text-gray-700">
+                          Groupset
+                        </label>
+                        <Input
+                          value={fd.groupset}
+                          onChange={(e) => onPatch("groupset", e.target.value)}
+                          placeholder="Shimano"
+                          className={inputCls}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="mb-1 block text-[13px] font-medium text-gray-700">
+                          Wheels
+                        </label>
+                        <Input
+                          value={fd.wheelSize}
+                          onChange={(e) => onPatch("wheelSize", e.target.value)}
+                          placeholder={'29"'}
+                          className={inputCls}
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[13px] font-medium text-gray-700">
+                          Colour
+                        </label>
+                        <Input
+                          value={fd.colorPrimary}
+                          onChange={(e) =>
+                            onPatch("colorPrimary", e.target.value)
+                          }
+                          placeholder="Black"
+                          className={inputCls}
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {itemType === "part" && (
+                  <>
+                    <div>
+                      <label className="mb-1 block text-[13px] font-medium text-gray-700">
+                        Part type
+                      </label>
+                      <Input
+                        value={fd.partTypeDetail}
+                        onChange={(e) =>
+                          onPatch("partTypeDetail", e.target.value)
+                        }
+                        placeholder="e.g. Rear Derailleur"
+                        className={inputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[13px] font-medium text-gray-700">
+                        Compatibility
+                      </label>
+                      <Textarea
+                        value={fd.compatibilityNotes}
+                        onChange={(e) =>
+                          onPatch("compatibilityNotes", e.target.value)
+                        }
+                        placeholder="Compatible with…"
+                        rows={2}
+                        className="resize-none rounded-md text-[16px]"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {itemType === "apparel" && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-1 block text-[13px] font-medium text-gray-700">
+                        Size
+                      </label>
+                      <Input
+                        value={fd.size}
+                        onChange={(e) => onPatch("size", e.target.value)}
+                        placeholder="Medium"
+                        className={inputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[13px] font-medium text-gray-700">
+                        Fit
+                      </label>
+                      <Select
+                        value={fd.genderFit}
+                        onValueChange={(v) => onPatch("genderFit", v)}
+                      >
+                        <SelectTrigger className="!h-12 w-full rounded-md py-1 text-[16px]">
+                          <SelectValue placeholder="Select…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Men's">Men&apos;s</SelectItem>
+                          <SelectItem value="Women's">Women&apos;s</SelectItem>
+                          <SelectItem value="Unisex">Unisex</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="mb-1 block text-[13px] font-medium text-gray-700">
+                    Condition notes
+                  </label>
+                  <Textarea
+                    value={fd.conditionDetails}
+                    onChange={(e) => onPatch("conditionDetails", e.target.value)}
+                    placeholder="Any wear or damage…"
+                    rows={2}
+                    className="resize-none rounded-md text-[16px]"
+                  />
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Delivery options */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between rounded-md border border-gray-200 px-3 py-3">
+          <div className="flex items-center gap-2">
+            <Truck className="h-4 w-4 text-gray-500" />
+            <span className="text-[14px] text-gray-700">Shipping</span>
+          </div>
+          <Switch
+            checked={fd.shippingAvailable}
+            onCheckedChange={(c) => onPatch("shippingAvailable", c)}
+          />
+        </div>
+        {fd.shippingAvailable && (
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+              $
+            </span>
+            <Input
+              type="number"
+              inputMode="numeric"
+              value={fd.shippingCost || ""}
+              onChange={(e) =>
+                onPatch("shippingCost", parseFloat(e.target.value) || 0)
+              }
+              placeholder="Postage cost (0 for free)"
+              className={cn(inputCls, "pl-7")}
+            />
+          </div>
+        )}
+        <div className="flex items-center justify-between rounded-md border border-gray-200 px-3 py-3">
+          <div className="flex items-center gap-2">
+            <MapPin className="h-4 w-4 text-gray-500" />
+            <span className="text-[14px] text-gray-700">Local pickup</span>
+          </div>
+          <Switch
+            checked={fd.pickupAvailable}
+            onCheckedChange={(c) => onPatch("pickupAvailable", c)}
+          />
+        </div>
+        {fd.pickupAvailable && (
+          <Input
+            value={fd.pickupLocation || ""}
+            onChange={(e) => onPatch("pickupLocation", e.target.value)}
+            placeholder="Suburb or area"
+            className={inputCls}
+          />
+        )}
+        {!fd.shippingAvailable && !fd.pickupAvailable && (
+          <p className="text-[12px] text-rose-600">
+            Select at least one delivery option
+          </p>
+        )}
+      </div>
+
+      {/* Remove */}
+      <button
+        type="button"
+        onClick={onDelete}
+        className="inline-flex items-center gap-1.5 text-[13px] font-medium text-rose-600"
+      >
+        <Trash2 className="h-4 w-4" />
+        Remove this item
+      </button>
+    </div>
   );
 }

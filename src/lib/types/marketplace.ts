@@ -4,8 +4,8 @@
 
 import type { BikeSpecsData, BikeSpecSource } from '@/lib/types/bike-specs';
 
-// The two distinct "spaces" in the marketplace
-export type MarketplaceSpace = 'marketplace' | 'stores' | 'uber';
+// The distinct "spaces" in the marketplace
+export type MarketplaceSpace = 'marketplace' | 'stores' | 'uber' | 'for-you';
 
 export type MarketplaceCategory = 'Bicycles' | 'Parts' | 'Apparel' | 'Nutrition';
 

@@ -301,6 +301,10 @@ Examine the photos carefully and provide:
 5. A preliminary second-hand AUD price range from the visible condition
 
 ${userHints?.itemType ? `The user thinks this is a ${userHints.itemType}.` : ''}
+${userHints?.text ? `The seller said this about the item while chatting (treat it as ground truth — work anything they want highlighted into the title, description, condition and pricing where it fits):
+"""
+${String(userHints.text).slice(0, 2000)}
+"""` : ''}
 
 Title guidance:
 - clean_title should read like a buyer-friendly second-hand listing title

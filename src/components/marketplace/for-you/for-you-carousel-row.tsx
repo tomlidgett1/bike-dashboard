@@ -17,6 +17,7 @@ import {
 } from "@/lib/tracking/interaction-tracker";
 import type { ForYouCarousel } from "@/lib/for-you/types";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
+import { cn } from "@/lib/utils";
 
 // ============================================================
 // For You carousel row
@@ -30,6 +31,8 @@ interface ForYouCarouselRowProps {
   userId?: string;
   onDismissProduct: (carouselKey: string, productId: string) => void;
   onHideCarousel: (carouselKey: string) => void;
+  /** Matches marketplace product grid spacing when rendered as a homepage tab. */
+  embedded?: boolean;
 }
 
 export function ForYouCarouselRow({
@@ -37,6 +40,7 @@ export function ForYouCarouselRow({
   userId,
   onDismissProduct,
   onHideCarousel,
+  embedded = false,
 }: ForYouCarouselRowProps) {
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   const sectionRef = React.useRef<HTMLElement>(null);
@@ -98,9 +102,14 @@ export function ForYouCarouselRow({
   if (carousel.products.length === 0) return null;
 
   return (
-    <section ref={sectionRef} className="py-2.5 sm:py-3">
+    <section ref={sectionRef} className={embedded ? "space-y-2.5 sm:space-y-3" : "py-2.5 sm:py-3"}>
       {/* Header */}
-      <div className="flex items-start justify-between gap-3 mb-2.5 sm:mb-3">
+      <div
+        className={cn(
+          "flex items-start justify-between gap-3",
+          embedded ? "px-0.5" : "mb-2.5 sm:mb-3",
+        )}
+      >
         <div className="min-w-0">
           <h3 className="text-sm sm:text-base font-semibold text-gray-900 truncate">
             {carousel.title}
@@ -162,7 +171,13 @@ export function ForYouCarouselRow({
             overflowY: "hidden",
           }}
         >
-          <div className="flex gap-2.5 sm:gap-3 md:gap-4" style={{ minWidth: "min-content" }}>
+          <div
+            className={cn(
+              "flex",
+              embedded ? "gap-2.5 sm:gap-3" : "gap-2.5 sm:gap-3 md:gap-4",
+            )}
+            style={{ minWidth: "min-content" }}
+          >
             {carousel.products.map((product, index) => (
               <ForYouCard
                 key={product.id}
@@ -227,7 +242,7 @@ function ForYouCard({
   return (
     <div
       ref={cardRef}
-      className="group/foryou relative flex-shrink-0 min-h-0 overflow-hidden w-[145px] xs:w-[160px] sm:w-[180px] md:w-[200px] lg:w-[220px] xl:w-[240px] snap-start"
+      className="group/foryou relative flex-shrink-0 min-h-0 overflow-hidden w-[145px] sm:w-[180px] md:w-[200px] lg:w-[220px] snap-start"
       onClickCapture={() => {
         trackCarouselClick(carouselKey, product.id, index, { source: carouselSource }, userId);
       }}

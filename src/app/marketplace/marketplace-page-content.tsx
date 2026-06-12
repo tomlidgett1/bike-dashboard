@@ -11,6 +11,8 @@ import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/produ
 import { ListItemBanner } from "@/components/marketplace/list-item-banner";
 import { UnifiedFilterBar, ViewMode, ListingTypeFilter as ListingTypeFilterType } from "@/components/marketplace/unified-filter-bar";
 import { SpaceNavigator, useMarketplaceSpace } from "@/components/marketplace/space-navigator";
+import { ForYouFeedView, ForYouFeedSkeletonBody } from "@/app/for-you/for-you-content";
+import type { ForYouFeedPayload } from "@/lib/for-you/types";
 import { StoreCategoryPills } from "@/components/marketplace/store-category-pills";
 import type { MarketplaceSpace } from "@/lib/types/marketplace";
 import { AdvancedFilters, DEFAULT_ADVANCED_FILTERS, countActiveFilters, type AdvancedFiltersState } from "@/components/marketplace/advanced-filters";
@@ -70,6 +72,15 @@ interface MarketplacePageContentProps {
   initialPagination?: InitialMarketplacePagination;
 }
 
+const EMPTY_FOR_YOU_FEED: ForYouFeedPayload = {
+  feedId: "",
+  carousels: [],
+  personalised: false,
+  source: "deterministic",
+  generatedAt: "",
+  enhanceable: false,
+};
+
 export function MarketplacePageContent({ initialProducts, initialPagination }: MarketplacePageContentProps = {}) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -89,7 +100,33 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   const isStoresView = currentSpace === 'stores';
   const isUberView = currentSpace === 'uber';
   const isMarketplaceView = currentSpace === 'marketplace';
+  const isForYouView = currentSpace === 'for-you';
   const isStoreInventoryView = isStoresView || isUberView;
+
+  const [forYouFeed, setForYouFeed] = React.useState<ForYouFeedPayload | null>(null);
+
+  React.useEffect(() => {
+    if (!isForYouView || forYouFeed) return;
+
+    let active = true;
+    fetch("/api/for-you/feed")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!active) return;
+        if (data?.success && data.feed?.carousels) {
+          setForYouFeed(data.feed as ForYouFeedPayload);
+        } else {
+          setForYouFeed(EMPTY_FOR_YOU_FEED);
+        }
+      })
+      .catch(() => {
+        if (active) setForYouFeed(EMPTY_FOR_YOU_FEED);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isForYouView, forYouFeed]);
 
   // View mode state (trending, all) - only for products view
   // Default to 'all' for browsing all products
@@ -493,7 +530,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   } = useMarketplaceData(
     marketplaceParams,
     {
-      enabled: true, // Enable for both marketplace and stores space
+      enabled: !isForYouView, // For You has its own feed; skip product queries
       revalidateOnFocus: false,
       dedupingInterval: 5000,
       fallbackData: canUseInitialProducts && initialPagination
@@ -554,19 +591,19 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
 
   const productGridClassName = React.useMemo(() => {
     if (isProductSearchActive) {
-      return "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2 sm:gap-3 md:gap-4";
+      return "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-1 sm:gap-3 md:gap-4";
     }
     if (productGridLayout === "grid8") {
-      return "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-1 sm:gap-1.5";
+      return "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-0.5 sm:gap-1.5";
     }
     if (productGridLayout === "grid4") {
       return isStoresView
-        ? "grid grid-cols-2 md:grid-cols-4 gap-1.5 md:gap-4"
-        : "grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4";
+        ? "grid grid-cols-2 md:grid-cols-4 gap-1 md:gap-4"
+        : "grid grid-cols-2 md:grid-cols-4 gap-1 md:gap-4";
     }
     return isStoresView
-      ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1 sm:gap-2.5"
-      : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-1.5 sm:gap-3";
+      ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-0.5 sm:gap-2.5"
+      : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-0.5 sm:gap-3";
   }, [isProductSearchActive, productGridLayout, isStoresView]);
 
   React.useEffect(() => {
@@ -825,7 +862,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     // new active state immediately via its own optimistic local state.
     startTransition(() => {
       setCurrentPage(1);
-      if (isStoreInventoryView) setSpace('marketplace');
+      if (isStoreInventoryView || isForYouView) setSpace('marketplace');
       setViewMode(mode);
       if (mode === "trending") {
         setSelectedLevel1(null);
@@ -1110,7 +1147,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
         )}
 
       <MarketplaceLayout showFooter={false} showStoreCTA={false}>
-        {/* Mobile: promo above Hot / Browse / Stores, then sticky tabs + category pills */}
+        {/* Mobile: promo above tabs, then sticky tabs + category pills */}
         <div className="sm:hidden bg-white">
           {MARKETPLACE_PROMO_BANNERS_ENABLED &&
             (isMarketplaceView || isStoresView) &&
@@ -1140,6 +1177,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
               categoryPillsRef={categoryPillsRef}
               onNavigateToStores={handleNavigateToAllStores}
               onNavigateToUber={handleNavigateToUber}
+              onNavigateToForYou={() => setSpace("for-you")}
               selectedStoreId={selectedStoreId}
               onStoreSelect={handleNavigateToStore}
               browseFilters={advancedFilters}
@@ -1188,6 +1226,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                   categoryPillsRef={categoryPillsRef}
                   onNavigateToStores={handleNavigateToAllStores}
                   onNavigateToUber={handleNavigateToUber}
+                  onNavigateToForYou={() => setSpace("for-you")}
                   selectedStoreId={selectedStoreId}
                   onStoreSelect={handleNavigateToStore}
                   browseFilters={advancedFilters}
@@ -1237,6 +1276,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                 categoryPillsRef={categoryPillsRef}
                 onNavigateToStores={handleNavigateToAllStores}
                 onNavigateToUber={handleNavigateToUber}
+                onNavigateToForYou={() => setSpace("for-you")}
                 selectedStoreId={selectedStoreId}
                 onStoreSelect={handleNavigateToStore}
                 browseFilters={advancedFilters}
@@ -1261,11 +1301,47 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                 }
               />
             )}
+            {isForYouView && (
+              <UnifiedFilterBar
+                currentSpace={currentSpace}
+                viewMode={viewMode}
+                onViewModeChange={handleViewModeChange}
+                selectedLevel1={selectedLevel1}
+                selectedLevel2={selectedLevel2}
+                selectedLevel3={selectedLevel3}
+                onLevel1Change={handleLevel1Change}
+                onLevel2Change={handleLevel2Change}
+                onLevel3Change={handleLevel3Change}
+                listingTypeFilter={listingTypeFilter}
+                onListingTypeChange={handleListingTypeChange}
+                categoryPillsRef={categoryPillsRef}
+                onNavigateToStores={handleNavigateToAllStores}
+                onNavigateToUber={handleNavigateToUber}
+                onNavigateToForYou={() => setSpace("for-you")}
+                selectedStoreId={selectedStoreId}
+                onStoreSelect={handleNavigateToStore}
+                browseFilters={advancedFilters}
+                onBrowseFiltersChange={handleAdvancedFiltersChange}
+                onBrowseFiltersApply={handleAdvancedFiltersApply}
+                onBrowseFiltersReset={handleAdvancedFiltersReset}
+                productGridLayout={productGridLayout}
+                onProductGridLayoutChange={setProductGridLayout}
+                suppressCategoryBrowse
+              />
+            )}
           </div>
         </div>
 
-        <div className="px-4 pb-24 sm:px-6 sm:pb-8">
+        <div className="px-2 pb-24 sm:px-6 sm:pb-8">
           <div className="space-y-3 pt-4 sm:pt-5">
+            {isForYouView ? (
+              forYouFeed ? (
+                <ForYouFeedView initialFeed={forYouFeed} hadIdentity embedded />
+              ) : (
+                <ForYouFeedSkeletonBody embedded />
+              )
+            ) : (
+              <>
             {/* Promo Banners - Marketplace and Bike Stores (hidden while searching) */}
             {MARKETPLACE_PROMO_BANNERS_ENABLED &&
               (isMarketplaceView || isStoresView) &&
@@ -1636,6 +1712,8 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                       </div>
                     )}
                 </div>
+              </>
+            )}
               </>
             )}
           </div>

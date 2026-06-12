@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { MessageCircle, Upload, Sparkles } from "lucide-react";
+import { Upload, Sparkles } from "lucide-react";
 import Image from "next/image";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -78,9 +78,9 @@ export function MobileUploadMethodDialog({
         <Separator />
 
         <MethodRow
-          icon={<MessageCircle className="h-4 w-4 text-muted-foreground" />}
+          icon={<Image src="/imessage.png" alt="iMessage" width={16} height={16} />}
           label="Text upload"
-          description="Send photos through Messages"
+          description="Chat with us on iMessage — we build the listing"
           onClick={() => { onClose(); onSelectText(); }}
         />
 

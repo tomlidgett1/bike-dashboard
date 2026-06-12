@@ -122,6 +122,31 @@ function getPublicBaseUrl(request: NextRequest): string {
   return origin.replace(/\/+$/, "");
 }
 
+async function detectPhotoGroupCount(imageUrls: string[]): Promise<number> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const secret = firstInternalSecret();
+  if (!supabaseUrl || !secret) return 1;
+
+  try {
+    const response = await fetch(`${supabaseUrl.replace(/\/+$/, "")}/functions/v1/group-photos-ai`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-internal-secret": secret,
+      },
+      body: JSON.stringify({ imageUrls }),
+      cache: "no-store",
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !Array.isArray(data.groups)) return 1;
+    return Math.max(1, data.groups.length);
+  } catch (error) {
+    console.warn("[text-upload] photo grouping check failed:", error);
+    return 1;
+  }
+}
+
 async function analyzeListing(params: {
   imageUrls: string[];
   userHints: Record<string, unknown>;
@@ -174,6 +199,7 @@ export async function POST(request: NextRequest) {
 
   const phoneE164 = normalisePhone(payload.phoneE164 ?? payload.phone_e164 ?? payload.phone);
   const images = normaliseImages(payload.images ?? payload.imageUrls ?? payload.image_urls);
+  const mode = payload.mode === "bulk" ? "bulk" : "single";
   const userHints =
     payload.userHints && typeof payload.userHints === "object"
       ? payload.userHints as Record<string, unknown>
@@ -185,8 +211,8 @@ export async function POST(request: NextRequest) {
   if (images.length === 0) {
     return json({ error: "at least one image is required" }, 400);
   }
-  if (images.length > 10) {
-    return json({ error: "text upload supports up to 10 images" }, 400);
+  if (images.length > 30) {
+    return json({ error: "text upload supports up to 30 images" }, 400);
   }
 
   const token = nanoid(28);
@@ -203,15 +229,37 @@ export async function POST(request: NextRequest) {
       }));
     }
 
-    const analysis = await analyzeListing({
-      imageUrls: uploadedImages.map((image) => image.url),
-      userHints,
-    });
-    const formData = buildListingFormDataFromAnalysis(
-      analysis,
-      uploadedImages.map((image) => image.url),
-      uploadedImages,
-    );
+    // Bulk mode skips server-side analysis — the photos are handed to the
+    // bulk upload flow, which groups and analyses them with the user's auth.
+    // Even when the sender didn't say "bulk", multi-photo uploads are checked
+    // for distinct products so several items never collapse into one listing.
+    let isBulk = mode === "bulk" && uploadedImages.length > 1;
+    if (!isBulk && uploadedImages.length > 1) {
+      const groupCount = await detectPhotoGroupCount(
+        uploadedImages.map((image) => image.url),
+      );
+      if (groupCount > 1) {
+        console.log(`[text-upload] detected ${groupCount} products — routing to bulk flow`);
+        isBulk = true;
+      }
+    }
+
+    let analysis: ListingAnalysisResult | null = null;
+    let formData: Record<string, unknown> = { bulk: true };
+
+    if (!isBulk) {
+      // A single listing holds at most 10 photos.
+      if (uploadedImages.length > 10) uploadedImages.length = 10;
+      analysis = await analyzeListing({
+        imageUrls: uploadedImages.map((image) => image.url),
+        userHints,
+      });
+      formData = buildListingFormDataFromAnalysis(
+        analysis,
+        uploadedImages.map((image) => image.url),
+        uploadedImages,
+      );
+    }
 
     const admin = createServiceRoleClient();
     const { error } = await admin
@@ -233,7 +281,9 @@ export async function POST(request: NextRequest) {
       return json({ error: "handoff session could not be saved" }, 500);
     }
 
-    const handoffUrl = `${getPublicBaseUrl(request)}/marketplace/sell?mode=manual&ai=true&textUploadToken=${encodeURIComponent(token)}`;
+    const handoffUrl = isBulk
+      ? `${getPublicBaseUrl(request)}/marketplace/sell?mode=bulk&textUploadToken=${encodeURIComponent(token)}`
+      : `${getPublicBaseUrl(request)}/marketplace/sell?mode=manual&ai=true&textUploadToken=${encodeURIComponent(token)}`;
 
     return json({
       ok: true,

@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  transpilePackages: ['web-haptics'],
   // Allow an isolated build dir (e.g. for a parallel preview server) without
   // clobbering the primary `.next` dir used by a concurrently running dev server.
   distDir: process.env.NEXT_DIST_DIR || ".next",

@@ -35,15 +35,22 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname === '/for-you' ||               // Public personalised discovery feed
     request.nextUrl.pathname.startsWith('/api/for-you') ||   // Feed APIs resolve anonymous identity themselves
     request.nextUrl.pathname === '/api/tracking' ||          // Anonymous behavioural event ingestion
+    // Text-upload handoff links land here logged out; the sell page shows the
+    // login popup itself and resumes the listing after auth.
+    (request.nextUrl.pathname === '/marketplace/sell' &&
+      request.nextUrl.searchParams.has('textUploadToken')) ||
     request.nextUrl.pathname.startsWith('/marketplace/product') ||
     request.nextUrl.pathname.startsWith('/marketplace/store') ||
+    request.nextUrl.pathname.startsWith('/marketplace/sell-prototypes') || // Mobile design prototypes (mock data, no auth)
     request.nextUrl.pathname.startsWith('/marketplace/used-products') ||
     request.nextUrl.pathname.startsWith('/marketplace/new-products') ||
     request.nextUrl.pathname.startsWith('/api/marketplace') ||
     request.nextUrl.pathname === '/api/store/analytics' || // Public storefront tracking; GET still enforces auth in the route handler.
     request.nextUrl.pathname.startsWith('/api/stripe') ||  // Stripe webhooks
     request.nextUrl.pathname.startsWith('/api/cron') ||    // Cron jobs
-    request.nextUrl.pathname === '/api/genie' ||           // Public AI chat
+    request.nextUrl.pathname === '/api/genie' ||           // Public marketplace Genie chat
+    request.nextUrl.pathname === '/api/genie/product-question' ||
+    request.nextUrl.pathname === '/api/genie/product-suggestions' ||
     request.nextUrl.pathname.startsWith('/mockup') ||      // Design mockup (no auth needed)
     request.nextUrl.pathname.startsWith('/preview-verify') // TEMP sidebar check (no auth)
   

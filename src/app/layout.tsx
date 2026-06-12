@@ -18,6 +18,7 @@ import { GenieProvider } from "@/components/providers/genie-provider";
 import { DeferredGlobalPanels } from "@/components/layout/deferred-global-panels";
 import { getUserProfile } from "@/lib/server/get-user-profile";
 import { WebVitalsReporter } from "@/lib/performance/web-vitals";
+import { HapticsBootstrap } from "@/components/providers/haptics-bootstrap";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 
@@ -81,6 +82,7 @@ export default async function RootLayout({
         className={`${inter.variable} ${jetbrainsMono.variable} ${caveat.variable} font-sans antialiased touch-manipulation`}
         style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none' } as any}
       >
+        <HapticsBootstrap />
         <ThemeProvider
           attribute="class"
           defaultTheme="light"
