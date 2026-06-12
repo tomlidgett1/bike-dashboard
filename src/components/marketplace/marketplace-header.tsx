@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
-import { Menu, X, Settings, LogOut, Sparkles, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus, Mail, Loader2, Upload, Bell, SlidersHorizontal, MessageCircle } from "lucide-react";
+import { Menu, X, Settings, LogOut, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus, Mail, Loader2, Bell, SlidersHorizontal } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { InstantSearch } from "./instant-search";
@@ -19,13 +19,6 @@ import { UserAvatar } from "@/components/ui/user-avatar";
 import { createClient } from "@/lib/supabase/client";
 import { useCombinedUnreadCount } from "@/lib/hooks/use-combined-unread-count";
 import { NotificationsDropdown } from "@/components/layout/notifications-dropdown";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Sheet,
   SheetContent,
@@ -57,6 +50,10 @@ const TextUploadDialog = dynamic(
 );
 const BulkUploadSheet = dynamic(
   () => import("./sell/bulk-upload-sheet").then((mod) => mod.BulkUploadSheet),
+  { ssr: false }
+);
+const CreateListingDialog = dynamic(
+  () => import("./sell/create-listing-dialog").then((mod) => mod.CreateListingDialog),
   { ssr: false }
 );
 
@@ -170,6 +167,7 @@ export function MarketplaceHeader({
   const [textUploadDialogOpen, setTextUploadDialogOpen] = React.useState(false);
   const [mobileUploadMethodOpen, setMobileUploadMethodOpen] = React.useState(false);
   const [bulkUploadSheetOpen, setBulkUploadSheetOpen] = React.useState(false);
+  const [createListingDialogOpen, setCreateListingDialogOpen] = React.useState(false);
   const [mounted, setMounted] = React.useState(false);
   const [isMobile, setIsMobile] = React.useState(false);
   const searchInputRef = React.useRef<HTMLInputElement>(null);
@@ -487,69 +485,15 @@ export function MarketplaceHeader({
               <div className="w-px h-5 bg-gray-200 mx-1 flex-shrink-0" />
 
               {mounted && (
-                <DropdownMenu modal={false}>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      className="group rounded-md bg-[#ffde59] hover:bg-[#f5cf3f] text-gray-900 font-semibold h-9 pl-1.5 pr-3.5 text-sm shadow-sm hover:shadow-md hover:-translate-y-px transition-all duration-200"
-                    >
-                      <span className="flex items-center justify-center h-6 w-6 rounded-full bg-gray-900 mr-2">
-                        <Plus className="h-3.5 w-3.5 text-white" strokeWidth={2.75} />
-                      </span>
-                      Create Listing
-                      <ChevronDown className="ml-1.5 h-3.5 w-3.5 text-gray-800/70 transition-transform duration-200 group-data-[state=open]:rotate-180" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56 bg-white rounded-md">
-                    <DropdownMenuItem
-                      onClick={() =>
-                        user ? router.push('/marketplace/sell') : setSellRequirementModalOpen(true)
-                      }
-                      className="cursor-pointer rounded-md"
-                    >
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      <div className="flex flex-col">
-                        <span className="font-medium">Quick Upload</span>
-                        <span className="text-xs text-gray-500">AI-powered analysis</span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => setTextUploadDialogOpen(true)}
-                      className="cursor-pointer rounded-md"
-                    >
-                      <MessageCircle className="mr-2 h-4 w-4" />
-                      <div className="flex flex-col">
-                        <span className="font-medium">Text Upload</span>
-                        <span className="text-xs text-gray-500">Send photos in Messages</span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() =>
-                        user ? setFacebookModalOpen(true) : setSellRequirementModalOpen(true)
-                      }
-                      className="cursor-pointer rounded-md"
-                    >
-                      <Image src="/facebook.png" alt="Facebook" width={16} height={16} className="mr-2" />
-                      <div className="flex flex-col">
-                        <span className="font-medium">Facebook Import</span>
-                        <span className="text-xs text-gray-500">Import from Facebook</span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() =>
-                        user
-                          ? router.push('/marketplace/sell?mode=bulk')
-                          : setSellRequirementModalOpen(true)
-                      }
-                      className="cursor-pointer rounded-md"
-                    >
-                      <Upload className="mr-2 h-4 w-4" />
-                      <div className="flex flex-col">
-                        <span className="font-medium">Bulk Upload</span>
-                        <span className="text-xs text-gray-500">Upload multiple products</span>
-                      </div>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <Button
+                  onClick={() => setCreateListingDialogOpen(true)}
+                  className="group rounded-md bg-[#ffde59] hover:bg-[#f5cf3f] text-gray-900 font-semibold h-9 pl-1.5 pr-3.5 text-sm shadow-sm hover:shadow-md hover:-translate-y-px transition-all duration-200"
+                >
+                  <span className="flex items-center justify-center h-6 w-6 rounded-full bg-gray-900 mr-2">
+                    <Plus className="h-3.5 w-3.5 text-white" strokeWidth={2.75} />
+                  </span>
+                  Create Listing
+                </Button>
               )}
             </div>
           </div>
@@ -889,6 +833,43 @@ export function MarketplaceHeader({
           setSmartUploadModalOpen(false);
           // Navigate to sell page - it will pick up the data from sessionStorage
           router.push('/marketplace/sell?mode=manual&ai=true');
+        }}
+      />
+
+      {/* Desktop Create Listing Dialog */}
+      <CreateListingDialog
+        open={createListingDialogOpen}
+        onOpenChange={setCreateListingDialogOpen}
+        onSelectGuided={() => {
+          if (user) {
+            router.push('/marketplace/sell?mode=guided');
+          } else {
+            setSellRequirementModalOpen(true);
+          }
+        }}
+        onSelectForm={() => {
+          if (user) {
+            router.push('/marketplace/sell?mode=form');
+          } else {
+            setSellRequirementModalOpen(true);
+          }
+        }}
+        onSelectText={() => {
+          setTextUploadDialogOpen(true);
+        }}
+        onSelectFacebook={() => {
+          if (user) {
+            setFacebookModalOpen(true);
+          } else {
+            setSellRequirementModalOpen(true);
+          }
+        }}
+        onSelectBulk={() => {
+          if (user) {
+            router.push('/marketplace/sell?mode=bulk');
+          } else {
+            setSellRequirementModalOpen(true);
+          }
         }}
       />
 

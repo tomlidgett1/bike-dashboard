@@ -2,126 +2,207 @@
 
 import * as React from "react";
 import {
+  ArrowLeft,
   ChevronRight,
-  LayoutList,
-  Link2,
   Layers,
+  LayoutList,
+  Package,
   Sparkles,
-  Wand2,
   type LucideIcon,
 } from "lucide-react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { FacebookImportModal } from "./facebook-import-modal";
+import { TextUploadDialog } from "./text-upload-dialog";
+import { MobileUploadMethodDialog } from "./mobile-upload-method-dialog";
 import type { ListingImage } from "@/lib/types/listing";
 
 // ============================================================
-// Step 0: Upload Method Choice
+// Step 0: Upload Method Choice (/marketplace/sell with no mode)
+// Desktop: inline two-step chooser. Mobile: the bottom sheet.
 // ============================================================
 
 interface UploadMethodChoiceProps {
   onFacebookImportComplete?: (formData: any, images: ListingImage[]) => void;
 }
 
-export function UploadMethodChoice({ 
+type ChoiceStep = "count" | "single" | "multi";
+
+export function UploadMethodChoice({
   onFacebookImportComplete,
 }: UploadMethodChoiceProps) {
   const router = useRouter();
+  const [step, setStep] = React.useState<ChoiceStep>("count");
   const [showFacebookModal, setShowFacebookModal] = React.useState(false);
+  const [showTextDialog, setShowTextDialog] = React.useState(false);
+  const [isMobile, setIsMobile] = React.useState<boolean | null>(null);
+  const [sheetOpen, setSheetOpen] = React.useState(true);
+
+  React.useEffect(() => {
+    const query = window.matchMedia("(max-width: 639px)");
+    const update = () => setIsMobile(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
 
   const handleFacebookComplete = (formData: any, images: ListingImage[]) => {
     setShowFacebookModal(false);
-    if (onFacebookImportComplete) {
-      onFacebookImportComplete(formData, images);
-    }
+    onFacebookImportComplete?.(formData, images);
   };
 
-  return (
+  const sharedModals = (
     <>
-    <div className="mx-auto w-full max-w-[460px]">
-      <div className="px-1">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-          Sell your bike
-        </p>
-        <h2 className="mt-1 text-[26px] font-bold leading-tight tracking-tight text-gray-900">
-          How would you like to list?
-        </h2>
-        <p className="mt-2 text-[15px] leading-relaxed text-gray-500">
-          Choose the path that matches how much control you want. Guided and Form both use AI
-          recommendations and support full bike specifications.
-        </p>
-      </div>
-
-      <p className="mt-6 px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-        Quick upload · one bike
-      </p>
-      <div className="mt-2 space-y-2">
-        <MethodRow
-          icon={Wand2}
-          title="Guided"
-          badge="Simplest"
-          description="One field at a time, with AI pre-filling details from your photos."
-          onClick={() => router.push("/marketplace/sell?mode=guided")}
-        />
-        <MethodRow
-          icon={LayoutList}
-          title="Form"
-          description="Everything on one page, still AI-assisted. Best when you know the details."
-          onClick={() => router.push("/marketplace/sell?mode=form")}
-        />
-      </div>
-
-      <p className="mt-6 px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-        Several at once
-      </p>
-      <div className="mt-2">
-        <MethodRow
-          icon={Layers}
-          title="Bulk upload"
-          description="Upload photos for multiple products and let AI sort them into listings."
-          onClick={() => router.push("/marketplace/sell?mode=bulk")}
-        />
-      </div>
-
-      <div className="mt-6 rounded-md border border-gray-200 bg-white p-3.5">
-        <div className="flex items-start gap-2.5">
-          <span className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-md bg-gray-100">
-            <Sparkles className="h-4 w-4 text-gray-700" />
-          </span>
-          <p className="text-[12.5px] leading-relaxed text-gray-600">
-            Bike listings can include the full component spec sheet buyers see on product
-            pages, filled by AI where possible or edited by hand.
-          </p>
-        </div>
-      </div>
-
-      <button
-        type="button"
-        onClick={() => setShowFacebookModal(true)}
-        className="mt-3 flex w-full items-center justify-center gap-2 rounded-md px-3 py-2.5 text-[13px] font-medium text-gray-600 transition-colors hover:bg-gray-100"
-      >
-        <Link2 className="h-4 w-4" />
-        Import from Facebook instead
-      </button>
-
-      {/* Facebook Import Modal */}
       <FacebookImportModal
         isOpen={showFacebookModal}
         onClose={() => setShowFacebookModal(false)}
         onComplete={handleFacebookComplete}
       />
-    </div>
+      <TextUploadDialog
+        isOpen={showTextDialog}
+        onClose={() => setShowTextDialog(false)}
+      />
+    </>
+  );
+
+  // Mobile: never show a page — present the same bottom sheet used everywhere.
+  if (isMobile) {
+    return (
+      <>
+        <MobileUploadMethodDialog
+          isOpen={sheetOpen && !showFacebookModal && !showTextDialog}
+          onClose={() => {
+            setSheetOpen(false);
+            router.push("/marketplace");
+          }}
+          onSelectGuided={() => router.push("/marketplace/sell?mode=guided")}
+          onSelectForm={() => router.push("/marketplace/sell?mode=form")}
+          onSelectText={() => setShowTextDialog(true)}
+          onSelectFacebook={() => setShowFacebookModal(true)}
+          onSelectBulk={() => router.push("/marketplace/sell?mode=bulk")}
+        />
+        {sharedModals}
+      </>
+    );
+  }
+
+  if (isMobile === null) {
+    // Avoid a flash of the desktop layout before the media query resolves.
+    return null;
+  }
+
+  return (
+    <>
+      <div className="mx-auto w-full max-w-[460px]">
+        <div className="px-1">
+          <div className="flex items-center gap-2">
+            {step !== "count" && (
+              <button
+                type="button"
+                onClick={() => setStep("count")}
+                aria-label="Back"
+                className="-ml-2 flex h-8 w-8 items-center justify-center rounded-full text-gray-600 transition-colors hover:bg-gray-100"
+              >
+                <ArrowLeft className="h-[18px] w-[18px]" />
+              </button>
+            )}
+            <div>
+              <h2 className="text-[26px] font-bold leading-tight tracking-tight text-gray-900">
+                {step === "count" && "Create a listing"}
+                {step === "single" && "List one item"}
+                {step === "multi" && "List multiple items"}
+              </h2>
+              <p className="mt-1 text-[15px] leading-relaxed text-gray-500">
+                {step === "count" && "What are you selling?"}
+                {step === "single" && "Pick how you'd like to list it"}
+                {step === "multi" && "Pick how you'd like to list them"}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div key={step} className="mt-5 space-y-2 animate-in fade-in slide-in-from-right-2 duration-200">
+          {step === "count" && (
+            <>
+              <MethodRow
+                icon={Package}
+                title="One item"
+                description="A bike, part or accessory"
+                onClick={() => setStep("single")}
+              />
+              <MethodRow
+                icon={Layers}
+                title="Multiple items"
+                description="List several things at once"
+                onClick={() => setStep("multi")}
+              />
+            </>
+          )}
+
+          {step === "single" && (
+            <>
+              <MethodRow
+                icon={Sparkles}
+                title="Quick upload"
+                badge="Easiest"
+                description="Add photos — AI fills in the details for you."
+                onClick={() => router.push("/marketplace/sell?mode=guided")}
+              />
+              <MethodRow
+                icon={LayoutList}
+                title="Fill in a form"
+                description="Type the details yourself, all on one page."
+                onClick={() => router.push("/marketplace/sell?mode=form")}
+              />
+              <MethodRow
+                image="/imessage.png"
+                title="Text us"
+                description="Send photos over iMessage — we build the listing."
+                onClick={() => setShowTextDialog(true)}
+              />
+              <MethodRow
+                image="/facebook.png"
+                title="Import from Facebook"
+                description="Paste your Marketplace link."
+                onClick={() => setShowFacebookModal(true)}
+              />
+            </>
+          )}
+
+          {step === "multi" && (
+            <>
+              <MethodRow
+                icon={Sparkles}
+                title="Bulk upload"
+                badge="Easiest"
+                description="Upload all your photos — AI sorts them into listings."
+                onClick={() => router.push("/marketplace/sell?mode=bulk")}
+              />
+              <MethodRow
+                image="/imessage.png"
+                title="Text us"
+                description="Send everything over iMessage — we do the rest."
+                onClick={() => setShowTextDialog(true)}
+              />
+            </>
+          )}
+        </div>
+      </div>
+      {sharedModals}
     </>
   );
 }
 
 function MethodRow({
   icon: Icon,
+  image,
   title,
   description,
   badge,
   onClick,
 }: {
-  icon: LucideIcon;
+  icon?: LucideIcon;
+  image?: string;
   title: string;
   description: string;
   badge?: string;
@@ -131,16 +212,20 @@ function MethodRow({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-md border border-gray-200 bg-white px-3.5 py-3.5 text-left transition-all hover:border-gray-300 hover:bg-gray-50 active:scale-[0.99]"
+      className="flex w-full items-center gap-3 rounded-xl border border-gray-200 bg-white px-3.5 py-3.5 text-left transition-all hover:border-gray-300 hover:bg-gray-50 active:scale-[0.99]"
     >
-      <span className="grid h-10 w-10 flex-shrink-0 place-items-center rounded-md bg-gray-100">
-        <Icon className="h-5 w-5 text-gray-700" />
+      <span className="grid h-10 w-10 flex-shrink-0 place-items-center rounded-lg bg-gray-100">
+        {Icon ? (
+          <Icon className="h-5 w-5 text-gray-700" />
+        ) : image ? (
+          <Image src={image} alt="" width={20} height={20} />
+        ) : null}
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="text-[15px] font-semibold text-gray-900">{title}</span>
           {badge && (
-            <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-700">
+            <span className="rounded-full bg-[#ffde59] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-900">
               {badge}
             </span>
           )}

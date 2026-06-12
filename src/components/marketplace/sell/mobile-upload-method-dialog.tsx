@@ -4,13 +4,13 @@ import * as React from "react";
 import {
   ArrowLeft,
   ChevronRight,
+  Layers,
   LayoutList,
+  Package,
   Sparkles,
-  Upload,
-  Wand2,
 } from "lucide-react";
 import Image from "next/image";
-import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 import { SpringBottomSheet } from "@/components/ui/spring-bottom-sheet";
 
 interface MobileUploadMethodDialogProps {
@@ -23,55 +23,74 @@ interface MobileUploadMethodDialogProps {
   onSelectBulk: () => void;
 }
 
-interface MethodRowProps {
-  icon: React.ReactNode;
-  label: string;
-  description: string;
-  onClick: () => void;
-}
+type SheetView = "count" | "single" | "multi";
 
-interface QuickMethodRowProps extends MethodRowProps {
-  badge?: string;
-}
+const VIEW_TITLES: Record<SheetView, { title: string; subtitle: string }> = {
+  count: { title: "List on Yellow Jersey", subtitle: "What are you selling?" },
+  single: { title: "One item", subtitle: "How do you want to list it?" },
+  multi: { title: "Multiple items", subtitle: "How do you want to list them?" },
+};
 
-function MethodRow({ icon, label, description, onClick }: MethodRowProps) {
+// Smoothly animates the sheet's height as views change.
+function AnimatedHeight({ children }: { children: React.ReactNode }) {
+  const innerRef = React.useRef<HTMLDivElement>(null);
+  const [height, setHeight] = React.useState<number | undefined>(undefined);
+
+  React.useLayoutEffect(() => {
+    const el = innerRef.current;
+    if (!el) return;
+    setHeight(el.offsetHeight);
+    const observer = new ResizeObserver(() => setHeight(el.offsetHeight));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 active:bg-muted"
+    <div
+      style={{
+        height,
+        transition: "height 320ms cubic-bezier(0.32, 0.72, 0, 1)",
+        overflow: "hidden",
+      }}
     >
-      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-muted">
-        {icon}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-foreground">{label}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
-      </div>
-    </button>
+      <div ref={innerRef}>{children}</div>
+    </div>
   );
 }
 
-function QuickMethodRow({ icon, label, description, badge, onClick }: QuickMethodRowProps) {
+function ChoiceCard({
+  icon,
+  label,
+  description,
+  badge,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  description: string;
+  badge?: string;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-md border border-gray-200 bg-white px-3.5 py-3.5 text-left transition-colors hover:bg-gray-50 active:bg-gray-100"
+      className="flex w-full items-center gap-3.5 rounded-2xl border border-gray-200 bg-white px-4 py-4 text-left transition-colors hover:bg-gray-50 active:scale-[0.985] active:bg-gray-100"
+      style={{ transition: "transform 150ms ease, background-color 150ms ease" }}
     >
-      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-gray-100">
+      <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-gray-100">
         {icon}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <p className="text-[15px] font-semibold text-gray-900">{label}</p>
+          <p className="text-[16px] font-semibold tracking-tight text-gray-900">{label}</p>
           {badge && (
-            <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-700">
+            <span className="rounded-full bg-[#ffde59] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-900">
               {badge}
             </span>
           )}
         </div>
-        <p className="mt-0.5 text-[12.5px] leading-snug text-gray-500">{description}</p>
+        <p className="mt-0.5 text-[13px] leading-snug text-gray-500">{description}</p>
       </div>
       <ChevronRight className="h-5 w-5 flex-shrink-0 text-gray-300" />
     </button>
@@ -87,141 +106,131 @@ export function MobileUploadMethodDialog({
   onSelectFacebook,
   onSelectBulk,
 }: MobileUploadMethodDialogProps) {
-  const [view, setView] = React.useState<"methods" | "quick">("methods");
+  const [view, setView] = React.useState<SheetView>("count");
+  const [direction, setDirection] = React.useState<"forward" | "back">("forward");
 
   React.useEffect(() => {
     if (!isOpen) {
-      setView("methods");
+      // Reset after the close animation finishes so content doesn't jump mid-exit.
+      const timer = setTimeout(() => setView("count"), 350);
+      return () => clearTimeout(timer);
     }
   }, [isOpen]);
+
+  const goTo = (next: SheetView, dir: "forward" | "back") => {
+    setDirection(dir);
+    setView(next);
+  };
+
+  const choose = (action: () => void) => {
+    onClose();
+    action();
+  };
+
+  const { title, subtitle } = VIEW_TITLES[view];
 
   return (
     <SpringBottomSheet
       open={isOpen}
       onClose={onClose}
-      aria-label={view === "quick" ? "Quick upload options" : "List your item"}
+      aria-label={title}
       className="gap-0 p-0"
     >
-      {view === "methods" ? (
-        <>
-          <div className="px-4 pb-3 pt-1">
-            <p className="text-sm font-semibold text-foreground">List your item</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Choose how to create your listing
-            </p>
-          </div>
-
-          <Separator />
-
-          <MethodRow
-            icon={<Sparkles className="h-4 w-4 text-muted-foreground" />}
-            label="Quick upload"
-            description="AI fills in details from your photos"
-            onClick={() => setView("quick")}
-          />
-
-          <Separator />
-
-          <MethodRow
-            icon={<Image src="/imessage.png" alt="iMessage" width={16} height={16} />}
-            label="Text upload"
-            description="Chat with us on iMessage — we build the listing"
-            onClick={() => {
-              onClose();
-              onSelectText();
-            }}
-          />
-
-          <Separator />
-
-          <MethodRow
-            icon={<Image src="/facebook.png" alt="Facebook" width={16} height={16} />}
-            label="Import from Facebook"
-            description="Paste a Marketplace link"
-            onClick={() => {
-              onClose();
-              onSelectFacebook();
-            }}
-          />
-
-          <Separator />
-
-          <MethodRow
-            icon={<Upload className="h-4 w-4 text-muted-foreground" />}
-            label="Bulk upload"
-            description="List multiple items at once"
-            onClick={() => {
-              onClose();
-              onSelectBulk();
-            }}
-          />
-
-          <div className="h-safe-area-inset-bottom pb-4" />
-        </>
-      ) : (
-        <>
-          <div className="px-4 pb-4 pt-1">
-            <button
-              type="button"
-              onClick={() => setView("methods")}
-              className="-ml-2 mb-3 inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[13px] font-medium text-gray-600 transition-colors hover:bg-gray-100"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back
-            </button>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-              Quick upload · one bike
-            </p>
-            <h2 className="mt-1 text-[24px] font-bold leading-tight tracking-tight text-gray-900">
-              How would you like to list?
-            </h2>
-            <p className="mt-2 text-[14px] leading-relaxed text-gray-500">
-              Pick a guided step-by-step flow or a compact form. Both use AI recommendations
-              and support optional full bike specs.
-            </p>
-          </div>
-
-          <Separator />
-
-          <div className="space-y-2 px-4 py-4">
-            <QuickMethodRow
-              icon={<Wand2 className="h-5 w-5 text-gray-700" />}
-              label="Guided"
-              badge="Simplest"
-              description="One field at a time, with AI helping from your photos."
-              onClick={() => {
-                onClose();
-                onSelectGuided();
-              }}
-            />
-            <QuickMethodRow
-              icon={<LayoutList className="h-5 w-5 text-gray-700" />}
-              label="Form"
-              description="Everything on one page, still AI-assisted."
-              onClick={() => {
-                onClose();
-                onSelectForm();
-              }}
-            />
-          </div>
-
-          <div className="px-4 pb-4">
-            <div className="rounded-md border border-gray-200 bg-white p-3.5">
-              <div className="flex items-start gap-2.5">
-                <span className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-md bg-gray-100">
-                  <Sparkles className="h-4 w-4 text-gray-700" />
-                </span>
-                <p className="text-[12.5px] leading-relaxed text-gray-600">
-                  Bike listings can include the full component spec sheet buyers see on product
-                  pages, filled by AI where possible or edited by hand.
-                </p>
-              </div>
+      <AnimatedHeight>
+        <div className="px-4 pb-2 pt-1">
+          <div className="flex items-center gap-2">
+            {view !== "count" && (
+              <button
+                type="button"
+                onClick={() => goTo("count", "back")}
+                aria-label="Back"
+                className="-ml-1.5 flex h-8 w-8 items-center justify-center rounded-full text-gray-600 transition-colors hover:bg-gray-100 active:bg-gray-200"
+              >
+                <ArrowLeft className="h-[18px] w-[18px]" />
+              </button>
+            )}
+            <div className="min-w-0">
+              <p className="text-[17px] font-bold tracking-tight text-gray-900">{title}</p>
+              <p className="text-[13px] text-gray-500">{subtitle}</p>
             </div>
           </div>
+        </div>
 
-          <div className="h-safe-area-inset-bottom pb-4" />
-        </>
-      )}
+        <div
+          key={view}
+          className={cn(
+            "space-y-2 px-4 pb-3 pt-2 animate-in fade-in duration-300",
+            direction === "forward" ? "slide-in-from-right-4" : "slide-in-from-left-4",
+          )}
+        >
+          {view === "count" && (
+            <>
+              <ChoiceCard
+                icon={<Package className="h-[22px] w-[22px] text-gray-700" />}
+                label="One item"
+                description="A bike, part or accessory"
+                onClick={() => goTo("single", "forward")}
+              />
+              <ChoiceCard
+                icon={<Layers className="h-[22px] w-[22px] text-gray-700" />}
+                label="Multiple items"
+                description="List several things at once"
+                onClick={() => goTo("multi", "forward")}
+              />
+            </>
+          )}
+
+          {view === "single" && (
+            <>
+              <ChoiceCard
+                icon={<Sparkles className="h-[22px] w-[22px] text-gray-700" />}
+                label="Quick upload"
+                badge="Easiest"
+                description="Snap photos — AI fills in the details"
+                onClick={() => choose(onSelectGuided)}
+              />
+              <ChoiceCard
+                icon={<LayoutList className="h-[22px] w-[22px] text-gray-700" />}
+                label="Fill in a form"
+                description="Type the details yourself, all on one page"
+                onClick={() => choose(onSelectForm)}
+              />
+              <ChoiceCard
+                icon={<Image src="/imessage.png" alt="" width={22} height={22} />}
+                label="Text us"
+                description="Send photos over iMessage — we build the listing"
+                onClick={() => choose(onSelectText)}
+              />
+              <ChoiceCard
+                icon={<Image src="/facebook.png" alt="" width={22} height={22} />}
+                label="Import from Facebook"
+                description="Paste your Marketplace link"
+                onClick={() => choose(onSelectFacebook)}
+              />
+            </>
+          )}
+
+          {view === "multi" && (
+            <>
+              <ChoiceCard
+                icon={<Sparkles className="h-[22px] w-[22px] text-gray-700" />}
+                label="Bulk upload"
+                badge="Easiest"
+                description="Upload all your photos — AI sorts them into listings"
+                onClick={() => choose(onSelectBulk)}
+              />
+              <ChoiceCard
+                icon={<Image src="/imessage.png" alt="" width={22} height={22} />}
+                label="Text us"
+                description="Send everything over iMessage — we do the rest"
+                onClick={() => choose(onSelectText)}
+              />
+            </>
+          )}
+        </div>
+
+        <div className="pb-[max(1rem,env(safe-area-inset-bottom))]" />
+      </AnimatedHeight>
     </SpringBottomSheet>
   );
 }
