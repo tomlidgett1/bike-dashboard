@@ -41,6 +41,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
           setLoading(false)
         }
+
+        // Fold anonymous browsing behaviour into the account so the For You
+        // feed keeps its context across login. Throttled per browser+user.
+        if (event === 'SIGNED_IN' && session?.user) {
+          const anonId = window.localStorage.getItem('yj_anon_id')
+          const mergeKey = `yj_anon_merged_${session.user.id}`
+          if (anonId && !window.localStorage.getItem(mergeKey)) {
+            window.localStorage.setItem(mergeKey, new Date().toISOString())
+            supabase
+              .rpc('merge_anonymous_behaviour', { p_anonymous_id: anonId })
+              .then(({ error }) => {
+                if (error) {
+                  console.warn('Failed to merge anonymous behaviour:', error.message)
+                  window.localStorage.removeItem(mergeKey)
+                }
+              })
+          }
+        }
       })
 
       return () => subscription.unsubscribe()

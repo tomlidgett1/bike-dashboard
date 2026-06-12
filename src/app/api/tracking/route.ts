@@ -9,17 +9,29 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
 
 // ============================================================
 // Types
 // ============================================================
 
+const VALID_INTERACTION_TYPES = new Set([
+  'view', 'click', 'search', 'add_to_cart', 'like', 'unlike',
+  'impression', 'gallery_view', 'photo_zoom', 'share',
+  'store_view', 'category_view', 'filter', 'sort', 'location_change', 'scroll_depth',
+  'carousel_impression', 'carousel_click', 'carousel_dismiss',
+  'enquiry', 'message', 'offer', 'buy_intent',
+  'dismiss',
+]);
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 interface QueuedInteraction {
   sessionId: string;
+  anonymousId?: string;
   userId?: string;
   productId?: string;
-  interactionType: 'view' | 'click' | 'search' | 'add_to_cart' | 'like' | 'unlike';
+  interactionType: string;
   dwellTimeSeconds?: number;
   metadata?: Record<string, any>;
   timestamp: string;
@@ -157,28 +169,41 @@ async function processInteractionsAsync(interactions: QueuedInteraction[]) {
 
     for (const interaction of interactions) {
       // Validate interaction
-      if (!interaction.sessionId || !interaction.interactionType) {
+      if (!interaction.sessionId || !UUID_RE.test(interaction.sessionId)) {
         continue; // Skip invalid interactions
       }
 
       // Validate interaction type
-      const validTypes = ['view', 'click', 'search', 'add_to_cart', 'like', 'unlike'];
-      if (!validTypes.includes(interaction.interactionType)) {
+      if (!VALID_INTERACTION_TYPES.has(interaction.interactionType)) {
         continue;
       }
 
-      // Use authenticated user ID if available, otherwise use provided userId
-      const userId = user?.id || interaction.userId;
+      // Only trust the authenticated user ID — never a client-supplied one.
+      const userId = user?.id || null;
+
+      const anonymousId =
+        interaction.anonymousId && UUID_RE.test(interaction.anonymousId)
+          ? interaction.anonymousId
+          : null;
+
+      // Guard against silly timestamps (clock skew / replayed offline queues)
+      const eventAt = new Date(interaction.timestamp);
+      const ageMs = Date.now() - eventAt.getTime();
+      const createdAt =
+        Number.isFinite(eventAt.getTime()) && ageMs > -60_000 && ageMs < 7 * 24 * 3600_000
+          ? eventAt.toISOString()
+          : new Date().toISOString();
 
       // Build interaction record
       const interactionRecord = {
-        user_id: userId || null,
+        user_id: userId,
+        anonymous_id: anonymousId,
         session_id: interaction.sessionId,
         product_id: interaction.productId || null,
         interaction_type: interaction.interactionType,
         dwell_time_seconds: interaction.dwellTimeSeconds || 0,
         metadata: interaction.metadata || {},
-        created_at: interaction.timestamp,
+        created_at: createdAt,
       };
 
       validInteractions.push(interactionRecord);
@@ -208,8 +233,10 @@ async function processInteractionsAsync(interactions: QueuedInteraction[]) {
       user_id: validInteractions[0]?.user_id,
     }, null, 2));
     
-    // Insert interactions into database
-    const { data: insertedData, error: insertError } = await supabase
+    // Insert with the service-role client: anonymous events have a NULL
+    // user_id, which the user-scoped RLS insert policy rejects.
+    const serviceClient = createServiceRoleClient();
+    const { data: insertedData, error: insertError } = await serviceClient
       .from('user_interactions')
       .insert(validInteractions)
       .select();

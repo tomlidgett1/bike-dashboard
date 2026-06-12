@@ -106,6 +106,17 @@ function DesktopHeaderPillContent() {
               Home
             </Link>
             <Link
+              href="/for-you"
+              className={cn(
+                "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
+                pathname === "/for-you"
+                  ? "text-gray-900 bg-gray-100"
+                  : "text-gray-700 hover:bg-gray-100"
+              )}
+            >
+              For You
+            </Link>
+            <Link
               href={`/marketplace/store/${profile?.user_id || user?.id}`}
               className={cn(
                 "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
@@ -257,6 +268,17 @@ function DesktopHeaderPillContent() {
                     )}
                   >
                     Browse
+                  </Link>
+                  <Link
+                    href="/for-you"
+                    className={cn(
+                      "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
+                      pathname === "/for-you"
+                        ? "text-gray-900 bg-gray-100"
+                        : "text-gray-700 hover:bg-gray-100"
+                    )}
+                  >
+                    For You
                   </Link>
                   <Link
                     href="/marketplace?space=stores"

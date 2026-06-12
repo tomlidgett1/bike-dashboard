@@ -19,7 +19,19 @@ import { v4 as uuidv4 } from 'uuid';
 // Types
 // ============================================================
 
-export type InteractionType = 'view' | 'click' | 'search' | 'add_to_cart' | 'like' | 'unlike';
+export type InteractionType =
+  // original vocabulary
+  | 'view' | 'click' | 'search' | 'add_to_cart' | 'like' | 'unlike'
+  // product surfaces
+  | 'impression' | 'gallery_view' | 'photo_zoom' | 'share'
+  // non-product surfaces
+  | 'store_view' | 'category_view' | 'filter' | 'sort' | 'location_change' | 'scroll_depth'
+  // carousels
+  | 'carousel_impression' | 'carousel_click' | 'carousel_dismiss'
+  // high intent
+  | 'enquiry' | 'message' | 'offer' | 'buy_intent'
+  // explicit negative
+  | 'dismiss';
 
 export interface Interaction {
   productId?: string;
@@ -31,6 +43,7 @@ export interface Interaction {
 
 interface QueuedInteraction extends Interaction {
   sessionId: string;
+  anonymousId?: string;
   userId?: string;
 }
 
@@ -41,6 +54,26 @@ interface QueuedInteraction extends Interaction {
 const SESSION_KEY = 'yj_session_id';
 const SESSION_DURATION = 30 * 60 * 1000; // 30 minutes
 const LAST_ACTIVITY_KEY = 'yj_last_activity';
+const ANON_KEY = 'yj_anon_id';
+const ANON_COOKIE_MAX_AGE = 365 * 24 * 60 * 60; // 1 year
+
+/**
+ * Persistent anonymous identity (survives sessions, unlike yj_session_id).
+ * Mirrored into a cookie so server components can personalise the first render
+ * for logged-out users.
+ */
+export function getOrCreateAnonymousId(): string {
+  let anonId = localStorage.getItem(ANON_KEY);
+  if (!anonId || !isValidUUID(anonId)) {
+    // Cookie may survive a cleared localStorage (or vice versa)
+    const cookieMatch = document.cookie.match(/(?:^|;\s*)yj_anon_id=([0-9a-f-]{36})/i);
+    anonId = cookieMatch && isValidUUID(cookieMatch[1]) ? cookieMatch[1] : uuidv4();
+    localStorage.setItem(ANON_KEY, anonId);
+  }
+  // Refresh the cookie on every read so it doesn't expire for active browsers
+  document.cookie = `yj_anon_id=${anonId}; path=/; max-age=${ANON_COOKIE_MAX_AGE}; samesite=lax`;
+  return anonId;
+}
 
 function getOrCreateSessionId(): string {
   const lastActivity = localStorage.getItem(LAST_ACTIVITY_KEY);
@@ -245,6 +278,7 @@ export function trackInteraction(
 ) {
   try {
     const sessionId = getOrCreateSessionId();
+    const anonymousId = getOrCreateAnonymousId();
     const queue = getQueue();
 
     // Validate product_id is a valid UUID or set to undefined
@@ -259,6 +293,7 @@ export function trackInteraction(
 
     queue.add({
       sessionId,
+      anonymousId,
       userId: options.userId,
       productId: validProductId,
       interactionType,
@@ -269,6 +304,104 @@ export function trackInteraction(
   } catch (error) {
     console.error('[Tracker] Failed to track interaction:', error);
   }
+}
+
+// ============================================================
+// Recommendation-signal helpers
+// ============================================================
+
+// Impressions are deduped per page load so a card scrolled past twice
+// doesn't double-count.
+const seenImpressions = new Set<string>();
+
+export function trackProductImpression(
+  productId: string,
+  metadata?: Record<string, any>,
+  userId?: string,
+) {
+  const dedupeKey = `${productId}:${metadata?.carousel_key || metadata?.source || ''}`;
+  if (seenImpressions.has(dedupeKey)) return;
+  seenImpressions.add(dedupeKey);
+  trackInteraction('impression', { productId, metadata, userId });
+}
+
+export function trackCarouselImpression(
+  carouselKey: string,
+  metadata?: Record<string, any>,
+  userId?: string,
+) {
+  const dedupeKey = `carousel:${carouselKey}`;
+  if (seenImpressions.has(dedupeKey)) return;
+  seenImpressions.add(dedupeKey);
+  trackInteraction('carousel_impression', {
+    metadata: { carousel_key: carouselKey, ...metadata },
+    userId,
+  });
+}
+
+export function trackCarouselClick(
+  carouselKey: string,
+  productId: string,
+  position: number,
+  metadata?: Record<string, any>,
+  userId?: string,
+) {
+  trackInteraction('carousel_click', {
+    productId,
+    metadata: { carousel_key: carouselKey, position, ...metadata },
+    userId,
+  });
+}
+
+export function trackStoreView(storeId: string, userId?: string) {
+  trackInteraction('store_view', { metadata: { store_id: storeId }, userId });
+}
+
+export function trackGalleryView(productId: string, imageIndex: number, userId?: string) {
+  trackInteraction('gallery_view', {
+    productId,
+    metadata: { image_index: imageIndex },
+    userId,
+  });
+}
+
+export function trackFilterChange(
+  filter: Record<string, any>,
+  userId?: string,
+) {
+  trackInteraction('filter', { metadata: filter, userId });
+}
+
+/**
+ * IntersectionObserver-based product impression tracking for feed surfaces.
+ * Returns a ref callback; attach it to the card wrapper.
+ */
+export function useImpressionRef(
+  productId: string,
+  metadata?: Record<string, any>,
+  userId?: string,
+) {
+  const metadataRef = useRef(metadata);
+  metadataRef.current = metadata;
+
+  return useCallback(
+    (node: HTMLElement | null) => {
+      if (!node || typeof IntersectionObserver === 'undefined') return;
+      const observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+              trackProductImpression(productId, metadataRef.current, userId);
+              observer.disconnect();
+            }
+          }
+        },
+        { threshold: 0.5 },
+      );
+      observer.observe(node);
+    },
+    [productId, userId],
+  );
 }
 
 // ============================================================

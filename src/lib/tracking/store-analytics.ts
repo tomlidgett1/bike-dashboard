@@ -85,6 +85,10 @@ export function useStorePageView(storeOwnerId: string | null | undefined) {
       eventType: "store_page_view",
       storeOwnerId,
     });
+    // Also feed the personalisation layer (store affinity signal).
+    import("@/lib/tracking/interaction-tracker")
+      .then(({ trackStoreView }) => trackStoreView(storeOwnerId))
+      .catch(() => {});
   }, [storeOwnerId]);
 }
 

@@ -144,6 +144,12 @@ export function ProductInquiryButton({
       }
 
       conversationIdRef.current = data.conversation.id;
+      // Strongest buying-intent signal we capture — feeds the For You engine.
+      import('@/lib/tracking/interaction-tracker')
+        .then(({ trackInteraction }) =>
+          trackInteraction('enquiry', { productId, metadata: { seller_id: sellerId } })
+        )
+        .catch(() => {});
       setSuccess(true);
       setTimeout(() => {
         openConversation(data.conversation.id);
