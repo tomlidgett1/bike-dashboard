@@ -42,6 +42,7 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/marketplace/product') ||
     request.nextUrl.pathname.startsWith('/marketplace/store') ||
     request.nextUrl.pathname.startsWith('/marketplace/sell-prototypes') || // Mobile design prototypes (mock data, no auth)
+    request.nextUrl.pathname.startsWith('/marketplace/mobile-prototypes') || // Mobile redesign prototypes (mock data, no auth)
     request.nextUrl.pathname.startsWith('/marketplace/used-products') ||
     request.nextUrl.pathname.startsWith('/marketplace/new-products') ||
     request.nextUrl.pathname.startsWith('/api/marketplace') ||

@@ -36,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ProductCard } from "@/components/marketplace/product-card";
+import { ListItemBannerSlot } from "@/components/marketplace/list-item-banner";
 import { BikeIcon, getCategoryIconName } from "@/components/ui/bike-icon";
 import { StoreCarouselRowControls } from "@/components/marketplace/store-profile/store-carousel-row-controls";
 import { StoreHomeTab } from "@/components/marketplace/store-profile/store-home-tab";
@@ -321,18 +322,24 @@ function CategoryScrollRow({
     return (
       <div ref={impressionRef} className={gridCls}>
         {products.map((product, j) => (
-          <div key={product.id} data-analytics-product-id={product.id}>
-            <ProductCard
-              product={product}
-              priority={rowIndex === 0 && j < 6}
-              hideStoreMeta
-              compact={cardCompact}
-              featuredMobile={cardFeatured}
-              storeId={storeId}
-              onBackgroundRemove={onBackgroundRemove}
-              backgroundRemoveBusy={backgroundRemovingIds?.has(product.id) ?? false}
+          <React.Fragment key={product.id}>
+            <div data-analytics-product-id={product.id}>
+              <ProductCard
+                product={product}
+                priority={rowIndex === 0 && j < 6}
+                hideStoreMeta
+                compact={cardCompact}
+                featuredMobile={cardFeatured}
+                storeId={storeId}
+                onBackgroundRemove={onBackgroundRemove}
+                backgroundRemoveBusy={backgroundRemovingIds?.has(product.id) ?? false}
+              />
+            </div>
+            <ListItemBannerSlot
+              productIndex={j}
+              productCount={products.length}
             />
-          </div>
+          </React.Fragment>
         ))}
       </div>
     );
@@ -805,17 +812,23 @@ function ProductSearchResultsGrid({
   return (
     <div ref={impressionRef} className={gridCls}>
       {products.map((product, index) => (
-        <div key={product.id} data-analytics-product-id={product.id}>
-          <ProductCard
-            product={product}
-            priority={index < 8}
-            hideStoreMeta
-            compact={compact}
-            storeId={storeId}
-            onBackgroundRemove={onBackgroundRemove}
-            backgroundRemoveBusy={backgroundRemovingIds?.has(product.id) ?? false}
+        <React.Fragment key={product.id}>
+          <div data-analytics-product-id={product.id}>
+            <ProductCard
+              product={product}
+              priority={index < 8}
+              hideStoreMeta
+              compact={compact}
+              storeId={storeId}
+              onBackgroundRemove={onBackgroundRemove}
+              backgroundRemoveBusy={backgroundRemovingIds?.has(product.id) ?? false}
+            />
+          </div>
+          <ListItemBannerSlot
+            productIndex={index}
+            productCount={products.length}
           />
-        </div>
+        </React.Fragment>
       ))}
     </div>
   );

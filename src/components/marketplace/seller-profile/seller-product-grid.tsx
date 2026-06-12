@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { Package, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SellerProduct, SellerCategory } from "@/app/api/marketplace/seller/[sellerId]/route";
+import { ListItemBannerSlot } from "@/components/marketplace/list-item-banner";
 
 // ============================================================
 // Seller Product Grid
@@ -157,12 +158,17 @@ export function SellerProductGrid({
         {/* Responsive Grid: 2 cols mobile, 3 cols tablet, 5 cols desktop */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {products.map((product, index) => (
-            <ProductCard 
-              key={product.id} 
-              product={product} 
-              index={index} 
-              isSold={isSoldTab}
-            />
+            <React.Fragment key={product.id}>
+              <ProductCard
+                product={product}
+                index={index}
+                isSold={isSoldTab}
+              />
+              <ListItemBannerSlot
+                productIndex={index}
+                productCount={products.length}
+              />
+            </React.Fragment>
           ))}
         </div>
       </div>

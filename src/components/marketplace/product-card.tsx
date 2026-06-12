@@ -383,7 +383,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             "relative overflow-hidden rounded-md bg-gray-100 border border-gray-200/80",
             isList
               ? "w-28 sm:w-32 flex-shrink-0 aspect-square mb-0"
-              : "w-full mb-0.5",
+              : cn("w-full", inCarousel ? "mb-0" : "mb-0.5"),
             !isList &&
               (featuredMobile && !inCarousel
                 ? "aspect-square sm:aspect-[4/3]"
@@ -501,10 +501,19 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
 	        <div
 	          className={cn(
 	            isList && "flex flex-1 flex-col justify-center min-w-0 py-0",
-	            !isList && (featuredMobile ? "px-0.5 mb-1 sm:pt-1 sm:mb-2 md:mb-3" : "px-0.5 mb-1 sm:mb-2"),
+	            !isList &&
+	              !hideStoreMeta &&
+	              (featuredMobile
+	                ? "px-0.5 mb-1 sm:pt-1 sm:mb-2 md:mb-3"
+	                : "px-0.5 mb-1 sm:mb-2"),
 	            !isList &&
 	              hideStoreMeta &&
-	              (featuredMobile && !inCarousel
+	              inCarousel &&
+	              "px-0.5 h-11 overflow-hidden mb-0",
+	            !isList &&
+	              hideStoreMeta &&
+	              !inCarousel &&
+	              (featuredMobile
 	                ? "h-9 sm:h-11 overflow-hidden mb-0.5"
 	                : "h-[3.25rem] overflow-hidden mb-0.5")
 	          )}
@@ -515,13 +524,15 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
               "text-gray-900 leading-tight line-clamp-2",
               isList && "text-sm font-semibold mb-1",
               !isList &&
-                (featuredMobile
-                  ? "text-xs sm:text-base font-medium sm:font-semibold line-clamp-1 mb-0 sm:mb-0.5"
-                  : compact
-                    ? "text-xs sm:text-[11px] font-medium line-clamp-1 mb-0"
-                    : hideStoreMeta
-                      ? "text-xs font-medium line-clamp-1 mb-0"
-                      : "text-sm font-medium line-clamp-1 mb-0")
+                (inCarousel && hideStoreMeta
+                  ? "text-sm font-medium line-clamp-1 mb-0"
+                  : featuredMobile
+                    ? "text-xs sm:text-base font-medium sm:font-semibold line-clamp-1 mb-0 sm:mb-0.5"
+                    : compact
+                      ? "text-xs sm:text-[11px] font-medium line-clamp-1 mb-0"
+                      : hideStoreMeta
+                        ? "text-xs font-medium line-clamp-1 mb-0"
+                        : "text-sm font-medium line-clamp-1 mb-0")
             )}
           >
             {productData.display_name || product.description}
@@ -534,7 +545,12 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             const priceSizeClass = cn(
               "font-semibold leading-tight",
               isList && "text-sm",
-              !isList && (featuredMobile ? "text-xs sm:text-sm" : "text-xs")
+              !isList &&
+                (inCarousel && hideStoreMeta
+                  ? "text-sm"
+                  : featuredMobile
+                    ? "text-xs sm:text-sm"
+                    : "text-xs")
             );
             const priceConditionBadge = conditionBadge ? (
               <span className="inline-flex items-center rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-gray-700">
@@ -662,7 +678,14 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
 // Product Card Skeleton - Matching image-first design
 // ============================================================
 
-export function ProductCardSkeleton({ layout = "grid" }: { layout?: "grid" | "list" }) {
+export function ProductCardSkeleton({
+  layout = "grid",
+  hideStoreMeta = false,
+}: {
+  layout?: "grid" | "list";
+  /** Carousel / store row — title + price only (no seller line). */
+  hideStoreMeta?: boolean;
+}) {
   if (layout === "list") {
     return (
       <div className="flex flex-row gap-3 w-full rounded-md border border-gray-200/80 bg-white p-2 sm:p-3">
@@ -679,21 +702,26 @@ export function ProductCardSkeleton({ layout = "grid" }: { layout?: "grid" | "li
     <div>
       {/* Image Skeleton */}
       <div
-        className="relative w-full rounded-xl bg-gray-100 animate-pulse mb-0.5 border border-gray-200"
-        style={{ aspectRatio: '1 / 1' }}
+        className={cn(
+          "relative w-full rounded-xl bg-gray-100 animate-pulse border border-gray-200",
+          hideStoreMeta ? "mb-0" : "mb-0.5",
+        )}
+        style={{ aspectRatio: "1 / 1" }}
       >
       </div>
 
-      {/* Content Skeleton */}
-      <div className="px-0.5 space-y-0">
-        {/* Title Skeleton */}
+      {/* Content Skeleton — carousel rows match live cards (title + price, 40px block) */}
+      <div
+        className={cn(
+          "px-0.5 overflow-hidden",
+          hideStoreMeta ? "h-11 mb-0" : "space-y-0 mb-0.5",
+        )}
+      >
         <div className="h-4 w-full bg-gray-100 rounded animate-pulse mb-0" />
-
-        {/* Price Skeleton */}
-        <div className="h-3 w-20 bg-gray-100 rounded animate-pulse mb-0.5" />
-
-        {/* Store Skeleton */}
-        <div className="h-3 w-16 bg-gray-100 rounded animate-pulse" />
+        <div className="h-3 w-20 bg-gray-100 rounded animate-pulse mb-0" />
+        {!hideStoreMeta && (
+          <div className="h-3 w-16 bg-gray-100 rounded animate-pulse" />
+        )}
       </div>
     </div>
   );

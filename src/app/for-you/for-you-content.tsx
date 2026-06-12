@@ -12,7 +12,20 @@ import { getOrCreateAnonymousId } from "@/lib/tracking/interaction-tracker";
 import { ForYouCarouselRow } from "@/components/marketplace/for-you/for-you-carousel-row";
 import { FOR_YOU_CAROUSEL_CARD_WIDTH } from "@/components/marketplace/for-you/carousel-card-width";
 import type { ForYouFeedPayload } from "@/lib/for-you/types";
+import {
+  genieProgressShimmerClassName,
+  genieProgressShimmerStyle,
+} from "@/lib/genie/shimmer";
 import { cn } from "@/lib/utils";
+
+const ENHANCE_EASE = [0.04, 0.62, 0.23, 0.98] as const;
+
+const ENHANCE_MESSAGES = [
+  "Personalising your picks…",
+  "Finding collections you'll love…",
+  "Grouping bikes and gear for you…",
+  "Almost ready…",
+];
 
 // ============================================================
 // For You — personalised, carousel-led discovery page
@@ -53,6 +66,8 @@ export function ForYouContent({ initialFeed, hadIdentity }: ForYouContentProps) 
 export function ForYouFeedView({ initialFeed, hadIdentity, embedded = false }: ForYouContentProps) {
   const { user } = useAuth();
   const [feed, setFeed] = React.useState<ForYouFeedPayload>(initialFeed);
+  const [isEnhancing, setIsEnhancing] = React.useState(() => initialFeed.enhanceable);
+  const [enhanceMessageIndex, setEnhanceMessageIndex] = React.useState(0);
   const enhanceRequestedRef = React.useRef(false);
 
   // Establish the persistent anonymous identity cookie. If the server built
@@ -74,10 +89,24 @@ export function ForYouFeedView({ initialFeed, hadIdentity, embedded = false }: F
     }
   }, [hadIdentity]);
 
+  React.useEffect(() => {
+    if (!isEnhancing) {
+      setEnhanceMessageIndex(0);
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setEnhanceMessageIndex((current) => (current + 1) % ENHANCE_MESSAGES.length);
+    }, 2500);
+
+    return () => window.clearInterval(interval);
+  }, [isEnhancing]);
+
   // Background LLM enhancement — never blocks, never degrades.
   React.useEffect(() => {
     if (!feed.enhanceable || enhanceRequestedRef.current) return;
     enhanceRequestedRef.current = true;
+    setIsEnhancing(true);
 
     // No abort on unmount: this warms the shared feed cache either way, and
     // aborting under React strict mode would skip enhancement entirely.
@@ -93,7 +122,8 @@ export function ForYouFeedView({ initialFeed, hadIdentity, embedded = false }: F
           setFeed(data.feed);
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setIsEnhancing(false));
   }, [feed.enhanceable, feed.feedId]);
 
   const handleDismissProduct = React.useCallback((carouselKey: string, productId: string) => {
@@ -129,33 +159,80 @@ export function ForYouFeedView({ initialFeed, hadIdentity, embedded = false }: F
   }, []);
 
   return (
-    <div className={embedded ? "space-y-3" : "px-3 sm:px-6 py-4 sm:py-6 max-w-[1800px] mx-auto"}>
-      {/* Carousels */}
+    <div
+      className={
+        embedded
+          ? undefined
+          : "max-w-[1800px] mx-auto px-4 sm:px-4 lg:px-4 xl:px-5 pt-2 pb-5 sm:pt-3 sm:pb-7"
+      }
+    >
       {feed.carousels.length > 0 ? (
-        <AnimatePresence initial={false} mode="popLayout">
-          {feed.carousels.map((carousel) => (
-            <motion.div
-              key={carousel.key}
-              layout
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <ForYouCarouselRow
-                carousel={carousel}
-                userId={user?.id}
-                onDismissProduct={handleDismissProduct}
-                onHideCarousel={handleHideCarousel}
-                embedded={embedded}
-              />
-            </motion.div>
-          ))}
-        </AnimatePresence>
+        <div className="space-y-1">
+          <AnimatePresence initial={false}>
+            {feed.carousels.map((carousel) => (
+              <motion.div
+                key={carousel.key}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                <ForYouCarouselRow
+                  carousel={carousel}
+                  userId={user?.id}
+                  onDismissProduct={handleDismissProduct}
+                  onHideCarousel={handleHideCarousel}
+                  embedded={embedded}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
+          {isEnhancing && (
+            <ForYouEnhanceLoading messageIndex={enhanceMessageIndex} />
+          )}
+        </div>
+      ) : isEnhancing ? (
+        <div className="space-y-1">
+          <ForYouEnhanceLoading messageIndex={enhanceMessageIndex} />
+        </div>
       ) : (
         <EmptyState embedded={embedded} />
       )}
     </div>
+  );
+}
+
+function ForYouEnhanceLoading({ messageIndex }: { messageIndex: number }) {
+  const message = ENHANCE_MESSAGES[messageIndex % ENHANCE_MESSAGES.length];
+
+  return (
+    <section aria-live="polite" aria-busy="true">
+      <div className="mb-0.5 min-h-5">
+        <AnimatePresence mode="wait">
+          <motion.p
+            key={message}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.35, ease: ENHANCE_EASE }}
+            className={cn(
+              "w-fit max-w-full whitespace-normal text-sm leading-relaxed",
+              genieProgressShimmerClassName,
+            )}
+            style={genieProgressShimmerStyle}
+          >
+            {message}
+          </motion.p>
+        </AnimatePresence>
+      </div>
+      <div className="flex items-start gap-1.5 sm:gap-2 overflow-hidden opacity-70">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className={cn("flex-shrink-0", FOR_YOU_CAROUSEL_CARD_WIDTH)}>
+            <ProductCardSkeleton hideStoreMeta />
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -186,23 +263,24 @@ function EmptyState({ embedded = false }: { embedded?: boolean }) {
 /** Bare loading body (no page chrome) — shared by route + space skeletons. */
 export function ForYouFeedSkeletonBody({ embedded = false }: { embedded?: boolean }) {
   return (
-    <div className={embedded ? "space-y-3" : "px-3 sm:px-6 py-4 sm:py-6 max-w-[1800px] mx-auto"}>
+    <div
+      className={
+        embedded
+          ? "space-y-1"
+          : "max-w-[1800px] mx-auto px-4 sm:px-4 lg:px-4 xl:px-5 pt-2 pb-5 sm:pt-3 sm:pb-7 space-y-1"
+      }
+    >
       {Array.from({ length: 3 }).map((_, section) => (
-        <div key={section} className={embedded ? "space-y-2.5 sm:space-y-3" : "py-3"}>
-          <div className="h-4 sm:h-5 w-40 sm:w-56 bg-gray-200 rounded-md animate-pulse px-0.5" />
-          <div
-            className={cn(
-              "flex overflow-hidden",
-              embedded ? "gap-2.5 sm:gap-3" : "gap-3",
-            )}
-          >
+        <section key={section}>
+          <div className="h-5 w-40 sm:w-56 bg-gray-200 rounded-md animate-pulse mb-0.5" />
+          <div className="flex items-start gap-1.5 sm:gap-2 overflow-hidden">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className={cn("flex-shrink-0", FOR_YOU_CAROUSEL_CARD_WIDTH)}>
-                <ProductCardSkeleton />
+                <ProductCardSkeleton hideStoreMeta />
               </div>
             ))}
           </div>
-        </div>
+        </section>
       ))}
     </div>
   );

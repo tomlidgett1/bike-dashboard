@@ -369,8 +369,20 @@ export function MarketplaceHeader({
             <div className="absolute inset-y-0 left-1/3 w-1/3 bg-[#f0cf45]" />
           </div>
         )}
-        <div className="px-4 sm:px-6">
-          <div className="flex h-12 sm:h-14 items-center min-w-0">
+        <div
+          className={cn(
+            "px-4 sm:px-6",
+            !isGuestLayout &&
+              "max-sm:pr-[max(1rem,env(safe-area-inset-right,0px))]",
+          )}
+        >
+          <div
+            className={cn(
+              "flex items-center min-w-0",
+              isGuestLayout ? "h-12 sm:h-14" : "h-[52px] sm:h-14",
+              !isGuestLayout && "max-sm:justify-between",
+            )}
+          >
             {/* Left: Logo */}
             <button
               onClick={() => router.push('/marketplace')}
@@ -386,13 +398,13 @@ export function MarketplaceHeader({
               />
             </button>
 
-            {/* Search — guests: left-aligned after logo; signed-in: centred */}
+            {/* Search — guests: left-aligned after logo; signed-in: centred (tablet+ only) */}
             <div
               className={cn(
-                "flex-1 flex items-center min-w-0 overflow-visible",
+                "items-center min-w-0 overflow-visible",
                 isGuestLayout
-                  ? "justify-start gap-2 pl-2 sm:pl-3 pr-2"
-                  : "justify-center px-3 sm:px-4"
+                  ? "flex flex-1 justify-start gap-2 pl-2 sm:pl-3 pr-2"
+                  : "hidden sm:flex flex-1 justify-center px-3 sm:px-4",
               )}
             >
               {/* Tablet (sm–lg) */}
@@ -420,8 +432,15 @@ export function MarketplaceHeader({
             </div>
 
             {/* Right: mobile icons / desktop nav + sell */}
-            {/* Mobile */}
-            <div className="sm:hidden flex items-center gap-1 flex-shrink-0">
+            {/* Mobile — tighter icon targets when signed in so the row fits with edge padding */}
+            <div
+              className={cn(
+                "sm:hidden flex items-center flex-shrink-0",
+                mounted && user
+                  ? "gap-0.5 pl-1 pr-0.5 [&_button]:h-8 [&_button]:w-8 [&_button_svg]:h-5 [&_button_svg]:w-5"
+                  : "gap-1",
+              )}
+            >
               <button
                 onClick={() => setMobileSearchOpen(true)}
                 className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"

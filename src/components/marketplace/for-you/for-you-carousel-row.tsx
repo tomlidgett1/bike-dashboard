@@ -122,20 +122,15 @@ export function ForYouCarouselRow({
   if (carousel.products.length === 0) return null;
 
   return (
-    <section ref={sectionRef} className={embedded ? "space-y-2.5 sm:space-y-3" : "py-2.5 sm:py-3"}>
-      {/* Header */}
-      <div
-        className={cn(
-          "flex items-start justify-between gap-3",
-          embedded ? "px-0.5" : "mb-2.5 sm:mb-3",
-        )}
-      >
+    <section ref={sectionRef}>
+      {/* Header — matches store Products tab CarouselRow */}
+      <div className="flex items-center justify-between gap-2 mb-0.5">
         <div className="min-w-0">
           <h3 className="text-sm sm:text-base font-semibold text-gray-900 truncate">
             {carousel.title}
           </h3>
           {carousel.explanation && (
-            <p className="text-xs text-gray-500 mt-0.5 truncate">{carousel.explanation}</p>
+            <p className="text-xs text-gray-500 mt-0 truncate leading-tight">{carousel.explanation}</p>
           )}
         </div>
         <div className="flex items-center gap-0.5 flex-shrink-0">
@@ -240,10 +235,7 @@ export function ForYouCarouselRow({
           }}
         >
           <div
-            className={cn(
-              "flex",
-              embedded ? "gap-2.5 sm:gap-3" : "gap-2.5 sm:gap-3 md:gap-4",
-            )}
+            className="flex items-start gap-1.5 sm:gap-2"
             style={{ minWidth: "min-content" }}
           >
             {displayedProducts.map((product, index) => (
@@ -258,7 +250,6 @@ export function ForYouCarouselRow({
                 variant="carousel"
               />
             ))}
-            <div className="w-3 flex-shrink-0 sm:hidden" />
           </div>
         </div>
           </motion.div>
@@ -349,7 +340,6 @@ function ForYouCard({
         priority={index < 4}
         inCarousel={variant === "carousel"}
         hideStoreMeta={variant === "carousel"}
-        compact={variant === "carousel"}
       />
     </div>
   );

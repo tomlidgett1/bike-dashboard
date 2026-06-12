@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Loader2, Package } from "lucide-react";
 import { ProductCard } from "./product-card";
+import { ListItemBannerSlot } from "./list-item-banner";
 import { Button } from "@/components/ui/button";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 
@@ -103,11 +104,16 @@ export function ProductGrid({
       {/* Products Grid - 2 columns on mobile, 6 on XL screens */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-1.5 sm:gap-4">
         {uniqueProducts.map((product, index) => (
-          <ProductCard
-            key={product.id}
-            product={product}
-            priority={index < 8} // Prioritize first 8 images
-          />
+          <React.Fragment key={product.id}>
+            <ProductCard
+              product={product}
+              priority={index < 8}
+            />
+            <ListItemBannerSlot
+              productIndex={index}
+              productCount={uniqueProducts.length}
+            />
+          </React.Fragment>
         ))}
       </div>
 

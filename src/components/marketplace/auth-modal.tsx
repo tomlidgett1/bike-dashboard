@@ -12,12 +12,7 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { SpringBottomSheet } from "@/components/ui/spring-bottom-sheet";
 import { Button } from "@/components/ui/button";
 
 interface AuthModalProps {
@@ -77,26 +72,22 @@ export function AuthModal({
     router.refresh();
   };
 
-  // ── Mobile: bottom sheet (native CSS slide-up animation) ──────────────────
+  // ── Mobile: spring bottom sheet ───────────────────────────────────────────
   if (isMobile) {
     return (
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent
-          side="bottom"
-          showCloseButton={false}
-          className="max-h-[94dvh] overflow-y-auto rounded-t-3xl border-0 bg-transparent p-0 shadow-none"
-        >
-          <SheetTitle className="sr-only">Sign in to Yellow Jersey</SheetTitle>
-          <SheetDescription className="sr-only">
-            Sign in or create an account to continue using Yellow Jersey.
-          </SheetDescription>
-          <AuthCard
-            ref={authCardRef}
-            className="max-w-none rounded-b-none pb-[calc(1.75rem+env(safe-area-inset-bottom))] shadow-none sm:p-7"
-            onAuthenticated={handleAuthenticated}
-          />
-        </SheetContent>
-      </Sheet>
+      <SpringBottomSheet
+        open={open}
+        onClose={() => onOpenChange(false)}
+        showDragHandle={false}
+        aria-label="Sign in to Yellow Jersey"
+        className="max-h-[94dvh] overflow-y-auto border-0 bg-transparent p-0 shadow-none backdrop-blur-none"
+      >
+        <AuthCard
+          ref={authCardRef}
+          className="max-w-none rounded-b-none pb-[calc(1.75rem+env(safe-area-inset-bottom))] shadow-none sm:p-7"
+          onAuthenticated={handleAuthenticated}
+        />
+      </SpringBottomSheet>
     );
   }
 

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Store, User, ChevronRight, Search, Package } from "lucide-react";
 import { ProductCard, ProductCardSkeleton } from "./product-card";
+import { ListItemBannerSlot } from "./list-item-banner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
@@ -90,17 +91,22 @@ function SearchSection({
       
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4">
         {products.map((product, index) => (
-          <ProductCard
-            key={product.id}
-            product={product}
-            priority={index < 6}
-            isAdmin={isAdmin}
-            onNavigate={onNavigate}
-            onImageDiscoveryClick={() => {
-              const canonicalId = product.canonical_product_id || product.id;
-              onImageDiscoveryClick?.(canonicalId, (product as any).display_name || product.description);
-            }}
-          />
+          <React.Fragment key={product.id}>
+            <ProductCard
+              product={product}
+              priority={index < 6}
+              isAdmin={isAdmin}
+              onNavigate={onNavigate}
+              onImageDiscoveryClick={() => {
+                const canonicalId = product.canonical_product_id || product.id;
+                onImageDiscoveryClick?.(canonicalId, (product as any).display_name || product.description);
+              }}
+            />
+            <ListItemBannerSlot
+              productIndex={index}
+              productCount={products.length}
+            />
+          </React.Fragment>
         ))}
       </div>
 

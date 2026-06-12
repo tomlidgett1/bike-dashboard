@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { User, Package, ArrowLeft, X } from "lucide-react";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { ProductCard } from "@/components/marketplace/product-card";
+import { ListItemBannerSlot } from "@/components/marketplace/list-item-banner";
 import { StoreProfileView } from "@/components/marketplace/store-profile/store-profile-view";
 import { useAuth } from "@/components/providers/auth-provider";
 import type { StoreProfile } from "@/lib/types/store";
@@ -348,8 +349,14 @@ export function StoreProfilePageClient({
                   <div className="grid grid-cols-2 gap-3">
                     {displayedCarousels
                       .flatMap(carousel => carousel.products)
-                      .map((product, index) => (
-                        <ProductCard key={product.id} product={product} priority={index < 6} />
+                      .map((product, index, arr) => (
+                        <React.Fragment key={product.id}>
+                          <ProductCard product={product} priority={index < 6} />
+                          <ListItemBannerSlot
+                            productIndex={index}
+                            productCount={arr.length}
+                          />
+                        </React.Fragment>
                       ))}
                   </div>
                 ) : (

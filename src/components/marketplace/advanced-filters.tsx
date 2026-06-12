@@ -25,13 +25,6 @@ import {
   SheetContent,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
 // ============================================================
 // Advanced Filters Component
@@ -62,6 +55,10 @@ interface AdvancedFiltersProps {
   listingTypeFilter?: 'all' | 'stores' | 'individuals';
   /** Callback for listing type changes */
   onListingTypeChange?: (filter: 'all' | 'stores' | 'individuals') => void;
+  /** Product count for the mobile apply button label */
+  productCount?: number;
+  /** When false, local draft state is frozen until the sheet opens again */
+  sheetOpen?: boolean;
 }
 
 const SORT_OPTIONS: { value: SortOption; label: string; description: string }[] = [
@@ -106,6 +103,23 @@ const PRICE_PRESETS = [
   { label: '$1k-2.5k', min: '1000', max: '2500' },
   { label: '$2.5k-5k', min: '2500', max: '5000' },
   { label: '$5k+', min: '5000', max: '' },
+];
+
+const BRAND_YELLOW = '#ffde59';
+const FILTER_INK = '#1c1c1e';
+const MAX_PRICE_SLIDER = 5000;
+
+const QUICK_SORT_OPTIONS: { value: SortOption; label: string }[] = [
+  { value: 'newest', label: 'Newest' },
+  { value: 'oldest', label: 'Oldest' },
+  { value: 'price_asc', label: 'Price: Low → High' },
+  { value: 'price_desc', label: 'Price: High → Low' },
+];
+
+const SELLER_OPTIONS: { value: 'all' | 'stores' | 'individuals'; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'stores', label: 'Stores' },
+  { value: 'individuals', label: 'Private' },
 ];
 
 // Collapsible Filter Section Component
@@ -173,29 +187,140 @@ function FilterSection({
   );
 }
 
-// Active Filter Chip Component
-function ActiveFilterChip({ 
-  label, 
-  onRemove 
-}: { 
-  label: string; 
-  onRemove: () => void;
+function countLocalActiveFilters(
+  localFilters: AdvancedFiltersState,
+  listingType?: 'all' | 'stores' | 'individuals'
+) {
+  return (
+    (localFilters.minPrice || localFilters.maxPrice ? 1 : 0) +
+    (localFilters.condition !== 'all' ? 1 : 0) +
+    (localFilters.sortBy !== 'newest' ? 1 : 0) +
+    (localFilters.brand ? 1 : 0) +
+    (listingType && listingType !== 'all' ? 1 : 0)
+  );
+}
+
+function FilterSectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+      {children}
+    </p>
+  );
+}
+
+function SegmentedRow<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
 }) {
   return (
-    <motion.span
-      initial={{ scale: 0.8, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      exit={{ scale: 0.8, opacity: 0 }}
-      className="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-900 text-white text-xs font-medium rounded-md"
-    >
-      {label}
-      <button
-        onClick={onRemove}
-        className="ml-0.5 p-0.5 hover:bg-white/20 rounded transition-colors"
-      >
-        <X className="h-3 w-3" />
-      </button>
-    </motion.span>
+    <div className="flex items-center rounded-md bg-gray-100 p-0.5">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={cn(
+            "flex min-h-11 flex-1 touch-manipulation items-center justify-center rounded-md px-2 py-2 text-[13px] font-medium transition-colors",
+            value === o.value
+              ? "bg-white text-gray-900 shadow-sm"
+              : "text-gray-500 hover:text-gray-700"
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PriceSlider({
+  minPrice,
+  maxPrice,
+  onMinChange,
+  onMaxChange,
+}: {
+  minPrice: string;
+  maxPrice: string;
+  onMinChange: (value: string) => void;
+  onMaxChange: (value: string) => void;
+}) {
+  const min =
+    minPrice === "" ? 0 : Math.min(Number(minPrice) || 0, MAX_PRICE_SLIDER);
+  const max =
+    maxPrice === ""
+      ? MAX_PRICE_SLIDER
+      : Math.min(Number(maxPrice) || MAX_PRICE_SLIDER, MAX_PRICE_SLIDER);
+  const leftPct = (min / MAX_PRICE_SLIDER) * 100;
+  const rightPct = (max / MAX_PRICE_SLIDER) * 100;
+  const [dragging, setDragging] = React.useState<"min" | "max" | null>(null);
+
+  const minZIndex =
+    dragging === "min" ? 30 : dragging === "max" ? 10 : min < max - MAX_PRICE_SLIDER * 0.15 ? 25 : 15;
+  const maxZIndex = dragging === "max" ? 30 : dragging === "min" ? 10 : 20;
+
+  const rangeInputClass =
+    "absolute inset-x-0 top-1/2 h-12 w-full -translate-y-1/2 cursor-grab appearance-none bg-transparent touch-manipulation active:cursor-grabbing " +
+    "[&::-webkit-slider-runnable-track]:h-1.5 [&::-webkit-slider-runnable-track]:bg-transparent " +
+    "[&::-webkit-slider-thumb]:mt-[-11px] [&::-webkit-slider-thumb]:h-7 [&::-webkit-slider-thumb]:w-7 " +
+    "[&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full " +
+    "[&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-gray-900 " +
+    "[&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-md";
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-[13px] font-medium text-gray-500">Price range</span>
+        <span className="text-[13px] font-semibold text-gray-900">
+          ${min.toLocaleString()} – {max >= MAX_PRICE_SLIDER ? "$5,000+" : `$${max.toLocaleString()}`}
+        </span>
+      </div>
+      <div className="relative h-12 touch-manipulation">
+        <div className="pointer-events-none absolute top-1/2 h-1.5 w-full -translate-y-1/2 rounded-full bg-gray-200" />
+        <div
+          className="pointer-events-none absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full"
+          style={{ left: `${leftPct}%`, right: `${100 - rightPct}%`, backgroundColor: FILTER_INK }}
+        />
+        <input
+          type="range"
+          min={0}
+          max={MAX_PRICE_SLIDER}
+          step={50}
+          value={min}
+          style={{ zIndex: minZIndex }}
+          onPointerDown={() => setDragging("min")}
+          onPointerUp={() => setDragging(null)}
+          onPointerCancel={() => setDragging(null)}
+          onInput={(e) => {
+            const v = Math.min(Number(e.currentTarget.value), max - 50);
+            onMinChange(v <= 0 ? "" : String(v));
+          }}
+          className={rangeInputClass}
+          aria-label="Minimum price"
+        />
+        <input
+          type="range"
+          min={0}
+          max={MAX_PRICE_SLIDER}
+          step={50}
+          value={max}
+          style={{ zIndex: maxZIndex }}
+          onPointerDown={() => setDragging("max")}
+          onPointerUp={() => setDragging(null)}
+          onPointerCancel={() => setDragging(null)}
+          onInput={(e) => {
+            const v = Math.max(Number(e.currentTarget.value), min + 50);
+            onMaxChange(v >= MAX_PRICE_SLIDER ? "" : String(v));
+          }}
+          className={rangeInputClass}
+          aria-label="Maximum price"
+        />
+      </div>
+    </div>
   );
 }
 
@@ -207,41 +332,55 @@ export function MobileFilterContent({
   onClose,
   listingTypeFilter,
   onListingTypeChange,
-  activeFilterCount,
+  productCount,
+  sheetOpen = true,
   /** Content above sort/price (e.g. category pills) inside the scrollable area */
   topSection,
 }: AdvancedFiltersProps & { onClose?: () => void; topSection?: React.ReactNode }) {
   const [localFilters, setLocalFilters] = React.useState(filters);
+  const [localListingType, setLocalListingType] = React.useState<
+    'all' | 'stores' | 'individuals'
+  >(listingTypeFilter ?? 'all');
   const [brandSearch, setBrandSearch] = React.useState('');
   const [showBrandDropdown, setShowBrandDropdown] = React.useState(false);
   const brandInputRef = React.useRef<HTMLInputElement>(null);
-  const brandDropdownRef = React.useRef<HTMLDivElement>(null);
+  const brandSectionRef = React.useRef<HTMLDivElement>(null);
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+  const wasSheetOpenRef = React.useRef(false);
 
-  // Sync local filters when props change
+  // Only hydrate draft state when the sheet opens — avoids parent refetches wiping edits.
   React.useEffect(() => {
-    setLocalFilters(filters);
-  }, [filters]);
+    if (sheetOpen && !wasSheetOpenRef.current) {
+      setLocalFilters(filters);
+      setLocalListingType(listingTypeFilter ?? 'all');
+      setBrandSearch('');
+      setShowBrandDropdown(false);
+    }
+    wasSheetOpenRef.current = sheetOpen;
+  }, [sheetOpen, filters, listingTypeFilter]);
 
-  // Close brand dropdown on click outside
   React.useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (brandDropdownRef.current && !brandDropdownRef.current.contains(e.target as Node)) {
+    const closeBrandDropdown = (e: PointerEvent) => {
+      if (brandSectionRef.current && !brandSectionRef.current.contains(e.target as Node)) {
         setShowBrandDropdown(false);
       }
     };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("pointerdown", closeBrandDropdown, true);
+    return () => document.removeEventListener("pointerdown", closeBrandDropdown, true);
   }, []);
 
-  const updateFilter = <K extends keyof AdvancedFiltersState>(
+  const updateFilter = React.useCallback(<K extends keyof AdvancedFiltersState>(
     key: K,
     value: AdvancedFiltersState[K]
   ) => {
-    setLocalFilters(prev => ({ ...prev, [key]: value }));
-  };
+    setLocalFilters((prev) => ({ ...prev, [key]: value }));
+  }, []);
 
   const handleApply = () => {
     onFiltersChange(localFilters);
+    if (onListingTypeChange && localListingType !== listingTypeFilter) {
+      onListingTypeChange(localListingType);
+    }
     onApply();
     onClose?.();
   };
@@ -255,360 +394,262 @@ export function MobileFilterContent({
       brand: '',
     };
     setLocalFilters(resetFilters);
+    setLocalListingType('all');
+    setBrandSearch('');
+    setShowBrandDropdown(false);
     onFiltersChange(resetFilters);
+    onListingTypeChange?.('all');
     onReset();
   };
 
-  // Filter brands based on search
-  const filteredBrands = brandSearch
-    ? ALL_BRANDS.filter(brand => 
-        brand.toLowerCase().includes(brandSearch.toLowerCase())
-      )
-    : ALL_BRANDS;
+  const filteredBrands = React.useMemo(() => {
+    if (!brandSearch.trim()) return [];
+    const query = brandSearch.toLowerCase();
+    return ALL_BRANDS.filter((brand) => brand.toLowerCase().includes(query)).slice(0, 12);
+  }, [brandSearch]);
 
-  // Check if filters are applied
-  const hasActiveFilters = 
-    localFilters.minPrice !== '' ||
-    localFilters.maxPrice !== '' ||
-    localFilters.condition !== 'all' ||
-    localFilters.sortBy !== 'newest' ||
-    localFilters.brand !== '';
+  const localActiveCount = countLocalActiveFilters(localFilters, localListingType);
+  const applyLabel =
+    productCount !== undefined
+      ? `Show ${productCount.toLocaleString()} results`
+      : 'Show results';
 
-  // Check if a price preset matches current filters
-  const matchingPreset = PRICE_PRESETS.find(
-    p => p.min === localFilters.minPrice && p.max === localFilters.maxPrice
-  );
-
-  // Build active filter labels
-  const getActiveFilterLabels = () => {
-    const labels: { key: string; label: string; onRemove: () => void }[] = [];
-    
-    if (localFilters.brand) {
-      labels.push({
-        key: 'brand',
-        label: localFilters.brand,
-        onRemove: () => updateFilter('brand', ''),
-      });
+  const applyQuickToggle = (id: string) => {
+    if (id === 'under500') {
+      setLocalFilters((prev) => ({ ...prev, minPrice: '', maxPrice: '500' }));
+    } else if (id === 'new') {
+      setLocalFilters((prev) => ({ ...prev, condition: 'New' }));
+    } else if (id === 'stores') {
+      setLocalListingType('stores');
+    } else if (id === 'cheapest') {
+      setLocalFilters((prev) => ({ ...prev, sortBy: 'price_asc' }));
     }
-    if (matchingPreset) {
-      labels.push({
-        key: 'price',
-        label: matchingPreset.label,
-        onRemove: () => {
-          updateFilter('minPrice', '');
-          updateFilter('maxPrice', '');
-        },
-      });
-    } else if (localFilters.minPrice || localFilters.maxPrice) {
-      const priceLabel = localFilters.minPrice && localFilters.maxPrice
-        ? `$${localFilters.minPrice}-$${localFilters.maxPrice}`
-        : localFilters.minPrice
-        ? `$${localFilters.minPrice}+`
-        : `Up to $${localFilters.maxPrice}`;
-      labels.push({
-        key: 'price',
-        label: priceLabel,
-        onRemove: () => {
-          updateFilter('minPrice', '');
-          updateFilter('maxPrice', '');
-        },
-      });
-    }
-    if (localFilters.condition !== 'all') {
-      labels.push({
-        key: 'condition',
-        label: localFilters.condition,
-        onRemove: () => updateFilter('condition', 'all'),
-      });
-    }
-    if (localFilters.sortBy !== 'newest') {
-      const sortLabel = SORT_OPTIONS.find(s => s.value === localFilters.sortBy)?.label || '';
-      labels.push({
-        key: 'sort',
-        label: sortLabel,
-        onRemove: () => updateFilter('sortBy', 'newest'),
-      });
-    }
-    
-    return labels;
   };
 
-  const activeLabels = getActiveFilterLabels();
+  const quickToggles = [
+    { id: 'under500', label: 'Under $500' },
+    { id: 'new', label: 'New only' },
+    ...(onListingTypeChange ? [{ id: 'stores', label: 'Stores' }] : []),
+    { id: 'cheapest', label: 'Cheapest first' },
+  ];
 
   return (
-    <div className="flex flex-col h-full bg-white">
-      {/* Header */}
-      <div className="flex-shrink-0 px-4 py-4 border-b border-gray-200">
+    <div className="flex h-full flex-col bg-white">
+      <div className="flex-shrink-0 border-b border-gray-100 px-4 py-3.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <SlidersHorizontal className="h-5 w-5 text-gray-600" />
             <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
-            {activeFilterCount > 0 && (
-              <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-gray-900 text-white rounded-md">
-                {activeFilterCount}
+            {localActiveCount > 0 && (
+              <span
+                className="rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-gray-900"
+                style={{ backgroundColor: BRAND_YELLOW }}
+              >
+                {localActiveCount}
               </span>
             )}
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 -mr-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+            className="-mr-2 rounded-md p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+            aria-label="Close filters"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
-
-        {/* Active Filters - Wrap on multiple lines */}
-        <AnimatePresence>
-          {activeLabels.length > 0 && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="overflow-hidden"
-            >
-              <div className="flex flex-wrap items-center gap-1.5 mt-3">
-                {activeLabels.map((filter) => (
-                  <ActiveFilterChip
-                    key={filter.key}
-                    label={filter.label}
-                    onRemove={filter.onRemove}
-                  />
-                ))}
-                <button
-                  onClick={handleReset}
-                  className="text-xs font-medium text-gray-500 hover:text-gray-700 whitespace-nowrap pl-1"
-                >
-                  Clear all
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <p className="mt-0.5 text-[13px] text-gray-500">Tap to filter fast</p>
       </div>
 
-      {/* Scrollable Content - Fixed for proper scrolling */}
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
-        <div className="px-4 pb-4 space-y-4">
+      <div
+        ref={scrollRef}
+        onScroll={() => setShowBrandDropdown(false)}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y"
+      >
+        <div className="space-y-5 px-4 py-4">
           {topSection}
 
-          {/* Sort By - Inline with Select dropdown */}
-          <div className="flex items-center justify-between py-2 border-b border-gray-100">
-            <span className="text-sm font-medium text-gray-700">Sort by</span>
-            <Select
-              value={localFilters.sortBy}
-              onValueChange={(value) => updateFilter('sortBy', value as SortOption)}
-            >
-              <SelectTrigger className="w-[160px] h-9 rounded-md border-gray-200 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SORT_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div>
+            <FilterSectionLabel>
+              <span className="inline-flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5" />
+                Popular
+              </span>
+            </FilterSectionLabel>
+            <div className="flex flex-wrap gap-2">
+              {quickToggles.map((toggle) => (
+                <button
+                  key={toggle.id}
+                  type="button"
+                  onClick={() => applyQuickToggle(toggle.id)}
+                  className="min-h-11 touch-manipulation rounded-md border border-gray-200 bg-white px-3.5 py-2.5 text-[13px] font-medium text-gray-700 transition-colors hover:border-gray-900"
+                >
+                  {toggle.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* Seller Type - Inline horizontal chips */}
-          {listingTypeFilter && onListingTypeChange && (
-            <div className="py-2 border-b border-gray-100">
-              <span className="text-sm font-medium text-gray-700 block mb-2">Seller Type</span>
-              <div className="flex gap-2">
-                {[
-                  { value: 'all' as const, label: 'All' },
-                  { value: 'stores' as const, label: 'Stores' },
-                  { value: 'individuals' as const, label: 'Private' },
-                ].map((option) => (
+          <div className="rounded-md border border-gray-100 bg-gray-50/70 p-3.5">
+            <PriceSlider
+              minPrice={localFilters.minPrice}
+              maxPrice={localFilters.maxPrice}
+              onMinChange={(value) => updateFilter('minPrice', value)}
+              onMaxChange={(value) => updateFilter('maxPrice', value)}
+            />
+          </div>
+
+          <div>
+            <FilterSectionLabel>Sort</FilterSectionLabel>
+            <div className="scrollbar-hide -mx-4 flex gap-2 overflow-x-auto px-4 touch-pan-x">
+              {QUICK_SORT_OPTIONS.map((option) => {
+                const active = localFilters.sortBy === option.value;
+                return (
                   <button
                     key={option.value}
-                    onClick={() => onListingTypeChange(option.value)}
+                    type="button"
+                    onClick={() => updateFilter('sortBy', option.value)}
                     className={cn(
-                      "flex-1 py-2 px-3 text-sm font-medium rounded-md transition-all",
-                      listingTypeFilter === option.value
-                        ? "bg-gray-900 text-white"
-                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      "min-h-11 flex-shrink-0 touch-manipulation whitespace-nowrap rounded-full px-4 py-2.5 text-[13px] font-medium transition-colors",
+                      active ? "text-gray-900 shadow-sm" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    )}
+                    style={active ? { backgroundColor: BRAND_YELLOW } : undefined}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <FilterSectionLabel>Condition</FilterSectionLabel>
+            <div className="flex flex-wrap gap-2">
+              {CONDITION_OPTIONS.map((option) => {
+                const active = localFilters.condition === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => updateFilter('condition', option.value)}
+                    className={cn(
+                      "min-h-11 touch-manipulation rounded-full px-4 py-2.5 text-[13px] font-medium transition-colors",
+                      active ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                     )}
                   >
                     {option.label}
                   </button>
-                ))}
-              </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {onListingTypeChange && (
+            <div>
+              <FilterSectionLabel>Seller</FilterSectionLabel>
+              <SegmentedRow
+                options={SELLER_OPTIONS}
+                value={localListingType}
+                onChange={setLocalListingType}
+              />
             </div>
           )}
 
-          {/* Price Range - Horizontal scrolling presets + compact inputs */}
-          <div className="py-2 border-b border-gray-100">
-            <span className="text-sm font-medium text-gray-700 block mb-2">Price</span>
-            
-            {/* Horizontal scrolling presets */}
-            <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2 -mx-4 px-4">
-              {PRICE_PRESETS.map((preset) => (
-                <button
-                  key={preset.label}
-                  onClick={() => {
-                    updateFilter('minPrice', preset.min);
-                    updateFilter('maxPrice', preset.max);
-                  }}
-                  className={cn(
-                    "flex-shrink-0 py-1.5 px-3 text-sm font-medium rounded-md transition-all whitespace-nowrap",
-                    matchingPreset?.label === preset.label
-                      ? "bg-gray-900 text-white"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                  )}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Compact price inputs */}
-            <div className="flex items-center gap-2 mt-2">
-              <div className="flex-1 relative">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-                <Input
-                  type="number"
-                  placeholder="Min"
-                  value={localFilters.minPrice}
-                  onChange={(e) => updateFilter('minPrice', e.target.value)}
-                  className="pl-6 rounded-md h-9 text-sm border-gray-200"
-                  min="0"
-                />
-              </div>
-              <span className="text-gray-400 text-xs">to</span>
-              <div className="flex-1 relative">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-                <Input
-                  type="number"
-                  placeholder="Max"
-                  value={localFilters.maxPrice}
-                  onChange={(e) => updateFilter('maxPrice', e.target.value)}
-                  className="pl-6 rounded-md h-9 text-sm border-gray-200"
-                  min="0"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Condition - Horizontal scrolling chips */}
-          <div className="py-2 border-b border-gray-100">
-            <span className="text-sm font-medium text-gray-700 block mb-2">Condition</span>
-            <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-4 px-4">
-              {CONDITION_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  onClick={() => updateFilter('condition', option.value)}
-                  className={cn(
-                    "flex-shrink-0 py-1.5 px-3 text-sm font-medium rounded-md transition-all whitespace-nowrap",
-                    localFilters.condition === option.value
-                      ? "bg-gray-900 text-white"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                  )}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Brand - Compact search */}
-          <div className="py-2">
-            <span className="text-sm font-medium text-gray-700 block mb-2">Brand</span>
-            <div className="relative" ref={brandDropdownRef}>
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  ref={brandInputRef}
-                  type="text"
-                  placeholder="Search brands..."
-                  value={localFilters.brand || brandSearch}
-                  onChange={(e) => {
-                    setBrandSearch(e.target.value);
-                    if (localFilters.brand) {
-                      updateFilter('brand', '');
-                    }
+          <div ref={brandSectionRef}>
+            <FilterSectionLabel>Brand</FilterSectionLabel>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <Input
+                ref={brandInputRef}
+                type="text"
+                placeholder="Search brands…"
+                value={localFilters.brand || brandSearch}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setBrandSearch(next);
+                  if (localFilters.brand) {
+                    updateFilter('brand', '');
+                  }
+                  setShowBrandDropdown(next.trim().length > 0);
+                }}
+                onFocus={() => {
+                  if (brandSearch.trim().length > 0) {
                     setShowBrandDropdown(true);
+                  }
+                }}
+                className="h-11 rounded-md border-gray-200 pl-9 pr-8 text-[14px] touch-manipulation"
+              />
+              {(localFilters.brand || brandSearch) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    updateFilter('brand', '');
+                    setBrandSearch('');
+                    setShowBrandDropdown(false);
+                    brandInputRef.current?.focus();
                   }}
-                  onFocus={() => setShowBrandDropdown(true)}
-                  className="pl-8 pr-8 rounded-md h-9 text-sm border-gray-200"
-                />
-                {(localFilters.brand || brandSearch) && (
-                  <button
-                    onClick={() => {
-                      updateFilter('brand', '');
-                      setBrandSearch('');
-                      brandInputRef.current?.focus();
-                    }}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 hover:bg-gray-100 rounded"
-                  >
-                    <X className="h-3.5 w-3.5 text-gray-400" />
-                  </button>
+                  className="absolute right-2.5 top-1/2 flex h-8 w-8 -translate-y-1/2 touch-manipulation items-center justify-center rounded-md hover:bg-gray-100"
+                >
+                  <X className="h-3.5 w-3.5 text-gray-400" />
+                </button>
+              )}
+            </div>
+
+            {showBrandDropdown && brandSearch.trim().length > 0 && (
+              <div className="mt-1 max-h-40 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-sm">
+                {filteredBrands.length > 0 ? (
+                  filteredBrands.map((brand) => (
+                    <button
+                      key={brand}
+                      type="button"
+                      onClick={() => {
+                        updateFilter('brand', brand);
+                        setBrandSearch('');
+                        setShowBrandDropdown(false);
+                      }}
+                      className={cn(
+                        "flex min-h-11 w-full touch-manipulation items-center justify-between px-3 py-2.5 text-left text-sm transition-colors hover:bg-gray-50",
+                        localFilters.brand === brand && "bg-gray-50 font-medium"
+                      )}
+                    >
+                      {brand}
+                      {localFilters.brand === brand && (
+                        <Check className="h-4 w-4 text-gray-700" />
+                      )}
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-3 py-2.5 text-sm text-gray-500">
+                    No brands found
+                  </div>
                 )}
               </div>
-              
-              <AnimatePresence>
-                {showBrandDropdown && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                    transition={{ duration: 0.15 }}
-                    className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-40 overflow-y-auto"
-                  >
-                    {filteredBrands.length > 0 ? (
-                      filteredBrands.slice(0, 12).map((brand) => (
-                        <button
-                          key={brand}
-                          onClick={() => {
-                            updateFilter('brand', brand);
-                            setBrandSearch('');
-                            setShowBrandDropdown(false);
-                          }}
-                          className={cn(
-                            "w-full text-left px-3 py-2.5 text-sm hover:bg-gray-50 transition-colors flex items-center justify-between",
-                            localFilters.brand === brand && "bg-gray-50 font-medium"
-                          )}
-                        >
-                          {brand}
-                          {localFilters.brand === brand && (
-                            <Check className="h-4 w-4 text-gray-700" />
-                          )}
-                        </button>
-                      ))
-                    ) : (
-                      <div className="px-3 py-2.5 text-sm text-gray-500">
-                        No brands found
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Compact Footer */}
-      <div className="flex-shrink-0 bg-white border-t border-gray-200 px-4 py-3" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
-        <div className="flex gap-2">
-          {hasActiveFilters && (
-            <Button
-              onClick={handleReset}
-              variant="outline"
-              size="sm"
-              className="h-10 rounded-md border-gray-200 text-gray-600 font-medium"
-            >
-              <RotateCcw className="h-4 w-4" />
-            </Button>
-          )}
-          <Button
-            onClick={handleApply}
-            className="flex-1 h-10 rounded-md bg-gray-900 hover:bg-gray-800 text-white font-medium"
+      <div
+        className="flex-shrink-0 border-t border-gray-100 bg-white px-4 py-3"
+        style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+      >
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={handleReset}
+            disabled={localActiveCount === 0}
+            className="flex h-12 min-w-[5.5rem] touch-manipulation items-center gap-1.5 rounded-md px-4 text-[14px] font-semibold text-gray-600 transition-colors hover:bg-gray-100 disabled:opacity-40"
           >
-            Show Results
-          </Button>
+            <RotateCcw className="h-4 w-4" />
+            Reset
+          </button>
+          <button
+            type="button"
+            onClick={handleApply}
+            className="flex h-12 min-h-12 flex-1 touch-manipulation items-center justify-center rounded-md text-[15px] font-semibold transition-colors"
+            style={{ backgroundColor: BRAND_YELLOW, color: FILTER_INK }}
+          >
+            {applyLabel}
+          </button>
         </div>
       </div>
     </div>
@@ -895,6 +936,7 @@ export function AdvancedFilters({
   variant = 'default',
   listingTypeFilter,
   onListingTypeChange,
+  productCount,
 }: AdvancedFiltersProps) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [isDesktopOpen, setIsDesktopOpen] = React.useState(false);
@@ -972,6 +1014,8 @@ export function AdvancedFilters({
             onApply={onApply}
             onReset={onReset}
             activeFilterCount={activeFilterCount}
+            productCount={productCount}
+            sheetOpen={isOpen}
             listingTypeFilter={listingTypeFilter}
             onListingTypeChange={onListingTypeChange}
             onClose={() => setIsOpen(false)}
@@ -1000,6 +1044,8 @@ export function AdvancedFilters({
               onApply={onApply}
               onReset={onReset}
               activeFilterCount={activeFilterCount}
+              productCount={productCount}
+              sheetOpen={isOpen}
               listingTypeFilter={listingTypeFilter}
               onListingTypeChange={onListingTypeChange}
               onClose={() => setIsOpen(false)}

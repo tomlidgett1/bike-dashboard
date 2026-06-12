@@ -437,6 +437,8 @@ export function UnifiedFilterBar({
                 onApply={() => { onBrowseFiltersApply(); setBrowseSheetOpen(false); }}
                 onReset={onBrowseFiltersReset}
                 activeFilterCount={activeFilterCount}
+                productCount={productCount}
+                sheetOpen={browseSheetOpen}
                 listingTypeFilter={listingTypeFilter}
                 onListingTypeChange={onListingTypeChange}
                 onClose={() => setBrowseSheetOpen(false)}

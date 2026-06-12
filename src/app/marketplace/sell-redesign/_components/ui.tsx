@@ -1,0 +1,660 @@
+"use client";
+
+import * as React from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Check,
+  ChevronDown,
+  Sparkles,
+  X,
+  Loader2,
+  Camera,
+  Images,
+  Pencil,
+  type LucideIcon,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { BRAND, BRAND_SOFT, INK, type Confidence, confidenceMeta } from "./data";
+
+// ============================================================
+// Shared UI primitives for the sell-redesign prototypes.
+// Brand: Yellow Jersey yellow (#ffde59) on near-black ink.
+// Containers: rounded-md. Info/alert cards: white bg + rounded-xl.
+// ============================================================
+
+// ---- Buttons ------------------------------------------------
+
+export function Btn({
+  children,
+  onClick,
+  variant = "primary",
+  disabled,
+  full,
+  size = "md",
+  className,
+  type = "button",
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  variant?: "primary" | "secondary" | "ghost" | "ink";
+  disabled?: boolean;
+  full?: boolean;
+  size?: "sm" | "md";
+  className?: string;
+  type?: "button" | "submit";
+}) {
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "inline-flex items-center justify-center gap-2 rounded-md font-semibold transition-all active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100",
+        size === "md" ? "h-12 px-5 text-[15px]" : "h-9 px-3.5 text-[13px]",
+        full && "w-full",
+        variant === "primary" && "text-[#1c1c1e] shadow-sm hover:brightness-[0.97]",
+        variant === "ink" && "bg-gray-900 text-white hover:bg-gray-800",
+        variant === "secondary" && "border border-gray-200 bg-white text-gray-900 hover:bg-gray-50",
+        variant === "ghost" && "bg-transparent text-gray-600 hover:bg-gray-100",
+        className,
+      )}
+      style={variant === "primary" ? { backgroundColor: BRAND } : undefined}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ---- Field wrapper ------------------------------------------
+
+export function Field({
+  label,
+  hint,
+  children,
+}: {
+  label?: string;
+  hint?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      {(label || hint) && (
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          {label && <label className="text-[13px] font-medium text-gray-700">{label}</label>}
+          {hint && <span className="text-[11px] text-gray-400">{hint}</span>}
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+const inputBase =
+  "w-full rounded-md border border-gray-200 bg-white px-3 text-[16px] text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-gray-900";
+
+export function TextInput({
+  value,
+  onChange,
+  placeholder,
+  autoFocus,
+  onEnter,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  autoFocus?: boolean;
+  onEnter?: () => void;
+}) {
+  return (
+    <input
+      value={value}
+      autoFocus={autoFocus}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && onEnter) onEnter();
+      }}
+      placeholder={placeholder}
+      className={cn(inputBase, "h-12")}
+    />
+  );
+}
+
+export function NumberInput({
+  value,
+  onChange,
+  prefix = "$",
+  placeholder,
+  big,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  prefix?: string;
+  placeholder?: string;
+  big?: boolean;
+}) {
+  return (
+    <div className="relative">
+      <span
+        className={cn(
+          "pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400",
+          big && "text-[22px]",
+        )}
+      >
+        {prefix}
+      </span>
+      <input
+        value={value || ""}
+        inputMode="numeric"
+        onChange={(e) => onChange(Number(e.target.value.replace(/[^0-9.]/g, "")) || 0)}
+        placeholder={placeholder}
+        className={cn(
+          inputBase,
+          big ? "h-16 pl-9 text-[28px] font-bold" : "h-12 pl-7",
+        )}
+      />
+    </div>
+  );
+}
+
+export function TextArea({
+  value,
+  onChange,
+  placeholder,
+  rows = 4,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  rows?: number;
+}) {
+  return (
+    <textarea
+      value={value}
+      rows={rows}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      className={cn(inputBase, "resize-none py-2.5 leading-relaxed")}
+    />
+  );
+}
+
+// ---- Option pills (single select) --------------------------
+
+export function OptionPills({
+  value,
+  options,
+  onChange,
+  columns = 2,
+  allowCustom,
+}: {
+  value: string;
+  options: readonly string[];
+  onChange: (v: string) => void;
+  columns?: 2 | 3;
+  allowCustom?: boolean;
+}) {
+  const isCustom = allowCustom && value !== "" && !options.includes(value);
+  const [custom, setCustom] = React.useState(isCustom ? value : "");
+  return (
+    <div>
+      <div className={cn("grid gap-2", columns === 3 ? "grid-cols-3" : "grid-cols-2")}>
+        {options.map((opt) => {
+          const active = value === opt;
+          return (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => onChange(opt)}
+              className={cn(
+                "flex h-12 items-center justify-center rounded-md border px-3 text-[14px] font-medium transition-all active:scale-[0.98]",
+                active
+                  ? "border-gray-900 bg-gray-900 text-white"
+                  : "border-gray-200 bg-white text-gray-700 hover:border-gray-300",
+              )}
+            >
+              {opt}
+            </button>
+          );
+        })}
+      </div>
+      {allowCustom && (
+        <div className="mt-2">
+          <TextInput
+            value={custom}
+            onChange={(v) => {
+              setCustom(v);
+              onChange(v);
+            }}
+            placeholder="Or type your own…"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- Toggle -------------------------------------------------
+
+export function Toggle({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={cn(
+        "relative h-7 w-12 flex-shrink-0 rounded-full transition-colors",
+        checked ? "" : "bg-gray-200",
+      )}
+      style={checked ? { backgroundColor: INK } : undefined}
+    >
+      <span
+        className={cn(
+          "absolute top-0.5 h-6 w-6 rounded-full bg-white shadow-sm transition-all",
+          checked ? "left-[22px]" : "left-0.5",
+        )}
+      />
+    </button>
+  );
+}
+
+// ---- Progress bar -------------------------------------------
+
+export function ProgressBar({ value }: { value: number }) {
+  return (
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+      <motion.div
+        className="h-full rounded-full"
+        style={{ backgroundColor: BRAND }}
+        initial={false}
+        animate={{ width: `${Math.round(value * 100)}%` }}
+        transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+      />
+    </div>
+  );
+}
+
+// ---- AI atoms -----------------------------------------------
+
+export function AiPill({ children }: { children: React.ReactNode }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold text-gray-800"
+      style={{ backgroundColor: BRAND_SOFT }}
+    >
+      <Sparkles className="h-3 w-3" />
+      {children}
+    </span>
+  );
+}
+
+export function ConfidenceDot({ c, withLabel }: { c: Confidence; withLabel?: boolean }) {
+  const meta = confidenceMeta(c);
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={cn("h-1.5 w-1.5 rounded-full", meta.dot)} />
+      {withLabel && <span className="text-[11px] font-medium text-gray-500">{meta.label}</span>}
+    </span>
+  );
+}
+
+// The signature "AI recommends X" row — accept with one tap, or pick an alternative.
+export function AiSuggestion({
+  value,
+  confidence,
+  alternatives,
+  accepted,
+  onAccept,
+  onPick,
+}: {
+  value: string;
+  confidence: Confidence;
+  alternatives?: string[];
+  accepted: boolean;
+  onAccept: () => void;
+  onPick?: (v: string) => void;
+}) {
+  if (!value) return null;
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-3">
+      <div className="flex items-center gap-1.5">
+        <Sparkles className="h-3.5 w-3.5 text-gray-500" />
+        <span className="text-[12px] font-semibold text-gray-700">AI suggests</span>
+        <span className="ml-auto">
+          <ConfidenceDot c={confidence} withLabel />
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={onAccept}
+        className={cn(
+          "mt-2 flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2.5 text-left transition-all active:scale-[0.99]",
+          accepted ? "border-gray-900 bg-gray-50" : "border-gray-200 bg-white hover:border-gray-300",
+        )}
+      >
+        <span className="text-[15px] font-medium text-gray-900">{value}</span>
+        {accepted ? (
+          <span
+            className="grid h-6 w-6 place-items-center rounded-full text-gray-900"
+            style={{ backgroundColor: BRAND }}
+          >
+            <Check className="h-4 w-4" />
+          </span>
+        ) : (
+          <span className="text-[12px] font-semibold text-gray-500">Use this</span>
+        )}
+      </button>
+      {alternatives && alternatives.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <span className="text-[11px] text-gray-400">Or:</span>
+          {alternatives.map((alt) => (
+            <button
+              key={alt}
+              type="button"
+              onClick={() => onPick?.(alt)}
+              className="rounded-md bg-gray-100 px-2 py-1 text-[12px] font-medium text-gray-700 hover:bg-gray-200"
+            >
+              {alt}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- Info card (white bg, rounded-xl per project convention) -
+
+export function InfoCard({
+  children,
+  className,
+  tone = "plain",
+}: {
+  children: React.ReactNode;
+  className?: string;
+  tone?: "plain" | "brand";
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-xl border bg-white p-3.5",
+        tone === "brand" ? "border-transparent shadow-sm ring-1 ring-gray-100" : "border-gray-200",
+        className,
+      )}
+      style={tone === "brand" ? { boxShadow: `0 0 0 2px ${BRAND_SOFT}` } : undefined}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ---- Section card (rounded-md) ------------------------------
+
+export function SectionCard({
+  title,
+  icon: Icon,
+  right,
+  children,
+}: {
+  title: string;
+  icon?: LucideIcon;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-md border border-gray-200 bg-white">
+      <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-3.5 py-2.5">
+        <div className="flex items-center gap-2">
+          {Icon && <Icon className="h-4 w-4 text-gray-500" />}
+          <h3 className="text-[14px] font-semibold text-gray-900">{title}</h3>
+        </div>
+        {right}
+      </div>
+      <div className="p-3.5">{children}</div>
+    </div>
+  );
+}
+
+// ---- Collapsible (project dropdown animation pattern) -------
+
+export function Collapsible({
+  open,
+  children,
+}: {
+  open: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <AnimatePresence initial={false}>
+      {open && (
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: "auto", opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+          className="overflow-hidden"
+        >
+          {children}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+export function Chevron({ open }: { open: boolean }) {
+  return (
+    <ChevronDown
+      className={cn(
+        "h-4 w-4 text-gray-400 transition-transform duration-200",
+        open && "rotate-180",
+      )}
+    />
+  );
+}
+
+// ---- Photo grid + uploader ---------------------------------
+
+export function PhotoUploader({
+  images,
+  onAdd,
+  onFiles,
+  onRemove,
+  uploading,
+  compact,
+}: {
+  images: string[];
+  onAdd: () => void;
+  onFiles?: (files: File[]) => void;
+  onRemove?: (i: number) => void;
+  uploading?: boolean;
+  compact?: boolean;
+}) {
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  const trigger = () => {
+    if (onFiles) inputRef.current?.click();
+    else onAdd();
+  };
+
+  const hiddenInput = onFiles ? (
+    <input
+      ref={inputRef}
+      type="file"
+      accept="image/*"
+      multiple
+      className="hidden"
+      onChange={(e) => {
+        const files = e.target.files ? Array.from(e.target.files) : [];
+        if (files.length) onFiles(files);
+        e.target.value = "";
+      }}
+    />
+  ) : null;
+
+  if (images.length === 0) {
+    return (
+      <div className="grid grid-cols-2 gap-3">
+        {hiddenInput}
+        <button
+          type="button"
+          onClick={trigger}
+          disabled={uploading}
+          className={cn(
+            "flex flex-col items-center justify-center gap-2 rounded-md border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-50 active:scale-[0.98] disabled:opacity-50",
+            compact ? "h-24" : "h-28",
+          )}
+        >
+          {uploading ? <Loader2 className="h-7 w-7 animate-spin" /> : <Camera className="h-7 w-7" />}
+          <span className="text-[14px] font-semibold">{uploading ? "Uploading…" : "Camera"}</span>
+        </button>
+        <button
+          type="button"
+          onClick={trigger}
+          disabled={uploading}
+          className={cn(
+            "flex flex-col items-center justify-center gap-2 rounded-md border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-50 active:scale-[0.98] disabled:opacity-50",
+            compact ? "h-24" : "h-28",
+          )}
+        >
+          <Images className="h-7 w-7" />
+          <span className="text-[14px] font-semibold">Photo library</span>
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {hiddenInput}
+      {images.map((url, i) => (
+        <div key={`${url}-${i}`} className="relative aspect-square overflow-hidden rounded-md bg-gray-100">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={url} alt="" className="h-full w-full object-cover" />
+          {i === 0 && (
+            <span className="absolute left-1 top-1 rounded-md bg-black/65 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+              Cover
+            </span>
+          )}
+          {onRemove && (
+            <button
+              type="button"
+              onClick={() => onRemove(i)}
+              className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-black/55 text-white"
+              aria-label="Remove photo"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={trigger}
+        disabled={uploading}
+        className="flex aspect-square flex-col items-center justify-center gap-1 rounded-md border border-dashed border-gray-300 text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+      >
+        {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
+        <span className="text-[11px] font-medium">{uploading ? "…" : "Add"}</span>
+      </button>
+    </div>
+  );
+}
+
+export function Spinner({ size = 20 }: { size?: number }) {
+  return <Loader2 className="animate-spin text-gray-900" width={size} height={size} />;
+}
+
+// ---- Bottom sheet / popup (project popup animation pattern) -
+
+export function BottomSheet({
+  open,
+  onClose,
+  title,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title?: string;
+  children: React.ReactNode;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className="absolute inset-0 bg-black/40 animate-in fade-in duration-200"
+      />
+      <div className="relative z-10 w-full max-w-[460px] animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out">
+        <div className="rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl">
+          {title && (
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-[16px] font-bold text-gray-900">{title}</h3>
+              <button
+                type="button"
+                onClick={onClose}
+                className="grid h-8 w-8 place-items-center rounded-md text-gray-400 hover:bg-gray-100"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+          )}
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Inline editable line (tap to edit) --------------------
+
+export function EditableRow({
+  label,
+  value,
+  onChange,
+  placeholder,
+  confidence,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  confidence?: Confidence;
+}) {
+  const [editing, setEditing] = React.useState(false);
+  return (
+    <div className="flex items-start justify-between gap-3 py-2">
+      <span className="mt-0.5 w-28 flex-shrink-0 text-[13px] text-gray-500">{label}</span>
+      {editing ? (
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={() => setEditing(false)}
+          onKeyDown={(e) => e.key === "Enter" && setEditing(false)}
+          placeholder={placeholder}
+          className="flex-1 rounded-md border border-gray-900 bg-white px-2 py-1 text-[14px] text-gray-900 outline-none"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="group flex flex-1 items-center justify-end gap-1.5 text-right"
+        >
+          {confidence && <ConfidenceDot c={confidence} />}
+          <span className={cn("text-[14px] font-medium", value ? "text-gray-900" : "text-gray-400")}>
+            {value || placeholder || "Add"}
+          </span>
+          <Pencil className="h-3 w-3 flex-shrink-0 text-gray-300 group-hover:text-gray-500" />
+        </button>
+      )}
+    </div>
+  );
+}

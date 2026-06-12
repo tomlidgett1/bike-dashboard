@@ -154,6 +154,12 @@ export async function POST(request: NextRequest) {
       color_primary: body.colorPrimary,
       color_secondary: body.colorSecondary,
 
+      // Full component spec sheet (seller-entered or AI-discovered).
+      // bike_specs is the structured { sections: [{ title, specs: [{ label, value }] }] }
+      // blob shown on bicycle product pages; is_bicycle enables that layout.
+      ...(body.bikeSpecs ? { bike_specs: body.bikeSpecs } : {}),
+      ...(body.isBicycle != null ? { is_bicycle: body.isBicycle } : {}),
+
       // Part fields
       part_type_detail: body.partTypeDetail,
       compatibility_notes: body.compatibilityNotes,

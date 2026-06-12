@@ -8,7 +8,7 @@ import { TrendingUp, Package, X, Search, Store as StoreIcon, User, Clock, Dollar
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
-import { ListItemBanner } from "@/components/marketplace/list-item-banner";
+import { ListItemBannerSlot } from "@/components/marketplace/list-item-banner";
 import { UnifiedFilterBar, ViewMode, ListingTypeFilter as ListingTypeFilterType } from "@/components/marketplace/unified-filter-bar";
 import { SpaceNavigator, useMarketplaceSpace } from "@/components/marketplace/space-navigator";
 import { ForYouFeedView, ForYouFeedSkeletonBody } from "@/app/for-you/for-you-content";
@@ -1333,7 +1333,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
         </div>
 
         <div className="px-2 pb-24 sm:px-6 sm:pb-8">
-          <div className="space-y-3 pt-4 sm:pt-5">
+          <div className={isForYouView ? "pt-2 pb-5 sm:pt-3 sm:pb-7" : "space-y-3 pt-4 sm:pt-5"}>
             {isForYouView ? (
               forYouFeed ? (
                 <ForYouFeedView initialFeed={forYouFeed} hadIdentity embedded />
@@ -1543,14 +1543,10 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                                     });
                                   }}
                                 />
-                                {!isProductSearchActive &&
-                                  MARKETPLACE_PROMO_BANNERS_ENABLED &&
-                                  index === 11 &&
-                                  isMarketplaceView && (
-                                  <div>
-                                    <ListItemBanner className="sm:hidden" />
-                                  </div>
-                                )}
+                                <ListItemBannerSlot
+                                  productIndex={index}
+                                  productCount={gridProducts.length}
+                                />
                               </React.Fragment>
                             ))}
                           </div>
