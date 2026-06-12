@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Package, ChevronRight, X, Store } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Package, ChevronRight, X, Store, Sparkles } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import {
@@ -127,6 +128,8 @@ export function UnifiedFilterBar({
     ? onMobileBrowseSheetOpenChange!
     : setUncontrolledBrowseOpen;
 
+  const router = useRouter();
+
   const isStoresMode = currentSpace === "stores";
   const isUberMode = currentSpace === "uber";
 
@@ -181,7 +184,14 @@ export function UnifiedFilterBar({
       {/* Mobile — segmented control. Tabs only; nothing crammed alongside.
           Labels carry the meaning on their own, so no icons (less is more). */}
       <div className="sm:hidden px-3 pt-2 pb-1">
-        <div className="grid grid-cols-3 gap-0.5 rounded-full bg-gray-100 p-0.5">
+        <div className="grid grid-cols-4 gap-0.5 rounded-full bg-gray-100 p-0.5">
+          <button
+            type="button"
+            onClick={() => router.push("/for-you")}
+            className="flex h-8 min-w-0 cursor-pointer items-center justify-center rounded-full px-1.5 text-[13px] font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 text-gray-500"
+          >
+            <span className="truncate">For You</span>
+          </button>
           <button
             type="button"
             onClick={() => { setOptimisticTab("marketplace"); onViewModeChange("all"); }}
@@ -190,7 +200,8 @@ export function UnifiedFilterBar({
               isBrowseActive ? "bg-white text-gray-900 shadow-sm" : "text-gray-500",
             )}
           >
-            <span className="truncate">Marketplace</span>
+            {/* "Browse" (not "Marketplace") so four tabs fit on small screens */}
+            <span className="truncate">Browse</span>
           </button>
           <button
             type="button"
@@ -219,6 +230,14 @@ export function UnifiedFilterBar({
       {/* Desktop — filters always visible, no toggle button */}
       <div className="hidden sm:flex items-center gap-2.5">
         <div className="h-11 rounded-full bg-white border border-gray-200 shadow-sm p-1 inline-flex flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => router.push("/for-you")}
+            className="flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 text-gray-500 hover:text-gray-700"
+          >
+            <Sparkles className="h-4 w-4" />
+            For You
+          </button>
           <button
             type="button"
             onClick={() => { setOptimisticTab("marketplace"); onViewModeChange("all"); }}
