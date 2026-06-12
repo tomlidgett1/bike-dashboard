@@ -315,9 +315,11 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
   // smallest sufficient variant. Grid: 2-col mobile, 3 md, 4 lg, 6 xl.
   const cardSizes = layout === "list"
     ? "128px"
-    : featuredMobile
-      ? "(max-width: 640px) 100vw, (min-width: 1280px) 16vw, (min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw"
-      : "(min-width: 1280px) 16vw, (min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw";
+    : inCarousel
+      ? "(max-width: 640px) 160px, (max-width: 768px) 180px, (max-width: 1024px) 200px, 220px"
+      : featuredMobile
+        ? "(max-width: 640px) 100vw, (min-width: 1280px) 16vw, (min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw"
+        : "(min-width: 1280px) 16vw, (min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw";
 
   // Memoize click handler to prevent recreating on every render
   const handleClick = React.useCallback((e: React.MouseEvent) => {
@@ -362,7 +364,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
       onClick={handleClick}
       className={cn(
         "product-card-root block",
-        inCarousel && "product-card-root--in-carousel h-full overflow-hidden",
+        inCarousel && "product-card-root--in-carousel h-full w-full overflow-hidden",
         isList && "w-full",
         !isList && featuredMobile && "sm:col-span-1"
       )}
@@ -504,7 +506,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
 	              hideStoreMeta &&
 	              (featuredMobile && !inCarousel
 	                ? "h-9 sm:h-11 overflow-hidden mb-0.5"
-	                : "h-9 overflow-hidden mb-0.5")
+	                : "h-[3.25rem] overflow-hidden mb-0.5")
 	          )}
 	        >
           {/* Product Title - Enhanced typography */}

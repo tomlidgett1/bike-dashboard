@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/auth-provider";
 import { getOrCreateAnonymousId } from "@/lib/tracking/interaction-tracker";
 import { ForYouCarouselRow } from "@/components/marketplace/for-you/for-you-carousel-row";
+import { FOR_YOU_CAROUSEL_CARD_WIDTH } from "@/components/marketplace/for-you/carousel-card-width";
 import type { ForYouFeedPayload } from "@/lib/for-you/types";
 import { cn } from "@/lib/utils";
 
@@ -196,7 +197,7 @@ export function ForYouFeedSkeletonBody({ embedded = false }: { embedded?: boolea
             )}
           >
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="flex-shrink-0 w-[145px] sm:w-[180px] md:w-[200px] lg:w-[220px]">
+              <div key={i} className={cn("flex-shrink-0", FOR_YOU_CAROUSEL_CARD_WIDTH)}>
                 <ProductCardSkeleton />
               </div>
             ))}

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, MoreHorizontal, EyeOff, X } from "lucide-react";
 import { ProductCard } from "@/components/marketplace/product-card";
 import {
@@ -17,6 +18,7 @@ import {
 } from "@/lib/tracking/interaction-tracker";
 import type { ForYouCarousel } from "@/lib/for-you/types";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
+import { FOR_YOU_CAROUSEL_CARD_WIDTH, FOR_YOU_CAROUSEL_COLLAPSED_COUNT, forYouExpandedGridClass } from "@/components/marketplace/for-you/carousel-card-width";
 import { cn } from "@/lib/utils";
 
 // ============================================================
@@ -42,10 +44,28 @@ export function ForYouCarouselRow({
   onHideCarousel,
   embedded = false,
 }: ForYouCarouselRowProps) {
+  const [isExpanded, setIsExpanded] = React.useState(false);
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   const sectionRef = React.useRef<HTMLElement>(null);
   const [canScrollLeft, setCanScrollLeft] = React.useState(false);
   const [canScrollRight, setCanScrollRight] = React.useState(false);
+
+  const hasMore = carousel.products.length > FOR_YOU_CAROUSEL_COLLAPSED_COUNT;
+  const collapsedProducts = hasMore
+    ? carousel.products.slice(0, FOR_YOU_CAROUSEL_COLLAPSED_COUNT)
+    : carousel.products;
+  const hiddenCount = carousel.products.length - FOR_YOU_CAROUSEL_COLLAPSED_COUNT;
+  const displayedProducts = isExpanded ? carousel.products : collapsedProducts;
+
+  const handleToggleExpanded = () => {
+    setIsExpanded((prev) => {
+      const next = !prev;
+      if (prev && scrollContainerRef.current) {
+        scrollContainerRef.current.scrollLeft = 0;
+      }
+      return next;
+    });
+  };
 
   // Carousel impression — once, when half the row is on screen.
   React.useEffect(() => {
@@ -87,7 +107,7 @@ export function ForYouCarouselRow({
       container.removeEventListener("scroll", checkScroll);
       window.removeEventListener("resize", checkScroll);
     };
-  }, [checkScroll, carousel.products.length]);
+  }, [checkScroll, carousel.products.length, isExpanded]);
 
   const scroll = (direction: "left" | "right") => {
     const container = scrollContainerRef.current;
@@ -118,8 +138,19 @@ export function ForYouCarouselRow({
             <p className="text-xs text-gray-500 mt-0.5 truncate">{carousel.explanation}</p>
           )}
         </div>
-        <DropdownMenu modal={false}>
-          <DropdownMenuTrigger asChild>
+        <div className="flex items-center gap-0.5 flex-shrink-0">
+          {(isExpanded || hasMore) && (
+            <button
+              type="button"
+              onClick={handleToggleExpanded}
+              className="text-xs sm:text-sm font-medium text-gray-600 hover:text-gray-900 px-2 py-1 rounded-md hover:bg-gray-100 transition-colors whitespace-nowrap"
+              aria-expanded={isExpanded}
+            >
+              {isExpanded ? "Show less" : `See more (${hiddenCount})`}
+            </button>
+          )}
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
             <button
               type="button"
               className="flex-shrink-0 p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
@@ -138,10 +169,47 @@ export function ForYouCarouselRow({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        </div>
       </div>
 
       {/* Products */}
-      <div className="relative">
+      <AnimatePresence mode="wait" initial={false}>
+        {isExpanded ? (
+          <motion.div
+            key="grid"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{
+              duration: 0.4,
+              ease: [0.04, 0.62, 0.23, 0.98],
+            }}
+            className="overflow-hidden"
+          >
+            <div className={forYouExpandedGridClass(embedded)}>
+              {displayedProducts.map((product, index) => (
+                <ForYouCard
+                  key={product.id}
+                  product={product}
+                  index={index}
+                  carouselKey={carousel.key}
+                  carouselSource={carousel.source}
+                  userId={userId}
+                  onDismiss={onDismissProduct}
+                  variant="grid"
+                />
+              ))}
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="carousel"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="relative"
+          >
         {canScrollLeft && (
           <button
             onClick={() => scroll("left")}
@@ -178,7 +246,7 @@ export function ForYouCarouselRow({
             )}
             style={{ minWidth: "min-content" }}
           >
-            {carousel.products.map((product, index) => (
+            {displayedProducts.map((product, index) => (
               <ForYouCard
                 key={product.id}
                 product={product}
@@ -187,12 +255,15 @@ export function ForYouCarouselRow({
                 carouselSource={carousel.source}
                 userId={userId}
                 onDismiss={onDismissProduct}
+                variant="carousel"
               />
             ))}
             <div className="w-3 flex-shrink-0 sm:hidden" />
           </div>
         </div>
-      </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 }
@@ -204,6 +275,7 @@ interface ForYouCardProps {
   carouselSource: "deterministic" | "llm";
   userId?: string;
   onDismiss: (carouselKey: string, productId: string) => void;
+  variant?: "carousel" | "grid";
 }
 
 function ForYouCard({
@@ -213,6 +285,7 @@ function ForYouCard({
   carouselSource,
   userId,
   onDismiss,
+  variant = "carousel",
 }: ForYouCardProps) {
   const cardRef = React.useRef<HTMLDivElement>(null);
 
@@ -242,7 +315,12 @@ function ForYouCard({
   return (
     <div
       ref={cardRef}
-      className="group/foryou relative flex-shrink-0 min-h-0 overflow-hidden w-[145px] sm:w-[180px] md:w-[200px] lg:w-[220px] snap-start"
+      className={cn(
+        "group/foryou relative min-h-0 overflow-hidden",
+        variant === "carousel"
+          ? cn("flex flex-col flex-shrink-0 snap-start", FOR_YOU_CAROUSEL_CARD_WIDTH)
+          : "w-full",
+      )}
       onClickCapture={() => {
         trackCarouselClick(carouselKey, product.id, index, { source: carouselSource }, userId);
       }}
@@ -266,7 +344,13 @@ function ForYouCard({
       >
         <X className="h-3.5 w-3.5" />
       </button>
-      <ProductCard product={product} priority={index < 4} inCarousel />
+      <ProductCard
+        product={product}
+        priority={index < 4}
+        inCarousel={variant === "carousel"}
+        hideStoreMeta={variant === "carousel"}
+        compact={variant === "carousel"}
+      />
     </div>
   );
 }
