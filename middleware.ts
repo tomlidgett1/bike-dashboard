@@ -32,6 +32,9 @@ export async function middleware(request: NextRequest) {
     // If we blocked here, users get sent to /marketplace with ?code= still attached (broken flow).
     request.nextUrl.pathname === '/api/lightspeed/auth/callback' ||
     request.nextUrl.pathname === '/marketplace' ||
+    request.nextUrl.pathname === '/for-you' ||               // Public personalised discovery feed
+    request.nextUrl.pathname.startsWith('/api/for-you') ||   // Feed APIs resolve anonymous identity themselves
+    request.nextUrl.pathname === '/api/tracking' ||          // Anonymous behavioural event ingestion
     request.nextUrl.pathname.startsWith('/marketplace/product') ||
     request.nextUrl.pathname.startsWith('/marketplace/store') ||
     request.nextUrl.pathname.startsWith('/marketplace/used-products') ||
