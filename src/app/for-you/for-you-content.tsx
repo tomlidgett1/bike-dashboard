@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/auth-provider";
 import { getOrCreateAnonymousId } from "@/lib/tracking/interaction-tracker";
 import { ForYouCarouselRow } from "@/components/marketplace/for-you/for-you-carousel-row";
+import { ForYouTabBar } from "@/components/marketplace/for-you/for-you-tab-bar";
 import type { ForYouFeedPayload } from "@/lib/for-you/types";
 
 // ============================================================
@@ -107,6 +108,7 @@ export function ForYouContent({ initialFeed, hadIdentity }: ForYouContentProps) 
     <>
       <MarketplaceHeader />
       <MarketplaceLayout showFooter={false}>
+        <ForYouTabBar />
         <div className="px-3 sm:px-6 py-4 sm:py-6 max-w-[1800px] mx-auto">
           {/* Page header */}
           <div className="mb-3 sm:mb-5">
@@ -172,6 +174,7 @@ export function ForYouSkeleton() {
     <>
       <MarketplaceHeader />
       <MarketplaceLayout showFooter={false}>
+        <ForYouTabBar />
         <div className="px-3 sm:px-6 py-4 sm:py-6 max-w-[1800px] mx-auto">
           <div className="mb-5">
             <div className="h-7 w-32 bg-gray-200 rounded-md animate-pulse" />
