@@ -300,7 +300,7 @@ function QuestionView({
   uploading: boolean;
   onJump: (id: string) => void;
 }) {
-  const ai = q.field ? AI_FIELDS[q.field as string] : undefined;
+  const ai = q.field ? AI_FIELDS[q.field as keyof BikeDraft] : undefined;
 
   return (
     <div>
@@ -347,7 +347,7 @@ function QuestionView({
                   onClick={() => patch({ [q.field as string]: s } as Partial<BikeDraft>)}
                   className={cn(
                     "rounded-md border px-2.5 py-1 text-[13px] font-medium transition-colors",
-                    draft[q.field as string] === s
+                    draft[q.field as keyof BikeDraft] === s
                       ? "border-gray-900 bg-gray-900 text-white"
                       : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50",
                   )}
