@@ -9,6 +9,8 @@ import { UploadMethodChoice } from "./upload-method-choice";
 import { SmartUploadFlow } from "./smart-upload-flow";
 import { FacebookImportFlow } from "./facebook-import-flow";
 import { BulkUploadSheet } from "./bulk-upload-sheet";
+import { FlowGuided } from "@/app/marketplace/sell-redesign/_components/flow-guided";
+import { FlowForm } from "@/app/marketplace/sell-redesign/_components/flow-form";
 import { WizardNavigation } from "./wizard-navigation";
 import { Step1ItemType } from "./step-1-item-type";
 // New granular step components
@@ -52,7 +54,7 @@ import {
 export function SellWizard() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const mode = searchParams?.get('mode'); // 'smart', 'facebook', or null (default manual)
+  const mode = searchParams?.get('mode'); // guided, form, smart, facebook, bulk, or null
   const hasAiData = searchParams?.get('ai') === 'true';
   const draftId = searchParams?.get('draftId') || undefined;
   const textUploadToken = searchParams?.get('textUploadToken') || undefined;
@@ -1361,6 +1363,30 @@ export function SellWizard() {
     );
   }
 
+  // Handle the new quick upload sub-options from the method chooser.
+  if (mode === "guided" || mode === "form") {
+    return (
+      <div className="min-h-screen bg-gray-50 pt-16">
+        <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[460px] flex-col bg-white sm:border-x sm:border-gray-200">
+          <div className="flex h-14 items-center justify-between gap-2 border-b border-gray-100 px-3">
+            <button
+              type="button"
+              onClick={() => router.push("/marketplace/sell")}
+              className="inline-flex items-center rounded-md px-2 py-1.5 text-[13px] font-medium text-gray-700 transition-colors hover:bg-gray-100"
+            >
+              Methods
+            </button>
+            <span className="truncate rounded-md bg-gray-100 px-2 py-1 text-[12px] font-semibold text-gray-600">
+              {mode === "guided" ? "Quick · Guided" : "Quick · Form"}
+            </span>
+            <span className="w-[72px]" aria-hidden />
+          </div>
+          {mode === "guided" ? <FlowGuided /> : <FlowForm />}
+        </div>
+      </div>
+    );
+  }
+
   // Handle Smart Upload mode
   if (mode === 'smart') {
     return (
@@ -1467,37 +1493,11 @@ export function SellWizard() {
       <div className="pt-16 min-h-screen bg-gray-50 flex flex-col">
         <div className="flex-1 py-12 px-6">
           <UploadMethodChoice
-            onSelectSmart={() => {
-              // No longer navigating - modal handles it
-            }}
-            onSelectFacebook={() => {
-              // No longer navigating - modal handles it
-            }}
             onFacebookImportComplete={(importedFormData, images) => {
               console.log('🎯 [WIZARD] Facebook data imported from modal:', importedFormData);
               console.log('🎯 [WIZARD] Images:', images);
               
               // Update form data with imported data
-              updateFormData({
-                ...importedFormData,
-              });
-              
-              console.log('🎯 [WIZARD] Form data updated, navigating to step 1');
-              
-              // Navigate to step 1 (Item Type) so user starts from beginning
-              goToStep(1);
-              
-              // Don't show method choice again
-              setShowMethodChoice(false);
-              
-              // Change URL without reload
-              window.history.pushState({}, '', '/marketplace/sell?mode=manual&ai=true');
-            }}
-            onSmartUploadComplete={(importedFormData, imageUrls) => {
-              console.log('🎯 [WIZARD] Smart Upload data imported from modal:', importedFormData);
-              console.log('🎯 [WIZARD] Image URLs:', imageUrls);
-              
-              // Update form data with imported data (images already included in formData)
               updateFormData({
                 ...importedFormData,
               });

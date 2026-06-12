@@ -502,7 +502,7 @@ export function MarketplaceHeader({
                   <DropdownMenuContent align="end" className="w-56 bg-white rounded-md">
                     <DropdownMenuItem
                       onClick={() =>
-                        user ? setSmartUploadModalOpen(true) : setSellRequirementModalOpen(true)
+                        user ? router.push('/marketplace/sell') : setSellRequirementModalOpen(true)
                       }
                       className="cursor-pointer rounded-md"
                     >
@@ -898,7 +898,7 @@ export function MarketplaceHeader({
         onClose={() => setMobileUploadMethodOpen(false)}
         onSelectQuick={() => {
           if (user) {
-            setSmartUploadModalOpen(true);
+            router.push('/marketplace/sell');
           } else {
             setSellRequirementModalOpen(true);
           }
