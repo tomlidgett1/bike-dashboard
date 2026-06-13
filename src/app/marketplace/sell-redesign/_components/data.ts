@@ -213,11 +213,17 @@ export interface UploadedImage {
 
 // ---- Draft model -------------------------------------------
 
+// What the AI detected in the photos. Empty until analysis runs.
+export type GuidedItemType = "" | "bike" | "part" | "apparel";
+
 export interface BikeDraft {
   images: string[];
   uploadedImages?: UploadedImage[];
+  itemType: GuidedItemType;
   title: string;
   bikeType: string;
+  partType: string;
+  size: string;
   brand: string;
   model: string;
   year: string;
@@ -322,8 +328,11 @@ export const AI_SPEC_SOURCES = [
 export function emptyDraft(): BikeDraft {
   return {
     images: [],
+    itemType: "",
     title: "",
     bikeType: "",
+    partType: "",
+    size: "",
     brand: "",
     model: "",
     year: "",
@@ -349,6 +358,7 @@ export function emptyDraft(): BikeDraft {
 // Draft pre-filled from the AI analysis (used after "analyse photos").
 export function aiPrefilledDraft(): BikeDraft {
   const d = emptyDraft();
+  d.itemType = "bike";
   d.images = [...MOCK_PHOTOS];
   d.title = AI_FIELDS.title.value;
   d.bikeType = AI_FIELDS.bikeType.value;
@@ -391,26 +401,34 @@ export interface QualityResult {
 }
 
 export function scoreDraft(draft: BikeDraft): QualityResult {
-  const core: (keyof BikeDraft)[] = [
-    "title", "bikeType", "brand", "model", "frameSize",
-    "frameMaterial", "colourPrimary", "condition", "description",
-  ];
+  const core: (keyof BikeDraft)[] =
+    draft.itemType === "part"
+      ? ["title", "partType", "brand", "colourPrimary", "condition", "description"]
+      : draft.itemType === "apparel"
+        ? ["title", "brand", "size", "colourPrimary", "condition", "description"]
+        : [
+            "title", "bikeType", "brand", "model", "frameSize",
+            "frameMaterial", "colourPrimary", "condition", "description",
+          ];
+  const isBike = draft.itemType === "" || draft.itemType === "bike";
   const filledCore = core.filter((k) => String(draft[k] ?? "").trim().length > 0).length;
   const hasImages = draft.images.length >= 3;
   const hasPrice = draft.price > 0;
   const specCount = Object.values(draft.specs).filter((v) => v.trim().length > 0).length;
 
   let score = 0;
-  score += Math.round((filledCore / core.length) * 45);
+  score += Math.round((filledCore / core.length) * (isBike ? 45 : 70));
   score += hasImages ? 20 : draft.images.length > 0 ? 10 : 0;
   score += hasPrice ? 10 : 0;
-  score += Math.min(25, specCount * 2); // detailed specs meaningfully boost the score
+  if (isBike) score += Math.min(25, specCount * 2); // detailed specs meaningfully boost the score
   score = Math.min(100, score);
 
   const tips: string[] = [];
   if (draft.images.length < 3) tips.push("Add at least 3 photos");
-  if (specCount === 0) tips.push("Add full specifications to win buyer trust");
-  else if (specCount < 8) tips.push("Add a few more component details");
+  if (isBike) {
+    if (specCount === 0) tips.push("Add full specifications to win buyer trust");
+    else if (specCount < 8) tips.push("Add a few more component details");
+  }
   if (!draft.description) tips.push("Add a description");
   if (!hasPrice) tips.push("Set a price");
 
@@ -453,7 +471,7 @@ export interface GuidedQuestion {
 }
 
 export const GUIDED_QUESTIONS: GuidedQuestion[] = [
-  { id: "photos", kind: "photos", question: "Let's start with photos", helper: "Add a few shots and we'll recognise your bike and fill in the details." },
+  { id: "photos", kind: "photos", question: "Let's start with photos", helper: "Add a few shots and we'll recognise what you're selling and fill in the details." },
   { id: "title", kind: "text", field: "title", question: "What's the listing title?", helper: "We drafted one from your photos — tweak if you like." },
   { id: "bikeType", kind: "pills", field: "bikeType", question: "What type of bike is it?", options: BIKE_TYPES },
   { id: "brand", kind: "text", field: "brand", question: "What brand is it?", suggestions: COMMON_BIKE_BRANDS },
@@ -471,3 +489,46 @@ export const GUIDED_QUESTIONS: GuidedQuestion[] = [
   { id: "delivery", kind: "delivery", question: "How can buyers get it?" },
   { id: "review", kind: "review", question: "Review & publish" },
 ];
+
+// Question sequences when the AI detects the photos aren't a bike.
+// Shorter and free of bike-specific fields.
+
+export const COMMON_PART_TYPES = [
+  "Wheelset", "Groupset", "Saddle", "Handlebars", "Helmet",
+  "Sunglasses", "Lights", "Pump", "Pedals", "Other",
+];
+
+export const APPAREL_SIZES = ["XS", "S", "M", "L", "XL", "XXL"] as const;
+
+export const PART_QUESTIONS: GuidedQuestion[] = [
+  GUIDED_QUESTIONS[0],
+  { id: "title", kind: "text", field: "title", question: "What's the listing title?", helper: "We drafted one from your photos — tweak if you like." },
+  { id: "partType", kind: "text", field: "partType", question: "What kind of item is it?", helper: "e.g. Wheelset, helmet, sunglasses, pump.", suggestions: COMMON_PART_TYPES, optional: true },
+  { id: "brand", kind: "text", field: "brand", question: "What brand is it?", optional: true },
+  { id: "model", kind: "text", field: "model", question: "And the model?", helper: "Skip it if there isn't one.", optional: true },
+  { id: "colourPrimary", kind: "colour", field: "colourPrimary", question: "What colour is it?", optional: true },
+  { id: "condition", kind: "condition", field: "condition", question: "What condition is it in?" },
+  { id: "price", kind: "price", field: "price", question: "Set your price" },
+  { id: "description", kind: "description", field: "description", question: "Describe your item", helper: "We've written a starting point — make it yours." },
+  { id: "delivery", kind: "delivery", question: "How can buyers get it?" },
+  { id: "review", kind: "review", question: "Review & publish" },
+];
+
+export const APPAREL_QUESTIONS: GuidedQuestion[] = [
+  GUIDED_QUESTIONS[0],
+  { id: "title", kind: "text", field: "title", question: "What's the listing title?", helper: "We drafted one from your photos — tweak if you like." },
+  { id: "brand", kind: "text", field: "brand", question: "What brand is it?", optional: true },
+  { id: "size", kind: "pills", field: "size", question: "What size is it?", options: APPAREL_SIZES, optional: true },
+  { id: "colourPrimary", kind: "colour", field: "colourPrimary", question: "What colour is it?", optional: true },
+  { id: "condition", kind: "condition", field: "condition", question: "What condition is it in?" },
+  { id: "price", kind: "price", field: "price", question: "Set your price" },
+  { id: "description", kind: "description", field: "description", question: "Describe your item", helper: "We've written a starting point — make it yours." },
+  { id: "delivery", kind: "delivery", question: "How can buyers get it?" },
+  { id: "review", kind: "review", question: "Review & publish" },
+];
+
+export function questionsForItemType(itemType: GuidedItemType): GuidedQuestion[] {
+  if (itemType === "part") return PART_QUESTIONS;
+  if (itemType === "apparel") return APPAREL_QUESTIONS;
+  return GUIDED_QUESTIONS;
+}

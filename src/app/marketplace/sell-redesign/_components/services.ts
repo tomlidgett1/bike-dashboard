@@ -79,6 +79,12 @@ export function analysisToDraftPatch(
   return {
     images: urls,
     uploadedImages: uploaded,
+    itemType:
+      analysis.item_type === "part" || analysis.item_type === "apparel"
+        ? analysis.item_type
+        : "bike",
+    partType: s(fd.partTypeDetail),
+    size: s(fd.size),
     title: s(fd.title),
     bikeType: s(fd.bikeType),
     brand: s(fd.brand),
@@ -177,23 +183,33 @@ function buildImagesPayload(draft: BikeDraft) {
   }));
 }
 
+const CATEGORY_BY_ITEM_TYPE = {
+  bike: "Bicycles",
+  part: "Parts",
+  apparel: "Apparel",
+} as const;
+
 export function mapDraftToListingPayload(draft: BikeDraft, status: "active" | "draft") {
-  const bikeSpecs = buildBikeSpecsBlob(draft.bikeType, draft.specs);
+  const itemType = draft.itemType || "bike";
+  const isBike = itemType === "bike";
+  const bikeSpecs = isBike ? buildBikeSpecsBlob(draft.bikeType, draft.specs) : { sections: [] };
   const hasSpecs = bikeSpecs.sections.length > 0;
   return {
-    itemType: "bike",
+    itemType,
     listingStatus: status,
     title: draft.title || undefined,
     brand: draft.brand || undefined,
     model: draft.model || undefined,
     modelYear: draft.year || undefined,
-    bikeType: draft.bikeType || undefined,
-    frameSize: draft.frameSize || undefined,
-    frameMaterial: draft.frameMaterial || undefined,
-    wheelSize: draft.wheelSize || undefined,
-    groupset: draft.groupset || undefined,
-    suspensionType: draft.suspension || undefined,
-    bikeWeight: draft.weight || undefined,
+    bikeType: isBike ? draft.bikeType || undefined : undefined,
+    frameSize: isBike ? draft.frameSize || undefined : undefined,
+    frameMaterial: isBike ? draft.frameMaterial || undefined : undefined,
+    wheelSize: isBike ? draft.wheelSize || undefined : undefined,
+    groupset: isBike ? draft.groupset || undefined : undefined,
+    suspensionType: isBike ? draft.suspension || undefined : undefined,
+    bikeWeight: isBike ? draft.weight || undefined : undefined,
+    partTypeDetail: itemType === "part" ? draft.partType || undefined : undefined,
+    size: itemType === "apparel" ? draft.size || undefined : undefined,
     colorPrimary: draft.colourPrimary || undefined,
     colorSecondary: draft.colourSecondary || undefined,
     conditionRating: draft.condition || undefined,
@@ -203,7 +219,7 @@ export function mapDraftToListingPayload(draft: BikeDraft, status: "active" | "d
     shippingAvailable: draft.shippingAvailable,
     shippingCost: draft.shippingAvailable ? draft.shippingCost : undefined,
     pickupLocation: draft.pickupAvailable ? draft.pickupLocation : undefined,
-    marketplace_category: "Bicycles",
+    marketplace_category: CATEGORY_BY_ITEM_TYPE[itemType],
     images: buildImagesPayload(draft),
     bikeSpecs: hasSpecs ? bikeSpecs : undefined,
     isBicycle: hasSpecs ? true : undefined,

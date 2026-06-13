@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  GUIDED_QUESTIONS,
+  questionsForItemType,
   AI_FIELDS,
   AI_DESCRIPTION,
   COLOUR_SWATCHES,
@@ -67,7 +67,9 @@ export function FlowGuided() {
   const [publishing, setPublishing] = React.useState(false);
   const [publishError, setPublishError] = React.useState<string | null>(null);
 
-  const questions = GUIDED_QUESTIONS;
+  // The question sequence adapts to what the AI detected in the photos —
+  // a helmet or jersey shouldn't be asked what kind of bike it is.
+  const questions = questionsForItemType(draft.itemType);
   const q = questions[qi];
   const progress = qi / (questions.length - 1);
 
@@ -322,7 +324,7 @@ function QuestionView({
             <div className="mt-4 flex items-center gap-2 rounded-xl border border-gray-200 bg-white p-3">
               <Sparkles className="h-4 w-4 text-gray-500" />
               <p className="text-[13px] text-gray-600">
-                Great — we&apos;ll recognise your bike and pre-fill everything next.
+                Great — we&apos;ll recognise what you&apos;re selling and pre-fill everything next.
               </p>
             </div>
           )}
@@ -369,7 +371,7 @@ function QuestionView({
             options={q.options}
             columns={q.options.length > 6 ? 3 : 2}
             onChange={(v) => patch({ [q.field as string]: v } as Partial<BikeDraft>)}
-            allowCustom={q.field === "frameSize"}
+            allowCustom={q.field === "frameSize" || q.field === "size"}
           />
           {ai && <AiAssist ai={ai} onPick={(v) => patch({ [q.field as string]: v } as Partial<BikeDraft>)} />}
         </div>
@@ -463,7 +465,15 @@ function QuestionView({
       {/* Description */}
       {q.kind === "description" && (
         <div className="mt-5">
-          <DescriptionField value={draft.description} onChange={(v) => patch({ description: v })} />
+          <DescriptionField
+            value={draft.description}
+            onChange={(v) => patch({ description: v })}
+            placeholder={
+              draft.itemType === "part" || draft.itemType === "apparel"
+                ? "Tell buyers about your item…"
+                : "Tell buyers about your bike…"
+            }
+          />
         </div>
       )}
 
@@ -587,7 +597,15 @@ function PriceGuide({ onUse }: { onUse: (v: number) => void }) {
   );
 }
 
-function DescriptionField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function DescriptionField({
+  value,
+  onChange,
+  placeholder = "Tell buyers about your bike…",
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
   const [busy, setBusy] = React.useState(false);
   const regen = () => {
     setBusy(true);
@@ -599,7 +617,7 @@ function DescriptionField({ value, onChange }: { value: string; onChange: (v: st
   return (
     <div className="space-y-2">
       <div className="relative">
-        <TextArea value={value} onChange={onChange} rows={7} placeholder="Tell buyers about your bike…" />
+        <TextArea value={value} onChange={onChange} rows={7} placeholder={placeholder} />
         <button
           type="button"
           onClick={regen}
@@ -690,17 +708,38 @@ function DeliveryFields({ draft, patch }: { draft: BikeDraft; patch: (p: Partial
 
 function ReviewView({ draft, onJump }: { draft: BikeDraft; onJump: (id: string) => void }) {
   const quality = scoreDraft(draft);
-  const rows: { id: string; label: string; value: string }[] = [
-    { id: "title", label: "Title", value: draft.title },
-    { id: "bikeType", label: "Type", value: draft.bikeType },
-    { id: "brand", label: "Brand", value: draft.brand },
-    { id: "model", label: "Model", value: draft.model },
-    { id: "frameSize", label: "Size", value: draft.frameSize },
-    { id: "frameMaterial", label: "Material", value: draft.frameMaterial },
-    { id: "colourPrimary", label: "Colour", value: draft.colourPrimary },
-    { id: "condition", label: "Condition", value: draft.condition },
-    { id: "price", label: "Price", value: draft.price ? formatAUD(draft.price) : "" },
-  ];
+  const isBike = draft.itemType === "" || draft.itemType === "bike";
+  const rows: { id: string; label: string; value: string }[] =
+    draft.itemType === "part"
+      ? [
+          { id: "title", label: "Title", value: draft.title },
+          { id: "partType", label: "Type", value: draft.partType },
+          { id: "brand", label: "Brand", value: draft.brand },
+          { id: "model", label: "Model", value: draft.model },
+          { id: "colourPrimary", label: "Colour", value: draft.colourPrimary },
+          { id: "condition", label: "Condition", value: draft.condition },
+          { id: "price", label: "Price", value: draft.price ? formatAUD(draft.price) : "" },
+        ]
+      : draft.itemType === "apparel"
+        ? [
+            { id: "title", label: "Title", value: draft.title },
+            { id: "brand", label: "Brand", value: draft.brand },
+            { id: "size", label: "Size", value: draft.size },
+            { id: "colourPrimary", label: "Colour", value: draft.colourPrimary },
+            { id: "condition", label: "Condition", value: draft.condition },
+            { id: "price", label: "Price", value: draft.price ? formatAUD(draft.price) : "" },
+          ]
+        : [
+            { id: "title", label: "Title", value: draft.title },
+            { id: "bikeType", label: "Type", value: draft.bikeType },
+            { id: "brand", label: "Brand", value: draft.brand },
+            { id: "model", label: "Model", value: draft.model },
+            { id: "frameSize", label: "Size", value: draft.frameSize },
+            { id: "frameMaterial", label: "Material", value: draft.frameMaterial },
+            { id: "colourPrimary", label: "Colour", value: draft.colourPrimary },
+            { id: "condition", label: "Condition", value: draft.condition },
+            { id: "price", label: "Price", value: draft.price ? formatAUD(draft.price) : "" },
+          ];
   return (
     <div className="pt-1">
       <h1 className="text-[24px] font-bold text-gray-900">Review &amp; publish</h1>
@@ -733,15 +772,17 @@ function ReviewView({ draft, onJump }: { draft: BikeDraft; onJump: (id: string) 
         ))}
       </div>
 
-      <div className="mt-3 flex items-center justify-between rounded-md border border-gray-200 bg-white px-3.5 py-3">
-        <div className="flex items-center gap-2">
-          <ListChecks className="h-4.5 w-4.5 text-gray-500" />
-          <span className="text-[14px] font-medium text-gray-900">Full specifications</span>
+      {isBike && (
+        <div className="mt-3 flex items-center justify-between rounded-md border border-gray-200 bg-white px-3.5 py-3">
+          <div className="flex items-center gap-2">
+            <ListChecks className="h-4.5 w-4.5 text-gray-500" />
+            <span className="text-[14px] font-medium text-gray-900">Full specifications</span>
+          </div>
+          <button type="button" onClick={() => onJump("specsOffer")} className="text-[13px] font-semibold text-gray-600 hover:text-gray-900">
+            {quality.specCount > 0 ? `${quality.specCount} added · Edit` : "Add"}
+          </button>
         </div>
-        <button type="button" onClick={() => onJump("specsOffer")} className="text-[13px] font-semibold text-gray-600 hover:text-gray-900">
-          {quality.specCount > 0 ? `${quality.specCount} added · Edit` : "Add"}
-        </button>
-      </div>
+      )}
     </div>
   );
 }
@@ -814,7 +855,7 @@ function SuccessScreen({ draft }: { draft: BikeDraft }) {
         </motion.div>
         <h2 className="mt-6 text-[24px] font-bold text-gray-900">You&apos;re live!</h2>
         <p className="mt-1.5 text-[15px] text-gray-500">
-          {draft.title || "Your bike"} · {formatAUD(draft.price)}
+          {draft.title || "Your item"} · {formatAUD(draft.price)}
         </p>
         <div className="mt-6 flex flex-col gap-2">
           <Btn full>View my listing</Btn>
