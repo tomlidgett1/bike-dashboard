@@ -13,7 +13,8 @@ import {
   CheckCircle2,
   AlertCircle,
   TrendingUp,
-  Search
+  Search,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -72,7 +73,7 @@ function CollapsibleSection({
   defaultOpen = true 
 }: { 
   title: string; 
-  icon: React.ElementType; 
+  icon: LucideIcon; 
   children: React.ReactNode;
   defaultOpen?: boolean;
 }) {
@@ -122,7 +123,7 @@ function CollapsibleSection({
 // ============================================================
 
 function PriceVerdictBadge({ verdict }: { verdict: string }) {
-  const config: Record<string, { bg: string; text: string; icon: React.ElementType; label: string }> = {
+  const config: Record<string, { bg: string; text: string; icon: LucideIcon; label: string }> = {
     great_deal: { bg: "bg-green-100", text: "text-green-800", icon: CheckCircle2, label: "Great Deal" },
     fair_price: { bg: "bg-gray-100", text: "text-gray-800", icon: TrendingUp, label: "Fair Price" },
     above_market: { bg: "bg-amber-100", text: "text-amber-800", icon: AlertCircle, label: "Above Market" },

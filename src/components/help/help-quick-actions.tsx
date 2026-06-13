@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Package, Truck, MessageCircle, ChevronRight } from "lucide-react";
+import { Package, Truck, MessageCircle, ChevronRight, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 
@@ -10,7 +10,7 @@ interface QuickAction {
   id: string;
   title: string;
   description: string;
-  icon: React.ElementType;
+  icon: LucideIcon;
   href?: string;
   onClick?: () => void;
   requiresAuth?: boolean;

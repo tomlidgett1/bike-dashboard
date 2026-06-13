@@ -3,7 +3,7 @@
 import { buildListingFormDataFromAnalysis } from "@/lib/marketplace/listing-analysis-form-data";
 import type { ListingAnalysisResult } from "@/lib/ai/schemas";
 import type { BikeSpecsData } from "@/lib/types/bike-specs";
-import { SPEC_SECTIONS, type BikeDraft, type SpecValues, type UploadedImage } from "./data";
+import { SPEC_SECTIONS, type BikeDraft, type GuidedItemType, type SpecValues, type UploadedImage } from "./data";
 
 // ============================================================
 // Production wiring for the sell-redesign flows.
@@ -46,7 +46,15 @@ export async function uploadPhotos(files: File[]): Promise<UploadedImage[]> {
 
 // ---- AI photo analysis -------------------------------------
 
-export async function analysePhotos(imageUrls: string[]): Promise<ListingAnalysisResult> {
+export interface ListingAiUserHints {
+  itemType?: GuidedItemType | string;
+  text?: string;
+}
+
+export async function analysePhotos(
+  imageUrls: string[],
+  userHints: ListingAiUserHints = {},
+): Promise<ListingAnalysisResult> {
   const { createClient } = await import("@/lib/supabase/client");
   const supabase = createClient();
   const {
@@ -60,7 +68,7 @@ export async function analysePhotos(imageUrls: string[]): Promise<ListingAnalysi
       "Content-Type": "application/json",
       Authorization: `Bearer ${session.access_token}`,
     },
-    body: JSON.stringify({ imageUrls, userHints: {} }),
+    body: JSON.stringify({ imageUrls, userHints }),
   });
   if (!res.ok) throw new Error(await errFrom(res, "AI analysis failed"));
   const json = await res.json();
@@ -68,6 +76,41 @@ export async function analysePhotos(imageUrls: string[]): Promise<ListingAnalysi
 }
 
 const s = (v: unknown): string => (typeof v === "string" ? v : "");
+const n = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+
+function normaliseUploadedImages(value: unknown): UploadedImage[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((image): image is Record<string, unknown> => Boolean(image) && typeof image === "object")
+    .map((image, index) => ({
+      id: s(image.id) || s(image.publicId) || `text-upload-${index}`,
+      url: s(image.url),
+      cardUrl: s(image.cardUrl) || undefined,
+      thumbnailUrl: s(image.thumbnailUrl) || undefined,
+    }))
+    .filter((image) => image.url);
+}
+
+function imagesFromFormData(formData: Record<string, unknown>, uploadedImages: UploadedImage[]): {
+  urls: string[];
+  uploaded: UploadedImage[];
+} {
+  const rawImages = Array.isArray(formData.images) ? formData.images : [];
+  const fromForm = rawImages
+    .filter((image): image is Record<string, unknown> => Boolean(image) && typeof image === "object")
+    .map((image, index) => ({
+      id: s(image.id) || `ai-${index}`,
+      url: s(image.url),
+      cardUrl: s(image.cardUrl) || undefined,
+      thumbnailUrl: s(image.thumbnailUrl) || undefined,
+    }))
+    .filter((image) => image.url);
+  const uploaded = uploadedImages.length ? uploadedImages : fromForm;
+  return {
+    urls: uploaded.map((image) => image.url),
+    uploaded,
+  };
+}
 
 // Map an AI analysis result + uploaded images into a BikeDraft patch.
 export function analysisToDraftPatch(
@@ -104,9 +147,63 @@ export function analysisToDraftPatch(
   };
 }
 
+export function formDataToDraftPatch(
+  formData: Record<string, unknown>,
+  uploadedImagesValue?: unknown,
+): Partial<BikeDraft> {
+  const uploadedImages = normaliseUploadedImages(uploadedImagesValue);
+  const { urls, uploaded } = imagesFromFormData(formData, uploadedImages);
+  const itemType = s(formData.itemType);
+
+  return {
+    images: urls,
+    uploadedImages: uploaded,
+    itemType:
+      itemType === "part" || itemType === "apparel" || itemType === "bike"
+        ? itemType
+        : "bike",
+    partType: s(formData.partTypeDetail),
+    size: s(formData.size),
+    title: s(formData.title),
+    bikeType: s(formData.bikeType),
+    brand: s(formData.brand),
+    model: s(formData.model),
+    year: s(formData.modelYear),
+    frameSize: s(formData.frameSize),
+    frameMaterial: s(formData.frameMaterial),
+    colourPrimary: s(formData.colorPrimary),
+    colourSecondary: s(formData.colorSecondary),
+    wheelSize: s(formData.wheelSize),
+    groupset: s(formData.groupset),
+    suspension: s(formData.suspensionType),
+    weight: s(formData.bikeWeight) || s(formData.weight),
+    condition: s(formData.conditionRating),
+    description: s(formData.productDescription),
+    price: n(formData.price),
+  };
+}
+
+export async function loadTextUploadDraft(token: string): Promise<Partial<BikeDraft>> {
+  const response = await fetch(
+    `/api/marketplace/text-upload/sessions/${encodeURIComponent(token)}`,
+    { cache: "no-store" },
+  );
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok || !data?.formData) {
+    throw new Error(
+      typeof data?.error === "string" ? data.error : "Could not load this text upload.",
+    );
+  }
+
+  return formDataToDraftPatch(data.formData as Record<string, unknown>, data.uploadedImages);
+}
+
 // ---- AI spec discovery (pre-publish) -----------------------
 
-export async function discoverSpecsPreview(draft: Partial<BikeDraft>): Promise<SpecValues> {
+export async function discoverSpecsPreview(
+  draft: Partial<BikeDraft> & { productHint?: string },
+): Promise<SpecValues> {
   const res = await fetch("/api/marketplace/bike-specs/preview", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -120,6 +217,7 @@ export async function discoverSpecsPreview(draft: Partial<BikeDraft>): Promise<S
       groupset: draft.groupset,
       wheelSize: draft.wheelSize,
       title: draft.title,
+      productHint: draft.productHint,
     }),
   });
   if (!res.ok) throw new Error(await errFrom(res, "Couldn't fetch specifications"));

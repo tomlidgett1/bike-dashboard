@@ -10,12 +10,13 @@ import {
   CreditCard,
   User,
   ChevronRight,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { HelpCategory } from "@/lib/constants/help-content";
 
 // Icon mapping
-const ICON_MAP: Record<string, React.ElementType> = {
+const ICON_MAP: Record<string, LucideIcon> = {
   ShoppingBag,
   Store,
   Truck,

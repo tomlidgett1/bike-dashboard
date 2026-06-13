@@ -47,6 +47,8 @@ import {
 } from "./ui";
 import { DetailedSpecs } from "./detailed-specs";
 import { uploadPhotos, analysePhotos, analysisToDraftPatch, submitListing } from "./services";
+import { QualityMeter } from "./quality-meter";
+import { AiRedoDialog } from "./ai-redo-dialog";
 
 const ANALYSE_MSGS = [
   "Looking at your photos…",
@@ -55,7 +57,7 @@ const ANALYSE_MSGS = [
   "Pre-filling your details…",
 ];
 
-export function FlowGuided() {
+export function FlowGuided({ initialDraft }: { initialDraft?: Partial<BikeDraft> }) {
   const [draft, setDraft] = React.useState<BikeDraft>(emptyDraft());
   const [qi, setQi] = React.useState(0);
   const [dir, setDir] = React.useState(1);
@@ -66,6 +68,9 @@ export function FlowGuided() {
   const [uploading, setUploading] = React.useState(false);
   const [publishing, setPublishing] = React.useState(false);
   const [publishError, setPublishError] = React.useState<string | null>(null);
+  const [redoOpen, setRedoOpen] = React.useState(false);
+  const [redoing, setRedoing] = React.useState(false);
+  const [redoError, setRedoError] = React.useState<string | null>(null);
 
   // The question sequence adapts to what the AI detected in the photos —
   // a helmet or jersey shouldn't be asked what kind of bike it is.
@@ -74,6 +79,13 @@ export function FlowGuided() {
   const progress = qi / (questions.length - 1);
 
   const patch = (p: Partial<BikeDraft>) => setDraft((d) => ({ ...d, ...p }));
+
+  React.useEffect(() => {
+    if (!initialDraft) return;
+    setDraft((d) => ({ ...d, ...initialDraft }));
+    setDir(1);
+    setQi(1);
+  }, [initialDraft]);
 
   // Real photo upload (falls back to demo photos if upload isn't available,
   // e.g. when reviewing on localhost without a signed-in session).
@@ -124,6 +136,28 @@ export function FlowGuided() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analysing]);
+
+  const handleRedoAi = async (hint: string) => {
+    if (draft.images.length === 0) return;
+    setRedoing(true);
+    setRedoError(null);
+    try {
+      const urls = draft.images;
+      const analysis = await analysePhotos(urls, {
+        text: `The previous AI result was for the wrong product. The seller says this item is: ${hint}`,
+        itemType: draft.itemType || undefined,
+      });
+      const patchData = analysisToDraftPatch(analysis, urls, draft.uploadedImages ?? []);
+      setDraft((d) => ({ ...d, ...patchData }));
+      setDir(1);
+      setQi(1);
+      setRedoOpen(false);
+    } catch (error) {
+      setRedoError(error instanceof Error ? error.message : "Could not redo the AI details.");
+    } finally {
+      setRedoing(false);
+    }
+  };
 
   const go = (next: number) => {
     setDir(next > qi ? 1 : -1);
@@ -187,6 +221,23 @@ export function FlowGuided() {
             {qi + 1}/{questions.length}
           </span>
         </div>
+        {draft.images.length > 0 && qi > 0 && !analysing && (
+          <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-gray-200 bg-white px-3 py-2">
+            <p className="min-w-0 truncate text-[12px] text-gray-500">
+              AI recognised{" "}
+              <span className="font-semibold text-gray-800">
+                {draft.title || [draft.brand, draft.model].filter(Boolean).join(" ") || "this item"}
+              </span>
+            </p>
+            <button
+              type="button"
+              onClick={() => setRedoOpen(true)}
+              className="flex-shrink-0 rounded-md bg-gray-100 px-2 py-1 text-[12px] font-semibold text-gray-700 hover:bg-gray-200"
+            >
+              Wrong product?
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Body */}
@@ -270,6 +321,13 @@ export function FlowGuided() {
           )}
         </div>
       )}
+      <AiRedoDialog
+        open={redoOpen}
+        isSubmitting={redoing}
+        error={redoError}
+        onClose={() => setRedoOpen(false)}
+        onSubmit={handleRedoAi}
+      />
     </div>
   );
 }
@@ -781,36 +839,6 @@ function ReviewView({ draft, onJump }: { draft: BikeDraft; onJump: (id: string) 
           <button type="button" onClick={() => onJump("specsOffer")} className="text-[13px] font-semibold text-gray-600 hover:text-gray-900">
             {quality.specCount > 0 ? `${quality.specCount} added · Edit` : "Add"}
           </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function QualityMeter({ score, tips }: { score: number; tips: string[] }) {
-  return (
-    <div className="mt-4 rounded-xl border border-gray-200 bg-white p-3.5">
-      <div className="flex items-center justify-between">
-        <p className="text-[13px] font-semibold text-gray-700">Listing quality</p>
-        <span className="text-[15px] font-bold text-gray-900">{score}%</span>
-      </div>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-gray-200">
-        <motion.div
-          className="h-full rounded-full"
-          style={{ backgroundColor: BRAND }}
-          initial={false}
-          animate={{ width: `${score}%` }}
-          transition={{ duration: 0.5, ease: [0.04, 0.62, 0.23, 0.98] }}
-        />
-      </div>
-      {tips.length > 0 && (
-        <div className="mt-2.5 space-y-1">
-          {tips.slice(0, 3).map((t) => (
-            <p key={t} className="flex items-center gap-1.5 text-[12px] text-gray-500">
-              <Sparkles className="h-3 w-3 text-gray-400" />
-              {t}
-            </p>
-          ))}
         </div>
       )}
     </div>

@@ -25,6 +25,7 @@ import {
 } from "./data";
 import { Btn, Collapsible, Chevron, Spinner, InfoCard } from "./ui";
 import { discoverSpecsPreview } from "./services";
+import { AiRedoDialog } from "./ai-redo-dialog";
 
 const ICONS: Record<string, LucideIcon> = {
   Frame, Cog, Disc3, CircleDot, Minus, Armchair, Zap, Plus,
@@ -73,18 +74,19 @@ export function DetailedSpecs({
   const [autofilled, setAutofilled] = React.useState(false);
   const [autoError, setAutoError] = React.useState<string | null>(null);
   const [preview, setPreview] = React.useState(false);
+  const [redoOpen, setRedoOpen] = React.useState(false);
 
   const totalFields = sections.reduce((s, sec) => s + sec.fields.length, 0);
   const filledTotal = sections.reduce((s, sec) => s + countFilled(sec, specs), 0);
 
   const set = (key: string, value: string) => onChange({ ...specs, [key]: value });
 
-  const applyValues = (values: SpecValues) => {
+  const applyValues = (values: SpecValues, replace = false) => {
     const next = { ...specs };
     for (const sec of sections) {
       for (const f of sec.fields) {
         const v = values[f.key];
-        if (v && !(specs[f.key] ?? "").trim()) next[f.key] = v;
+        if (v && (replace || !(specs[f.key] ?? "").trim())) next[f.key] = v;
       }
     }
     onChange(next);
@@ -94,17 +96,18 @@ export function DetailedSpecs({
     setOpen(expanded);
   };
 
-  const autoFill = async () => {
+  const autoFill = async (productHint?: string, replace = false) => {
     setFetching(true);
     setAutoError(null);
     try {
       const found = await discoverSpecsPreview({
-        brand, model, year, bikeType, frameSize, frameMaterial, groupset, wheelSize, title,
+        brand, model, year, bikeType, frameSize, frameMaterial, groupset, wheelSize, title, productHint,
       });
       if (Object.keys(found).length === 0) {
         throw new Error("No published specs found for this exact model.");
       }
-      applyValues(found);
+      applyValues(found, replace);
+      setRedoOpen(false);
     } catch (e) {
       setAutoError(e instanceof Error ? e.message : "Couldn't fetch specifications.");
     } finally {
@@ -142,8 +145,8 @@ export function DetailedSpecs({
     </div>
   ) : (
     <div className="flex items-start gap-3">
-      <div className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-md bg-emerald-50">
-        <BadgeCheck className="h-5 w-5 text-emerald-600" />
+      <div className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-md bg-gray-100">
+        <BadgeCheck className="h-5 w-5 text-gray-700" />
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-[14px] font-semibold text-gray-900">
@@ -153,6 +156,13 @@ export function DetailedSpecs({
           Verified against the manufacturer&apos;s website. Review and tweak anything below — these
           aren&apos;t published yet.
         </p>
+        <button
+          type="button"
+          onClick={() => setRedoOpen(true)}
+          className="mt-2 rounded-md bg-gray-100 px-2.5 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-200"
+        >
+          Wrong specs? Search again
+        </button>
       </div>
     </div>
   );
@@ -174,6 +184,18 @@ export function DetailedSpecs({
           </p>
         </div>
       )}
+
+      <AiRedoDialog
+        open={redoOpen}
+        title="Redo specifications"
+        description="If AI found specs for the wrong bike, type the exact product name and model year. We'll search again and replace the current spec values."
+        placeholder="e.g. 2021 Specialized Allez Elite Disc, 54cm"
+        submitLabel="Search specs again"
+        isSubmitting={fetching}
+        error={autoError}
+        onClose={() => setRedoOpen(false)}
+        onSubmit={(hint) => autoFill(hint, true)}
+      />
 
       {/* Progress + preview toggle */}
       <div className="flex items-center justify-between px-0.5">

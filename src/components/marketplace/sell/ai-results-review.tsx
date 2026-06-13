@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import Image from "next/image";
 import { CONDITION_RATINGS } from "@/lib/types/listing";
 import { rotateCloudinaryUrlClockwise } from "@/lib/utils/cloudinary-rotation";
+import { AiRedoDialog } from "@/app/marketplace/sell-redesign/_components/ai-redo-dialog";
 
 // ============================================================
 // AI Results Review Screen
@@ -23,7 +24,7 @@ interface AIResultsReviewProps {
   analysis: ListingAnalysisResult;
   photos: string[];
   onContinue: (editedData: any, primaryImageIndex: number, photos: string[]) => void;
-  onReanalyze: () => void;
+  onReanalyze: (correctionHint?: string) => void | Promise<void>;
   onSwitchToManual: () => void;
 }
 
@@ -39,6 +40,9 @@ export function AIResultsReview({
   const [primaryImageIndex, setPrimaryImageIndex] = React.useState(0);
   const [showDetails, setShowDetails] = React.useState(false);
   const [isMobile, setIsMobile] = React.useState(false);
+  const [redoOpen, setRedoOpen] = React.useState(false);
+  const [redoing, setRedoing] = React.useState(false);
+  const [redoError, setRedoError] = React.useState<string | null>(null);
 
   // Debug logging
   React.useEffect(() => {
@@ -121,9 +125,33 @@ export function AIResultsReview({
   const displayPhotos = reviewPhotos.length > 0 ? reviewPhotos : photos;
   const activePhoto = displayPhotos[primaryImageIndex] || displayPhotos[0];
 
+  const handleRedoSubmit = async (hint: string) => {
+    setRedoing(true);
+    setRedoError(null);
+    try {
+      await onReanalyze(hint);
+      setRedoOpen(false);
+    } catch (error) {
+      setRedoError(error instanceof Error ? error.message : "Could not redo the AI details.");
+    } finally {
+      setRedoing(false);
+    }
+  };
+
+  const redoDialog = (
+    <AiRedoDialog
+      open={redoOpen}
+      isSubmitting={redoing}
+      error={redoError}
+      onClose={() => setRedoOpen(false)}
+      onSubmit={handleRedoSubmit}
+    />
+  );
+
   // Mobile view - card-style like BulkProductCard
   if (isMobile) {
     return (
+      <>
       <div className="min-h-screen bg-gray-50 pb-32">
         {/* Photo Gallery */}
         <div className="relative aspect-square bg-gray-100">
@@ -515,7 +543,7 @@ export function AIResultsReview({
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-40">
           <div className="flex gap-3">
             <Button
-              onClick={onReanalyze}
+              onClick={() => setRedoOpen(true)}
               variant="outline"
               className="rounded-xl h-12 px-4"
             >
@@ -530,6 +558,8 @@ export function AIResultsReview({
           </div>
         </div>
       </div>
+      {redoDialog}
+      </>
     );
   }
 
@@ -819,7 +849,7 @@ export function AIResultsReview({
           Continue to Listing
         </Button>
         <Button
-          onClick={onReanalyze}
+          onClick={() => setRedoOpen(true)}
           variant="outline"
           className="rounded-md h-11"
         >
@@ -842,6 +872,7 @@ export function AIResultsReview({
           <span className="font-semibold">Tip:</span> You can edit any field inline. Click "Continue" to proceed to the full listing form where you can add more details.
         </p>
       </div>
+      {redoDialog}
     </div>
   );
 }

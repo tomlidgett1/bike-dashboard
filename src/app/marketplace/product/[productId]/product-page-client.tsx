@@ -44,10 +44,6 @@ const ProductUploadSuccessBanner = dynamic(
   { ssr: false },
 );
 
-const ProductOptimizeDrawer = dynamic(
-  () => import("@/components/marketplace/product-optimize-drawer").then((mod) => mod.ProductOptimizeDrawer),
-  { ssr: false },
-);
 
 const ImmersiveProductLayout = dynamic(
   () => import("./immersive-product-layout").then((mod) => mod.ImmersiveProductLayout),
@@ -176,7 +172,7 @@ export function ProductPageClient({
   const isSold =
     !!(localProduct as { sold_at?: string | null }).sold_at ||
     (localProduct as { listing_status?: string }).listing_status === "sold";
-  const showAskGenie = !isOwner && !isSold;
+  const showAskGenie = !isSold;
   const featuredBrandAbout = React.useMemo(
     () => getFeaturedBrandAbout(localProduct.brand || brandName),
     [localProduct.brand, brandName],
@@ -210,16 +206,6 @@ export function ProductPageClient({
       />
       {sellerProfile && (
         <AboutThisSellerSection seller={sellerProfile} embedded />
-      )}
-      {isOwner && (
-        <div className="border-t border-gray-200/80 px-4 py-3 sm:px-5 lg:px-0">
-          <ProductOptimizeDrawer
-            product={localProduct}
-            onProductUpdate={(updates) =>
-              setLocalProduct((prev) => ({ ...prev, ...updates }))
-            }
-          />
-        </div>
       )}
     </>
   );

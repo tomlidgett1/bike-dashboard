@@ -186,36 +186,39 @@ export function RecommendationCarousel({
         {/* Scrollable Container */}
         <div
           ref={scrollContainerRef}
-          className="overflow-x-auto overflow-y-hidden overscroll-x-contain scroll-smooth scrollbar-hide touch-pan-x sm:snap-x sm:snap-mandatory"
+          className="carousel-scroll-track overflow-x-auto overflow-y-hidden overscroll-x-contain scrollbar-hide snap-x snap-mandatory sm:snap-none"
           style={{
             scrollbarWidth: 'none',
             msOverflowStyle: 'none',
             WebkitOverflowScrolling: 'touch',
           }}
         >
-          <div className="inline-flex w-max max-w-none items-start gap-2.5 sm:gap-3 md:gap-4">
+          <div
+            className="flex items-start gap-2.5 sm:gap-3 md:gap-4"
+            style={{ minWidth: 'min-content' }}
+          >
             {isLoading ? (
               // Loading Skeletons
               Array.from({ length: 6 }).map((_, index) => (
                 <div
                   key={`skeleton-${index}`}
-                  className="h-[204px] w-[160px] flex-shrink-0 snap-start overflow-hidden sm:h-[224px] sm:w-[180px] md:h-[244px] md:w-[200px] lg:h-[254px] lg:w-[210px]"
+                  className="w-[160px] flex-shrink-0 snap-start sm:w-[180px] md:w-[200px] lg:w-[210px]"
                 >
                   <ProductCardSkeleton />
                 </div>
               ))
             ) : (
-              // Products — fixed slots + inCarousel avoid the 300px content-visibility placeholder
+              // Products — fixed width slots; height follows card content (image + meta).
               products.map((product, index) => (
                 <div
                   key={product.id}
-                  className="h-[204px] w-[160px] flex-shrink-0 snap-start overflow-hidden sm:h-[224px] sm:w-[180px] md:h-[244px] md:w-[200px] lg:h-[254px] lg:w-[210px]"
+                  className="w-[160px] flex-shrink-0 snap-start sm:w-[180px] md:w-[200px] lg:w-[210px]"
                 >
                   <ProductCard product={product} priority={index < 4} inCarousel />
                 </div>
               ))
             )}
-            <div className="w-1 flex-shrink-0 sm:hidden" aria-hidden />
+            <div className="w-3 flex-shrink-0 sm:hidden" aria-hidden />
           </div>
         </div>
       </div>

@@ -48,8 +48,9 @@ import {
   PhotoUploader,
 } from "./ui";
 import { DetailedSpecs } from "./detailed-specs";
-import { QualityMeter } from "./flow-guided";
+import { QualityMeter } from "./quality-meter";
 import { uploadPhotos, analysePhotos, analysisToDraftPatch, submitListing } from "./services";
+import { AiRedoDialog } from "./ai-redo-dialog";
 
 type Phase = "start" | "analysing" | "form" | "published";
 
@@ -60,7 +61,7 @@ const ANALYSE_MSGS = [
   "Pre-filling your form…",
 ];
 
-export function FlowForm() {
+export function FlowForm({ initialDraft }: { initialDraft?: Partial<BikeDraft> }) {
   const [phase, setPhase] = React.useState<Phase>("start");
   const [draft, setDraft] = React.useState<BikeDraft>(emptyDraft());
   const [msg, setMsg] = React.useState(0);
@@ -68,9 +69,18 @@ export function FlowForm() {
   const [uploading, setUploading] = React.useState(false);
   const [publishing, setPublishing] = React.useState(false);
   const [publishError, setPublishError] = React.useState<string | null>(null);
+  const [redoOpen, setRedoOpen] = React.useState(false);
+  const [redoing, setRedoing] = React.useState(false);
+  const [redoError, setRedoError] = React.useState<string | null>(null);
 
   const patch = (p: Partial<BikeDraft>) => setDraft((d) => ({ ...d, ...p }));
   const quality = scoreDraft(draft);
+
+  React.useEffect(() => {
+    if (!initialDraft) return;
+    setDraft((d) => ({ ...d, ...initialDraft }));
+    setPhase("form");
+  }, [initialDraft]);
 
   const handleFiles = async (files: File[]) => {
     setUploading(true);
@@ -130,6 +140,26 @@ export function FlowForm() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
+
+  const handleRedoAi = async (hint: string) => {
+    if (draft.images.length === 0) return;
+    setRedoing(true);
+    setRedoError(null);
+    try {
+      const urls = draft.images;
+      const analysis = await analysePhotos(urls, {
+        text: `The previous AI result was for the wrong product. The seller says this item is: ${hint}`,
+        itemType: draft.itemType || undefined,
+      });
+      const patchData = analysisToDraftPatch(analysis, urls, draft.uploadedImages ?? []);
+      setDraft((d) => ({ ...d, ...patchData }));
+      setRedoOpen(false);
+    } catch (error) {
+      setRedoError(error instanceof Error ? error.message : "Could not redo the AI details.");
+    } finally {
+      setRedoing(false);
+    }
+  };
 
   if (phase === "published") {
     return (
@@ -218,7 +248,7 @@ export function FlowForm() {
       <div className="flex-1 space-y-3 px-4 pb-32 pt-4">
         {/* AI summary banner */}
         {aiActive && (
-          <div className="rounded-xl border border-gray-200 bg-white p-3.5">
+          <div className="rounded-md border border-gray-200 bg-white p-3.5">
             <div className="flex items-start gap-3">
               <div className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-md bg-gray-100">
                 <Sparkles className="h-5 w-5 text-gray-700" />
@@ -230,6 +260,13 @@ export function FlowForm() {
                   amber ones.
                 </p>
               </div>
+              <button
+                type="button"
+                onClick={() => setRedoOpen(true)}
+                className="flex-shrink-0 rounded-md bg-gray-100 px-2 py-1 text-[12px] font-semibold text-gray-700 hover:bg-gray-200"
+              >
+                Wrong product?
+              </button>
             </div>
           </div>
         )}
@@ -408,6 +445,13 @@ export function FlowForm() {
           )}
         </Btn>
       </div>
+      <AiRedoDialog
+        open={redoOpen}
+        isSubmitting={redoing}
+        error={redoError}
+        onClose={() => setRedoOpen(false)}
+        onSubmit={handleRedoAi}
+      />
     </div>
   );
 }

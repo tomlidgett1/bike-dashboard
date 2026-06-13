@@ -283,7 +283,7 @@ export async function POST(request: NextRequest) {
 
     const handoffUrl = isBulk
       ? `${getPublicBaseUrl(request)}/marketplace/sell?mode=bulk&textUploadToken=${encodeURIComponent(token)}`
-      : `${getPublicBaseUrl(request)}/marketplace/sell?mode=manual&ai=true&textUploadToken=${encodeURIComponent(token)}`;
+      : `${getPublicBaseUrl(request)}/marketplace/sell?textUploadToken=${encodeURIComponent(token)}`;
 
     return json({
       ok: true,

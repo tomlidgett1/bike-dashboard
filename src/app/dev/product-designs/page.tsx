@@ -764,9 +764,10 @@ function DevTabs() {
     </a>
   );
   return (
-    <div style={{ display: 'flex', gap: 10, marginBottom: 28 }}>
+    <div style={{ display: 'flex', gap: 10, marginBottom: 28, flexWrap: 'wrap' }}>
       {tab('/dev/email-preview', 'Email Templates', false)}
-      {tab('/dev/product-designs', 'Product Pages', true)}
+      {tab('/dev/product-designs', 'Product Pages v1', true)}
+      {tab('/dev/product-designs-orbea', 'Orbea 3D v2', false)}
     </div>
   );
 }
@@ -787,7 +788,8 @@ export default function ProductDesignsPage() {
           <p style={{ margin: 0, fontSize: 14.5, color: '#8a8a93', maxWidth: 760, lineHeight: 1.6 }}>
             Five fundamentally different directions for the marketplace product page — each fully responsive.
             Pick a concept below to see it at desktop width and in a phone frame side by side. These are previews only;
-            nothing here changes the live product page.
+            nothing here changes the live product page. For five new Orbea + Three.js concepts, see{' '}
+            <a href="/dev/product-designs-orbea" style={{ color: '#ffde59' }}>Orbea 3D v2</a>.
           </p>
         </div>
 

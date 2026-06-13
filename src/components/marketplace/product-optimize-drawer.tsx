@@ -22,12 +22,6 @@ import {
   Pencil,
   Save,
 } from "lucide-react";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -639,41 +633,52 @@ function TextSection({
   );
 }
 
-// ── Main drawer ───────────────────────────────────────────────────────────────
+// ── Optimise panel (embeddable in Edit Listing) ───────────────────────────────
 
-interface ProductOptimizeDrawerProps {
+export interface ProductOptimizePanelProps {
   product: MarketplaceProduct;
   onProductUpdate?: (updates: Partial<MarketplaceProduct>) => void;
+  /** When true, loads photos and runs panel effects */
+  active?: boolean;
+  /** Tighter layout when nested inside Edit Listing */
+  embedded?: boolean;
 }
 
-export function ProductOptimizeDrawer({ product, onProductUpdate }: ProductOptimizeDrawerProps) {
-  const [open, setOpen] = React.useState(false);
+export function ProductOptimizePanel({
+  product,
+  onProductUpdate,
+  active = true,
+  embedded = false,
+}: ProductOptimizePanelProps) {
   const [running, setRunning] = React.useState(false);
   const [lightbox, setLightbox] = React.useState<string | null>(null);
 
-  // Local mutable product state (tracks changes made in the drawer)
+  // Local mutable product state (tracks changes made in the panel)
   const [local, setLocal] = React.useState<MarketplaceProduct>(product);
-  React.useEffect(() => { setLocal(product); }, [product]);
+  React.useEffect(() => {
+    setLocal(product);
+  }, [product]);
 
   const patchLocal = (updates: Partial<MarketplaceProduct>) => {
     setLocal((prev) => ({ ...prev, ...updates }));
     onProductUpdate?.(updates);
   };
 
-  // Canonical images (fetched when drawer opens, used for existing photo management)
+  // Canonical images (fetched when panel is active)
   const [canonicalImages, setCanonicalImages] = React.useState<CanonicalImageRecord[]>([]);
   const [loadingImages, setLoadingImages] = React.useState(false);
   const [ciRemovingIds, setCiRemovingIds] = React.useState<string[]>([]);
   const [ciEnhancingIds, setCiEnhancingIds] = React.useState<string[]>([]);
 
-  // Fetch canonical images when drawer opens
   React.useEffect(() => {
-    if (!open || !product.canonical_product_id) return;
+    if (!active || !product.canonical_product_id) return;
     let cancelled = false;
     (async () => {
       setLoadingImages(true);
       try {
-        const res = await fetch(`/api/admin/images/approved?canonicalProductId=${product.canonical_product_id}`);
+        const res = await fetch(
+          `/api/admin/images/approved?canonicalProductId=${product.canonical_product_id}`,
+        );
         const json = await res.json();
         if (!cancelled && json.success) setCanonicalImages(json.data ?? []);
       } catch {
@@ -682,8 +687,10 @@ export function ProductOptimizeDrawer({ product, onProductUpdate }: ProductOptim
         if (!cancelled) setLoadingImages(false);
       }
     })();
-    return () => { cancelled = true; };
-  }, [open, product.canonical_product_id]);
+    return () => {
+      cancelled = true;
+    };
+  }, [active, product.canonical_product_id]);
 
   const removeCanonicalImage = async (imageId: string) => {
     if (!product.canonical_product_id) return;
@@ -867,57 +874,13 @@ export function ProductOptimizeDrawer({ product, onProductUpdate }: ProductOptim
     patchLocal({ [field]: value });
   };
 
-  const productName = local.display_name || local.description;
+  const sectionClass = embedded ? "py-4" : "px-5 py-5";
 
   return (
     <>
-      {/* Trigger button — shown floating for the store owner */}
-      <Button
-        onClick={() => setOpen(true)}
-        className="gap-2 shadow-lg"
-      >
-        <Sparkles className="h-4 w-4" />
-        Optimize listing
-      </Button>
-
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent
-          side="right"
-          className="w-full overflow-y-auto p-0 sm:max-w-xl"
-          showCloseButton={false}
-        >
-          {/* Header */}
-          <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border bg-popover px-5 py-4">
-            <div className="min-w-0">
-              <SheetHeader className="p-0">
-                <SheetTitle className="flex items-center gap-2 text-base">
-                  <Sparkles className="h-4 w-4 text-primary" />
-                  Optimize listing
-                </SheetTitle>
-              </SheetHeader>
-              <p className="mt-0.5 truncate text-[13px] text-muted-foreground">{productName}</p>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {running && (
-                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={stop}>
-                  Stop
-                </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => setOpen(false)}
-                aria-label="Close"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-
-          {/* Body */}
-          <div className="space-y-0 divide-y divide-border">
-            {/* Photos */}
-            <section className="px-5 py-5">
+      <div className={cn(embedded ? "space-y-4" : "space-y-0 divide-y divide-border")}>
+        {/* Photos */}
+        <section className={sectionClass}>
               <div className="mb-3 flex items-center gap-2">
                 <ImageIcon className="h-4 w-4 text-muted-foreground" />
                 <h3 className="text-sm font-semibold text-foreground">Photos</h3>
@@ -1048,7 +1011,7 @@ export function ProductOptimizeDrawer({ product, onProductUpdate }: ProductOptim
             </section>
 
             {/* Title */}
-            <section className="px-5 py-5">
+            <section className={sectionClass}>
               <TextSection
                 label="Title"
                 icon={Type}
@@ -1061,7 +1024,7 @@ export function ProductOptimizeDrawer({ product, onProductUpdate }: ProductOptim
             </section>
 
             {/* Description */}
-            <section className="px-5 py-5">
+            <section className={sectionClass}>
               <TextSection
                 label="Description"
                 icon={FileText}
@@ -1075,7 +1038,7 @@ export function ProductOptimizeDrawer({ product, onProductUpdate }: ProductOptim
             </section>
 
             {/* Specs */}
-            <section className="px-5 py-5">
+            <section className={sectionClass}>
               <TextSection
                 label="Specs"
                 icon={ListChecks}
@@ -1090,7 +1053,7 @@ export function ProductOptimizeDrawer({ product, onProductUpdate }: ProductOptim
 
             {/* Generate all shortcut */}
             {!running && (
-              <section className="px-5 py-5">
+              <section className={sectionClass}>
                 <Button
                   variant="outline"
                   size="sm"
@@ -1106,9 +1069,15 @@ export function ProductOptimizeDrawer({ product, onProductUpdate }: ProductOptim
                 </Button>
               </section>
             )}
-          </div>
-        </SheetContent>
-      </Sheet>
+      </div>
+
+      {running && embedded && (
+        <div className="mt-3 flex justify-end">
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={stop}>
+            Stop AI
+          </Button>
+        </div>
+      )}
 
       {/* Lightbox */}
       {lightbox && (

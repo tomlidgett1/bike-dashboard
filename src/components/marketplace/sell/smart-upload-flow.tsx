@@ -35,7 +35,7 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const handlePhotosUploaded = async (imageUrls: string[]) => {
+  const handlePhotosUploaded = async (imageUrls: string[], correctionHint?: string) => {
     setPhotos(imageUrls);
     setStage("analyzing");
     setError(null);
@@ -64,7 +64,11 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
           },
           body: JSON.stringify({
             imageUrls,
-            userHints: {},
+            userHints: correctionHint
+              ? {
+                  text: `The previous AI result was for the wrong product. The seller says this item is: ${correctionHint}`,
+                }
+              : {},
           }),
         }
       );
@@ -93,11 +97,16 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
     }
   };
 
-  const handleReanalyze = () => {
-    setStage("upload");
-    setPhotos([]);
-    setAnalysis(null);
-    setError(null);
+  const handleReanalyze = (correctionHint?: string) => {
+    if (!correctionHint) {
+      setStage("upload");
+      setPhotos([]);
+      setAnalysis(null);
+      setError(null);
+      return;
+    }
+
+    void handlePhotosUploaded(photos, correctionHint);
   };
 
   const handleContinue = (
@@ -345,7 +354,7 @@ export function SmartUploadFlow({ onComplete, onSwitchToManual }: SmartUploadFlo
                 <p className="text-gray-700">{error}</p>
                 <div className="flex gap-3 justify-center pt-4">
                   <button
-                    onClick={handleReanalyze}
+                    onClick={() => handleReanalyze()}
                     className="px-6 py-2 bg-gray-900 text-white rounded-md hover:bg-gray-800"
                   >
                     Try Again

@@ -19,6 +19,9 @@ import {
 } from "@/lib/genie/shimmer";
 import { pickRandomProductGenieTitle } from "@/lib/genie/product-genie-titles";
 import { FALLBACK_PRODUCT_GENIE_SUGGESTIONS } from "@/lib/genie/product-suggestions";
+import { GenieSellerMessageCta } from "@/components/genie/genie-seller-message-cta";
+import { resolveSellerCta, type SellerIntentReason } from "@/lib/genie/seller-intent";
+import type { ProductGenieContext } from "@/lib/genie/product-context";
 import { cn } from "@/lib/utils";
 
 interface Citation {
@@ -36,6 +39,10 @@ interface ChatMessage {
   products?: GenieMarketplaceProduct[];
   videos?: GenieYoutubeVideoPreview[];
   error?: string;
+  sellerCta?: {
+    reason: SellerIntentReason;
+    suggestedMessage: string;
+  };
 }
 
 const SUGGESTION_SKELETON_WIDTHS = ["w-[7.5rem]", "w-[9rem]", "w-[8rem]"] as const;
@@ -43,7 +50,7 @@ const SUGGESTION_SKELETON_WIDTHS = ["w-[7.5rem]", "w-[9rem]", "w-[8rem]"] as con
 const ASSISTANT_MARKDOWN_CLASS =
   "max-w-none text-left text-sm leading-relaxed text-gray-700 [&_a]:text-gray-700 [&_a]:underline [&_strong]:font-medium [&_strong]:text-gray-900 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-4 [&_ul]:text-left [&_table]:w-full [&_th]:whitespace-nowrap [&_td]:whitespace-normal [&_td]:break-words";
 
-const PANEL_CLOSE_MS = 420;
+const PANEL_CLOSE_MS = 320;
 const DESKTOP_PANEL_WIDTH_PX = 400;
 const DESKTOP_PANEL_EXPANDED_WIDTH = "clamp(400px, 40vw, calc(100vw - 3rem))";
 const DESKTOP_PANEL_HEIGHT = "min(85vh, 680px)";
@@ -174,9 +181,11 @@ function writeDesktopExpandedPreference(expanded: boolean) {
 
 function AssistantMessage({
   message,
+  productContext,
   isExpanded,
 }: {
   message: ChatMessage;
+  productContext: ProductGenieContext;
   isExpanded?: boolean;
 }) {
   const html = React.useMemo(
@@ -244,6 +253,13 @@ function AssistantMessage({
           ))}
         </div>
       )}
+      {message.sellerCta && !message.isStreaming ? (
+        <GenieSellerMessageCta
+          product={productContext}
+          reason={message.sellerCta.reason}
+          suggestedMessage={message.sellerCta.suggestedMessage}
+        />
+      ) : null}
     </div>
   );
 }
@@ -404,7 +420,11 @@ function ProductGeniePanelBody({
                 </div>
               ) : (
                 <div key={message.id}>
-                  <AssistantMessage message={message} isExpanded={isExpanded} />
+                  <AssistantMessage
+                    message={message}
+                    productContext={productContext}
+                    isExpanded={isExpanded}
+                  />
                 </div>
               ),
             )
@@ -626,7 +646,7 @@ export function ProductGeniePanel() {
       const controller = new AbortController();
       abortRef.current = controller;
 
-      const streamState = { pending: "", rafId: null as number | null };
+      const streamState = { pending: "", rafId: null as number | null, assistantText: "" };
 
       const flush = () => {
         if (!streamState.pending) {
@@ -685,9 +705,29 @@ export function ProductGeniePanel() {
               }
               if (parsed.event === "text_delta" && typeof parsed.text === "string") {
                 streamState.pending += parsed.text;
+                streamState.assistantText += parsed.text;
                 if (streamState.rafId === null) {
                   streamState.rafId = requestAnimationFrame(flush);
                 }
+              }
+              if (
+                parsed.event === "seller_cta" &&
+                typeof parsed.reason === "string" &&
+                typeof parsed.suggestedMessage === "string"
+              ) {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? {
+                          ...m,
+                          sellerCta: {
+                            reason: parsed.reason as SellerIntentReason,
+                            suggestedMessage: parsed.suggestedMessage as string,
+                          },
+                        }
+                      : m,
+                  ),
+                );
               }
               if (parsed.event === "products" && Array.isArray(parsed.products)) {
                 setMessages((prev) =>
@@ -728,10 +768,19 @@ export function ProductGeniePanel() {
           cancelAnimationFrame(streamState.rafId);
         }
         flush();
+        const sellerCta = resolveSellerCta(userMsg.content, streamState.assistantText);
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId ? { ...m, isStreaming: false, statusText: undefined } : m,
-          ),
+          prev.map((m) => {
+            if (m.id !== assistantId) return m;
+            const nextMessage = { ...m, isStreaming: false, statusText: undefined };
+            if (!m.sellerCta && sellerCta?.needsSeller && sellerCta.reason) {
+              nextMessage.sellerCta = {
+                reason: sellerCta.reason,
+                suggestedMessage: sellerCta.suggestedMessage,
+              };
+            }
+            return nextMessage;
+          }),
         );
       } catch (err) {
         if (streamState.rafId !== null) {
@@ -812,11 +861,12 @@ export function ProductGeniePanel() {
       {/* Mobile: native bottom sheet */}
       <div
         data-state={panelState}
-        className="store-message-overlay fixed inset-x-0 z-[110] flex items-end justify-center bg-black/30 px-0 sm:hidden"
+        className="store-message-overlay fixed inset-x-0 z-[110] flex items-end justify-center bg-black/40 px-0 sm:hidden"
         role="presentation"
         style={{
           top: mobileViewport.top,
           bottom: mobileViewport.bottom,
+          pointerEvents: isLeaving ? "none" : "auto",
         }}
         onMouseDown={(event) => {
           if (event.target === event.currentTarget) close();

@@ -4,6 +4,7 @@ import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
+import { LayoutList, Wand2 } from "lucide-react";
 import { useListingForm } from "@/lib/hooks/use-listing-form";
 import { UploadMethodChoice } from "./upload-method-choice";
 import { SmartUploadFlow } from "./smart-upload-flow";
@@ -34,6 +35,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useAuthModal } from "@/components/providers/auth-modal-provider";
+import { buildListingFormDataFromAnalysis } from "@/lib/marketplace/listing-analysis-form-data";
+import { AiRedoDialog } from "@/app/marketplace/sell-redesign/_components/ai-redo-dialog";
 import {
   validateItemType,
   validateBikeDetails,
@@ -77,6 +80,9 @@ export function SellWizard() {
   const [isPublishing, setIsPublishing] = React.useState(false);
   const [textUploadLoading, setTextUploadLoading] = React.useState(false);
   const [textUploadError, setTextUploadError] = React.useState<string | null>(null);
+  const [redoOpen, setRedoOpen] = React.useState(false);
+  const [redoing, setRedoing] = React.useState(false);
+  const [redoError, setRedoError] = React.useState<string | null>(null);
   const loadedTextUploadTokenRef = React.useRef<string | null>(null);
   // Don't show method choice if we have a draftId (loading existing draft)
   const [showMethodChoice, setShowMethodChoice] = React.useState(!mode && !hasAiData && !draftId);
@@ -352,7 +358,7 @@ export function SellWizard() {
 
   React.useEffect(() => {
     if (!textUploadToken) return;
-    if (mode === 'bulk') return; // bulk sessions hydrate inside BulkUploadSheet
+    if (mode !== 'manual-legacy') return;
     if (authLoading) return;
 
     if (!user) {
@@ -809,6 +815,71 @@ export function SellWizard() {
       alert("Failed to publish listing. Please try again.");
     } finally {
       setIsPublishing(false);
+    }
+  };
+
+  const handleRedoAiDetails = async (hint: string) => {
+    const images = Array.isArray(formData.images) ? formData.images : [];
+    const imageUrls = images
+      .map((image: any) => image?.url)
+      .filter((url: unknown): url is string => typeof url === "string" && url.length > 0);
+
+    if (imageUrls.length === 0) return;
+
+    setRedoing(true);
+    setRedoError(null);
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) throw new Error("You must be logged in to use AI analysis");
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/analyze-listing-ai`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            imageUrls,
+            userHints: {
+              itemType: formData.itemType,
+              text: `The previous AI result was for the wrong product. The seller says this item is: ${hint}`,
+            },
+          }),
+        },
+      );
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.analysis) {
+        throw new Error(
+          typeof data?.error === "string" ? data.error : "AI analysis failed",
+        );
+      }
+
+      const uploadedImages = images.map((image: any, index: number) => ({
+        url: image.url || imageUrls[index],
+        cardUrl: image.cardUrl,
+        mobileCardUrl: image.mobileCardUrl,
+        thumbnailUrl: image.thumbnailUrl,
+        galleryUrl: image.galleryUrl,
+        detailUrl: image.detailUrl,
+      }));
+
+      updateFormData(
+        buildListingFormDataFromAnalysis(data.analysis, imageUrls, uploadedImages),
+      );
+      goToStep(1);
+      setRedoOpen(false);
+    } catch (error) {
+      setRedoError(error instanceof Error ? error.message : "Could not redo the AI details.");
+    } finally {
+      setRedoing(false);
     }
   };
 
@@ -1351,6 +1422,23 @@ export function SellWizard() {
     );
   }
 
+  if (
+    textUploadToken &&
+    mode !== "bulk" &&
+    mode !== "guided" &&
+    mode !== "form"
+  ) {
+    return (
+      <TextUploadFlowChoice
+        onSelect={(selectedMode) =>
+          router.push(
+            `/marketplace/sell?mode=${selectedMode}&textUploadToken=${encodeURIComponent(textUploadToken)}`,
+          )
+        }
+      />
+    );
+  }
+
   // Handle Bulk Upload mode (including iMessage / Nest text upload links)
   if (mode === 'bulk') {
     return (
@@ -1375,6 +1463,7 @@ export function SellWizard() {
       <QuickUploadSheet
         isOpen
         mode={mode}
+        textUploadToken={textUploadToken}
         onClose={() => router.push("/marketplace/sell")}
       />
     );
@@ -1528,6 +1617,27 @@ export function SellWizard() {
         isQuickListingMobile ? "sm:py-8 sm:px-6" : "py-8 px-6",
         currentStep !== getTotalSteps() && !isQuickListingMobile && "pb-32" // Extra bottom padding for fixed footer, except on review step and quick listing
       )}>
+        {hasAiData && Array.isArray(formData.images) && formData.images.length > 0 && (
+          <div className="mx-auto mb-4 max-w-2xl rounded-md border border-gray-200 bg-white p-3.5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold text-gray-900">AI filled this listing</p>
+                <p className="mt-0.5 truncate text-[12px] text-gray-500">
+                  {(formData.title as string) ||
+                    [formData.brand, formData.model].filter(Boolean).join(" ") ||
+                    "Review the generated details"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRedoOpen(true)}
+                className="flex-shrink-0 rounded-md bg-gray-100 px-2.5 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-200"
+              >
+                Wrong product?
+              </button>
+            </div>
+          </div>
+        )}
         <AnimatePresence mode="wait">
           <motion.div
             key={currentStep}
@@ -1557,6 +1667,70 @@ export function SellWizard() {
           />
         </div>
       )}
+      <AiRedoDialog
+        open={redoOpen}
+        isSubmitting={redoing}
+        error={redoError}
+        onClose={() => setRedoOpen(false)}
+        onSubmit={handleRedoAiDetails}
+      />
+    </div>
+  );
+}
+
+function TextUploadFlowChoice({
+  onSelect,
+}: {
+  onSelect: (mode: "guided" | "form") => void;
+}) {
+  return (
+    <div className="min-h-screen bg-gray-50 px-4 pt-20">
+      <div className="mx-auto w-full max-w-md">
+        <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="mx-auto grid h-12 w-12 place-items-center rounded-md bg-gray-100">
+            <Wand2 className="h-6 w-6 text-gray-700" />
+          </div>
+          <h1 className="mt-4 text-center text-[22px] font-bold tracking-tight text-gray-900">
+            Finish your text upload
+          </h1>
+          <p className="mt-2 text-center text-[14px] leading-relaxed text-gray-500">
+            We&apos;ve loaded the photos and AI details. Choose how you&apos;d like to review the
+            listing before publishing.
+          </p>
+          <div className="mt-5 grid gap-2">
+            <button
+              type="button"
+              onClick={() => onSelect("guided")}
+              className="flex w-full items-center gap-3 rounded-md border border-gray-200 bg-white p-3.5 text-left transition-colors hover:bg-gray-50"
+            >
+              <span className="grid h-10 w-10 place-items-center rounded-md bg-gray-100">
+                <Wand2 className="h-5 w-5 text-gray-700" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[15px] font-semibold text-gray-900">Guided</span>
+                <span className="mt-0.5 block text-[12.5px] leading-snug text-gray-500">
+                  Review one detail at a time.
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelect("form")}
+              className="flex w-full items-center gap-3 rounded-md border border-gray-200 bg-white p-3.5 text-left transition-colors hover:bg-gray-50"
+            >
+              <span className="grid h-10 w-10 place-items-center rounded-md bg-gray-100">
+                <LayoutList className="h-5 w-5 text-gray-700" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[15px] font-semibold text-gray-900">Form</span>
+                <span className="mt-0.5 block text-[12.5px] leading-snug text-gray-500">
+                  Check everything on one page.
+                </span>
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

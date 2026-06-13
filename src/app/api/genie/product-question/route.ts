@@ -21,6 +21,7 @@ import {
 } from "@/lib/bikes/official-spec-sources";
 import { resolveBrandWebsite } from "@/lib/bikes/brand-websites";
 import { searchYoutubeVideos } from "@/lib/genie/youtube-video-search";
+import { resolveSellerCta } from "@/lib/genie/seller-intent";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -79,7 +80,12 @@ STYLE:
 - Avoid paragraph blocks. Prefer labelled lines: **Verdict:**, **Why:**, **Check:**, **Options:**.
 - Never paste raw URLs in the reply — sources appear separately.
 - If listing details are ambiguous, say what you'd verify and still give useful guidance.
-- Do not invent listing details not provided in the listing block.`;
+- Do not invent listing details not provided in the listing block.
+
+SELLER-ONLY QUESTIONS (critical):
+- You are NOT the seller. You cannot negotiate price, confirm availability, arrange pickup/viewing, or answer personal seller motivations.
+- For seller-only questions (pickup times, offers, availability, crash history not in listing, extras, viewing, warranty from seller): give a one-sentence helpful reply, then clearly say the seller can confirm — e.g. "Pickup times are between you and the seller."
+- Keep seller-only replies under ~40 words. Do not web-search for these.`;
 
 interface Message {
   role: "user" | "assistant";
@@ -283,6 +289,7 @@ export async function POST(request: NextRequest) {
             { role: "user" as const, content: userTurn },
           ];
           const citations: Citation[] = [];
+          let assistantText = "";
 
           for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
             const isLastIteration = iteration === MAX_ITERATIONS - 1;
@@ -342,7 +349,9 @@ export async function POST(request: NextRequest) {
               }
 
               if (type === "response.output_text.delta") {
-                emit({ event: "text_delta", text: event.delta ?? "" });
+                const delta = event.delta ?? "";
+                assistantText += delta;
+                emit({ event: "text_delta", text: delta });
               }
 
               if (type === "response.completed") {
@@ -424,6 +433,15 @@ export async function POST(request: NextRequest) {
               return true;
             });
             emit({ event: "sources", sources: unique });
+          }
+
+          const sellerCta = resolveSellerCta(latestUserMessage, assistantText);
+          if (sellerCta?.needsSeller && sellerCta.reason) {
+            emit({
+              event: "seller_cta",
+              reason: sellerCta.reason,
+              suggestedMessage: sellerCta.suggestedMessage,
+            });
           }
 
           emit({ event: "done" });

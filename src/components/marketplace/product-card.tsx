@@ -364,7 +364,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
       onClick={handleClick}
       className={cn(
         "product-card-root block",
-        inCarousel && "product-card-root--in-carousel h-full w-full overflow-hidden",
+        inCarousel && "product-card-root--in-carousel w-full",
         isList && "w-full",
         !isList && featuredMobile && "sm:col-span-1"
       )}

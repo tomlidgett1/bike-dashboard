@@ -23,6 +23,7 @@ export interface ProductGenieContext {
   modelYear?: string | null;
   quantityOnHand?: number | null;
   storeName?: string | null;
+  sellerId?: string | null;
   image?: string | null;
   url: string;
   specsSummary?: string | null;
@@ -37,6 +38,7 @@ export interface ProductGenieContext {
 
 const PRODUCT_GENIE_DB_FIELDS = `
   id,
+  user_id,
   description,
   product_description,
   product_specs,
@@ -184,6 +186,7 @@ export function buildProductGenieContext(product: MarketplaceProduct): ProductGe
     modelYear: product.model_year ?? null,
     quantityOnHand: product.qoh ?? null,
     storeName: product.store_name?.trim() || null,
+    sellerId: product.user_id ?? null,
     image,
     url: `/marketplace/product/${product.id}`,
     specsSummary: buildSpecsSummary(product.bike_specs),

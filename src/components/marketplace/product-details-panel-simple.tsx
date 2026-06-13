@@ -26,7 +26,7 @@ const PickupLocationMap = dynamic(
   () => import("./product-detail/pickup-location-map").then((mod) => mod.PickupLocationMap),
   {
     ssr: false,
-    loading: () => <div className="mx-4 mb-3 h-36 rounded-md bg-gray-100 sm:mx-5" />,
+    loading: () => <div className="h-36 w-full bg-gray-100" />,
   },
 );
 
@@ -35,14 +35,68 @@ const EditProductDrawer = dynamic(
   { ssr: false },
 );
 
-// Adaptive spec row: label ↔ value (ecommerce spec table)
+// Flat spec row — label / value, no card chrome
 function SpecRow({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="grid grid-cols-1 gap-0.5 px-4 py-3 lg:px-0 sm:grid-cols-[minmax(0,38%)_1fr] sm:items-baseline sm:gap-4">
-      <dt className="text-sm text-gray-500">{label}</dt>
-      <dd className="text-sm font-medium text-gray-900">{String(value)}</dd>
+    <div className="flex items-baseline justify-between gap-4 py-3.5 sm:grid sm:grid-cols-[minmax(0,34%)_1fr] sm:justify-start sm:gap-6 sm:py-3">
+      <dt className="shrink-0 text-sm text-gray-500">{label}</dt>
+      <dd className="min-w-0 text-right text-sm font-medium leading-snug text-gray-900 sm:text-left">
+        {String(value)}
+      </dd>
     </div>
   );
+}
+
+type SpecEntry = { label: string; value: string | number };
+
+function getHighlightSpecEntries(
+  product: MarketplaceProduct,
+  stockLabel: string | null,
+): SpecEntry[] {
+  const p = product as unknown as Record<string, unknown>;
+  const rows: SpecEntry[] = [];
+
+  if (p.condition_rating) {
+    rows.push({ label: "Condition", value: p.condition_rating as string });
+  }
+  if (stockLabel) {
+    rows.push({ label: "Stock on hand", value: Math.floor(Number(product.qoh)) });
+  }
+
+  return rows;
+}
+
+function getStructuredSpecEntries(product: MarketplaceProduct): SpecEntry[] {
+  const p = product as unknown as Record<string, unknown>;
+  const rows: SpecEntry[] = [];
+  const add = (label: string, key: string) => {
+    const value = p[key];
+    if (value != null && value !== "") {
+      rows.push({ label, value: value as string | number });
+    }
+  };
+
+  add("Brand", "brand");
+  add("Model", "model");
+  add("Year", "model_year");
+  add("Type", "bike_type");
+
+  const size = (p.frame_size || p.size) as string | undefined;
+  if (size) rows.push({ label: "Size", value: size });
+
+  add("Frame material", "frame_material");
+  add("Groupset", "groupset");
+  add("Wheel size", "wheel_size");
+  add("Suspension", "suspension_type");
+  add("Colour", "color_primary");
+  add("Gender fit", "gender_fit");
+  add("Apparel material", "apparel_material");
+  add("Part type", "part_type_detail");
+  add("Compatibility", "compatibility_notes");
+  add("Material", "material");
+  add("Weight", "weight");
+
+  return rows;
 }
 
 // Renders **bold** spans within a line of text
@@ -270,17 +324,20 @@ export function ProductDetailsPanelSimple({
             <p className="text-sm text-gray-500">This item has been sold</p>
           </div>
         ) : isOwner ? (
-          /* Owner View: Edit Button */
-          <Button
-            onClick={() => setIsEditOpen(true)}
-            size="lg"
-            className="w-full h-11 rounded-md text-sm font-medium bg-gray-900 hover:bg-gray-800 text-white"
-          >
-            <Pencil className="h-4 w-4 mr-2" />
-            Edit Listing
-          </Button>
+          <div className="space-y-2">
+            <Button
+              onClick={() => setIsEditOpen(true)}
+              size="lg"
+              className="w-full h-11 rounded-md text-sm font-medium bg-gray-900 hover:bg-gray-800 text-white"
+            >
+              <Pencil className="h-4 w-4 mr-2" />
+              Edit Listing
+            </Button>
+            <div className="hidden sm:block">
+              <ProductAskGenieButton product={product} />
+            </div>
+          </div>
         ) : (
-          /* Buyer View: Buy Now, Make Offer & Send Message */
           <>
             <BuyNowButton
               productId={product.id}
@@ -367,44 +424,79 @@ export function ProductDetailsPanelSimple({
         </div>
       )}
 
-      {/* Tabs — standard underline (ecommerce) */}
+      {/* Tabs */}
       {showSpecsTab && (
-        <div
-          className="border-b border-gray-200 px-4 sm:px-5 lg:px-0"
-          role="tablist"
-          aria-label="Product details"
-        >
-          <div className="flex gap-8">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === "overview"}
-              onClick={() => setActiveTab("overview")}
-              className={cn(
-                "-mb-px border-b-2 pb-3 pt-1 text-sm font-medium transition-colors",
-                activeTab === "overview"
-                  ? "border-gray-900 text-gray-900"
-                  : "border-transparent text-gray-500 hover:text-gray-700",
-              )}
-            >
-              Overview
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === "specs"}
-              onClick={() => setActiveTab("specs")}
-              className={cn(
-                "-mb-px border-b-2 pb-3 pt-1 text-sm font-medium transition-colors",
-                activeTab === "specs"
-                  ? "border-gray-900 text-gray-900"
-                  : "border-transparent text-gray-500 hover:text-gray-700",
-              )}
-            >
-              Specifications
-            </button>
+        <>
+          <div className="px-4 pb-4 pt-1 sm:hidden sm:px-5 lg:px-0" role="tablist" aria-label="Product details">
+            <div className="flex items-center rounded-md bg-gray-100 p-0.5 w-fit">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === "overview"}
+                onClick={() => setActiveTab("overview")}
+                className={cn(
+                  "px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+                  activeTab === "overview"
+                    ? "bg-white text-gray-800 shadow-sm"
+                    : "text-gray-600 hover:bg-gray-200/70",
+                )}
+              >
+                Overview
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === "specs"}
+                onClick={() => setActiveTab("specs")}
+                className={cn(
+                  "px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+                  activeTab === "specs"
+                    ? "bg-white text-gray-800 shadow-sm"
+                    : "text-gray-600 hover:bg-gray-200/70",
+                )}
+              >
+                Specifications
+              </button>
+            </div>
           </div>
-        </div>
+
+          <div
+            className="hidden border-b border-gray-200 px-4 sm:block sm:px-5 lg:px-0"
+            role="tablist"
+            aria-label="Product details"
+          >
+            <div className="flex gap-8">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === "overview"}
+                onClick={() => setActiveTab("overview")}
+                className={cn(
+                  "-mb-px border-b-2 pb-3 pt-1 text-sm font-medium transition-colors",
+                  activeTab === "overview"
+                    ? "border-gray-900 text-gray-900"
+                    : "border-transparent text-gray-500 hover:text-gray-700",
+                )}
+              >
+                Overview
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === "specs"}
+                onClick={() => setActiveTab("specs")}
+                className={cn(
+                  "-mb-px border-b-2 pb-3 pt-1 text-sm font-medium transition-colors",
+                  activeTab === "specs"
+                    ? "border-gray-900 text-gray-900"
+                    : "border-transparent text-gray-500 hover:text-gray-700",
+                )}
+              >
+                Specifications
+              </button>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Tab Content */}
@@ -412,6 +504,7 @@ export function ProductDetailsPanelSimple({
         className={cn(
           "px-4 py-5 sm:px-5 lg:px-0",
           !showSpecsTab && "border-t border-gray-100",
+          showSpecsTab && "pt-4 sm:pt-5",
         )}
       >
         {(activeTab === "overview" || !showSpecsTab) && (
@@ -475,7 +568,7 @@ export function ProductDetailsPanelSimple({
                         {/* Map with privacy circle */}
                         <PickupLocationMap 
                           location={(product as any).pickup_location} 
-                          className="mx-4 mb-3 h-36 sm:mx-5"
+                          className="h-36 w-full"
                         />
                       </div>
                     )}
@@ -490,75 +583,54 @@ export function ProductDetailsPanelSimple({
           </div>
         )}
 
-        {showSpecsTab && activeTab === "specs" && (
-          <div>
-            {(product as any).condition_rating || stockLabel || (product as any).product_specs ? (
-              <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
-                <dl className="divide-y divide-gray-100">
-                  {(product as any).condition_rating && (
-                    <SpecRow label="Condition" value={(product as any).condition_rating} />
-                  )}
-                  {stockLabel && (
-                    <SpecRow label="Stock on hand" value={Math.floor(Number(product.qoh))} />
-                  )}
-                </dl>
-              </div>
-            ) : null}
+        {showSpecsTab && activeTab === "specs" && (() => {
+          const highlightSpecs = getHighlightSpecEntries(product, stockLabel);
+          const structuredSpecs = getStructuredSpecEntries(product);
+          const proseSpecs = (product as { product_specs?: string }).product_specs;
+          const listSpecs = proseSpecs
+            ? highlightSpecs
+            : [...highlightSpecs, ...structuredSpecs];
+          const hasContent = listSpecs.length > 0 || Boolean(proseSpecs);
 
-            {(product as any).product_specs ? (
-              <div className={cn((product as any).condition_rating || stockLabel ? "mt-5" : "")}>
-                <ProductDescription text={(product as any).product_specs} />
-              </div>
-            ) : (
-              <div
-                className={cn(
-                  "overflow-hidden rounded-md border border-gray-200 bg-white",
-                  (product as any).condition_rating || stockLabel ? "mt-5" : "",
-                )}
-              >
-                <dl className="divide-y divide-gray-100">
-                  {(product as any).brand && <SpecRow label="Brand" value={(product as any).brand} />}
-                  {(product as any).model && <SpecRow label="Model" value={(product as any).model} />}
-                  {(product as any).model_year && <SpecRow label="Year" value={(product as any).model_year} />}
-                  {(product as any).bike_type && <SpecRow label="Type" value={(product as any).bike_type} />}
-                  {((product as any).frame_size || (product as any).size) && (
-                    <SpecRow label="Size" value={(product as any).frame_size || (product as any).size} />
-                  )}
-                  {(product as any).frame_material && (
-                    <SpecRow label="Frame Material" value={(product as any).frame_material} />
-                  )}
-                  {(product as any).groupset && <SpecRow label="Groupset" value={(product as any).groupset} />}
-                  {(product as any).wheel_size && <SpecRow label="Wheel Size" value={(product as any).wheel_size} />}
-                  {(product as any).suspension_type && (
-                    <SpecRow label="Suspension" value={(product as any).suspension_type} />
-                  )}
-                  {(product as any).color_primary && <SpecRow label="Colour" value={(product as any).color_primary} />}
-                  {(product as any).gender_fit && <SpecRow label="Gender Fit" value={(product as any).gender_fit} />}
-                  {(product as any).apparel_material && (
-                    <SpecRow label="Material" value={(product as any).apparel_material} />
-                  )}
-                  {(product as any).part_type_detail && (
-                    <SpecRow label="Part Type" value={(product as any).part_type_detail} />
-                  )}
-                  {(product as any).compatibility_notes && (
-                    <SpecRow label="Compatibility" value={(product as any).compatibility_notes} />
-                  )}
-                  {(product as any).material && <SpecRow label="Material" value={(product as any).material} />}
-                  {(product as any).weight && <SpecRow label="Weight" value={(product as any).weight} />}
+          if (!hasContent) {
+            return (
+              <p className="py-8 text-center text-sm text-gray-400">
+                No specifications available
+              </p>
+            );
+          }
+
+          return (
+            <div className="space-y-6">
+              {listSpecs.length > 0 && (
+                <dl className="divide-y divide-gray-100 border-t border-gray-100">
+                  {listSpecs.map((entry, index) => (
+                    <SpecRow
+                      key={`${entry.label}-${index}`}
+                      label={entry.label}
+                      value={entry.value}
+                    />
+                  ))}
                 </dl>
-                {!(product as any).brand &&
-                  !(product as any).model &&
-                  !(product as any).bike_type &&
-                  !(product as any).condition_rating &&
-                  !stockLabel && (
-                    <div className="py-8 text-center text-sm text-gray-400">
-                      No specifications available
-                    </div>
+              )}
+
+              {proseSpecs ? (
+                <section
+                  className={cn(
+                    listSpecs.length > 0 && "border-t border-gray-100 pt-6",
                   )}
-              </div>
-            )}
-          </div>
-        )}
+                >
+                  {listSpecs.length > 0 && (
+                    <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-gray-400">
+                      Details
+                    </h3>
+                  )}
+                  <ProductDescription text={proseSpecs} />
+                </section>
+              ) : null}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Official sources cited during AI copy generation */}

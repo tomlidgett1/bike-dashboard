@@ -9,6 +9,7 @@ import {
   HelpCircle,
   Ban,
   PackageX,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -20,7 +21,7 @@ interface Category {
   id: string;
   label: string;
   description: string;
-  icon: React.ElementType;
+  icon: LucideIcon;
 }
 
 interface HelpStepCategoryProps {

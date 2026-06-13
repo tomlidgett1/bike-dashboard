@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { ShimmerText } from "@/app/marketplace/sell-redesign/_components/ui";
+import { AiRedoDialog } from "@/app/marketplace/sell-redesign/_components/ai-redo-dialog";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
@@ -115,6 +116,59 @@ interface ProductFormData {
   pickupAvailable: boolean;
 }
 
+function productFormDataFromAnalysis(
+  analysis: any,
+  fallbackName: string,
+): ProductFormData {
+  const titleParts = [
+    analysis?.brand,
+    analysis?.model,
+    analysis?.model_year,
+  ].filter(Boolean);
+  const generatedTitle =
+    analysis?.clean_title ||
+    analysis?.title ||
+    (titleParts.length > 0 ? titleParts.join(" ") : fallbackName);
+  const bikeDetails = analysis?.bike_details || {};
+  const partDetails = analysis?.part_details || {};
+  const apparelDetails = analysis?.apparel_details || {};
+  const priceEstimate = analysis?.price_estimate || {};
+
+  return {
+    title: generatedTitle,
+    description: analysis?.description || "",
+    sellerNotes: analysis?.seller_notes || "",
+    brand: analysis?.brand || "",
+    model: analysis?.model || "",
+    modelYear: analysis?.model_year || "",
+    itemType: analysis?.item_type || "bike",
+    bikeType: bikeDetails.bike_type || "",
+    frameSize: bikeDetails.frame_size || "",
+    frameMaterial: bikeDetails.frame_material || "",
+    groupset: bikeDetails.groupset || "",
+    wheelSize: bikeDetails.wheel_size || "",
+    colorPrimary: bikeDetails.color_primary || "",
+    partTypeDetail: partDetails.part_category || partDetails.part_type || "",
+    compatibilityNotes: partDetails.compatibility || "",
+    size: apparelDetails.size || "",
+    genderFit: apparelDetails.gender_fit || "",
+    conditionRating: (analysis?.condition_rating || "Good") as ConditionRating,
+    conditionDetails:
+      analysis?.condition_details || analysis?.condition_notes || "",
+    price: priceEstimate.min_aud
+      ? Math.round(
+          priceEstimate.target_aud ||
+            (priceEstimate.min_aud + priceEstimate.max_aud) / 2
+        )
+      : 0,
+    originalRrp: priceEstimate.max_aud || 0,
+    shippingAvailable: false,
+    shippingCost: 0,
+    pickupLocation: "",
+    pickupAvailable: true,
+  };
+}
+
 interface BulkUploadSheetProps {
   isOpen: boolean;
   onClose: () => void;
@@ -150,6 +204,9 @@ export function BulkUploadSheet({
   const [products, setProducts] = React.useState<ProductData[]>([]);
   const [currentIndex, setCurrentIndex] = React.useState(0);
   const [generatingId, setGeneratingId] = React.useState<string | null>(null);
+  const [redoProductIndex, setRedoProductIndex] = React.useState<number | null>(null);
+  const [redoingProduct, setRedoingProduct] = React.useState(false);
+  const [redoProductError, setRedoProductError] = React.useState<string | null>(null);
 
   const [successListingIds, setSuccessListingIds] = React.useState<string[]>(
     []
@@ -695,6 +752,68 @@ export function BulkUploadSheet({
     }
   };
 
+  const handleRedoProductAt = async (index: number, hint: string) => {
+    const product = products[index];
+    if (!product) return;
+
+    setRedoingProduct(true);
+    setRedoProductError(null);
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) throw new Error("You must be logged in to use AI analysis");
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/analyze-listing-ai`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            imageUrls: product.imageUrls,
+            userHints: {
+              itemType: product.formData.itemType,
+              text: `The previous AI result was for the wrong product. The seller says this item is: ${hint}`,
+            },
+          }),
+        }
+      );
+
+      if (!response.ok) throw new Error("Analysis failed");
+
+      const result = await response.json();
+      const analysis = result.analysis;
+      const formData = productFormDataFromAnalysis(analysis, product.suggestedName);
+
+      setProducts((prev) =>
+        prev.map((item, itemIndex) =>
+          itemIndex === index
+            ? {
+                ...item,
+                suggestedName: formData.title || item.suggestedName,
+                aiData: analysis,
+                formData,
+                isValid: validateProduct(formData),
+              }
+            : item
+        )
+      );
+      setRedoProductIndex(null);
+    } catch (error) {
+      setRedoProductError(
+        error instanceof Error ? error.message : "Could not redo this item.",
+      );
+    } finally {
+      setRedoingProduct(false);
+    }
+  };
+
   // ============================================================
   // Navigation
   // ============================================================
@@ -1082,6 +1201,7 @@ export function BulkUploadSheet({
                       setCoverPhotoAt(currentIndex, photoIndex)
                     }
                     onGenerate={() => handleGenerateDescriptionAt(currentIndex)}
+                    onRedo={() => setRedoProductIndex(currentIndex)}
                     onDelete={() => deleteProduct(current.groupId)}
                   />
                 </motion.div>
@@ -1275,6 +1395,19 @@ export function BulkUploadSheet({
           onKeepEditing={() => setShowExitConfirm(false)}
           onExit={confirmExit}
         />
+        <AiRedoDialog
+          open={redoProductIndex !== null}
+          isSubmitting={redoingProduct}
+          error={redoProductError}
+          onClose={() => {
+            if (!redoingProduct) setRedoProductIndex(null);
+          }}
+          onSubmit={(hint) =>
+            redoProductIndex !== null
+              ? handleRedoProductAt(redoProductIndex, hint)
+              : undefined
+          }
+        />
       </SheetContent>
     </Sheet>
   );
@@ -1428,6 +1561,7 @@ interface ProductEditorFieldsProps {
   onRotate: (photoIndex: number) => void;
   onSetCover: (photoIndex: number) => void;
   onGenerate: () => void;
+  onRedo: () => void;
   onDelete: () => void;
 }
 
@@ -1438,6 +1572,7 @@ function ProductEditorFields({
   onRotate,
   onSetCover,
   onGenerate,
+  onRedo,
   onDelete,
 }: ProductEditorFieldsProps) {
   const [detailsOpen, setDetailsOpen] = React.useState(false);
@@ -1499,6 +1634,25 @@ function ProductEditorFields({
           ))}
         </div>
       )}
+
+      {/* Title */}
+      <div className="rounded-md border border-gray-200 bg-white p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[13px] font-semibold text-gray-900">AI recognised this item</p>
+            <p className="mt-0.5 truncate text-[12px] text-gray-500">
+              {fd.title || product.suggestedName || "Review the generated details"}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onRedo}
+            className="flex-shrink-0 rounded-md bg-gray-100 px-2.5 py-1.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-200"
+          >
+            Wrong product?
+          </button>
+        </div>
+      </div>
 
       {/* Title */}
       <div>

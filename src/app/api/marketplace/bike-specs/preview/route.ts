@@ -30,13 +30,16 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { brand, model, modelYear, bikeType, frameSize, frameMaterial, groupset, wheelSize, title } =
+    const { brand, model, modelYear, bikeType, frameSize, frameMaterial, groupset, wheelSize, title, productHint } =
       body as Record<string, string | undefined>;
 
     const productName =
-      title || [brand, model, modelYear].filter(Boolean).join(" ") || "Unknown bicycle";
+      productHint?.trim() ||
+      title ||
+      [brand, model, modelYear].filter(Boolean).join(" ") ||
+      "Unknown bicycle";
 
-    if (!brand && !model && !title) {
+    if (!brand && !model && !title && !productHint) {
       return NextResponse.json(
         { error: "Add a brand and model first so AI can find the right spec sheet." },
         { status: 400 },

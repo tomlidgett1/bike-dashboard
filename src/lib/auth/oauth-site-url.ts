@@ -12,17 +12,27 @@
  * `https://<project-ref>.supabase.co/auth/v1/callback` for the client ID in
  * Supabase → Providers → Google.
  */
+function isLocalDevHost(host: string): boolean {
+  if (host === "localhost" || host === "127.0.0.1" || host.endsWith(".local")) {
+    return true;
+  }
+  // Private LAN IPs (RFC 1918) — e.g. testing from a phone on the same network.
+  if (/^10\./.test(host) || /^192\.168\./.test(host)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return true;
+  return false;
+}
+
 export function getBrowserOAuthBaseUrl(): string {
   const canonical = (process.env.NEXT_PUBLIC_SITE_URL || "").replace(/\/$/, "");
   const devOrigin = (process.env.NEXT_PUBLIC_DEV_ORIGIN || "").replace(/\/$/, "");
 
   if (typeof window !== "undefined") {
     const host = window.location.hostname;
-    const isLocal =
-      host === "localhost" || host === "127.0.0.1" || host.endsWith(".local");
-    if (isLocal) {
-      // Optional fixed origin (e.g. http://localhost:3000) avoids PKCE cookies on the wrong port.
-      if (devOrigin) {
+    if (isLocalDevHost(host)) {
+      // Pin localhost/127.0.0.1 to a fixed port; keep LAN IPs on their actual origin.
+      const useFixedDevOrigin =
+        devOrigin && (host === "localhost" || host === "127.0.0.1");
+      if (useFixedDevOrigin) {
         return devOrigin;
       }
       return window.location.origin;

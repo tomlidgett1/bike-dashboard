@@ -249,10 +249,18 @@ Consider:
 - Season/collectability
 - Australian market demand`;
 
-export function buildAnalysisPrompt(photoCount: number, userHints?: { itemType?: string }): string {
-  const hintText = userHints?.itemType 
-    ? `The user indicates this is a ${userHints.itemType}.` 
-    : '';
+export function buildAnalysisPrompt(
+  photoCount: number,
+  userHints?: { itemType?: string; text?: string },
+): string {
+  const hintText = [
+    userHints?.itemType ? `The user indicates this is a ${userHints.itemType}.` : "",
+    userHints?.text
+      ? `The seller says this about the product. Treat this as ground truth when identifying the item, specs, title, description and price:\n"""${userHints.text.slice(0, 2000)}"""`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   return `Analyze these ${photoCount} photo${photoCount > 1 ? 's' : ''} of a cycling product with professional expertise.
 

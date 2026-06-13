@@ -3,6 +3,7 @@ import {
   formatProductGenieListingForModel,
   type ProductGenieContext,
 } from "@/lib/genie/product-context";
+import { looksLikeSellerOnlyQuestion } from "@/lib/genie/seller-intent";
 
 export const FALLBACK_PRODUCT_GENIE_SUGGESTIONS = [
   "Is this good value at this price?",
@@ -125,21 +126,6 @@ function looksLikeSpecQuiz(question: string): boolean {
     /^does it (have|include|come with)\b/.test(lower) ||
     /^is this .+ (frame|groupset|carbon|alloy)\??$/.test(lower) ||
     /^what (size|wheel|tyre|tire)s? (and|&)/.test(lower)
-  );
-}
-
-function looksLikeSellerOnlyQuestion(question: string): boolean {
-  const lower = question.toLowerCase();
-  return (
-    /\b(negotiat|best price|drop the price|lower the price|discount|offer less)\b/.test(lower) ||
-    /\b(why (are you|is the seller|did they) sell|reason for selling|getting rid of)\b/.test(lower) ||
-    /\b(pick up|pickup|collect) (this|next|on|at|tomorrow|weekend)\b/.test(lower) ||
-    /\b(contact (the )?seller|ask the seller|message the seller)\b/.test(lower) ||
-    /\b(been (in a )?crash|accident|dropped it)\b/.test(lower) ||
-    /\b(throw in|include (pedals|extras)|can they include)\b/.test(lower) ||
-    /\b(meet (in person|up)|available (to )?view)\b/.test(lower) ||
-    /\b(return policy|refund if)\b/.test(lower) ||
-    /\b(warranty from (the )?seller)\b/.test(lower)
   );
 }
 
