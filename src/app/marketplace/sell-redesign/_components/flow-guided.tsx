@@ -24,7 +24,6 @@ import {
   YEARS,
   PRICE_GUIDE,
   BRAND,
-  BRAND_SOFT,
   emptyDraft,
   aiPrefilledDraft,
   formatAUD,
@@ -43,6 +42,7 @@ import {
   Collapsible,
   ConfidenceDot,
   Spinner,
+  ShimmerText,
   PhotoUploader,
 } from "./ui";
 import { DetailedSpecs } from "./detailed-specs";
@@ -635,8 +635,8 @@ function DescriptionField({
 function SpecsOffer() {
   return (
     <div className="pt-3">
-      <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl" style={{ backgroundColor: BRAND_SOFT }}>
-        <ListChecks className="h-7 w-7 text-gray-800" />
+      <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-gray-100">
+        <ListChecks className="h-7 w-7 text-gray-700" />
       </div>
       <h1 className="mt-4 text-center text-[24px] font-bold leading-tight text-gray-900">
         Add full specifications?
@@ -819,23 +819,25 @@ export function QualityMeter({ score, tips }: { score: number; tips: string[] })
 
 function Analysing({ message, count }: { message: string; count: number }) {
   return (
-    <div className="grid place-items-center py-24 text-center">
-      <div className="grid h-20 w-20 place-items-center rounded-full" style={{ backgroundColor: BRAND_SOFT }}>
-        <Spinner size={34} />
+    <div className="grid place-items-center py-32 text-center">
+      <div>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={message}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.25 }}
+          >
+            <ShimmerText className="text-[17px] font-semibold tracking-tight">
+              {message}
+            </ShimmerText>
+          </motion.div>
+        </AnimatePresence>
+        <p className="mt-2 text-[13px] text-gray-400">
+          Analysing {count} {count === 1 ? "photo" : "photos"}
+        </p>
       </div>
-      <h2 className="mt-6 text-[20px] font-bold text-gray-900">Analysing {count} photos</h2>
-      <AnimatePresence mode="wait">
-        <motion.p
-          key={message}
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.25 }}
-          className="mt-2 text-[15px] text-gray-500"
-        >
-          {message}
-        </motion.p>
-      </AnimatePresence>
     </div>
   );
 }

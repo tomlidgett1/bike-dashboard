@@ -85,7 +85,7 @@ function ChoiceCard({
         <div className="flex items-center gap-2">
           <p className="text-[16px] font-semibold tracking-tight text-gray-900">{label}</p>
           {badge && (
-            <span className="rounded-full bg-[#ffde59] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-900">
+            <span className="rounded-full bg-gray-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
               {badge}
             </span>
           )}
@@ -185,14 +185,15 @@ export function MobileUploadMethodDialog({
               <ChoiceCard
                 icon={<Sparkles className="h-[22px] w-[22px] text-gray-700" />}
                 label="Quick upload"
-                badge="Easiest"
-                description="Snap photos — AI fills in the details"
+                badge="Guided"
+                description="Step-by-step questions, one at a time — AI fills in details from your photos"
                 onClick={() => choose(onSelectGuided)}
               />
               <ChoiceCard
                 icon={<LayoutList className="h-[22px] w-[22px] text-gray-700" />}
                 label="Fill in a form"
-                description="Type the details yourself, all on one page"
+                badge="Fastest"
+                description="Everything on one page — quicker if you already know the details"
                 onClick={() => choose(onSelectForm)}
               />
               <ChoiceCard
@@ -215,7 +216,7 @@ export function MobileUploadMethodDialog({
               <ChoiceCard
                 icon={<Sparkles className="h-[22px] w-[22px] text-gray-700" />}
                 label="Bulk upload"
-                badge="Easiest"
+                badge="Guided"
                 description="Upload all your photos — AI sorts them into listings"
                 onClick={() => choose(onSelectBulk)}
               />

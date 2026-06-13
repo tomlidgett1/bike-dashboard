@@ -26,7 +26,6 @@ import {
   COMMON_GROUPSETS,
   YEARS,
   BRAND,
-  BRAND_SOFT,
   emptyDraft,
   aiPrefilledDraft,
   formatAUD,
@@ -45,6 +44,7 @@ import {
   Chevron,
   ConfidenceDot,
   Spinner,
+  ShimmerText,
   PhotoUploader,
 } from "./ui";
 import { DetailedSpecs } from "./detailed-specs";
@@ -162,22 +162,20 @@ export function FlowForm() {
         {phase === "analysing" ? (
           <div className="grid flex-1 place-items-center text-center">
             <div>
-              <div className="mx-auto grid h-20 w-20 place-items-center rounded-full" style={{ backgroundColor: BRAND_SOFT }}>
-                <Spinner size={34} />
-              </div>
-              <h2 className="mt-6 text-[20px] font-bold text-gray-900">Analysing your photos</h2>
               <AnimatePresence mode="wait">
-                <motion.p
+                <motion.div
                   key={msg}
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -6 }}
                   transition={{ duration: 0.25 }}
-                  className="mt-2 text-[15px] text-gray-500"
                 >
-                  {ANALYSE_MSGS[msg]}
-                </motion.p>
+                  <ShimmerText className="text-[17px] font-semibold tracking-tight">
+                    {ANALYSE_MSGS[msg]}
+                  </ShimmerText>
+                </motion.div>
               </AnimatePresence>
+              <p className="mt-2 text-[13px] text-gray-400">Analysing your photos</p>
             </div>
           </div>
         ) : (
@@ -222,8 +220,8 @@ export function FlowForm() {
         {aiActive && (
           <div className="rounded-xl border border-gray-200 bg-white p-3.5">
             <div className="flex items-start gap-3">
-              <div className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-md" style={{ backgroundColor: BRAND_SOFT }}>
-                <Sparkles className="h-5 w-5 text-gray-800" />
+              <div className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-md bg-gray-100">
+                <Sparkles className="h-5 w-5 text-gray-700" />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-[14px] font-semibold text-gray-900">We recognised your bike</p>
@@ -462,7 +460,7 @@ function PriceGuideInline({ onUse }: { onUse: (v: number) => void }) {
           Similar bikes sell for <span className="font-semibold text-gray-900">$1,050–$1,450</span>
         </span>
       </span>
-      <span className="rounded-md px-2 py-1 text-[12px] font-semibold text-gray-900" style={{ backgroundColor: BRAND_SOFT }}>
+      <span className="rounded-md bg-gray-100 px-2 py-1 text-[12px] font-semibold text-gray-800">
         Use $1,250
       </span>
     </button>

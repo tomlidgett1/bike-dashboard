@@ -20,7 +20,6 @@ import {
 import { cn } from "@/lib/utils";
 import {
   SPEC_SECTIONS,
-  BRAND_SOFT,
   type SpecValues,
   type SpecSection,
 } from "./data";
@@ -119,11 +118,8 @@ export function DetailedSpecs({
     <div>
       <div className="flex items-start gap-3">
         {!flat && (
-          <div
-            className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-md"
-            style={{ backgroundColor: BRAND_SOFT }}
-          >
-            <Wand2 className="h-5 w-5 text-gray-800" />
+          <div className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-md bg-gray-100">
+            <Wand2 className="h-5 w-5 text-gray-700" />
           </div>
         )}
         <div className="min-w-0">
@@ -243,10 +239,7 @@ export function DetailedSpecs({
                 {!flat && <p className="truncate text-[12px] text-gray-400">{section.blurb}</p>}
               </div>
               {filled > 0 && (
-                <span
-                  className="rounded-md px-2 py-0.5 text-[11px] font-semibold text-gray-800"
-                  style={{ backgroundColor: BRAND_SOFT }}
-                >
+                <span className="rounded-md bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-700">
                   {filled}/{section.fields.length}
                 </span>
               )}
@@ -322,10 +315,7 @@ function SpecsPreview({ bikeType, specs }: { bikeType: string; specs: SpecValues
           </div>
         ))}
       </div>
-      <div
-        className="mt-3 flex items-center gap-1.5 rounded-md px-2.5 py-1.5"
-        style={{ backgroundColor: BRAND_SOFT }}
-      >
+      <div className="mt-3 flex items-center gap-1.5 rounded-md bg-gray-100 px-2.5 py-1.5">
         <Zap className="h-3.5 w-3.5 text-gray-700" />
         <span className="text-[11px] font-medium text-gray-700">
           Listings with full specs get more views and questions answered upfront.

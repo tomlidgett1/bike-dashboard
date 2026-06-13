@@ -30,6 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { ShimmerText } from "@/app/marketplace/sell-redesign/_components/ui";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
@@ -1002,10 +1003,9 @@ export function BulkUploadSheet({
         {/* ---------------- UPLOADING ---------------- */}
         {stage === "uploading" && (
           <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
-            <Loader2 className="h-8 w-8 animate-spin text-gray-900" />
-            <p className="mt-4 text-[15px] font-medium text-gray-900">
+            <ShimmerText className="text-[17px] font-semibold tracking-tight">
               {isCompressing ? "Optimising photos…" : "Uploading photos…"}
-            </p>
+            </ShimmerText>
             <p className="mt-1 text-[13px] text-gray-500">
               {uploadProgress.current} of {uploadProgress.total}
             </p>
@@ -1028,17 +1028,10 @@ export function BulkUploadSheet({
         {/* ---------------- GROUPING / ANALYSING ---------------- */}
         {stage === "grouping" && (
           <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
-            <div
-              className="grid h-20 w-20 place-items-center rounded-full"
-              style={{ backgroundColor: "#fff7d6" }}
-            >
-              <Loader2 className="h-8 w-8 animate-spin text-gray-900" />
-            </div>
-            <h2 className="mt-6 flex items-center gap-2 text-[18px] font-bold text-gray-900">
-              <Sparkles className="h-4 w-4" />
-              Analysing your photos
-            </h2>
-            <p className="mt-1 text-[14px] text-gray-500">
+            <ShimmerText className="text-[17px] font-semibold tracking-tight">
+              Analysing your photos…
+            </ShimmerText>
+            <p className="mt-1 text-[13px] text-gray-500">
               Grouping items and identifying makes, models &amp; prices
             </p>
           </div>
@@ -1200,10 +1193,9 @@ export function BulkUploadSheet({
         {/* ---------------- PUBLISHING ---------------- */}
         {stage === "publishing" && (
           <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
-            <Loader2 className="h-8 w-8 animate-spin text-gray-900" />
-            <p className="mt-4 text-[15px] font-medium text-gray-900">
+            <ShimmerText className="text-[17px] font-semibold tracking-tight">
               Publishing your listings…
-            </p>
+            </ShimmerText>
             <p className="mt-1 text-[13px] text-gray-500">
               {products.length} item{products.length !== 1 ? "s" : ""} going live
             </p>

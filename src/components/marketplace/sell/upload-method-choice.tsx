@@ -144,14 +144,15 @@ export function UploadMethodChoice({
               <MethodRow
                 icon={Sparkles}
                 title="Quick upload"
-                badge="Easiest"
-                description="Add photos — AI fills in the details for you."
+                badge="Guided"
+                description="Step-by-step questions — AI fills in details from your photos."
                 onClick={() => router.push("/marketplace/sell?mode=guided")}
               />
               <MethodRow
                 icon={LayoutList}
                 title="Fill in a form"
-                description="Type the details yourself, all on one page."
+                badge="Fastest"
+                description="Everything on one page — quicker if you know the details."
                 onClick={() => router.push("/marketplace/sell?mode=form")}
               />
               <MethodRow
@@ -174,7 +175,7 @@ export function UploadMethodChoice({
               <MethodRow
                 icon={Sparkles}
                 title="Bulk upload"
-                badge="Easiest"
+                badge="Guided"
                 description="Upload all your photos — AI sorts them into listings."
                 onClick={() => router.push("/marketplace/sell?mode=bulk")}
               />
@@ -225,7 +226,7 @@ function MethodRow({
         <span className="flex items-center gap-2">
           <span className="text-[15px] font-semibold text-gray-900">{title}</span>
           {badge && (
-            <span className="rounded-full bg-[#ffde59] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-900">
+            <span className="rounded-full bg-gray-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
               {badge}
             </span>
           )}

@@ -49,16 +49,20 @@ export function Btn({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-md font-semibold transition-all active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100",
+        "inline-flex items-center justify-center gap-2 rounded-md font-semibold transition-all active:scale-[0.98] disabled:active:scale-100",
+        variant !== "primary" && "disabled:opacity-40",
         size === "md" ? "h-12 px-5 text-[15px]" : "h-9 px-3.5 text-[13px]",
         full && "w-full",
-        variant === "primary" && "text-[#1c1c1e] shadow-sm hover:brightness-[0.97]",
+        variant === "primary" &&
+          (disabled
+            ? "bg-gray-100 text-gray-400"
+            : "text-[#1c1c1e] shadow-sm hover:brightness-[0.97]"),
         variant === "ink" && "bg-gray-900 text-white hover:bg-gray-800",
         variant === "secondary" && "border border-gray-200 bg-white text-gray-900 hover:bg-gray-50",
         variant === "ghost" && "bg-transparent text-gray-600 hover:bg-gray-100",
         className,
       )}
-      style={variant === "primary" ? { backgroundColor: BRAND } : undefined}
+      style={variant === "primary" && !disabled ? { backgroundColor: BRAND } : undefined}
     >
       {children}
     </button>
@@ -284,10 +288,7 @@ export function ProgressBar({ value }: { value: number }) {
 
 export function AiPill({ children }: { children: React.ReactNode }) {
   return (
-    <span
-      className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold text-gray-800"
-      style={{ backgroundColor: BRAND_SOFT }}
-    >
+    <span className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-700">
       <Sparkles className="h-3 w-3" />
       {children}
     </span>
@@ -384,10 +385,9 @@ export function InfoCard({
     <div
       className={cn(
         "rounded-xl border bg-white p-3.5",
-        tone === "brand" ? "border-transparent shadow-sm ring-1 ring-gray-100" : "border-gray-200",
+        tone === "brand" ? "border-gray-200 shadow-sm" : "border-gray-200",
         className,
       )}
-      style={tone === "brand" ? { boxShadow: `0 0 0 2px ${BRAND_SOFT}` } : undefined}
     >
       {children}
     </div>
@@ -567,6 +567,35 @@ export function PhotoUploader({
 
 export function Spinner({ size = 20 }: { size?: number }) {
   return <Loader2 className="animate-spin text-gray-900" width={size} height={size} />;
+}
+
+// Discreet loading text — a light sweep of highlight travels across the
+// characters (the iOS "thinking" treatment) instead of a spinner.
+export function ShimmerText({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn("inline-block", className)}
+      style={{
+        backgroundImage:
+          "linear-gradient(90deg, #9ca3af 0%, #9ca3af 38%, #111827 50%, #9ca3af 62%, #9ca3af 100%)",
+        backgroundSize: "200% 100%",
+        WebkitBackgroundClip: "text",
+        backgroundClip: "text",
+        color: "transparent",
+        WebkitTextFillColor: "transparent",
+        animation: "yj-shimmer-sweep 1.8s linear infinite",
+      }}
+    >
+      {children}
+      <style>{`@keyframes yj-shimmer-sweep { from { background-position: 200% 0; } to { background-position: -200% 0; } }`}</style>
+    </span>
+  );
 }
 
 // ---- Bottom sheet / popup (project popup animation pattern) -

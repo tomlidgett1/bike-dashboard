@@ -85,7 +85,7 @@ function MethodCard({
           {icon}
         </div>
         {badge && (
-          <span className="rounded-full bg-[#ffde59] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-900">
+          <span className="rounded-full bg-gray-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
             {badge}
           </span>
         )}
@@ -177,14 +177,15 @@ export function CreateListingDialog({
               <MethodCard
                 icon={<Sparkles className="h-5 w-5 text-gray-700" />}
                 label="Quick upload"
-                badge="Easiest"
-                description="Add photos — AI fills in the details"
+                badge="Guided"
+                description="Step-by-step questions — AI fills in details from your photos"
                 onClick={() => choose(onSelectGuided)}
               />
               <MethodCard
                 icon={<LayoutList className="h-5 w-5 text-gray-700" />}
                 label="Fill in a form"
-                description="Type the details yourself, all on one page"
+                badge="Fastest"
+                description="Everything on one page — quicker if you know the details"
                 onClick={() => choose(onSelectForm)}
               />
               <MethodCard
@@ -207,7 +208,7 @@ export function CreateListingDialog({
               <MethodCard
                 icon={<Sparkles className="h-5 w-5 text-gray-700" />}
                 label="Bulk upload"
-                badge="Easiest"
+                badge="Guided"
                 description="Upload all your photos — AI sorts them into listings"
                 onClick={() => choose(onSelectBulk)}
               />
