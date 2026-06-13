@@ -9,8 +9,7 @@ import { UploadMethodChoice } from "./upload-method-choice";
 import { SmartUploadFlow } from "./smart-upload-flow";
 import { FacebookImportFlow } from "./facebook-import-flow";
 import { BulkUploadSheet } from "./bulk-upload-sheet";
-import { FlowGuided } from "@/app/marketplace/sell-redesign/_components/flow-guided";
-import { FlowForm } from "@/app/marketplace/sell-redesign/_components/flow-form";
+import { QuickUploadSheet } from "./quick-upload-sheet";
 import { WizardNavigation } from "./wizard-navigation";
 import { Step1ItemType } from "./step-1-item-type";
 // New granular step components
@@ -1363,27 +1362,15 @@ export function SellWizard() {
     );
   }
 
-  // Handle the new quick upload sub-options from the method chooser.
+  // Handle the quick upload sub-options from the method chooser.
+  // Hosted in the same full-height bottom sheet as bulk upload.
   if (mode === "guided" || mode === "form") {
     return (
-      <div className="min-h-screen bg-gray-50 pt-16">
-        <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[460px] flex-col bg-white sm:border-x sm:border-gray-200">
-          <div className="flex h-14 items-center justify-between gap-2 border-b border-gray-100 px-3">
-            <button
-              type="button"
-              onClick={() => router.push("/marketplace/sell")}
-              className="inline-flex items-center rounded-md px-2 py-1.5 text-[13px] font-medium text-gray-700 transition-colors hover:bg-gray-100"
-            >
-              Methods
-            </button>
-            <span className="truncate rounded-md bg-gray-100 px-2 py-1 text-[12px] font-semibold text-gray-600">
-              {mode === "guided" ? "Quick · Guided" : "Quick · Form"}
-            </span>
-            <span className="w-[72px]" aria-hidden />
-          </div>
-          {mode === "guided" ? <FlowGuided /> : <FlowForm />}
-        </div>
-      </div>
+      <QuickUploadSheet
+        isOpen
+        mode={mode}
+        onClose={() => router.push("/marketplace/sell")}
+      />
     );
   }
 

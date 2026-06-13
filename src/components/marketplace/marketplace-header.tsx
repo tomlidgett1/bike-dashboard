@@ -56,6 +56,10 @@ const CreateListingDialog = dynamic(
   () => import("./sell/create-listing-dialog").then((mod) => mod.CreateListingDialog),
   { ssr: false }
 );
+const QuickUploadSheet = dynamic(
+  () => import("./sell/quick-upload-sheet").then((mod) => mod.QuickUploadSheet),
+  { ssr: false }
+);
 
 function formatRelativeTime(value: string) {
   const then = new Date(value).getTime();
@@ -168,6 +172,7 @@ export function MarketplaceHeader({
   const [mobileUploadMethodOpen, setMobileUploadMethodOpen] = React.useState(false);
   const [bulkUploadSheetOpen, setBulkUploadSheetOpen] = React.useState(false);
   const [createListingDialogOpen, setCreateListingDialogOpen] = React.useState(false);
+  const [quickUploadMode, setQuickUploadMode] = React.useState<"guided" | "form" | null>(null);
   const [mounted, setMounted] = React.useState(false);
   const [isMobile, setIsMobile] = React.useState(false);
   const searchInputRef = React.useRef<HTMLInputElement>(null);
@@ -504,7 +509,7 @@ export function MarketplaceHeader({
       {/* Mobile Space Navigator removed - now integrated into UnifiedFilterBar */}
 
       {/* Mobile floating action bar — single glass capsule, one primary action */}
-      {showFloatingButton && mounted && !mobileUploadMethodOpen && !smartUploadModalOpen && !facebookModalOpen && !textUploadDialogOpen && !isUploading && (
+      {showFloatingButton && mounted && !mobileUploadMethodOpen && !smartUploadModalOpen && !facebookModalOpen && !textUploadDialogOpen && !isUploading && !quickUploadMode && !bulkUploadSheetOpen && (
         <div
           className="sm:hidden fixed inset-x-0 bottom-0 z-50 pointer-events-none animate-in fade-in slide-in-from-bottom-4 duration-300"
           style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
@@ -842,14 +847,14 @@ export function MarketplaceHeader({
         onOpenChange={setCreateListingDialogOpen}
         onSelectGuided={() => {
           if (user) {
-            router.push('/marketplace/sell?mode=guided');
+            setQuickUploadMode('guided');
           } else {
             setSellRequirementModalOpen(true);
           }
         }}
         onSelectForm={() => {
           if (user) {
-            router.push('/marketplace/sell?mode=form');
+            setQuickUploadMode('form');
           } else {
             setSellRequirementModalOpen(true);
           }
@@ -866,11 +871,18 @@ export function MarketplaceHeader({
         }}
         onSelectBulk={() => {
           if (user) {
-            router.push('/marketplace/sell?mode=bulk');
+            setBulkUploadSheetOpen(true);
           } else {
             setSellRequirementModalOpen(true);
           }
         }}
+      />
+
+      {/* Quick Upload / Form Sheet */}
+      <QuickUploadSheet
+        isOpen={quickUploadMode !== null}
+        mode={quickUploadMode ?? 'guided'}
+        onClose={() => setQuickUploadMode(null)}
       />
 
       {/* Mobile Upload Method Dialog */}
@@ -879,14 +891,14 @@ export function MarketplaceHeader({
         onClose={() => setMobileUploadMethodOpen(false)}
         onSelectGuided={() => {
           if (user) {
-            router.push('/marketplace/sell?mode=guided');
+            setQuickUploadMode('guided');
           } else {
             setSellRequirementModalOpen(true);
           }
         }}
         onSelectForm={() => {
           if (user) {
-            router.push('/marketplace/sell?mode=form');
+            setQuickUploadMode('form');
           } else {
             setSellRequirementModalOpen(true);
           }
