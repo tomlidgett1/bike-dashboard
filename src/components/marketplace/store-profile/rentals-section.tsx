@@ -21,6 +21,7 @@ import {
   isRangeAvailable,
   normaliseDateRange,
 } from "@/lib/rentals/availability";
+import { trackStoreBehaviourEvent } from "@/lib/tracking/store-analytics";
 import type { StoreRental } from "@/lib/types/store";
 
 interface RentalsSectionProps {
@@ -91,6 +92,14 @@ export function RentalsSection({
   const [submitted, setSubmitted] = React.useState(false);
 
   const openRental = async (rental: StoreRental) => {
+    if (storeId) {
+      trackStoreBehaviourEvent(storeId, "rental_view", {
+        action: "open_rental",
+        label: rental.name,
+        rentalId: rental.id,
+        tab: "rentals",
+      });
+    }
     setSelectedRental(rental);
     setSelectedStart(null);
     setSelectedEnd(null);
@@ -103,6 +112,12 @@ export function RentalsSection({
 
     if (!storeId) return;
 
+    trackStoreBehaviourEvent(storeId, "rental_availability_open", {
+      action: "load_availability",
+      label: rental.name,
+      rentalId: rental.id,
+      tab: "rentals",
+    });
     setLoadingAvailability(true);
     try {
       const res = await fetch(
@@ -124,6 +139,16 @@ export function RentalsSection({
   const handleSelectDate = (dateKey: string) => {
     setError(null);
     setSubmitted(false);
+    if (storeId && selectedRental) {
+      trackStoreBehaviourEvent(storeId, "rental_date_select", {
+        action: "select_rental_date",
+        label: selectedRental.name,
+        rentalId: selectedRental.id,
+        dateKey,
+        hasStart: Boolean(selectedStart),
+        tab: "rentals",
+      });
+    }
     if (!selectedStart || (selectedStart && selectedEnd)) {
       setSelectedStart(dateKey);
       setSelectedEnd(null);
@@ -186,6 +211,14 @@ export function RentalsSection({
       }
 
       setSubmitted(true);
+      trackStoreBehaviourEvent(storeId, "rental_request_submit", {
+        action: "submit_rental_request",
+        label: selectedRental.name,
+        rentalId: selectedRental.id,
+        startDate: selectedStart,
+        endDate: selectedEnd,
+        tab: "rentals",
+      });
       setMessage(
         storePhone
           ? "Booking request sent. The store will confirm your hire — you can also call to follow up."

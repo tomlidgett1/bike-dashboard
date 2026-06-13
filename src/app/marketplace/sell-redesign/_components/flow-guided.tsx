@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
-  Sparkles,
   Wand2,
   ListChecks,
   ChevronRight,
@@ -20,9 +19,8 @@ import {
   AI_FIELDS,
   AI_DESCRIPTION,
   COLOUR_SWATCHES,
-  CONDITION_RATINGS,
+  conditionRatingsForItemType,
   YEARS,
-  PRICE_GUIDE,
   BRAND,
   emptyDraft,
   aiPrefilledDraft,
@@ -30,6 +28,7 @@ import {
   scoreDraft,
   type BikeDraft,
   type GuidedQuestion,
+  type AiField,
 } from "./data";
 import {
   Btn,
@@ -44,11 +43,14 @@ import {
   Spinner,
   ShimmerText,
   PhotoUploader,
+  TitleOptionList,
+  PublishedCoverImage,
 } from "./ui";
 import { DetailedSpecs } from "./detailed-specs";
-import { uploadPhotos, analysePhotos, analysisToDraftPatch, submitListing } from "./services";
+import { uploadPhotos, analysePhotos, analysisToDraftPatch, fetchListingFieldSuggestions, submitListing } from "./services";
 import { QualityMeter } from "./quality-meter";
 import { AiRedoDialog } from "./ai-redo-dialog";
+import { PriceResearchGuide } from "./price-research-guide";
 
 const ANALYSE_MSGS = [
   "Looking at your photos…",
@@ -57,7 +59,15 @@ const ANALYSE_MSGS = [
   "Pre-filling your details…",
 ];
 
-export function FlowGuided({ initialDraft }: { initialDraft?: Partial<BikeDraft> }) {
+export function FlowGuided({
+  initialDraft,
+  autoAnalyseFromPhotos,
+  onListAnother,
+}: {
+  initialDraft?: Partial<BikeDraft>;
+  autoAnalyseFromPhotos?: boolean;
+  onListAnother?: () => void;
+}) {
   const [draft, setDraft] = React.useState<BikeDraft>(emptyDraft());
   const [qi, setQi] = React.useState(0);
   const [dir, setDir] = React.useState(1);
@@ -71,6 +81,7 @@ export function FlowGuided({ initialDraft }: { initialDraft?: Partial<BikeDraft>
   const [redoOpen, setRedoOpen] = React.useState(false);
   const [redoing, setRedoing] = React.useState(false);
   const [redoError, setRedoError] = React.useState<string | null>(null);
+  const [aiFields, setAiFields] = React.useState<Record<string, AiField>>({});
 
   // The question sequence adapts to what the AI detected in the photos —
   // a helmet or jersey shouldn't be asked what kind of bike it is.
@@ -80,12 +91,35 @@ export function FlowGuided({ initialDraft }: { initialDraft?: Partial<BikeDraft>
 
   const patch = (p: Partial<BikeDraft>) => setDraft((d) => ({ ...d, ...p }));
 
+  const resetForAnotherListing = () => {
+    setPublished(false);
+    setDraft(emptyDraft());
+    setQi(0);
+    setDir(1);
+    setAnalysing(false);
+    setMsg(0);
+    setSpecsOpen(false);
+    setUploading(false);
+    setPublishing(false);
+    setPublishError(null);
+    setRedoOpen(false);
+    setRedoing(false);
+    setRedoError(null);
+    setAiFields({});
+    onListAnother?.();
+  };
+
   React.useEffect(() => {
     if (!initialDraft) return;
     setDraft((d) => ({ ...d, ...initialDraft }));
     setDir(1);
-    setQi(1);
-  }, [initialDraft]);
+    if (autoAnalyseFromPhotos && initialDraft.images?.length) {
+      setQi(1);
+      setAnalysing(true);
+    } else if (initialDraft.images?.length) {
+      setQi(1);
+    }
+  }, [initialDraft, autoAnalyseFromPhotos]);
 
   // Real photo upload (falls back to demo photos if upload isn't available,
   // e.g. when reviewing on localhost without a signed-in session).
@@ -120,9 +154,13 @@ export function FlowGuided({ initialDraft }: { initialDraft?: Partial<BikeDraft>
       try {
         const analysis = await analysePhotos(urls);
         patchData = analysisToDraftPatch(analysis, urls, draft.uploadedImages ?? []);
+        const fields = await fetchListingFieldSuggestions(analysis);
+        if (fields.title?.value) patchData.title = fields.title.value;
+        if (!cancelled) setAiFields(fields);
       } catch {
         const demo = aiPrefilledDraft();
         patchData = { ...demo, images: urls.length ? urls : demo.images, uploadedImages: draft.uploadedImages };
+        if (!cancelled) setAiFields(AI_FIELDS);
       }
       if (cancelled) return;
       setDraft((d) => ({ ...d, ...patchData }));
@@ -148,7 +186,10 @@ export function FlowGuided({ initialDraft }: { initialDraft?: Partial<BikeDraft>
         itemType: draft.itemType || undefined,
       });
       const patchData = analysisToDraftPatch(analysis, urls, draft.uploadedImages ?? []);
+      const fields = await fetchListingFieldSuggestions(analysis);
+      if (fields.title?.value) patchData.title = fields.title.value;
       setDraft((d) => ({ ...d, ...patchData }));
+      setAiFields(fields);
       setDir(1);
       setQi(1);
       setRedoOpen(false);
@@ -198,7 +239,7 @@ export function FlowGuided({ initialDraft }: { initialDraft?: Partial<BikeDraft>
     return String(v ?? "").trim().length > 0;
   })();
 
-  if (published) return <SuccessScreen draft={draft} />;
+  if (published) return <SuccessScreen draft={draft} onListAnother={resetForAnotherListing} />;
 
   return (
     <div className="flex min-h-[78dvh] flex-col">
@@ -259,6 +300,7 @@ export function FlowGuided({ initialDraft }: { initialDraft?: Partial<BikeDraft>
                 q={q}
                 draft={draft}
                 patch={patch}
+                aiFields={aiFields}
                 specsOpen={specsOpen}
                 setSpecsOpen={setSpecsOpen}
                 onFiles={handleFiles}
@@ -350,17 +392,19 @@ function QuestionView({
   onFiles,
   uploading,
   onJump,
+  aiFields,
 }: {
   q: GuidedQuestion;
   draft: BikeDraft;
   patch: (p: Partial<BikeDraft>) => void;
+  aiFields: Record<string, AiField>;
   specsOpen: boolean;
   setSpecsOpen: (v: boolean) => void;
   onFiles: (files: File[]) => void;
   uploading: boolean;
   onJump: (id: string) => void;
 }) {
-  const ai = q.field ? AI_FIELDS[q.field as keyof BikeDraft] : undefined;
+  const ai = q.field ? aiFields[q.field as string] : undefined;
 
   return (
     <div>
@@ -378,27 +422,26 @@ function QuestionView({
             uploading={uploading}
             onRemove={(i) => patch({ images: draft.images.filter((_, idx) => idx !== i) })}
           />
-          {draft.images.length > 0 && (
-            <div className="mt-4 flex items-center gap-2 rounded-xl border border-gray-200 bg-white p-3">
-              <Sparkles className="h-4 w-4 text-gray-500" />
-              <p className="text-[13px] text-gray-600">
-                Great — we&apos;ll recognise what you&apos;re selling and pre-fill everything next.
-              </p>
-            </div>
-          )}
         </div>
       )}
 
       {/* Text */}
       {q.kind === "text" && q.field && (
         <div className="mt-5 space-y-3">
+          {q.field === "title" && ai && (
+            <TitleOptionList
+              options={[ai.value, ...(ai.alternatives ?? [])]}
+              selected={String(draft.title ?? "")}
+              onPick={(v) => patch({ title: v })}
+            />
+          )}
           <TextInput
             value={String(draft[q.field] ?? "")}
             onChange={(v) => patch({ [q.field as string]: v } as Partial<BikeDraft>)}
             placeholder={q.question}
-            autoFocus
+            autoFocus={q.field !== "title"}
           />
-          {q.suggestions && (
+          {q.suggestions && q.field !== "title" && (
             <div className="flex flex-wrap gap-1.5">
               {q.suggestions.slice(0, 8).map((s) => (
                 <button
@@ -417,7 +460,9 @@ function QuestionView({
               ))}
             </div>
           )}
-          {ai && <AiAssist ai={ai} onPick={(v) => patch({ [q.field as string]: v } as Partial<BikeDraft>)} />}
+          {ai && q.field !== "title" && (
+            <AiAssist ai={ai} onPick={(v) => patch({ [q.field as string]: v } as Partial<BikeDraft>)} />
+          )}
         </div>
       )}
 
@@ -482,7 +527,7 @@ function QuestionView({
       {/* Condition */}
       {q.kind === "condition" && (
         <div className="mt-5 space-y-2">
-          {CONDITION_RATINGS.map((c) => {
+          {conditionRatingsForItemType(draft.itemType).map((c) => {
             const active = draft.condition === c.value;
             return (
               <button
@@ -516,7 +561,7 @@ function QuestionView({
       {q.kind === "price" && (
         <div className="mt-5 space-y-4">
           <NumberInput value={draft.price} onChange={(v) => patch({ price: v })} big placeholder="0" />
-          <PriceGuide onUse={(v) => patch({ price: v })} />
+          <PriceResearchGuide draft={draft} onUse={(v) => patch({ price: v })} />
         </div>
       )}
 
@@ -600,57 +645,33 @@ function AiAssist({
   ai: { value: string; confidence: "high" | "medium" | "low"; alternatives?: string[] };
   onPick: (v: string) => void;
 }) {
+  const alternatives = ai.alternatives?.filter(Boolean) ?? [];
+  const needsAttention = ai.confidence !== "high";
+
+  if (!needsAttention && alternatives.length === 0) return null;
+
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2">
-      <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-gray-700">
-        <Sparkles className="h-3.5 w-3.5 text-gray-500" />
-        AI filled this
-      </span>
-      <ConfidenceDot c={ai.confidence} withLabel />
-      {ai.alternatives && ai.alternatives.length > 0 && (
-        <div className="ml-auto flex items-center gap-1.5">
-          {ai.alternatives.map((alt) => (
-            <button
-              key={alt}
-              type="button"
-              onClick={() => onPick(alt)}
-              className="rounded-md bg-gray-100 px-2 py-0.5 text-[12px] font-medium text-gray-700 hover:bg-gray-200"
-            >
-              {alt}
-            </button>
-          ))}
+    <div className="mt-3 space-y-2">
+      {needsAttention && (
+        <ConfidenceDot c={ai.confidence} withLabel />
+      )}
+      {alternatives.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[13px] text-gray-500">Could also be</p>
+          <div className="flex flex-wrap gap-2">
+            {alternatives.map((alt) => (
+              <button
+                key={alt}
+                type="button"
+                onClick={() => onPick(alt)}
+                className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-[13px] font-medium text-gray-700 transition-colors hover:bg-gray-50 active:scale-[0.98]"
+              >
+                {alt}
+              </button>
+            ))}
+          </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function PriceGuide({ onUse }: { onUse: (v: number) => void }) {
-  const pct = (PRICE_GUIDE.suggested - PRICE_GUIDE.low) / (PRICE_GUIDE.high - PRICE_GUIDE.low);
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-3.5">
-      <div className="flex items-center gap-1.5">
-        <Sparkles className="h-3.5 w-3.5 text-gray-500" />
-        <p className="text-[13px] font-semibold text-gray-700">AI price guidance</p>
-      </div>
-      <p className="mt-1 text-[12px] text-gray-500">
-        Based on {PRICE_GUIDE.sampleSize} similar sold listings
-      </p>
-      <div className="relative mt-3 h-1.5 rounded-full bg-gray-200">
-        <div className="absolute -top-1 h-3.5 w-3.5 -translate-x-1/2 rounded-full border-2 border-white shadow" style={{ left: `${pct * 100}%`, backgroundColor: BRAND }} />
-      </div>
-      <div className="mt-2 flex items-center justify-between text-[12px] text-gray-500">
-        <span>{formatAUD(PRICE_GUIDE.low)}</span>
-        <span className="font-semibold text-gray-900">Sweet spot {formatAUD(PRICE_GUIDE.suggested)}</span>
-        <span>{formatAUD(PRICE_GUIDE.high)}</span>
-      </div>
-      <button
-        type="button"
-        onClick={() => onUse(PRICE_GUIDE.suggested)}
-        className="mt-3 w-full rounded-md border border-gray-200 py-2 text-[13px] font-semibold text-gray-800 hover:bg-gray-50"
-      >
-        Use suggested price
-      </button>
     </div>
   );
 }
@@ -870,26 +891,24 @@ function Analysing({ message, count }: { message: string; count: number }) {
   );
 }
 
-function SuccessScreen({ draft }: { draft: BikeDraft }) {
+function SuccessScreen({
+  draft,
+  onListAnother,
+}: {
+  draft: BikeDraft;
+  onListAnother: () => void;
+}) {
   return (
     <div className="grid min-h-[78dvh] place-items-center px-6 text-center">
       <div>
-        <motion.div
-          initial={{ scale: 0.6, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: "spring", stiffness: 260, damping: 18 }}
-          className="mx-auto grid h-20 w-20 place-items-center rounded-full text-gray-900"
-          style={{ backgroundColor: BRAND }}
-        >
-          <Check className="h-10 w-10" />
-        </motion.div>
+        <PublishedCoverImage imageUrl={draft.images[0]} alt={draft.title} />
         <h2 className="mt-6 text-[24px] font-bold text-gray-900">You&apos;re live!</h2>
         <p className="mt-1.5 text-[15px] text-gray-500">
           {draft.title || "Your item"} · {formatAUD(draft.price)}
         </p>
         <div className="mt-6 flex flex-col gap-2">
           <Btn full>View my listing</Btn>
-          <Btn full variant="secondary">
+          <Btn full variant="secondary" onClick={onListAnother}>
             <RefreshCw className="h-4 w-4" />
             List another
           </Btn>

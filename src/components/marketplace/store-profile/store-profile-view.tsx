@@ -13,7 +13,6 @@ import {
   Package,
   Bike,
   Wrench,
-  Info,
   Star,
   ChevronRight,
   Search,
@@ -43,7 +42,6 @@ import { StoreHomeTab } from "@/components/marketplace/store-profile/store-home-
 import {
   StoreProfileChrome,
   STORE_PAGE_CONTENT_SHELL,
-  getStoreOpenStatus,
   parseStoreTabParam,
   type StoreTab,
 } from "@/components/marketplace/store-profile/store-profile-chrome";
@@ -51,7 +49,15 @@ import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-ca
 import type { StoreCategoryWithProducts, StoreProfile, OpeningHours, StoreSectionWithCategories } from "@/lib/types/store";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { resolveLivePrice, sortProductsSaleFirst } from "@/lib/marketplace/pricing";
-import { useProductImpressions, useStorePageView, useStoreSearchTracking } from "@/lib/tracking/store-analytics";
+import {
+  trackStoreBehaviourEvent,
+  useProductImpressions,
+  useStorePageView,
+  useStoreScrollDepthTracking,
+  useStoreSearchTracking,
+  useStoreSectionViewTracking,
+  useStoreTabTracking,
+} from "@/lib/tracking/store-analytics";
 
 // ============================================================
 // Store Profile View
@@ -610,9 +616,29 @@ function CarouselRow({
         : Math.min(maxScroll, el.scrollLeft + scrollAmount);
 
     el.scrollTo({ left: target, behavior: "smooth" });
+    if (trackAnalytics && storeId) {
+      trackStoreBehaviourEvent(storeId, "carousel_scroll", {
+        categoryId: cat.id,
+        categoryName: cat.name,
+        rowIndex,
+        direction: dir,
+        carouselSize: catSize,
+        scrollFrom: Math.round(el.scrollLeft),
+        scrollTo: Math.round(target),
+      });
+    }
   };
 
   const toggleExpanded = () => {
+    if (trackAnalytics && storeId) {
+      trackStoreBehaviourEvent(storeId, "carousel_expand", {
+        categoryId: cat.id,
+        categoryName: cat.name,
+        rowIndex,
+        carouselSize: catSize,
+        expanded: !isExpanded,
+      });
+    }
     setExpandedCategories((prev) => {
       const next = new Set(prev);
       if (isExpanded) {
@@ -627,7 +653,11 @@ function CarouselRow({
   if (cat.products.length === 0) return null;
 
   return (
-    <section key={cat.id}>
+    <section
+      key={cat.id}
+      data-store-analytics-section={`carousel:${cat.id}`}
+      data-store-analytics-label={cat.name}
+    >
       <div className="flex items-center justify-between gap-2 mb-1">
         <div className="flex items-center gap-3">
           {logoUrl ? (
@@ -1014,8 +1044,23 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
   const [hoursOpen, setHoursOpen] = React.useState(false);
   const [loadingFullProducts, setLoadingFullProducts] = React.useState(false);
   const [backgroundRemovingIds, setBackgroundRemovingIds] = React.useState<Set<string>>(new Set());
+  const analyticsRootRef = React.useRef<HTMLDivElement | null>(null);
+  const shouldTrackStoreAnalytics = !isOwnProfile;
+  const analyticsContext = React.useMemo(() => ({ tab: activeTab }), [activeTab]);
 
-  useStorePageView(isOwnProfile ? null : store.id);
+  useStorePageView(shouldTrackStoreAnalytics ? store.id : null);
+  useStoreTabTracking(shouldTrackStoreAnalytics ? store.id : null, activeTab, shouldTrackStoreAnalytics);
+  useStoreScrollDepthTracking(
+    shouldTrackStoreAnalytics ? store.id : null,
+    analyticsContext,
+    shouldTrackStoreAnalytics,
+  );
+  useStoreSectionViewTracking(
+    shouldTrackStoreAnalytics ? store.id : null,
+    analyticsRootRef,
+    analyticsContext,
+    shouldTrackStoreAnalytics,
+  );
 
   React.useEffect(() => {
     setStore(initialStore);
@@ -1061,8 +1106,6 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
       cancelled = true;
     };
   }, [activeTab, store.id, store.product_feed_complete]);
-
-  const openStatus = getStoreOpenStatus(store.opening_hours);
 
   // Flatten + dedupe products across categories
   const allProducts = React.useMemo(() => {
@@ -1187,43 +1230,131 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(store.address)}`
     : null;
 
+  const trackBehaviour = React.useCallback(
+    (eventType: Parameters<typeof trackStoreBehaviourEvent>[1], metadata: Record<string, unknown> = {}) => {
+      if (!shouldTrackStoreAnalytics) return;
+      trackStoreBehaviourEvent(store.id, eventType, metadata);
+    },
+    [shouldTrackStoreAnalytics, store.id],
+  );
+
+  const handleStoreSearchChange = React.useCallback(
+    (value: string) => {
+      setStoreSearch((current) => {
+        if (!current.trim() && value.trim()) {
+          trackBehaviour("search_focus", { tab: activeTab, source: "store_header_search" });
+        }
+        if (current.trim() && !value.trim()) {
+          trackBehaviour("search_clear", { tab: activeTab, source: "store_header_search" });
+        }
+        return value;
+      });
+    },
+    [activeTab, trackBehaviour],
+  );
+
+  const handleTabSelect = React.useCallback(
+    (tab: StoreTab) => {
+      setActiveTab(tab);
+      setSelectedCategory(null);
+    },
+    [],
+  );
+
+  const handleCategoryToggle = React.useCallback(
+    (name: string) => {
+      setSelectedCategory((current) => {
+        const next = current === name ? null : name;
+        trackBehaviour("category_filter", {
+          tab: activeTab,
+          categoryName: name,
+          selected: next === name,
+        });
+        return next;
+      });
+    },
+    [activeTab, trackBehaviour],
+  );
+
+  const handleSaleOnlyToggle = React.useCallback(() => {
+    setShowSaleOnly((current) => {
+      trackBehaviour("category_filter", {
+        tab: activeTab,
+        categoryName: "Sale",
+        selected: !current,
+      });
+      return !current;
+    });
+  }, [activeTab, trackBehaviour]);
+
+  const handleSortChange = React.useCallback(
+    (nextSort: SortKey) => {
+      trackBehaviour("sort_change", {
+        tab: activeTab,
+        sort: nextSort,
+        previousSort: sort,
+      });
+      setSort(nextSort);
+    },
+    [activeTab, sort, trackBehaviour],
+  );
+
+  const handleHoursOpenChange = React.useCallback(
+    (open: boolean) => {
+      if (open) {
+        trackBehaviour("hours_open", { tab: activeTab, source: "store_profile_chrome" });
+      }
+      setHoursOpen(open);
+    },
+    [activeTab, trackBehaviour],
+  );
+
   // Home-tab CTA dispatcher: tab key → switch tab; 'call'/'directions'/URL → act.
   const handleHomeNavigate = React.useCallback(
     (href: string) => {
       if (!href) return;
       if (href === "call") {
+        trackBehaviour("contact_click", { action: "call", label: "Call", tab: activeTab, source: "home_cta" });
         if (store.phone) window.location.href = `tel:${store.phone}`;
         return;
       }
       if (href === "directions") {
+        trackBehaviour("contact_click", { action: "directions", label: "Directions", tab: activeTab, source: "home_cta" });
         if (directionsUrl) window.open(directionsUrl, "_blank", "noopener,noreferrer");
         return;
       }
       if (/^https?:\/\//i.test(href)) {
+        trackBehaviour("cta_click", { action: "external_link", href, tab: activeTab, source: "home_cta" });
         window.open(href, "_blank", "noopener,noreferrer");
         return;
       }
       const tabKeys: StoreTab[] = ["home", "products", "bikes", "rentals", "service", "about", "reviews"];
       if (tabKeys.includes(href as StoreTab)) {
         const tab = href as StoreTab;
+        trackBehaviour("cta_click", { action: "open_tab", tab, previousTab: activeTab, source: "home_cta" });
         setActiveTab(tab);
         setSelectedCategory(null);
         if (tab === "home") {
-          setStoreSearch("");
+          handleStoreSearchChange("");
           setMobileSearchOpen(false);
         }
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
     },
-    [store.phone, directionsUrl],
+    [activeTab, directionsUrl, handleStoreSearchChange, store.phone, trackBehaviour],
   );
 
   // Open the Products tab pre-filtered to a category (from a Home collection tile).
   const handleOpenCollection = React.useCallback((categoryName: string) => {
+    trackBehaviour("collection_open", {
+      categoryName,
+      previousTab: activeTab,
+      source: "home_collection",
+    });
     setActiveTab("products");
     setSelectedCategory(categoryName);
     window.scrollTo({ top: 0, behavior: "smooth" });
-  }, []);
+  }, [activeTab, trackBehaviour]);
 
   const handleCategoryRename = React.useCallback(
     async (categoryId: string, name: string): Promise<boolean> => {
@@ -1344,7 +1475,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
     : STORE_PAGE_CONTENT_SHELL;
 
   return (
-    <div className={cn("min-h-screen bg-gray-50", immersive && "pt-14")}>
+    <div ref={analyticsRootRef} className={cn("min-h-screen bg-gray-50", immersive && "pt-14")}>
       <div>
       <div>
       <StoreProfileChrome
@@ -1352,29 +1483,25 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
         contentShell={storeContentShell}
         activeTab={activeTab}
         storeSearch={storeSearch}
-        onStoreSearchChange={setStoreSearch}
+        onStoreSearchChange={handleStoreSearchChange}
         mobileSearchOpen={mobileSearchOpen}
         onMobileSearchOpenChange={setMobileSearchOpen}
         showHeaderSearch={showHeaderSearch}
         hoursOpen={hoursOpen}
-        onHoursOpenChange={setHoursOpen}
-        onTabSelect={(tab) => {
-          setActiveTab(tab);
-          setSelectedCategory(null);
-        }}
+        onHoursOpenChange={handleHoursOpenChange}
+        onTabSelect={handleTabSelect}
         actionButtons={actionButtons}
         immersive={immersive}
+        onBehaviourEvent={trackBehaviour}
         floatingBarExtra={
           activeTab === "products" && allProducts.length > 0 ? (
             <StoreProductCategoryPills
               className="flex-1"
               categories={store.categories}
               selectedCategory={selectedCategory}
-              onToggleCategory={(name) =>
-                setSelectedCategory((cur) => (cur === name ? null : name))
-              }
+              onToggleCategory={handleCategoryToggle}
               showSaleOnly={showSaleOnly}
-              onToggleSaleOnly={() => setShowSaleOnly((v) => !v)}
+              onToggleSaleOnly={handleSaleOnlyToggle}
               saleCount={saleProductIds.size}
               searchQuery={storeSearch}
               emptySearchMessage={
@@ -1412,11 +1539,9 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                 className="flex-1"
                 categories={store.categories}
                 selectedCategory={selectedCategory}
-                onToggleCategory={(name) =>
-                  setSelectedCategory((cur) => (cur === name ? null : name))
-                }
+                onToggleCategory={handleCategoryToggle}
                 showSaleOnly={showSaleOnly}
-                onToggleSaleOnly={() => setShowSaleOnly((v) => !v)}
+                onToggleSaleOnly={handleSaleOnlyToggle}
                 saleCount={saleProductIds.size}
                 searchQuery={storeSearch}
                 emptySearchMessage={
@@ -1428,13 +1553,16 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
 
               <div className="flex items-center gap-2 flex-shrink-0">
                 <div className="md:hidden">
-                  <StoreSortButton sort={sort} onSortChange={setSort} size="sm" />
+                  <StoreSortButton sort={sort} onSortChange={handleSortChange} size="sm" />
                 </div>
                 <div className="hidden md:flex items-center gap-2">
                 <div className="flex items-center rounded-md border border-gray-200 overflow-hidden">
                   <button
                     type="button"
-                    onClick={() => setCompact(false)}
+                    onClick={() => {
+                      trackBehaviour("cta_click", { action: "view_density", label: "Default view", tab: activeTab });
+                      setCompact(false);
+                    }}
                     className={cn(
                       "flex items-center justify-center w-8 h-8 transition-colors cursor-pointer",
                       !compact ? "bg-gray-900 text-white" : "bg-white text-gray-400 hover:text-gray-700"
@@ -1445,7 +1573,10 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                   </button>
                   <button
                     type="button"
-                    onClick={() => setCompact(true)}
+                    onClick={() => {
+                      trackBehaviour("cta_click", { action: "view_density", label: "Compact view", tab: activeTab });
+                      setCompact(true);
+                    }}
                     className={cn(
                       "flex items-center justify-center w-8 h-8 transition-colors cursor-pointer",
                       compact ? "bg-gray-900 text-white" : "bg-white text-gray-400 hover:text-gray-700"
@@ -1455,7 +1586,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                     <Grip className="h-3.5 w-3.5" />
                   </button>
                 </div>
-                <StoreSortButton sort={sort} onSortChange={setSort} size="sm" />
+                <StoreSortButton sort={sort} onSortChange={handleSortChange} size="sm" />
                 </div>
               </div>
             </div>
@@ -1471,7 +1602,11 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
           ? "" // full-bleed; inherits the page's gray-50 so white cards pop
           : cn("pt-2 pb-5 sm:pt-3 sm:pb-7", storeContentShell)
       )}>
-          <div key={activeTab}>
+          <div
+            key={activeTab}
+            data-store-analytics-section={`tab:${activeTab}`}
+            data-store-analytics-label={`${activeTab} tab`}
+          >
             {/* HOME — storefront landing page */}
             {activeTab === "home" && (
               <StoreHomeTab
@@ -1481,7 +1616,8 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                 contentShell={storeContentShell}
                 onNavigate={handleHomeNavigate}
                 onOpenCollection={handleOpenCollection}
-                onOpenHours={() => setHoursOpen(true)}
+                onOpenHours={() => handleHoursOpenChange(true)}
+                onTrackBehaviour={trackBehaviour}
               />
             )}
 
@@ -1589,6 +1725,14 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                       </div>
                       <a
                         href={`tel:${store.phone.replace(/\s/g, "")}`}
+                        onClick={() =>
+                          trackBehaviour("contact_click", {
+                            action: "call",
+                            label: "Call rental store",
+                            tab: "rentals",
+                            source: "rentals_banner",
+                          })
+                        }
                         className="inline-flex items-center justify-center rounded-md bg-white px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-100 transition-colors"
                       >
                         Call {store.phone}
@@ -1618,7 +1762,17 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                         className="rounded-lg cursor-pointer text-gray-900 font-semibold hover:brightness-95 flex-shrink-0"
                         style={{ backgroundColor: BRAND_YELLOW }}
                       >
-                        <a href={`tel:${store.phone}`}>
+                        <a
+                          href={`tel:${store.phone}`}
+                          onClick={() =>
+                            trackBehaviour("service_book_click", {
+                              action: "call_to_book",
+                              label: "Call to book",
+                              tab: "service",
+                              source: "services_banner",
+                            })
+                          }
+                        >
                           <Phone className="h-4 w-4 mr-2" />
                           Call to book
                           <ChevronRight className="h-4 w-4 ml-1" />
@@ -1641,7 +1795,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
 
             {/* ABOUT */}
             {activeTab === "about" && (
-              <AboutTab store={store} openStatus={openStatus} />
+              <AboutTab store={store} />
             )}
 
             {/* REVIEWS */}
@@ -1699,10 +1853,8 @@ function HeroAction({
 // ── About tab ──────────────────────────────────────────────
 function AboutTab({
   store,
-  openStatus,
 }: {
   store: StoreProfile;
-  openStatus: { open: boolean; label: string } | null;
 }) {
   const todayKey = DAY_KEYS[new Date().getDay()];
   return (

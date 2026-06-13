@@ -83,7 +83,7 @@ interface ProductData {
   imageUrls: string[];
   thumbnailUrls: string[];
   suggestedName: string;
-  aiData: any;
+  aiData: unknown;
   formData: ProductFormData;
   isValid: boolean;
 }
@@ -116,52 +116,71 @@ interface ProductFormData {
   pickupAvailable: boolean;
 }
 
+type ProductFieldValue = ProductFormData[keyof ProductFormData];
+type AnalysisRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): AnalysisRecord {
+  return value && typeof value === "object" ? (value as AnalysisRecord) : {};
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function asNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 function productFormDataFromAnalysis(
-  analysis: any,
+  analysisValue: unknown,
   fallbackName: string,
 ): ProductFormData {
+  const analysis = asRecord(analysisValue);
   const titleParts = [
-    analysis?.brand,
-    analysis?.model,
-    analysis?.model_year,
+    analysis.brand,
+    analysis.model,
+    analysis.model_year,
   ].filter(Boolean);
   const generatedTitle =
-    analysis?.clean_title ||
-    analysis?.title ||
+    asString(analysis.clean_title) ||
+    asString(analysis.title) ||
     (titleParts.length > 0 ? titleParts.join(" ") : fallbackName);
-  const bikeDetails = analysis?.bike_details || {};
-  const partDetails = analysis?.part_details || {};
-  const apparelDetails = analysis?.apparel_details || {};
-  const priceEstimate = analysis?.price_estimate || {};
+  const bikeDetails = asRecord(analysis.bike_details);
+  const partDetails = asRecord(analysis.part_details);
+  const apparelDetails = asRecord(analysis.apparel_details);
+  const priceEstimate = asRecord(analysis.price_estimate);
+  const minPrice = asNumber(priceEstimate.min_aud);
+  const maxPrice = asNumber(priceEstimate.max_aud);
+  const targetPrice = asNumber(priceEstimate.target_aud);
 
   return {
     title: generatedTitle,
-    description: analysis?.description || "",
-    sellerNotes: analysis?.seller_notes || "",
-    brand: analysis?.brand || "",
-    model: analysis?.model || "",
-    modelYear: analysis?.model_year || "",
-    itemType: analysis?.item_type || "bike",
-    bikeType: bikeDetails.bike_type || "",
-    frameSize: bikeDetails.frame_size || "",
-    frameMaterial: bikeDetails.frame_material || "",
-    groupset: bikeDetails.groupset || "",
-    wheelSize: bikeDetails.wheel_size || "",
-    colorPrimary: bikeDetails.color_primary || "",
-    partTypeDetail: partDetails.part_category || partDetails.part_type || "",
-    compatibilityNotes: partDetails.compatibility || "",
-    size: apparelDetails.size || "",
-    genderFit: apparelDetails.gender_fit || "",
-    conditionRating: (analysis?.condition_rating || "Good") as ConditionRating,
+    description: asString(analysis.description),
+    sellerNotes: asString(analysis.seller_notes),
+    brand: asString(analysis.brand),
+    model: asString(analysis.model),
+    modelYear: asString(analysis.model_year),
+    itemType: asString(analysis.item_type) || "bike",
+    bikeType: asString(bikeDetails.bike_type),
+    frameSize: asString(bikeDetails.frame_size),
+    frameMaterial: asString(bikeDetails.frame_material),
+    groupset: asString(bikeDetails.groupset),
+    wheelSize: asString(bikeDetails.wheel_size),
+    colorPrimary: asString(bikeDetails.color_primary),
+    partTypeDetail: asString(partDetails.part_category) || asString(partDetails.part_type),
+    compatibilityNotes: asString(partDetails.compatibility),
+    size: asString(apparelDetails.size),
+    genderFit: asString(apparelDetails.gender_fit),
+    conditionRating: (asString(analysis.condition_rating) || "Good") as ConditionRating,
     conditionDetails:
-      analysis?.condition_details || analysis?.condition_notes || "",
-    price: priceEstimate.min_aud
+      asString(analysis.condition_details) || asString(analysis.condition_notes),
+    price: minPrice
       ? Math.round(
-          priceEstimate.target_aud ||
-            (priceEstimate.min_aud + priceEstimate.max_aud) / 2
+          targetPrice ||
+            (minPrice + maxPrice) / 2
         )
       : 0,
-    originalRrp: priceEstimate.max_aud || 0,
+    originalRrp: maxPrice,
     shippingAvailable: false,
     shippingCost: 0,
     pickupLocation: "",
@@ -632,7 +651,7 @@ export function BulkUploadSheet({
   const updateProductFieldAt = (
     index: number,
     field: keyof ProductFormData,
-    value: any
+    value: ProductFieldValue
   ) => {
     setProducts((prev) =>
       prev.map((p, i) =>
@@ -1557,7 +1576,7 @@ function ExitConfirmDialog({
 interface ProductEditorFieldsProps {
   product: ProductData;
   isGenerating: boolean;
-  onPatch: (field: keyof ProductFormData, value: any) => void;
+  onPatch: (field: keyof ProductFormData, value: ProductFieldValue) => void;
   onRotate: (photoIndex: number) => void;
   onSetCover: (photoIndex: number) => void;
   onGenerate: () => void;

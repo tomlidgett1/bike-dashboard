@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Check,
   ChevronDown,
-  Sparkles,
   X,
   Loader2,
   Camera,
@@ -288,20 +287,76 @@ export function ProgressBar({ value }: { value: number }) {
 
 export function AiPill({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-700">
-      <Sparkles className="h-3 w-3" />
-      {children}
-    </span>
+    <span className="text-[11px] font-medium text-gray-500">{children}</span>
   );
 }
 
 export function ConfidenceDot({ c, withLabel }: { c: Confidence; withLabel?: boolean }) {
+  if (c === "high") return null;
   const meta = confidenceMeta(c);
   return (
     <span className="inline-flex items-center gap-1.5">
       <span className={cn("h-1.5 w-1.5 rounded-full", meta.dot)} />
-      {withLabel && <span className="text-[11px] font-medium text-gray-500">{meta.label}</span>}
+      {withLabel && meta.label && (
+        <span className="text-[12px] font-medium text-gray-500">{meta.label}</span>
+      )}
     </span>
+  );
+}
+
+export function TitleOptionList({
+  options,
+  selected,
+  onPick,
+}: {
+  options: string[];
+  selected: string;
+  onPick: (value: string) => void;
+}) {
+  const unique = [...new Set(options.map((option) => option.trim()).filter(Boolean))].slice(0, 5);
+  if (unique.length <= 1) return null;
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[13px] text-gray-500">Suggested titles</p>
+      <div className="space-y-2">
+        {unique.map((title) => (
+          <button
+            key={title}
+            type="button"
+            onClick={() => onPick(title)}
+            className={cn(
+              "w-full rounded-md border px-3 py-2.5 text-left text-[15px] leading-snug transition-colors active:scale-[0.99]",
+              selected === title
+                ? "border-gray-900 bg-gray-50 font-medium text-gray-900"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50",
+            )}
+          >
+            {title}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function PublishedCoverImage({ imageUrl, alt }: { imageUrl?: string; alt?: string }) {
+  return (
+    <motion.div
+      initial={{ scale: 0.92, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ type: "spring", stiffness: 260, damping: 20 }}
+      className="mx-auto h-32 w-32 overflow-hidden rounded-md border border-gray-200 bg-gray-100 shadow-sm"
+    >
+      {imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={imageUrl} alt={alt ?? "Your listing"} className="h-full w-full object-cover" />
+      ) : (
+        <div className="grid h-full w-full place-items-center text-gray-400">
+          <Camera className="h-8 w-8" />
+        </div>
+      )}
+    </motion.div>
   );
 }
 
@@ -323,14 +378,12 @@ export function AiSuggestion({
 }) {
   if (!value) return null;
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-3">
-      <div className="flex items-center gap-1.5">
-        <Sparkles className="h-3.5 w-3.5 text-gray-500" />
-        <span className="text-[12px] font-semibold text-gray-700">AI suggests</span>
-        <span className="ml-auto">
+    <div className="rounded-md border border-gray-200 bg-white p-3">
+      {confidence !== "high" && (
+        <div className="mb-2">
           <ConfidenceDot c={confidence} withLabel />
-        </span>
-      </div>
+        </div>
+      )}
       <button
         type="button"
         onClick={onAccept}
@@ -475,35 +528,55 @@ export function PhotoUploader({
   uploading?: boolean;
   compact?: boolean;
 }) {
-  const inputRef = React.useRef<HTMLInputElement>(null);
+  const cameraInputRef = React.useRef<HTMLInputElement>(null);
+  const libraryInputRef = React.useRef<HTMLInputElement>(null);
 
-  const trigger = () => {
-    if (onFiles) inputRef.current?.click();
+  const triggerCamera = () => {
+    if (onFiles) cameraInputRef.current?.click();
     else onAdd();
   };
 
-  const hiddenInput = onFiles ? (
-    <input
-      ref={inputRef}
-      type="file"
-      accept="image/*"
-      multiple
-      className="hidden"
-      onChange={(e) => {
-        const files = e.target.files ? Array.from(e.target.files) : [];
-        if (files.length) onFiles(files);
-        e.target.value = "";
-      }}
-    />
+  const triggerLibrary = () => {
+    if (onFiles) libraryInputRef.current?.click();
+    else onAdd();
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!onFiles) return;
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    if (files.length) onFiles(files);
+    e.target.value = "";
+  };
+
+  const hiddenInputs = onFiles ? (
+    <>
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        multiple
+        className="hidden"
+        onChange={handleFileInputChange}
+      />
+      <input
+        ref={libraryInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={handleFileInputChange}
+      />
+    </>
   ) : null;
 
   if (images.length === 0) {
     return (
       <div className="grid grid-cols-2 gap-3">
-        {hiddenInput}
+        {hiddenInputs}
         <button
           type="button"
-          onClick={trigger}
+          onClick={triggerCamera}
           disabled={uploading}
           className={cn(
             "flex flex-col items-center justify-center gap-2 rounded-md border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-50 active:scale-[0.98] disabled:opacity-50",
@@ -515,7 +588,7 @@ export function PhotoUploader({
         </button>
         <button
           type="button"
-          onClick={trigger}
+          onClick={triggerLibrary}
           disabled={uploading}
           className={cn(
             "flex flex-col items-center justify-center gap-2 rounded-md border border-gray-200 bg-white text-gray-700 transition-colors hover:bg-gray-50 active:scale-[0.98] disabled:opacity-50",
@@ -530,7 +603,7 @@ export function PhotoUploader({
   }
   return (
     <div className="grid grid-cols-3 gap-2">
-      {hiddenInput}
+      {hiddenInputs}
       {images.map((url, i) => (
         <div key={`${url}-${i}`} className="relative aspect-square overflow-hidden rounded-md bg-gray-100">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -554,7 +627,7 @@ export function PhotoUploader({
       ))}
       <button
         type="button"
-        onClick={trigger}
+        onClick={triggerLibrary}
         disabled={uploading}
         className="flex aspect-square flex-col items-center justify-center gap-1 rounded-md border border-dashed border-gray-300 text-gray-500 hover:bg-gray-50 disabled:opacity-50"
       >

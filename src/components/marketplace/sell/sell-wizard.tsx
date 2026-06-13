@@ -11,6 +11,7 @@ import { SmartUploadFlow } from "./smart-upload-flow";
 import { FacebookImportFlow } from "./facebook-import-flow";
 import { BulkUploadSheet } from "./bulk-upload-sheet";
 import { QuickUploadSheet } from "./quick-upload-sheet";
+import { readSingleItemPhotoDraft } from "./single-item-photo-draft";
 import { WizardNavigation } from "./wizard-navigation";
 import { Step1ItemType } from "./step-1-item-type";
 // New granular step components
@@ -819,9 +820,19 @@ export function SellWizard() {
   };
 
   const handleRedoAiDetails = async (hint: string) => {
-    const images = Array.isArray(formData.images) ? formData.images : [];
+    type WizardImage = {
+      url?: unknown;
+      cardUrl?: unknown;
+      mobileCardUrl?: unknown;
+      thumbnailUrl?: unknown;
+      galleryUrl?: unknown;
+      detailUrl?: unknown;
+    };
+    const images: WizardImage[] = Array.isArray(formData.images)
+      ? (formData.images as WizardImage[])
+      : [];
     const imageUrls = images
-      .map((image: any) => image?.url)
+      .map((image) => image.url)
       .filter((url: unknown): url is string => typeof url === "string" && url.length > 0);
 
     if (imageUrls.length === 0) return;
@@ -862,13 +873,13 @@ export function SellWizard() {
         );
       }
 
-      const uploadedImages = images.map((image: any, index: number) => ({
-        url: image.url || imageUrls[index],
-        cardUrl: image.cardUrl,
-        mobileCardUrl: image.mobileCardUrl,
-        thumbnailUrl: image.thumbnailUrl,
-        galleryUrl: image.galleryUrl,
-        detailUrl: image.detailUrl,
+      const uploadedImages = images.map((image, index) => ({
+        url: typeof image.url === "string" ? image.url : imageUrls[index],
+        cardUrl: typeof image.cardUrl === "string" ? image.cardUrl : undefined,
+        mobileCardUrl: typeof image.mobileCardUrl === "string" ? image.mobileCardUrl : undefined,
+        thumbnailUrl: typeof image.thumbnailUrl === "string" ? image.thumbnailUrl : undefined,
+        galleryUrl: typeof image.galleryUrl === "string" ? image.galleryUrl : undefined,
+        detailUrl: typeof image.detailUrl === "string" ? image.detailUrl : undefined,
       }));
 
       updateFormData(
@@ -1456,14 +1467,19 @@ export function SellWizard() {
     );
   }
 
-  // Handle the quick upload sub-options from the method chooser.
-  // Hosted in the same full-height bottom sheet as bulk upload.
+  // Handle guided or quick upload (form) after photos in the entry flow.
+  const photoDraftForSheet = React.useMemo(
+    () => (mode === "guided" || mode === "form" ? readSingleItemPhotoDraft() : null),
+    [mode],
+  );
+
   if (mode === "guided" || mode === "form") {
     return (
       <QuickUploadSheet
         isOpen
         mode={mode}
         textUploadToken={textUploadToken}
+        photoDraft={photoDraftForSheet}
         onClose={() => router.push("/marketplace/sell")}
       />
     );
@@ -1722,9 +1738,9 @@ function TextUploadFlowChoice({
                 <LayoutList className="h-5 w-5 text-gray-700" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-[15px] font-semibold text-gray-900">Form</span>
+                <span className="block text-[15px] font-semibold text-gray-900">Quick upload</span>
                 <span className="mt-0.5 block text-[12.5px] leading-snug text-gray-500">
-                  Check everything on one page.
+                  Every field on one page.
                 </span>
               </span>
             </button>

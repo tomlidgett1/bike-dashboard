@@ -40,7 +40,7 @@ export const WHEEL_SIZES = ["700c", '29"', '27.5"', '26"', '20"', '16"', "Other"
 
 export const SUSPENSION_TYPES = ["Rigid", "Hardtail", "Full Suspension", "N/A"] as const;
 
-export const CONDITION_RATINGS = [
+export const CONDITION_RATINGS_BIKE = [
   { value: "New", blurb: "Never ridden, as new" },
   { value: "Like New", blurb: "Ridden a handful of times" },
   { value: "Excellent", blurb: "Light use, well cared for" },
@@ -48,6 +48,35 @@ export const CONDITION_RATINGS = [
   { value: "Fair", blurb: "Visible wear, may need a service" },
   { value: "Well Used", blurb: "Heavy use, sold as-is" },
 ] as const;
+
+export const CONDITION_RATINGS_GENERAL = [
+  { value: "New", blurb: "Unused, with tags or original packaging" },
+  { value: "Like New", blurb: "Barely used, no visible wear" },
+  { value: "Excellent", blurb: "Light use, well cared for" },
+  { value: "Good", blurb: "Normal wear, fully functional" },
+  { value: "Fair", blurb: "Visible wear, still works as intended" },
+  { value: "Well Used", blurb: "Heavy use, sold as-is" },
+] as const;
+
+/** Bike listings and bulk upload — bike-specific blurbs. */
+export const CONDITION_RATINGS = CONDITION_RATINGS_BIKE;
+
+export const ITEM_TYPE_OPTIONS = [
+  { value: "bike", label: "Bike" },
+  { value: "part", label: "Part or accessory" },
+  { value: "apparel", label: "Apparel" },
+] as const;
+
+export function conditionRatingsForItemType(itemType: GuidedItemType) {
+  if (itemType === "part" || itemType === "apparel") return CONDITION_RATINGS_GENERAL;
+  return CONDITION_RATINGS_BIKE;
+}
+
+export function conditionSectionTitleForItemType(itemType: GuidedItemType): string {
+  if (itemType === "apparel") return "Gear condition";
+  if (itemType === "part") return "Item condition";
+  return "Bike condition";
+}
 
 export const FRAME_SIZE_SUGGESTIONS = [
   "XS", "S", "M", "L", "XL",
@@ -267,7 +296,15 @@ export const MOCK_PHOTOS: string[] = [
 // Specialized Allez Sport (2021), Shimano 105 R7000.
 
 export const AI_FIELDS: Record<string, AiField> = {
-  title: { value: "Specialized Allez Sport 2021 — Shimano 105", confidence: "high" },
+  title: {
+    value: "Specialized Allez Sport 2021 — Shimano 105",
+    confidence: "high",
+    alternatives: [
+      "2021 Specialized Allez Sport | Shimano 105",
+      "Specialized Allez Sport — Road Bike",
+      "Specialized Allez Sport 2021, 54cm",
+    ],
+  },
   bikeType: { value: "Road", confidence: "high" },
   brand: { value: "Specialized", confidence: "high" },
   model: { value: "Allez Sport", confidence: "high", alternatives: ["Allez Elite", "Allez E5"] },
@@ -388,9 +425,6 @@ export function formatAUD(value: number): string {
   }).format(value || 0);
 }
 
-// AI price guidance for the recognised bike.
-export const PRICE_GUIDE = { low: 1050, suggested: 1250, high: 1450, sampleSize: 18 };
-
 // Live listing quality score — drives the AI "boost your listing" nudges.
 export interface QualityResult {
   score: number;
@@ -436,9 +470,9 @@ export function scoreDraft(draft: BikeDraft): QualityResult {
 }
 
 export function confidenceMeta(c: Confidence): { dot: string; label: string } {
-  if (c === "high") return { dot: "bg-emerald-500", label: "AI confident" };
-  if (c === "medium") return { dot: "bg-amber-500", label: "Worth a check" };
-  return { dot: "bg-rose-500", label: "Please confirm" };
+  if (c === "high") return { dot: "bg-gray-300", label: "" };
+  if (c === "medium") return { dot: "bg-amber-500", label: "Double-check" };
+  return { dot: "bg-rose-500", label: "Confirm" };
 }
 
 export const YEARS = Array.from({ length: 16 }, (_, i) => String(2026 - i));
@@ -482,8 +516,14 @@ export const GUIDED_QUESTIONS: GuidedQuestion[] = [
   { id: "colourPrimary", kind: "colour", field: "colourPrimary", question: "What colour is it?" },
   { id: "wheelSize", kind: "pills", field: "wheelSize", question: "Wheel size?", options: WHEEL_SIZES, optional: true },
   { id: "groupset", kind: "text", field: "groupset", question: "Which groupset?", helper: "The gears and brakes brand, e.g. Shimano 105.", suggestions: COMMON_GROUPSETS, optional: true },
-  { id: "condition", kind: "condition", field: "condition", question: "What condition is it in?" },
-  { id: "price", kind: "price", field: "price", question: "Set your price", helper: "Here's what similar bikes are selling for." },
+  {
+    id: "condition",
+    kind: "condition",
+    field: "condition",
+    question: "What condition is the bike in?",
+    helper: "Wear, service history, and any quirks — buyers appreciate honesty.",
+  },
+  { id: "price", kind: "price", field: "price", question: "Set your price", helper: "We'll look up brand-new pricing and similar listings to help you decide." },
   { id: "description", kind: "description", field: "description", question: "Describe your bike", helper: "We've written a starting point — make it yours." },
   { id: "specsOffer", kind: "specsOffer", question: "Add full specifications?", helper: "Detailed component specs help your bike sell faster — and we can fetch them for you." },
   { id: "delivery", kind: "delivery", question: "How can buyers get it?" },
@@ -507,7 +547,13 @@ export const PART_QUESTIONS: GuidedQuestion[] = [
   { id: "brand", kind: "text", field: "brand", question: "What brand is it?", optional: true },
   { id: "model", kind: "text", field: "model", question: "And the model?", helper: "Skip it if there isn't one.", optional: true },
   { id: "colourPrimary", kind: "colour", field: "colourPrimary", question: "What colour is it?", optional: true },
-  { id: "condition", kind: "condition", field: "condition", question: "What condition is it in?" },
+  {
+    id: "condition",
+    kind: "condition",
+    field: "condition",
+    question: "What condition is the item in?",
+    helper: "Scratches, missing parts, or anything a buyer should know.",
+  },
   { id: "price", kind: "price", field: "price", question: "Set your price" },
   { id: "description", kind: "description", field: "description", question: "Describe your item", helper: "We've written a starting point — make it yours." },
   { id: "delivery", kind: "delivery", question: "How can buyers get it?" },
@@ -520,7 +566,13 @@ export const APPAREL_QUESTIONS: GuidedQuestion[] = [
   { id: "brand", kind: "text", field: "brand", question: "What brand is it?", optional: true },
   { id: "size", kind: "pills", field: "size", question: "What size is it?", options: APPAREL_SIZES, optional: true },
   { id: "colourPrimary", kind: "colour", field: "colourPrimary", question: "What colour is it?", optional: true },
-  { id: "condition", kind: "condition", field: "condition", question: "What condition is it in?" },
+  {
+    id: "condition",
+    kind: "condition",
+    field: "condition",
+    question: "What condition is the gear in?",
+    helper: "Fabric, zips, and padding — small details help buyers decide.",
+  },
   { id: "price", kind: "price", field: "price", question: "Set your price" },
   { id: "description", kind: "description", field: "description", question: "Describe your item", helper: "We've written a starting point — make it yours." },
   { id: "delivery", kind: "delivery", question: "How can buyers get it?" },

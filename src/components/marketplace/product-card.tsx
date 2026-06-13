@@ -14,6 +14,7 @@ import { getCardImageUrl } from "@/lib/utils/cloudinary";
 import { cloudinaryCardLoader, extractCloudinaryPublicId } from "@/lib/utils/cloudinary-transforms";
 import { resolveLivePrice, formatPriceAUD, formatPriceAUDFull } from "@/lib/marketplace/pricing";
 import { cn } from "@/lib/utils";
+import { trackStoreBehaviourEvent } from "@/lib/tracking/store-analytics";
 
 // 1x1 light-grey SVG used as the blur-up placeholder for card images
 const CARD_BLUR_DATA_URL =
@@ -106,7 +107,13 @@ function buildCardCartItem(product: ProductCardData): CartItem {
 // ── Add-to-cart overlay button ──────────────────────────────
 // Kept outside the memoized ProductCard so cart-state changes (in/out of
 // cart) cause this tiny component to re-render without busting the whole card.
-function CartOverlayButton({ product }: { product: ProductCardData }) {
+function CartOverlayButton({
+  product,
+  storeId,
+}: {
+  product: ProductCardData;
+  storeId?: string;
+}) {
   const { has, addItem, openCart } = useCart();
   const inCart = has(product.id);
 
@@ -115,6 +122,15 @@ function CartOverlayButton({ product }: { product: ProductCardData }) {
     e.stopPropagation();
     if (inCart) { openCart(); return; }
     const result = addItem(buildCardCartItem(product));
+    if (storeId) {
+      trackStoreBehaviourEvent(storeId, "add_to_cart_click", {
+        action: "add_to_cart",
+        label: "Add to cart",
+        source: "product_card",
+        category: product.marketplace_category,
+        price: resolveLivePrice(product).price,
+      }, product.id);
+    }
     if (result === "added" || result === "exists") openCart();
   };
 
@@ -153,7 +169,13 @@ function UberDeliveryBadge() {
   );
 }
 
-function BuyNowOverlayButton({ product }: { product: ProductCardData }) {
+function BuyNowOverlayButton({
+  product,
+  storeId,
+}: {
+  product: ProductCardData;
+  storeId?: string;
+}) {
   const { user } = useAuth();
   const { openAuthModal } = useAuthModal();
   const { startBuyNow } = useCart();
@@ -170,6 +192,15 @@ function BuyNowOverlayButton({ product }: { product: ProductCardData }) {
     }
 
     startBuyNow(buildCardCartItem(product));
+    if (storeId) {
+      trackStoreBehaviourEvent(storeId, "buy_now_click", {
+        action: "buy_now",
+        label: "Buy now",
+        source: "product_card",
+        category: product.marketplace_category,
+        price: resolveLivePrice(product).price,
+      }, product.id);
+    }
     trackInteraction("click", {
       productId: product.id,
       metadata: {
@@ -338,13 +369,31 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
         price: product.price,
       }
     });
+    if (storeId) {
+      trackStoreBehaviourEvent(storeId, "product_click", {
+        action: "open_product",
+        label: product.display_name || product.description,
+        source: "product_card",
+        category: product.marketplace_category,
+        price: product.price,
+      }, product.id);
+    }
 
     // Navigate to product page
     const productUrl = storeId
       ? `/marketplace/product/${product.id}?store=${storeId}`
       : `/marketplace/product/${product.id}`;
     router.push(productUrl);
-  }, [product.id, product.marketplace_category, product.price, router, onNavigate, storeId]);
+  }, [
+    product.description,
+    product.display_name,
+    product.id,
+    product.marketplace_category,
+    product.price,
+    router,
+    onNavigate,
+    storeId,
+  ]);
 
   const isList = layout === "list";
   // Resolve live price once so both the photo badge and the price row can use it.
@@ -431,8 +480,8 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
 
           {/* Quick action overlays */}
           <div className="absolute top-1.5 right-1.5 sm:top-2 sm:right-2 z-10 flex items-center gap-1 sm:gap-1.5">
-            <CartOverlayButton product={productData} />
-            <BuyNowOverlayButton product={productData} />
+            <CartOverlayButton product={productData} storeId={storeId} />
+            <BuyNowOverlayButton product={productData} storeId={storeId} />
           </div>
 
           {onBackgroundRemove && !isList && (

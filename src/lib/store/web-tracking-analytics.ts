@@ -1,4 +1,8 @@
 import { STORE_ANALYTICS_TIMEZONE } from "@/lib/constants/store-analytics";
+import {
+  getInternalAnalyticsUserIds,
+  isExcludedAnalyticsUser,
+} from "@/lib/store/analytics-exclusions";
 import type { createServiceRoleClient } from "@/lib/supabase/server";
 import type {
   StoreAnalyticsByDevice,
@@ -223,6 +227,7 @@ export async function getWebTrackingAnalytics(
     parseDateKeyAsUtc(firstDate).getTime() - 2 * DAY_MS
   ).toISOString();
   const rows = await fetchStoreAnalyticsEvents(service, userId, fetchSince);
+  const internalUserIds = await getInternalAnalyticsUserIds(service);
 
   const todaySummary = createMutableTrackingSummary(today, today);
   const weekSummary = createMutableTrackingSummary(currentWeekStart, currentWeekEnd);
@@ -244,7 +249,7 @@ export async function getWebTrackingAnalytics(
   }
 
   for (const row of rows) {
-    if (!row.occurred_at || row.user_id === userId) continue;
+    if (!row.occurred_at || isExcludedAnalyticsUser(row.user_id, userId, internalUserIds)) continue;
 
     const dateKey = getStoreAnalyticsDateKey(new Date(row.occurred_at));
     if (dateKey > today) continue;

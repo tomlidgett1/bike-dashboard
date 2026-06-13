@@ -1,38 +1,37 @@
 "use client";
 
 import * as React from "react";
-import {
-  ArrowLeft,
-  ChevronRight,
-  Layers,
-  LayoutList,
-  Package,
-  Sparkles,
-  type LucideIcon,
-} from "lucide-react";
-import Image from "next/image";
+import { ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FacebookImportModal } from "./facebook-import-modal";
 import { TextUploadDialog } from "./text-upload-dialog";
 import { MobileUploadMethodDialog } from "./mobile-upload-method-dialog";
+import { ListingCountBento } from "./listing-count-bento";
+import { ListingLayoutBento } from "./listing-layout-bento";
+import { ListingPhotosPanel, type ListingPhotoDraft } from "./listing-photos-panel";
+import { stashSingleItemPhotoDraft } from "./single-item-photo-draft";
 import type { ListingImage } from "@/lib/types/listing";
 
 // ============================================================
 // Step 0: Upload Method Choice (/marketplace/sell with no mode)
-// Desktop: inline two-step chooser. Mobile: the bottom sheet.
+// One item: count → photos → guided | quick upload
+// Bulk: opens bulk flow (photos first there too)
 // ============================================================
 
 interface UploadMethodChoiceProps {
   onFacebookImportComplete?: (formData: any, images: ListingImage[]) => void;
 }
 
-type ChoiceStep = "count" | "single" | "multi";
+type ChoiceStep = "count" | "photos" | "layout";
+
+const emptyPhotoDraft = (): ListingPhotoDraft => ({ images: [], uploadedImages: [] });
 
 export function UploadMethodChoice({
   onFacebookImportComplete,
 }: UploadMethodChoiceProps) {
   const router = useRouter();
   const [step, setStep] = React.useState<ChoiceStep>("count");
+  const [photoDraft, setPhotoDraft] = React.useState<ListingPhotoDraft>(emptyPhotoDraft);
   const [showFacebookModal, setShowFacebookModal] = React.useState(false);
   const [showTextDialog, setShowTextDialog] = React.useState(false);
   const [isMobile, setIsMobile] = React.useState<boolean | null>(null);
@@ -51,6 +50,19 @@ export function UploadMethodChoice({
     onFacebookImportComplete?.(formData, images);
   };
 
+  const openSingleFlow = (mode: "guided" | "form") => {
+    stashSingleItemPhotoDraft(photoDraft);
+    router.push(`/marketplace/sell?mode=${mode}`);
+  };
+
+  const goBack = () => {
+    if (step === "layout") setStep("photos");
+    else if (step === "photos") {
+      setPhotoDraft(emptyPhotoDraft());
+      setStep("count");
+    }
+  };
+
   const sharedModals = (
     <>
       <FacebookImportModal
@@ -65,7 +77,6 @@ export function UploadMethodChoice({
     </>
   );
 
-  // Mobile: never show a page — present the same bottom sheet used everywhere.
   if (isMobile) {
     return (
       <>
@@ -75,8 +86,14 @@ export function UploadMethodChoice({
             setSheetOpen(false);
             router.push("/marketplace");
           }}
-          onSelectGuided={() => router.push("/marketplace/sell?mode=guided")}
-          onSelectForm={() => router.push("/marketplace/sell?mode=form")}
+          onSelectGuided={(draft) => {
+            stashSingleItemPhotoDraft(draft);
+            router.push("/marketplace/sell?mode=guided");
+          }}
+          onSelectQuickUpload={(draft) => {
+            stashSingleItemPhotoDraft(draft);
+            router.push("/marketplace/sell?mode=form");
+          }}
           onSelectText={() => setShowTextDialog(true)}
           onSelectFacebook={() => setShowFacebookModal(true)}
           onSelectBulk={() => router.push("/marketplace/sell?mode=bulk")}
@@ -87,7 +104,6 @@ export function UploadMethodChoice({
   }
 
   if (isMobile === null) {
-    // Avoid a flash of the desktop layout before the media query resolves.
     return null;
   }
 
@@ -99,7 +115,7 @@ export function UploadMethodChoice({
             {step !== "count" && (
               <button
                 type="button"
-                onClick={() => setStep("count")}
+                onClick={goBack}
                 aria-label="Back"
                 className="-ml-2 flex h-8 w-8 items-center justify-center rounded-full text-gray-600 transition-colors hover:bg-gray-100"
               >
@@ -109,133 +125,48 @@ export function UploadMethodChoice({
             <div>
               <h2 className="text-[26px] font-bold leading-tight tracking-tight text-gray-900">
                 {step === "count" && "Create a listing"}
-                {step === "single" && "List one item"}
-                {step === "multi" && "List multiple items"}
+                {step === "photos" && "Add photos"}
+                {step === "layout" && "How do you want to list it?"}
               </h2>
               <p className="mt-1 text-[15px] leading-relaxed text-gray-500">
-                {step === "count" && "What are you selling?"}
-                {step === "single" && "Pick how you'd like to list it"}
-                {step === "multi" && "Pick how you'd like to list them"}
+                {step === "count" && "One item or bulk"}
+                {step === "photos" && "We'll recognise what you're selling"}
+                {step === "layout" && "Same photos — pick a layout"}
               </p>
             </div>
           </div>
         </div>
 
-        <div key={step} className="mt-5 space-y-2 animate-in fade-in slide-in-from-right-2 duration-200">
+        <div key={step} className="mt-5 animate-in fade-in slide-in-from-right-2 duration-200">
           {step === "count" && (
-            <>
-              <MethodRow
-                icon={Package}
-                title="One item"
-                description="A bike, part or accessory"
-                onClick={() => setStep("single")}
-              />
-              <MethodRow
-                icon={Layers}
-                title="Multiple items"
-                description="List several things at once"
-                onClick={() => setStep("multi")}
-              />
-            </>
+            <ListingCountBento
+              onSelectOneItem={() => {
+                setPhotoDraft(emptyPhotoDraft());
+                setStep("photos");
+              }}
+              onSelectBulk={() => router.push("/marketplace/sell?mode=bulk")}
+              onSelectText={() => setShowTextDialog(true)}
+              onSelectFacebook={() => setShowFacebookModal(true)}
+            />
           )}
 
-          {step === "single" && (
-            <>
-              <MethodRow
-                icon={Sparkles}
-                title="Quick upload"
-                badge="Guided"
-                description="Step-by-step questions — AI fills in details from your photos."
-                onClick={() => router.push("/marketplace/sell?mode=guided")}
-              />
-              <MethodRow
-                icon={LayoutList}
-                title="Fill in a form"
-                badge="Fastest"
-                description="Everything on one page — quicker if you know the details."
-                onClick={() => router.push("/marketplace/sell?mode=form")}
-              />
-              <MethodRow
-                image="/imessage.png"
-                title="Text us"
-                description="Send photos over iMessage — we build the listing."
-                onClick={() => setShowTextDialog(true)}
-              />
-              <MethodRow
-                image="/facebook.png"
-                title="Import from Facebook"
-                description="Paste your Marketplace link."
-                onClick={() => setShowFacebookModal(true)}
-              />
-            </>
+          {step === "photos" && (
+            <ListingPhotosPanel
+              draft={photoDraft}
+              onChange={setPhotoDraft}
+              onContinue={() => setStep("layout")}
+            />
           )}
 
-          {step === "multi" && (
-            <>
-              <MethodRow
-                icon={Sparkles}
-                title="Bulk upload"
-                badge="Guided"
-                description="Upload all your photos — AI sorts them into listings."
-                onClick={() => router.push("/marketplace/sell?mode=bulk")}
-              />
-              <MethodRow
-                image="/imessage.png"
-                title="Text us"
-                description="Send everything over iMessage — we do the rest."
-                onClick={() => setShowTextDialog(true)}
-              />
-            </>
+          {step === "layout" && (
+            <ListingLayoutBento
+              onSelectGuided={() => openSingleFlow("guided")}
+              onSelectQuickUpload={() => openSingleFlow("form")}
+            />
           )}
         </div>
       </div>
       {sharedModals}
     </>
-  );
-}
-
-function MethodRow({
-  icon: Icon,
-  image,
-  title,
-  description,
-  badge,
-  onClick,
-}: {
-  icon?: LucideIcon;
-  image?: string;
-  title: string;
-  description: string;
-  badge?: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-xl border border-gray-200 bg-white px-3.5 py-3.5 text-left transition-all hover:border-gray-300 hover:bg-gray-50 active:scale-[0.99]"
-    >
-      <span className="grid h-10 w-10 flex-shrink-0 place-items-center rounded-lg bg-gray-100">
-        {Icon ? (
-          <Icon className="h-5 w-5 text-gray-700" />
-        ) : image ? (
-          <Image src={image} alt="" width={20} height={20} />
-        ) : null}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-2">
-          <span className="text-[15px] font-semibold text-gray-900">{title}</span>
-          {badge && (
-            <span className="rounded-full bg-gray-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-              {badge}
-            </span>
-          )}
-        </span>
-        <span className="mt-0.5 block text-[12.5px] leading-snug text-gray-500">
-          {description}
-        </span>
-      </span>
-      <ChevronRight className="h-5 w-5 flex-shrink-0 text-gray-300" />
-    </button>
   );
 }

@@ -6,7 +6,6 @@ import Link from "next/link";
 import {
   Store,
   Home,
-  Phone,
   Star,
   Search,
   X,
@@ -26,6 +25,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { CartButton } from "@/components/marketplace/cart-button";
+import type { StoreAnalyticsEventType } from "@/lib/tracking/store-analytics";
 import type { OpeningHours, StoreProfile } from "@/lib/types/store";
 
 export type StoreTab =
@@ -148,6 +148,7 @@ export interface StoreProfileChromeProps {
   immersive?: boolean;
   /** Extra content below the search field in the desktop floating bar (e.g. category pills) */
   floatingBarExtra?: React.ReactNode;
+  onBehaviourEvent?: (eventType: StoreAnalyticsEventType, metadata?: Record<string, unknown>) => void;
 }
 
 function StoreDesktopSearchField({
@@ -212,6 +213,7 @@ export function StoreProfileChrome({
   storeHomeHref,
   immersive = false,
   floatingBarExtra,
+  onBehaviourEvent,
 }: StoreProfileChromeProps) {
   const [scrolled, setScrolled] = React.useState(false);
   const [showFloatingSearch, setShowFloatingSearch] = React.useState(false);
@@ -219,10 +221,8 @@ export function StoreProfileChrome({
   const mobileSearchInputRef = React.useRef<HTMLInputElement>(null);
   const mobileSearchMode = mobileSearchOpen && showHeaderSearch;
   const searchPlaceholder = `Search ${store.store_name}…`;
-  const tabs = React.useMemo(
-    () => buildStoreTabs(isStoreHomeEnabled(store)),
-    [store.homepage_config?.enabled],
-  );
+  const homeEnabled = isStoreHomeEnabled(store);
+  const tabs = React.useMemo(() => buildStoreTabs(homeEnabled), [homeEnabled]);
 
   const openStatus = getStoreOpenStatus(store.opening_hours);
   const headerRating =
@@ -406,7 +406,14 @@ export function StoreProfileChrome({
                           href={directionsUrl}
                           target="_blank"
                           rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onBehaviourEvent?.("contact_click", {
+                              action: "directions",
+                              label: "Store address",
+                              source: "store_header",
+                            });
+                          }}
                           className="hidden truncate hover:text-gray-900 transition-colors sm:inline"
                         >
                           {store.address}
@@ -420,7 +427,14 @@ export function StoreProfileChrome({
                     {store.phone && (
                       <a
                         href={`tel:${store.phone}`}
-                        onClick={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onBehaviourEvent?.("contact_click", {
+                            action: "call",
+                            label: "Store phone",
+                            source: "store_header",
+                          });
+                        }}
                         className="hidden flex-shrink-0 hover:text-gray-900 transition-colors sm:inline"
                       >
                         {store.phone}
@@ -480,7 +494,14 @@ export function StoreProfileChrome({
               {showHeaderSearch && (
                 <button
                   type="button"
-                  onClick={() => onMobileSearchOpenChange(true)}
+                  onClick={() => {
+                    onBehaviourEvent?.("search_focus", {
+                      action: "open_mobile_search",
+                      label: "Search products",
+                      source: "store_header",
+                    });
+                    onMobileSearchOpenChange(true);
+                  }}
                   className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 md:hidden"
                   aria-label="Search products"
                 >

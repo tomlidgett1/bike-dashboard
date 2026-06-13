@@ -30,7 +30,7 @@ import { sortProductsSaleFirst } from "@/lib/marketplace/pricing";
 import { getHomepageIcon } from "@/components/marketplace/store-profile/homepage-icons";
 import { ServiceCard } from "@/components/marketplace/store-profile/service-card";
 import { ProductCard } from "@/components/marketplace/product-card";
-import { useProductImpressions } from "@/lib/tracking/store-analytics";
+import { type StoreAnalyticsEventType, useProductImpressions } from "@/lib/tracking/store-analytics";
 import { STORE_PAGE_CONTENT_SHELL } from "@/components/marketplace/store-profile/store-profile-chrome";
 import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
 
@@ -51,6 +51,7 @@ interface StoreHomeTabProps {
   onOpenCollection: (categoryName: string) => void;
   /** Open the shared store hours sheet/dialog. */
   onOpenHours?: () => void;
+  onTrackBehaviour?: (eventType: StoreAnalyticsEventType, metadata?: Record<string, unknown>) => void;
 }
 
 const DAY_KEYS: (keyof OpeningHours)[] = [
@@ -129,6 +130,7 @@ export function StoreHomeTab({
   onNavigate,
   onOpenCollection,
   onOpenHours,
+  onTrackBehaviour,
 }: StoreHomeTabProps) {
   const [messageOpen, setMessageOpen] = React.useState(false);
   const handleCloseMessage = React.useCallback(() => setMessageOpen(false), []);
@@ -145,6 +147,12 @@ export function StoreHomeTab({
   };
 
   const handleUberDelivery = React.useCallback(() => {
+    onTrackBehaviour?.("cta_click", {
+      action: "uber_delivery",
+      label: "1-hour delivery via Uber",
+      tab: "home",
+      source: "home_hero",
+    });
     const uberCategory = store.categories.find(
       (c) => c.source === "uber" && c.products.length > 0,
     );
@@ -153,7 +161,7 @@ export function StoreHomeTab({
       return;
     }
     onNavigate("products");
-  }, [onNavigate, onOpenCollection, store.categories]);
+  }, [onNavigate, onOpenCollection, onTrackBehaviour, store.categories]);
 
   const sectionRenderers: Record<string, () => React.ReactNode> = {
     highlights: () =>
@@ -232,7 +240,15 @@ export function StoreHomeTab({
           accentText={accentText}
           onPrimary={() => handleCta(config.hero.primary_cta)}
           onSecondary={() => handleCta(config.hero.secondary_cta)}
-          onMessageStore={() => setMessageOpen(true)}
+          onMessageStore={() => {
+            onTrackBehaviour?.("message_open", {
+              action: "message_store",
+              label: "Message store",
+              tab: "home",
+              source: "home_hero",
+            });
+            setMessageOpen(true);
+          }}
           onOpenHours={onOpenHours}
           onUberDelivery={storeHasUberDelivery(store) ? handleUberDelivery : undefined}
           isOwnProfile={isOwnProfile}
@@ -244,6 +260,7 @@ export function StoreHomeTab({
           accent={accent}
           accentText={accentText}
           onClose={handleCloseMessage}
+          onTrackBehaviour={onTrackBehaviour}
         />
 
         {/* Ordered sections */}
@@ -403,7 +420,11 @@ function Hero({
   // ── Split variant ──────────────────────────────────────
   if (hero.variant === "split") {
     return (
-      <section className={cn(shell, "relative pt-10 sm:pt-14")}>
+      <section
+        className={cn(shell, "relative pt-10 sm:pt-14")}
+        data-store-analytics-section="home:hero"
+        data-store-analytics-label="Home hero"
+      >
         {isOwnProfile && <EditButton />}
         <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
           <div>
@@ -444,7 +465,11 @@ function Hero({
   // ── Minimal variant ────────────────────────────────────
   if (hero.variant === "minimal") {
     return (
-      <section className="relative overflow-hidden">
+      <section
+        className="relative overflow-hidden"
+        data-store-analytics-section="home:hero"
+        data-store-analytics-label="Home hero"
+      >
         {isOwnProfile && <EditButton />}
         <div
           className="absolute inset-0 -z-10"
@@ -482,7 +507,11 @@ function Hero({
   // ── Spotlight variant (default) ────────────────────────
   const alignCenter = hero.align === "center";
   return (
-    <section className="relative">
+    <section
+      className="relative"
+      data-store-analytics-section="home:hero"
+      data-store-analytics-label="Home hero"
+    >
       {isOwnProfile && <EditButton />}
       <div className="relative isolate min-h-[364px] sm:min-h-[600px] flex items-center overflow-hidden">
         {/* Background */}
@@ -550,12 +579,14 @@ function StoreMessageDialog({
   accent,
   accentText,
   onClose,
+  onTrackBehaviour,
 }: {
   open: boolean;
   storeName: string;
   accent: string;
   accentText: string;
   onClose: () => void;
+  onTrackBehaviour?: (eventType: StoreAnalyticsEventType, metadata?: Record<string, unknown>) => void;
 }) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [phone, setPhone] = React.useState("");
@@ -652,6 +683,12 @@ function StoreMessageDialog({
       setPhone("");
       setSuccess(true);
       setMessageHref(nextMessageHref);
+      onTrackBehaviour?.("message_submit", {
+        action: "message_route_submit",
+        label: "Message store",
+        tab: "home",
+        source: "message_dialog",
+      });
       window.setTimeout(() => {
         window.location.href = nextMessageHref;
       }, 50);
@@ -925,7 +962,11 @@ function HeroFallback({ store, accent }: { store: StoreProfile; accent: string }
 function HighlightsSection({ config, accent }: { config: StoreHomepageConfig; accent: string }) {
   const shell = useStoreHomeShell();
   return (
-    <section className={shell}>
+    <section
+      className={shell}
+      data-store-analytics-section="home:highlights"
+      data-store-analytics-label="Home highlights"
+    >
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
         {config.highlights.items.map((item, i) => {
           const Icon = getHomepageIcon(item.icon);
@@ -960,7 +1001,11 @@ function CollectionsSection({
   const items = config.collections.items;
   const shell = useStoreHomeShell();
   return (
-    <section className={shell}>
+    <section
+      className={shell}
+      data-store-analytics-section="home:collections"
+      data-store-analytics-label="Home collections"
+    >
       <Reveal>
         <div className="flex items-end justify-between gap-4 mb-6">
           <div>
@@ -1068,7 +1113,11 @@ function StorySection({
     </Reveal>
   );
   return (
-    <section className={shell}>
+    <section
+      className={shell}
+      data-store-analytics-section="home:story"
+      data-store-analytics-label="Home story"
+    >
       <div className={cn("flex flex-col gap-8 lg:gap-14 items-stretch", imageRight ? "lg:flex-row" : "lg:flex-row-reverse")}>
         {TextBlock}
         {ImageBlock}
@@ -1098,7 +1147,11 @@ function ServicesTeaser({
   const shell = useStoreHomeShell();
 
   return (
-    <section className={shell}>
+    <section
+      className={shell}
+      data-store-analytics-section="home:services"
+      data-store-analytics-label="Home services"
+    >
       <Reveal>
         {/* Header */}
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
@@ -1164,7 +1217,11 @@ function GallerySection({ config }: { config: StoreHomepageConfig }) {
   const imgs = config.gallery.images;
   const shell = useStoreHomeShell();
   return (
-    <section className={shell}>
+    <section
+      className={shell}
+      data-store-analytics-section="home:gallery"
+      data-store-analytics-label="Home gallery"
+    >
       <Reveal>
         <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 mb-6">
           {config.gallery.title}
@@ -1216,7 +1273,11 @@ function FeaturedCarouselsSection({
       : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 
   return (
-    <section className={cn(shell, "space-y-8")}>
+    <section
+      className={cn(shell, "space-y-8")}
+      data-store-analytics-section="home:featured_carousels"
+      data-store-analytics-label="Home featured carousels"
+    >
       {slots.map((cat) => {
         const shown = sortProductsSaleFirst(cat!.products).slice(0, perRow);
         return (
@@ -1370,10 +1431,13 @@ function VisitSection({
   onNavigate: (href: string) => void;
 }) {
   const shell = useStoreHomeShell();
-  const status = openStatusFor(store.opening_hours);
   const todayKey = DAY_KEYS[new Date().getDay()];
   return (
-    <section className={shell}>
+    <section
+      className={shell}
+      data-store-analytics-section="home:visit"
+      data-store-analytics-label="Home visit"
+    >
       <Reveal>
         <div className="grid lg:grid-cols-2 gap-6 lg:gap-8">
           {/* Contact + map CTA */}

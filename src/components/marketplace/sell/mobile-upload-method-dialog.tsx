@@ -1,37 +1,33 @@
 "use client";
 
 import * as React from "react";
-import {
-  ArrowLeft,
-  ChevronRight,
-  Layers,
-  LayoutList,
-  Package,
-  Sparkles,
-} from "lucide-react";
-import Image from "next/image";
+import { ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SpringBottomSheet } from "@/components/ui/spring-bottom-sheet";
+import { ListingCountBento } from "./listing-count-bento";
+import { ListingLayoutBento } from "./listing-layout-bento";
+import { ListingPhotosPanel, type ListingPhotoDraft } from "./listing-photos-panel";
 
 interface MobileUploadMethodDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelectGuided: () => void;
-  onSelectForm: () => void;
+  onSelectGuided: (photoDraft: ListingPhotoDraft) => void;
+  onSelectQuickUpload: (photoDraft: ListingPhotoDraft) => void;
   onSelectText: () => void;
   onSelectFacebook: () => void;
   onSelectBulk: () => void;
 }
 
-type SheetView = "count" | "single" | "multi";
+type SheetView = "count" | "photos" | "layout";
+
+const emptyPhotoDraft = (): ListingPhotoDraft => ({ images: [], uploadedImages: [] });
 
 const VIEW_TITLES: Record<SheetView, { title: string; subtitle: string }> = {
-  count: { title: "List on Yellow Jersey", subtitle: "What are you selling?" },
-  single: { title: "One item", subtitle: "How do you want to list it?" },
-  multi: { title: "Multiple items", subtitle: "How do you want to list them?" },
+  count: { title: "List on Yellow Jersey", subtitle: "One item or bulk" },
+  photos: { title: "Add photos", subtitle: "We'll recognise what you're selling" },
+  layout: { title: "How do you want to list it?", subtitle: "Same photos — pick a layout" },
 };
 
-// Smoothly animates the sheet's height as views change.
 function AnimatedHeight({ children }: { children: React.ReactNode }) {
   const innerRef = React.useRef<HTMLDivElement>(null);
   const [height, setHeight] = React.useState<number | undefined>(undefined);
@@ -58,61 +54,25 @@ function AnimatedHeight({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ChoiceCard({
-  icon,
-  label,
-  description,
-  badge,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  description: string;
-  badge?: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full items-center gap-3.5 rounded-2xl border border-gray-200 bg-white px-4 py-4 text-left transition-colors hover:bg-gray-50 active:scale-[0.985] active:bg-gray-100"
-      style={{ transition: "transform 150ms ease, background-color 150ms ease" }}
-    >
-      <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-gray-100">
-        {icon}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className="text-[16px] font-semibold tracking-tight text-gray-900">{label}</p>
-          {badge && (
-            <span className="rounded-full bg-gray-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-              {badge}
-            </span>
-          )}
-        </div>
-        <p className="mt-0.5 text-[13px] leading-snug text-gray-500">{description}</p>
-      </div>
-      <ChevronRight className="h-5 w-5 flex-shrink-0 text-gray-300" />
-    </button>
-  );
-}
-
 export function MobileUploadMethodDialog({
   isOpen,
   onClose,
   onSelectGuided,
-  onSelectForm,
+  onSelectQuickUpload,
   onSelectText,
   onSelectFacebook,
   onSelectBulk,
 }: MobileUploadMethodDialogProps) {
   const [view, setView] = React.useState<SheetView>("count");
+  const [photoDraft, setPhotoDraft] = React.useState<ListingPhotoDraft>(emptyPhotoDraft);
   const [direction, setDirection] = React.useState<"forward" | "back">("forward");
 
   React.useEffect(() => {
     if (!isOpen) {
-      // Reset after the close animation finishes so content doesn't jump mid-exit.
-      const timer = setTimeout(() => setView("count"), 350);
+      const timer = setTimeout(() => {
+        setView("count");
+        setPhotoDraft(emptyPhotoDraft());
+      }, 350);
       return () => clearTimeout(timer);
     }
   }, [isOpen]);
@@ -120,6 +80,14 @@ export function MobileUploadMethodDialog({
   const goTo = (next: SheetView, dir: "forward" | "back") => {
     setDirection(dir);
     setView(next);
+  };
+
+  const goBack = () => {
+    if (view === "layout") goTo("photos", "back");
+    else if (view === "photos") {
+      setPhotoDraft(emptyPhotoDraft());
+      goTo("count", "back");
+    }
   };
 
   const choose = (action: () => void) => {
@@ -142,7 +110,7 @@ export function MobileUploadMethodDialog({
             {view !== "count" && (
               <button
                 type="button"
-                onClick={() => goTo("count", "back")}
+                onClick={goBack}
                 aria-label="Back"
                 className="-ml-1.5 flex h-8 w-8 items-center justify-center rounded-full text-gray-600 transition-colors hover:bg-gray-100 active:bg-gray-200"
               >
@@ -159,74 +127,35 @@ export function MobileUploadMethodDialog({
         <div
           key={view}
           className={cn(
-            "space-y-2 px-4 pb-3 pt-2 animate-in fade-in duration-300",
+            "px-4 pb-3 pt-2 animate-in fade-in duration-300",
             direction === "forward" ? "slide-in-from-right-4" : "slide-in-from-left-4",
           )}
         >
           {view === "count" && (
-            <>
-              <ChoiceCard
-                icon={<Package className="h-[22px] w-[22px] text-gray-700" />}
-                label="One item"
-                description="A bike, part or accessory"
-                onClick={() => goTo("single", "forward")}
-              />
-              <ChoiceCard
-                icon={<Layers className="h-[22px] w-[22px] text-gray-700" />}
-                label="Multiple items"
-                description="List several things at once"
-                onClick={() => goTo("multi", "forward")}
-              />
-            </>
+            <ListingCountBento
+              onSelectOneItem={() => {
+                setPhotoDraft(emptyPhotoDraft());
+                goTo("photos", "forward");
+              }}
+              onSelectBulk={() => choose(onSelectBulk)}
+              onSelectText={() => choose(onSelectText)}
+              onSelectFacebook={() => choose(onSelectFacebook)}
+            />
           )}
 
-          {view === "single" && (
-            <>
-              <ChoiceCard
-                icon={<Sparkles className="h-[22px] w-[22px] text-gray-700" />}
-                label="Quick upload"
-                badge="Guided"
-                description="Step-by-step questions, one at a time — AI fills in details from your photos"
-                onClick={() => choose(onSelectGuided)}
-              />
-              <ChoiceCard
-                icon={<LayoutList className="h-[22px] w-[22px] text-gray-700" />}
-                label="Fill in a form"
-                badge="Fastest"
-                description="Everything on one page — quicker if you already know the details"
-                onClick={() => choose(onSelectForm)}
-              />
-              <ChoiceCard
-                icon={<Image src="/imessage.png" alt="" width={22} height={22} />}
-                label="Text us"
-                description="Send photos over iMessage — we build the listing"
-                onClick={() => choose(onSelectText)}
-              />
-              <ChoiceCard
-                icon={<Image src="/facebook.png" alt="" width={22} height={22} />}
-                label="Import from Facebook"
-                description="Paste your Marketplace link"
-                onClick={() => choose(onSelectFacebook)}
-              />
-            </>
+          {view === "photos" && (
+            <ListingPhotosPanel
+              draft={photoDraft}
+              onChange={setPhotoDraft}
+              onContinue={() => goTo("layout", "forward")}
+            />
           )}
 
-          {view === "multi" && (
-            <>
-              <ChoiceCard
-                icon={<Sparkles className="h-[22px] w-[22px] text-gray-700" />}
-                label="Bulk upload"
-                badge="Guided"
-                description="Upload all your photos — AI sorts them into listings"
-                onClick={() => choose(onSelectBulk)}
-              />
-              <ChoiceCard
-                icon={<Image src="/imessage.png" alt="" width={22} height={22} />}
-                label="Text us"
-                description="Send everything over iMessage — we do the rest"
-                onClick={() => choose(onSelectText)}
-              />
-            </>
+          {view === "layout" && (
+            <ListingLayoutBento
+              onSelectGuided={() => choose(() => onSelectGuided(photoDraft))}
+              onSelectQuickUpload={() => choose(() => onSelectQuickUpload(photoDraft))}
+            />
           )}
         </div>
 

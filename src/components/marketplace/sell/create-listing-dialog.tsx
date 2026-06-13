@@ -1,15 +1,10 @@
 "use client";
 
 import * as React from "react";
-import {
-  ArrowLeft,
-  Layers,
-  LayoutList,
-  Package,
-  Sparkles,
-} from "lucide-react";
-import Image from "next/image";
-import { cn } from "@/lib/utils";
+import { ArrowLeft } from "lucide-react";
+import { ListingCountBento } from "./listing-count-bento";
+import { ListingLayoutBento } from "./listing-layout-bento";
+import { ListingPhotosPanel, type ListingPhotoDraft } from "./listing-photos-panel";
 import {
   Dialog,
   DialogContent,
@@ -18,100 +13,39 @@ import {
 
 // ============================================================
 // Desktop "Create Listing" dialog
-// Step 1: one item vs multiple items. Step 2: how to list.
+// One item: count → photos → guided | quick upload
 // ============================================================
 
 interface CreateListingDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSelectGuided: () => void;
-  onSelectForm: () => void;
+  onStartSingleListing: (mode: "guided" | "form", photoDraft: ListingPhotoDraft) => void;
   onSelectText: () => void;
   onSelectFacebook: () => void;
   onSelectBulk: () => void;
 }
 
-type DialogStep = "count" | "single" | "multi";
+type DialogStep = "count" | "photos" | "layout";
 
-function CountCard({
-  icon,
-  label,
-  description,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  description: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="group flex flex-1 flex-col items-center gap-3 rounded-2xl border border-gray-200 bg-white px-6 py-8 text-center transition-all hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-[0_8px_24px_rgba(17,17,17,0.08)]"
-    >
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 transition-colors group-hover:bg-[#ffde59]/30">
-        {icon}
-      </div>
-      <div>
-        <p className="text-[17px] font-bold tracking-tight text-gray-900">{label}</p>
-        <p className="mt-1 text-[13.5px] leading-snug text-gray-500">{description}</p>
-      </div>
-    </button>
-  );
-}
-
-function MethodCard({
-  icon,
-  label,
-  description,
-  badge,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  description: string;
-  badge?: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex flex-col gap-2.5 rounded-xl border border-gray-200 bg-white p-4 text-left transition-all hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-[0_6px_20px_rgba(17,17,17,0.07)]"
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100">
-          {icon}
-        </div>
-        {badge && (
-          <span className="rounded-full bg-gray-900 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-            {badge}
-          </span>
-        )}
-      </div>
-      <div>
-        <p className="text-[14.5px] font-semibold text-gray-900">{label}</p>
-        <p className="mt-0.5 text-[12.5px] leading-snug text-gray-500">{description}</p>
-      </div>
-    </button>
-  );
-}
+const emptyPhotoDraft = (): ListingPhotoDraft => ({ images: [], uploadedImages: [] });
 
 export function CreateListingDialog({
   open,
   onOpenChange,
-  onSelectGuided,
-  onSelectForm,
+  onStartSingleListing,
   onSelectText,
   onSelectFacebook,
   onSelectBulk,
 }: CreateListingDialogProps) {
   const [step, setStep] = React.useState<DialogStep>("count");
+  const [photoDraft, setPhotoDraft] = React.useState<ListingPhotoDraft>(emptyPhotoDraft);
 
   React.useEffect(() => {
     if (!open) {
-      const timer = setTimeout(() => setStep("count"), 250);
+      const timer = setTimeout(() => {
+        setStep("count");
+        setPhotoDraft(emptyPhotoDraft());
+      }, 250);
       return () => clearTimeout(timer);
     }
   }, [open]);
@@ -121,15 +55,23 @@ export function CreateListingDialog({
     action();
   };
 
+  const goBack = () => {
+    if (step === "layout") setStep("photos");
+    else if (step === "photos") {
+      setPhotoDraft(emptyPhotoDraft());
+      setStep("count");
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[560px] gap-0 rounded-2xl bg-white p-0">
+      <DialogContent className="max-w-[560px] gap-0 rounded-md bg-white p-0">
         <div className="px-6 pb-4 pt-6">
           <div className="flex items-center gap-2">
             {step !== "count" && (
               <button
                 type="button"
-                onClick={() => setStep("count")}
+                onClick={goBack}
                 aria-label="Back"
                 className="-ml-2 flex h-8 w-8 items-center justify-center rounded-full text-gray-600 transition-colors hover:bg-gray-100"
               >
@@ -139,13 +81,13 @@ export function CreateListingDialog({
             <div>
               <DialogTitle className="text-[19px] font-bold tracking-tight text-gray-900">
                 {step === "count" && "Create a listing"}
-                {step === "single" && "List one item"}
-                {step === "multi" && "List multiple items"}
+                {step === "photos" && "Add photos"}
+                {step === "layout" && "How do you want to list it?"}
               </DialogTitle>
               <p className="mt-0.5 text-[13.5px] text-gray-500">
-                {step === "count" && "What are you selling?"}
-                {step === "single" && "Pick how you'd like to list it"}
-                {step === "multi" && "Pick how you'd like to list them"}
+                {step === "count" && "One item or bulk"}
+                {step === "photos" && "We'll recognise what you're selling"}
+                {step === "layout" && "Same photos — pick a layout"}
               </p>
             </div>
           </div>
@@ -156,69 +98,30 @@ export function CreateListingDialog({
           className="px-6 pb-6 animate-in fade-in slide-in-from-right-2 duration-200"
         >
           {step === "count" && (
-            <div className="flex gap-3">
-              <CountCard
-                icon={<Package className="h-7 w-7 text-gray-700" />}
-                label="One item"
-                description="A bike, part or accessory"
-                onClick={() => setStep("single")}
-              />
-              <CountCard
-                icon={<Layers className="h-7 w-7 text-gray-700" />}
-                label="Multiple items"
-                description="List several at once"
-                onClick={() => setStep("multi")}
-              />
-            </div>
+            <ListingCountBento
+              onSelectOneItem={() => {
+                setPhotoDraft(emptyPhotoDraft());
+                setStep("photos");
+              }}
+              onSelectBulk={() => choose(onSelectBulk)}
+              onSelectText={() => choose(onSelectText)}
+              onSelectFacebook={() => choose(onSelectFacebook)}
+            />
           )}
 
-          {step === "single" && (
-            <div className="grid grid-cols-2 gap-3">
-              <MethodCard
-                icon={<Sparkles className="h-5 w-5 text-gray-700" />}
-                label="Quick upload"
-                badge="Guided"
-                description="Step-by-step questions — AI fills in details from your photos"
-                onClick={() => choose(onSelectGuided)}
-              />
-              <MethodCard
-                icon={<LayoutList className="h-5 w-5 text-gray-700" />}
-                label="Fill in a form"
-                badge="Fastest"
-                description="Everything on one page — quicker if you know the details"
-                onClick={() => choose(onSelectForm)}
-              />
-              <MethodCard
-                icon={<Image src="/imessage.png" alt="" width={20} height={20} />}
-                label="Text us"
-                description="Send photos over iMessage — we build it"
-                onClick={() => choose(onSelectText)}
-              />
-              <MethodCard
-                icon={<Image src="/facebook.png" alt="" width={20} height={20} />}
-                label="Import from Facebook"
-                description="Paste your Marketplace link"
-                onClick={() => choose(onSelectFacebook)}
-              />
-            </div>
+          {step === "photos" && (
+            <ListingPhotosPanel
+              draft={photoDraft}
+              onChange={setPhotoDraft}
+              onContinue={() => setStep("layout")}
+            />
           )}
 
-          {step === "multi" && (
-            <div className="grid grid-cols-2 gap-3">
-              <MethodCard
-                icon={<Sparkles className="h-5 w-5 text-gray-700" />}
-                label="Bulk upload"
-                badge="Guided"
-                description="Upload all your photos — AI sorts them into listings"
-                onClick={() => choose(onSelectBulk)}
-              />
-              <MethodCard
-                icon={<Image src="/imessage.png" alt="" width={20} height={20} />}
-                label="Text us"
-                description="Send everything over iMessage — we do the rest"
-                onClick={() => choose(onSelectText)}
-              />
-            </div>
+          {step === "layout" && (
+            <ListingLayoutBento
+              onSelectGuided={() => choose(() => onStartSingleListing("guided", photoDraft))}
+              onSelectQuickUpload={() => choose(() => onStartSingleListing("form", photoDraft))}
+            />
           )}
         </div>
       </DialogContent>

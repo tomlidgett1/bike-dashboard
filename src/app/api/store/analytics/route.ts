@@ -1,20 +1,80 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isInternalAnalyticsEmail } from "@/lib/store/analytics-exclusions";
+import { getCustomerBehaviourAnalytics } from "@/lib/store/customer-behaviour-analytics";
 import { getWebTrackingAnalytics } from "@/lib/store/web-tracking-analytics";
 import { resolveAnalyticsDeviceType } from "@/lib/tracking/resolve-analytics-device-type";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 
-type StoreAnalyticsEventType = "store_page_view" | "product_view" | "product_impression";
+type StoreAnalyticsEventType =
+  | "store_page_view"
+  | "product_view"
+  | "product_impression"
+  | "tab_select"
+  | "cta_click"
+  | "section_view"
+  | "scroll_depth"
+  | "carousel_scroll"
+  | "carousel_expand"
+  | "category_filter"
+  | "sort_change"
+  | "search_focus"
+  | "search_clear"
+  | "hours_open"
+  | "contact_click"
+  | "message_open"
+  | "message_submit"
+  | "collection_open"
+  | "service_view"
+  | "service_book_click"
+  | "rental_view"
+  | "rental_availability_open"
+  | "rental_date_select"
+  | "rental_request_submit"
+  | "product_click"
+  | "add_to_cart_click"
+  | "buy_now_click";
 
 const VALID_EVENT_TYPES = new Set<StoreAnalyticsEventType>([
   "store_page_view",
   "product_view",
   "product_impression",
+  "tab_select",
+  "cta_click",
+  "section_view",
+  "scroll_depth",
+  "carousel_scroll",
+  "carousel_expand",
+  "category_filter",
+  "sort_change",
+  "search_focus",
+  "search_clear",
+  "hours_open",
+  "contact_click",
+  "message_open",
+  "message_submit",
+  "collection_open",
+  "service_view",
+  "service_book_click",
+  "rental_view",
+  "rental_availability_open",
+  "rental_date_select",
+  "rental_request_submit",
+  "product_click",
+  "add_to_cart_click",
+  "buy_now_click",
+]);
+const PRODUCT_EVENT_TYPES = new Set<StoreAnalyticsEventType>([
+  "product_view",
+  "product_impression",
+  "product_click",
+  "add_to_cart_click",
+  "buy_now_click",
 ]);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const rateLimit = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-const RATE_LIMIT_MAX = 120;
+const RATE_LIMIT_MAX = 240;
 
 function validUuid(value: unknown): value is string {
   return typeof value === "string" && UUID_RE.test(value);
@@ -35,6 +95,18 @@ function checkRateLimit(key: string) {
   if (current.count >= RATE_LIMIT_MAX) return false;
   current.count += 1;
   return true;
+}
+
+function normalizeMetadata(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+
+  try {
+    const json = JSON.stringify(value);
+    if (json.length > 6000) return {};
+    return JSON.parse(json) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -58,7 +130,7 @@ export async function POST(request: NextRequest) {
   const deviceType = resolveAnalyticsDeviceType(request, body.deviceType);
   const occurredAt = typeof body.occurredAt === "string" ? body.occurredAt : new Date().toISOString();
   const source = typeof body.source === "string" ? body.source.slice(0, 240) : null;
-  const metadata = body.metadata && typeof body.metadata === "object" ? body.metadata : {};
+  const metadata = normalizeMetadata(body.metadata);
 
   if (!VALID_EVENT_TYPES.has(eventType as StoreAnalyticsEventType)) {
     return NextResponse.json({ error: "Invalid event type" }, { status: 400 });
@@ -69,7 +141,7 @@ export async function POST(request: NextRequest) {
   if (productId !== null && productId !== undefined && !validUuid(productId)) {
     return NextResponse.json({ error: "Invalid product id" }, { status: 400 });
   }
-  if ((eventType === "product_view" || eventType === "product_impression") && !validUuid(productId)) {
+  if (PRODUCT_EVENT_TYPES.has(eventType as StoreAnalyticsEventType) && !validUuid(productId)) {
     return NextResponse.json({ error: "Product event requires product id" }, { status: 400 });
   }
 
@@ -89,6 +161,9 @@ export async function POST(request: NextRequest) {
 
   if (user?.id === storeOwnerId) {
     return NextResponse.json({ success: true, ignored: "store_owner" }, { status: 202 });
+  }
+  if (isInternalAnalyticsEmail(user?.email)) {
+    return NextResponse.json({ success: true, ignored: "internal_user" }, { status: 202 });
   }
 
   if (validUuid(productId)) {
@@ -146,7 +221,7 @@ export async function GET(request: NextRequest) {
   const daysParam = request.nextUrl.searchParams.get("days");
   const days = Math.max(1, Math.min(Number(daysParam || 30) || 30, 365));
 
-  const [summaryResult, searchTermsResult, webAnalytics] = await Promise.all([
+  const [summaryResult, searchTermsResult, webAnalytics, behaviourAnalytics] = await Promise.all([
     service.rpc("get_store_analytics_summary", {
       p_store_owner_id: user.id,
       p_days: days,
@@ -159,6 +234,7 @@ export async function GET(request: NextRequest) {
       dailyDays: days,
       weekCount: Math.ceil(days / 7),
     }),
+    getCustomerBehaviourAnalytics(service, user.id, days),
   ]);
 
   if (summaryResult.error) {
@@ -179,5 +255,6 @@ export async function GET(request: NextRequest) {
       searchTerms: [],
     },
     webAnalytics,
+    behaviourAnalytics,
   });
 }

@@ -3,7 +3,9 @@
 import { buildListingFormDataFromAnalysis } from "@/lib/marketplace/listing-analysis-form-data";
 import type { ListingAnalysisResult } from "@/lib/ai/schemas";
 import type { BikeSpecsData } from "@/lib/types/bike-specs";
-import { SPEC_SECTIONS, type BikeDraft, type GuidedItemType, type SpecValues, type UploadedImage } from "./data";
+import { analysisToAiFieldsFallback } from "@/lib/ai/listing-field-suggestions";
+import type { ListingPricingInput, ListingPricingResearch } from "@/lib/ai/listing-pricing-schema";
+import { SPEC_SECTIONS, type AiField, type BikeDraft, type GuidedItemType, type SpecValues, type UploadedImage } from "./data";
 
 // ============================================================
 // Production wiring for the sell-redesign flows.
@@ -73,6 +75,43 @@ export async function analysePhotos(
   if (!res.ok) throw new Error(await errFrom(res, "AI analysis failed"));
   const json = await res.json();
   return json.analysis as ListingAnalysisResult;
+}
+
+export async function fetchListingPricingResearch(
+  input: ListingPricingInput,
+): Promise<ListingPricingResearch> {
+  const res = await fetch("/api/marketplace/listing-pricing-research", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(await errFrom(res, "Couldn't research pricing"));
+  const json = await res.json();
+  return json.research as ListingPricingResearch;
+}
+
+export async function fetchListingFieldSuggestions(
+  analysis: ListingAnalysisResult,
+): Promise<Record<string, AiField>> {
+  try {
+    const { createClient } = await import("@/lib/supabase/client");
+    const supabase = createClient();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session) throw new Error("Sign in for AI suggestions");
+
+    const res = await fetch("/api/marketplace/listing-field-suggestions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ analysis }),
+    });
+    if (!res.ok) throw new Error(await errFrom(res, "Couldn't load field suggestions"));
+    const json = await res.json();
+    return (json.fields ?? {}) as Record<string, AiField>;
+  } catch {
+    return analysisToAiFieldsFallback(analysis) as Record<string, AiField>;
+  }
 }
 
 const s = (v: unknown): string => (typeof v === "string" ? v : "");

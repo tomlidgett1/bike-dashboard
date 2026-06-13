@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isInternalAnalyticsEmail } from "@/lib/store/analytics-exclusions";
 import { resolveAnalyticsDeviceType } from "@/lib/tracking/resolve-analytics-device-type";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 
@@ -81,6 +82,9 @@ export async function POST(request: NextRequest) {
 
   if (user?.id === storeOwnerId) {
     return NextResponse.json({ success: true, ignored: "store_owner" }, { status: 202 });
+  }
+  if (isInternalAnalyticsEmail(user?.email)) {
+    return NextResponse.json({ success: true, ignored: "internal_user" }, { status: 202 });
   }
 
   const { error } = await service.from("store_search_events").insert({

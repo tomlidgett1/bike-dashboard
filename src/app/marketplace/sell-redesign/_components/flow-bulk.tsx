@@ -1,10 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { motion } from "framer-motion";
 import {
   Sparkles,
-  Check,
   ListChecks,
   ChevronRight,
   Layers,
@@ -21,7 +19,7 @@ import {
   type SpecValues,
   type Confidence,
 } from "./data";
-import { Btn, NumberInput, TextInput, Collapsible, Chevron, ConfidenceDot, Spinner } from "./ui";
+import { Btn, NumberInput, TextInput, Collapsible, Chevron, ConfidenceDot, Spinner, PublishedCoverImage } from "./ui";
 import { DetailedSpecs } from "./detailed-specs";
 
 // Bulk works exactly as it does today — photos in, AI sorts them into
@@ -100,15 +98,7 @@ export function FlowBulk() {
     return (
       <div className="grid min-h-[78dvh] place-items-center px-6 text-center">
         <div>
-          <motion.div
-            initial={{ scale: 0.6, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: "spring", stiffness: 260, damping: 18 }}
-            className="mx-auto grid h-20 w-20 place-items-center rounded-full text-gray-900"
-            style={{ backgroundColor: BRAND }}
-          >
-            <Check className="h-10 w-10" />
-          </motion.div>
+          <PublishedCoverImage imageUrl={items[0]?.images[0]} alt={items[0]?.title} />
           <h2 className="mt-6 text-[24px] font-bold text-gray-900">{items.length} listings live!</h2>
           <p className="mt-1.5 text-[15px] text-gray-500">
             {formatAUD(total)} total · {withSpecs} with full specs

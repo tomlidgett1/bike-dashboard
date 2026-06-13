@@ -34,10 +34,16 @@ export function ConditionalLayout({ children }: ConditionalLayoutProps) {
   const isMockup = pathname?.startsWith('/mockup') || false;
   // V2 marketplace homepage ships its own header/footer chrome
   const isV2 = pathname?.startsWith('/v2') || false;
+  // Public marketing landing pages are full-bleed, no dashboard chrome
+  const isHome =
+    pathname === '/home' ||
+    pathname === '/home2' ||
+    pathname?.startsWith('/home/') ||
+    false;
 
-  // Don't wrap marketplace, messages, login, auth, onboarding, ecommerce-hero, or mockup pages with dashboard layout
+  // Don't wrap marketplace, messages, login, auth, onboarding, ecommerce-hero, mockup, v2, or home pages with dashboard layout
   // These pages manage their own layout
-  if (isMarketplace || isMessages || isLogin || isAuth || isOnboarding || isEcommerceHero || isMockup || isV2) {
+  if (isMarketplace || isMessages || isLogin || isAuth || isOnboarding || isEcommerceHero || isMockup || isV2 || isHome) {
     return <>{children}</>;
   }
 

@@ -53,7 +53,10 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname === '/api/genie/product-question' ||
     request.nextUrl.pathname === '/api/genie/product-suggestions' ||
     request.nextUrl.pathname.startsWith('/mockup') ||      // Design mockup (no auth needed)
-    request.nextUrl.pathname.startsWith('/preview-verify') // TEMP sidebar check (no auth)
+    request.nextUrl.pathname.startsWith('/preview-verify') || // TEMP sidebar check (no auth)
+    request.nextUrl.pathname === '/home' ||
+    request.nextUrl.pathname === '/home2' ||
+    request.nextUrl.pathname === '/v2'
   
   if (isPublicRoute) {
     return NextResponse.next()

@@ -7,11 +7,11 @@ import { FlowGuided } from "@/app/marketplace/sell-redesign/_components/flow-gui
 import { FlowForm } from "@/app/marketplace/sell-redesign/_components/flow-form";
 import { loadTextUploadDraft } from "@/app/marketplace/sell-redesign/_components/services";
 import type { BikeDraft } from "@/app/marketplace/sell-redesign/_components/data";
+import type { SingleItemPhotoDraft } from "./single-item-photo-draft";
 
 // ============================================================
-// Quick Upload Sheet — hosts the guided and form listing flows
-// in the same full-height bottom sheet used by bulk upload, so
-// the whole listing journey stays in a sheet instead of a page.
+// Quick Upload Sheet — guided or form listing after photos
+// are collected in the entry flow (count → photos → layout).
 // ============================================================
 
 interface QuickUploadSheetProps {
@@ -19,50 +19,75 @@ interface QuickUploadSheetProps {
   mode: "guided" | "form";
   onClose: () => void;
   textUploadToken?: string;
+  photoDraft?: SingleItemPhotoDraft | null;
 }
 
-export function QuickUploadSheet({ isOpen, mode, onClose, textUploadToken }: QuickUploadSheetProps) {
+export function QuickUploadSheet({
+  isOpen,
+  mode,
+  onClose,
+  textUploadToken,
+  photoDraft,
+}: QuickUploadSheetProps) {
   const [initialDraft, setInitialDraft] = React.useState<Partial<BikeDraft> | null>(null);
   const [loadingTextUpload, setLoadingTextUpload] = React.useState(false);
   const [textUploadError, setTextUploadError] = React.useState<string | null>(null);
+  const [flowInstance, setFlowInstance] = React.useState(0);
   const loadedTokenRef = React.useRef<string | null>(null);
+  const [autoAnalyseFromPhotos, setAutoAnalyseFromPhotos] = React.useState(false);
+
+  const handleListAnother = () => {
+    setInitialDraft(null);
+    loadedTokenRef.current = null;
+    setAutoAnalyseFromPhotos(false);
+    setFlowInstance((instance) => instance + 1);
+  };
 
   React.useEffect(() => {
-    if (!isOpen || !textUploadToken) {
-      if (!textUploadToken) {
-        setInitialDraft(null);
-        loadedTokenRef.current = null;
-      }
+    if (!isOpen) return;
+
+    if (textUploadToken) {
+      if (loadedTokenRef.current === textUploadToken) return;
+      let cancelled = false;
+      const load = async () => {
+        setLoadingTextUpload(true);
+        setTextUploadError(null);
+        try {
+          const draft = await loadTextUploadDraft(textUploadToken);
+          if (cancelled) return;
+          loadedTokenRef.current = textUploadToken;
+          setInitialDraft(draft);
+          setAutoAnalyseFromPhotos(false);
+        } catch (error) {
+          if (!cancelled) {
+            setTextUploadError(
+              error instanceof Error ? error.message : "Could not load this text upload.",
+            );
+          }
+        } finally {
+          if (!cancelled) setLoadingTextUpload(false);
+        }
+      };
+      void load();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (photoDraft?.images?.length) {
+      setInitialDraft({
+        images: photoDraft.images,
+        uploadedImages: photoDraft.uploadedImages,
+      });
+      setAutoAnalyseFromPhotos(true);
       return;
     }
-    if (loadedTokenRef.current === textUploadToken) return;
 
-    let cancelled = false;
-    const load = async () => {
-      setLoadingTextUpload(true);
-      setTextUploadError(null);
-      try {
-        const draft = await loadTextUploadDraft(textUploadToken);
-        if (cancelled) return;
-        loadedTokenRef.current = textUploadToken;
-        setInitialDraft(draft);
-      } catch (error) {
-        if (!cancelled) {
-          setTextUploadError(
-            error instanceof Error ? error.message : "Could not load this text upload.",
-          );
-        }
-      } finally {
-        if (!cancelled) setLoadingTextUpload(false);
-      }
-    };
+    setInitialDraft(null);
+    setAutoAnalyseFromPhotos(false);
+  }, [isOpen, textUploadToken, photoDraft]);
 
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, textUploadToken]);
+  const modeLabel = mode === "guided" ? "Guided" : "Quick upload";
 
   return (
     <Sheet
@@ -77,18 +102,14 @@ export function QuickUploadSheet({ isOpen, mode, onClose, textUploadToken }: Qui
         style={{ height: "96dvh" }}
         showCloseButton={false}
       >
-        <SheetTitle className="sr-only">
-          {mode === "guided" ? "Quick upload" : "Fill in a form"}
-        </SheetTitle>
-        {/* Handle bar */}
+        <SheetTitle className="sr-only">{modeLabel}</SheetTitle>
         <div className="flex flex-shrink-0 justify-center pb-1 pt-3">
           <div className="h-1 w-10 rounded-full bg-gray-300" />
         </div>
 
-        {/* Slim header */}
         <div className="flex h-9 flex-shrink-0 items-center justify-between px-4">
           <span className="rounded-md bg-gray-100 px-2 py-1 text-[12px] font-semibold text-gray-600">
-            {mode === "guided" ? "Quick upload" : "Fill in a form"}
+            {modeLabel}
           </span>
           <button
             type="button"
@@ -100,7 +121,6 @@ export function QuickUploadSheet({ isOpen, mode, onClose, textUploadToken }: Qui
           </button>
         </div>
 
-        {/* Flow body — flows manage their own scroll/CTA inside this container */}
         <div className="flex-1 overflow-y-auto overscroll-contain">
           {loadingTextUpload ? (
             <div className="grid min-h-[70dvh] place-items-center px-6 text-center">
@@ -117,9 +137,19 @@ export function QuickUploadSheet({ isOpen, mode, onClose, textUploadToken }: Qui
               </div>
             </div>
           ) : mode === "guided" ? (
-            <FlowGuided initialDraft={initialDraft ?? undefined} />
+            <FlowGuided
+              key={`guided-${flowInstance}`}
+              initialDraft={flowInstance === 0 ? (initialDraft ?? undefined) : undefined}
+              autoAnalyseFromPhotos={flowInstance === 0 && autoAnalyseFromPhotos}
+              onListAnother={handleListAnother}
+            />
           ) : (
-            <FlowForm initialDraft={initialDraft ?? undefined} />
+            <FlowForm
+              key={`form-${flowInstance}`}
+              initialDraft={flowInstance === 0 ? (initialDraft ?? undefined) : undefined}
+              autoAnalyseFromPhotos={flowInstance === 0 && autoAnalyseFromPhotos}
+              onListAnother={handleListAnother}
+            />
           )}
         </div>
       </SheetContent>

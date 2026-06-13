@@ -173,6 +173,10 @@ export function MarketplaceHeader({
   const [bulkUploadSheetOpen, setBulkUploadSheetOpen] = React.useState(false);
   const [createListingDialogOpen, setCreateListingDialogOpen] = React.useState(false);
   const [quickUploadMode, setQuickUploadMode] = React.useState<"guided" | "form" | null>(null);
+  const [quickUploadPhotoDraft, setQuickUploadPhotoDraft] = React.useState<{
+    images: string[];
+    uploadedImages?: import("@/app/marketplace/sell-redesign/_components/data").BikeDraft["uploadedImages"];
+  } | null>(null);
   const [mounted, setMounted] = React.useState(false);
   const [isMobile, setIsMobile] = React.useState(false);
   const searchInputRef = React.useRef<HTMLInputElement>(null);
@@ -845,16 +849,10 @@ export function MarketplaceHeader({
       <CreateListingDialog
         open={createListingDialogOpen}
         onOpenChange={setCreateListingDialogOpen}
-        onSelectGuided={() => {
+        onStartSingleListing={(mode, photoDraft) => {
           if (user) {
-            setQuickUploadMode('guided');
-          } else {
-            setSellRequirementModalOpen(true);
-          }
-        }}
-        onSelectForm={() => {
-          if (user) {
-            setQuickUploadMode('form');
+            setQuickUploadPhotoDraft(photoDraft);
+            setQuickUploadMode(mode);
           } else {
             setSellRequirementModalOpen(true);
           }
@@ -881,24 +879,30 @@ export function MarketplaceHeader({
       {/* Quick Upload / Form Sheet */}
       <QuickUploadSheet
         isOpen={quickUploadMode !== null}
-        mode={quickUploadMode ?? 'guided'}
-        onClose={() => setQuickUploadMode(null)}
+        mode={quickUploadMode ?? "guided"}
+        photoDraft={quickUploadPhotoDraft}
+        onClose={() => {
+          setQuickUploadMode(null);
+          setQuickUploadPhotoDraft(null);
+        }}
       />
 
       {/* Mobile Upload Method Dialog */}
       <MobileUploadMethodDialog
         isOpen={mobileUploadMethodOpen}
         onClose={() => setMobileUploadMethodOpen(false)}
-        onSelectGuided={() => {
+        onSelectGuided={(photoDraft) => {
           if (user) {
-            setQuickUploadMode('guided');
+            setQuickUploadPhotoDraft(photoDraft);
+            setQuickUploadMode("guided");
           } else {
             setSellRequirementModalOpen(true);
           }
         }}
-        onSelectForm={() => {
+        onSelectQuickUpload={(photoDraft) => {
           if (user) {
-            setQuickUploadMode('form');
+            setQuickUploadPhotoDraft(photoDraft);
+            setQuickUploadMode("form");
           } else {
             setSellRequirementModalOpen(true);
           }
