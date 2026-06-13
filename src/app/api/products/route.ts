@@ -8,48 +8,49 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { buildCloudinaryImageUrl, extractCloudinaryPublicId } from '@/lib/utils/cloudinary-transforms'
 import { getMarketplaceReadiness } from '@/lib/marketplace/product-readiness'
 import {
   LIGHTSPEED_SOURCE_OR_FILTER,
   MANUAL_SOURCE_OR_FILTER,
 } from '@/lib/products/catalog-helpers'
 
-function escapeSearchTerm(term: string) {
-  return term.replace(/[%_]/g, (match) => `\\${match}`).replace(/,/g, ' ')
-}
+const PRODUCT_LIST_SELECT = `
+  id,
+  lightspeed_item_id,
+  system_sku,
+  custom_sku,
+  description,
+  category_name,
+  full_category_path,
+  marketplace_category,
+  marketplace_subcategory,
+  marketplace_level_3_category,
+  manufacturer_name,
+  price,
+  default_cost,
+  qoh,
+  sellable,
+  reorder_point,
+  model_year,
+  primary_image_url,
+  cached_image_url,
+  cached_thumbnail_url,
+  canonical_product_id,
+  last_synced_at,
+  is_active,
+  listing_source,
+  listing_status,
+  listing_type,
+  is_bicycle,
+  bike_specs,
+  display_name,
+  selected_product_image_id,
+  created_at
+`
 
-function buildSearchOr(term: string) {
-  const escaped = escapeSearchTerm(term)
-  const fields = [
-    'description',
-    'display_name',
-    'custom_sku',
-    'system_sku',
-    'lightspeed_item_id',
-    'manufacturer_name',
-    'category_name',
-    'full_category_path',
-    'marketplace_category',
-    'marketplace_subcategory',
-    'marketplace_level_3_category',
-    'model_year',
-    'listing_status',
-    'listing_source',
-  ]
-
-  return fields.map((field) => `${field}.ilike.%${escaped}%`).join(',')
-}
-
-type ProductImageRow = {
-  id: string
-  cloudinary_public_id?: string | null
-  cloudinary_url?: string | null
-  external_url?: string | null
-  is_primary?: boolean | null
-  approval_status?: string | null
-  sort_order?: number | null
-  source?: string | null
+type ProductSearchRow = {
+  product_id: string
+  relevance: number
 }
 
 export async function GET(request: NextRequest) {
@@ -80,6 +81,8 @@ export async function GET(request: NextRequest) {
     const sourceFilter = searchParams.get('source') || 'all' // all, lightspeed, manual
     const brandFilter = searchParams.get('brand') || '' // brand name, or __none__ for missing brand
     const listingTypeFilter = searchParams.get('listing_type') || '' // e.g. private_listing
+    const includeFilterOptions = searchParams.get('includeFilters') !== 'false'
+    const trimmedSearch = search.trim()
     const productIds = (searchParams.get('ids') || '')
       .split(',')
       .map((id) => id.trim())
@@ -89,41 +92,83 @@ export async function GET(request: NextRequest) {
     const from = (page - 1) * pageSize
     const to = from + pageSize - 1
 
-    // Build query - include canonical product images with thumbnail_url
+    let searchProductIds: string[] | null = null
+    let searchRank = new Map<string, number>()
+
+    if (trimmedSearch && productIds.length === 0) {
+      const { data: searchRows, error: searchError } = await supabase.rpc(
+        'search_user_products_catalog',
+        {
+          p_user_id: user.id,
+          p_search: trimmedSearch,
+          p_limit: 10000,
+        },
+      )
+
+      if (searchError) {
+        console.error('[Products API] Search error:', searchError)
+        throw searchError
+      }
+
+      const rows = (searchRows ?? []) as ProductSearchRow[]
+      searchProductIds = rows.map((row) => row.product_id)
+      searchRank = new Map(rows.map((row, index) => [row.product_id, row.relevance || rows.length - index]))
+
+      if (searchProductIds.length === 0) {
+        return NextResponse.json({
+          products: [],
+          pagination: {
+            page,
+            pageSize,
+            total: 0,
+            totalPages: 0,
+          },
+          ...(includeFilterOptions ? { categories: [], brands: [] } : {}),
+        })
+      }
+    }
+
+    const hasAdditionalFilters = Boolean(
+      categoryFilter ||
+      lsCategoryId ||
+      brandFilter ||
+      stockFilter !== 'all' ||
+      statusFilter !== 'all' ||
+      imageFilter !== 'all' ||
+      sourceFilter !== 'all' ||
+      listingTypeFilter
+    )
+    const useRankedSearchPagination = Boolean(
+      searchProductIds && sortBy === 'created_at' && !hasAdditionalFilters
+    )
+    const searchIdsForQuery = useRankedSearchPagination
+      ? searchProductIds?.slice(from, to + 1) ?? null
+      : searchProductIds
+
+    if (searchProductIds && searchIdsForQuery?.length === 0) {
+      return NextResponse.json({
+        products: [],
+        pagination: {
+          page,
+          pageSize,
+          total: searchProductIds.length,
+          totalPages: Math.ceil(searchProductIds.length / pageSize),
+        },
+        ...(includeFilterOptions ? { categories: [], brands: [] } : {}),
+      })
+    }
+
+    // Build query. The list view uses cached image columns so searches do not
+    // pay for product_images/canonical_products joins on every keystroke.
     let query = supabase
       .from('products')
-      .select(`
-        *,
-        product_images!product_id (
-          id,
-          cloudinary_public_id,
-          cloudinary_url,
-          external_url,
-          is_primary,
-          approval_status,
-          sort_order,
-          source
-        ),
-        canonical_products!canonical_product_id (
-          id,
-          upc,
-          normalized_name,
-          product_images!canonical_product_id (
-            id,
-            cloudinary_public_id,
-            cloudinary_url,
-            external_url,
-            is_primary,
-            approval_status,
-            sort_order,
-            source
-          )
-        )
-      `, { count: 'exact' })
+      .select(PRODUCT_LIST_SELECT, { count: 'exact' })
       .eq('user_id', user.id)
 
     if (productIds.length > 0) {
       query = query.in('id', productIds)
+    } else if (searchIdsForQuery) {
+      query = query.in('id', searchIdsForQuery)
     }
 
     // Apply status filter
@@ -133,19 +178,6 @@ export async function GET(request: NextRequest) {
       query = query.eq('is_active', false)
     }
     // If 'all', no filter applied
-
-    // Apply search filter. Each token must match at least one searchable field,
-    // which makes multi-word searches far more useful than a single broad OR.
-    if (search) {
-      const terms = search
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean)
-
-      for (const term of terms) {
-        query = query.or(buildSearchOr(term))
-      }
-    }
 
     // Apply category filter
     if (lsCategoryId) {
@@ -173,6 +205,12 @@ export async function GET(request: NextRequest) {
       query = query.eq('listing_type', listingTypeFilter)
     }
 
+    if (imageFilter === 'approved') {
+      query = query.or('cached_image_url.not.is.null,cached_thumbnail_url.not.is.null')
+    } else if (imageFilter === 'needs-images') {
+      query = query.is('cached_image_url', null).is('cached_thumbnail_url', null)
+    }
+
     // Lightspeed vs manual / online catalogue (aligned with isLightspeedProduct)
     if (sourceFilter === 'lightspeed') {
       query = query.or(LIGHTSPEED_SOURCE_OR_FILTER)
@@ -181,14 +219,15 @@ export async function GET(request: NextRequest) {
     }
 
     // Apply sorting
-    query = query.order(sortBy, { ascending: sortOrder === 'asc' })
-
-    const postProcessImageFilter = imageFilter === 'approved' || imageFilter === 'needs-images'
-
-    // Image readiness depends on product + canonical image joins, so when that
-    // filter is active we fetch a wider candidate set, resolve readiness, then
-    // paginate the filtered result in-memory.
-    query = postProcessImageFilter ? query.range(0, 9999) : query.range(from, to)
+    if (useRankedSearchPagination) {
+      // Already narrowed to the ranked page IDs returned by the search RPC.
+    } else if (searchProductIds && sortBy === 'created_at') {
+      query = query.range(0, Math.min(searchProductIds.length, 10000) - 1)
+    } else {
+      query = query
+        .order(sortBy, { ascending: sortOrder === 'asc' })
+        .range(from, to)
+    }
 
     const { data, error, count } = await query
 
@@ -197,153 +236,71 @@ export async function GET(request: NextRequest) {
       throw error
     }
 
-    console.log(`[Products API] Query returned ${data?.length || 0} products`)
-    
-    // Check first product's raw data
-    if (data && data.length > 0) {
-      const first = data[0]
-      console.log('[Products API] First product raw data:', {
-        id: first.id,
-        canonical_product_id: first.canonical_product_id,
-        has_canonical_products_join: !!first.canonical_products,
-        canonical_products_keys: first.canonical_products ? Object.keys(first.canonical_products) : [],
-      })
+    let uniqueCategories: string[] | undefined
+    let uniqueBrands: string[] | undefined
+
+    if (includeFilterOptions) {
+      const [{ data: categories }, { data: brandRows }] = await Promise.all([
+        supabase
+          .from('products')
+          .select('category_name')
+          .eq('user_id', user.id)
+          .not('category_name', 'is', null)
+          .order('category_name'),
+        supabase
+          .from('products')
+          .select('manufacturer_name')
+          .eq('user_id', user.id)
+          .not('manufacturer_name', 'is', null)
+          .order('manufacturer_name'),
+      ])
+
+      uniqueCategories = [...new Set(categories?.map(c => c.category_name).filter(Boolean))]
+      uniqueBrands = [...new Set(
+        (brandRows ?? [])
+          .map(row => (row.manufacturer_name ?? '').trim())
+          .filter(Boolean)
+      )]
     }
 
-    // Get unique categories for filter dropdown
-    const { data: categories } = await supabase
-      .from('products')
-      .select('category_name')
-      .eq('user_id', user.id)
-      .not('category_name', 'is', null)
-      .order('category_name')
-
-    const uniqueCategories = [...new Set(categories?.map(c => c.category_name).filter(Boolean))]
-
-    // Get unique brands for filter dropdown
-    const { data: brandRows } = await supabase
-      .from('products')
-      .select('manufacturer_name')
-      .eq('user_id', user.id)
-      .not('manufacturer_name', 'is', null)
-      .order('manufacturer_name')
-
-    const uniqueBrands = [...new Set(
-      (brandRows ?? [])
-        .map(row => (row.manufacturer_name ?? '').trim())
-        .filter(Boolean)
-    )]
-
-    // Process products to add resolved image URLs from product_images table
-    let processedProducts = (data || []).map((product, idx) => {
-      let resolvedImageUrl = null;
-      
-      // Debug first product
-      if (idx === 0) {
-        console.log('[Products API] First product debug:', {
-          has_canonical_id: !!product.canonical_product_id,
-          canonical_id: product.canonical_product_id,
-          has_canonical_join: !!product.canonical_products,
-          has_product_images: !!product.canonical_products?.product_images,
-          image_count: product.canonical_products?.product_images?.length || 0,
-          cached_image: product.cached_image_url ? 'YES' : 'NO',
-          cached_thumbnail: product.cached_thumbnail_url ? 'YES' : 'NO',
-        })
-        
-        if (product.canonical_products?.product_images?.[0]) {
-          const img = product.canonical_products.product_images[0]
-          console.log('[Products API] First image data:', {
-            thumbnail_url: img.thumbnail_url || 'NULL',
-            card_url: img.card_url || 'NULL',
-            cloudinary_url: img.cloudinary_url || 'NULL',
-            approval_status: img.approval_status,
-            is_primary: img.is_primary,
-          })
-        }
-      }
-      
-      // Get approved images from canonical product_images
-      if (product.canonical_products?.product_images && Array.isArray(product.canonical_products.product_images)) {
-        const canonicalProductImages = product.canonical_products.product_images as ProductImageRow[]
-        const approvedImages = canonicalProductImages.filter(
-          (img) => img.approval_status === 'approved' || img.approval_status === null
-        );
-        
-        // Find primary image or use first approved
-        const primaryImage = approvedImages.find((img) => img.is_primary) || approvedImages[0];
-        
-        if (primaryImage) {
-          // Compute the 100px thumbnail from the public_id (single source of truth)
-          const publicId = primaryImage.cloudinary_public_id || extractCloudinaryPublicId(primaryImage.cloudinary_url);
-          resolvedImageUrl = buildCloudinaryImageUrl(publicId, 'thumbnail') ||
-                            primaryImage.cloudinary_url ||
-                            primaryImage.external_url;
-        }
-      }
-      
-      // Fallback to cached URLs populated by triggers. Prefer the tiny thumbnail
-      // so catalogue tables do not pull larger card/hero images.
-      if (!resolvedImageUrl) {
-        resolvedImageUrl = product.cached_thumbnail_url || product.cached_image_url;
-      }
-      
-      const productImages = Array.isArray(product.product_images)
-        ? product.product_images
-        : [];
-      const canonicalImages = Array.isArray(
-        product.canonical_products?.product_images
-      )
-        ? product.canonical_products.product_images
-        : [];
+    let processedProducts = (data || []).map((product) => {
+      const resolvedImageUrl = product.cached_thumbnail_url || product.cached_image_url || product.primary_image_url || null;
+      const hasApprovedImage = Boolean(product.cached_thumbnail_url || product.cached_image_url);
 
       const marketplace_readiness = getMarketplaceReadiness({
         is_active: product.is_active ?? false,
         listing_status: product.listing_status ?? null,
         listing_type: product.listing_type ?? null,
         qoh: product.qoh ?? null,
+        hasApprovedImage,
         selected_product_image_id: product.selected_product_image_id ?? null,
-        productImages,
-        canonicalImages,
       });
-
-      const canonical = product.canonical_products as {
-        marketplace_category?: string | null
-        marketplace_subcategory?: string | null
-        marketplace_level_3_category?: string | null
-      } | null
 
       return {
         ...product,
         resolved_image_url: resolvedImageUrl,
         marketplace_readiness,
         brand: product.manufacturer_name || null,
-        marketplace_category:
-          product.marketplace_category ?? canonical?.marketplace_category ?? null,
-        marketplace_subcategory:
-          product.marketplace_subcategory ?? canonical?.marketplace_subcategory ?? null,
-        marketplace_level_3_category:
-          product.marketplace_level_3_category ??
-          canonical?.marketplace_level_3_category ??
-          null,
       };
     });
 
-    if (postProcessImageFilter) {
-      processedProducts = processedProducts.filter((product) => {
-        const needsImage = product.marketplace_readiness.blockers.some(
-          (blocker: { id: string }) => blocker.id === 'no_approved_image',
-        )
-        return imageFilter === 'approved' ? !needsImage : needsImage
+    if (searchProductIds && sortBy === 'created_at') {
+      processedProducts = processedProducts.sort((a, b) => {
+        const rankDelta = (searchRank.get(b.id) ?? 0) - (searchRank.get(a.id) ?? 0)
+        if (rankDelta !== 0) return rankDelta
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       })
     }
 
-    const filteredCount = postProcessImageFilter ? processedProducts.length : count || 0
-    const paginatedProducts = postProcessImageFilter
+    const useInMemorySearchPagination = Boolean(searchProductIds && sortBy === 'created_at' && !useRankedSearchPagination)
+    const filteredCount = useRankedSearchPagination
+      ? searchProductIds?.length ?? 0
+      : useInMemorySearchPagination
+        ? count || processedProducts.length
+        : count || 0
+    const paginatedProducts = useInMemorySearchPagination
       ? processedProducts.slice(from, to + 1)
       : processedProducts
-
-    console.log('[Products API] Total products:', paginatedProducts.length)
-    console.log('[Products API] Products with images:', paginatedProducts.filter(p => p.resolved_image_url).length)
 
     return NextResponse.json({
       products: paginatedProducts,
@@ -353,8 +310,7 @@ export async function GET(request: NextRequest) {
         total: filteredCount,
         totalPages: Math.ceil(filteredCount / pageSize),
       },
-      categories: uniqueCategories,
-      brands: uniqueBrands,
+      ...(includeFilterOptions ? { categories: uniqueCategories, brands: uniqueBrands } : {}),
     })
   } catch (error) {
     console.error('Error fetching products:', error)

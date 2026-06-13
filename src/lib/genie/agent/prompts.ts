@@ -309,6 +309,7 @@ function buildSystemPrompt(
   storeName: string,
   executionPlan: GenieExecutionPlan | null = null,
   route: GenieOrchestrationDecision['route'] = 'mixed',
+  fastMode = false,
 ): string {
   const today = getStoreToday()
   const includeGmail = routeUsesGmail(route, executionPlan)
@@ -381,12 +382,19 @@ STYLE
 FINAL ANSWER CONTRACT
 ${formatAnswerContractForRoute(route)}
 
-ANSWER VERIFICATION (mandatory before every final user-visible reply when using tools)
+${fastMode
+    ? `FAST ANSWER MODE (speed over exhaustive verification)
+- Answer as soon as you have enough evidence for a useful reply. Do not loop on rechecks or second-pass SQL unless the first result is empty or clearly wrong.
+- Fire independent read tools in parallel when they do not depend on each other (e.g. multiple SQL reports, Xero + sales summary).
+- One SQL pass is usually enough. State any caveat in one line instead of fetching more data.
+- Do not call verify_question_answered, record_answer_recheck, or record_lightspeed_recheck — write the final answer directly when ready.
+- Prefer a concise, actionable answer now over a perfect answer later.`
+    : `ANSWER VERIFICATION
 - Ask yourself: "Have we actually answered the user's question?" If not, keep using tools — do not reply yet.
-- Call verify_question_answered ONCE, only when you already believe the answer is complete — it is a final gate, not a per-step checkpoint. Do not re-verify after every tool call; gather all the evidence first, draft the full answer, then verify.
-- If verify_question_answered returns not_ready, close the specific gaps with the fewest additional tool calls, then verify again. Expect to verify at most 2-3 times total; after that, answer with the best evidence you have and state any caveat in one line.
+- For broad or high-stakes tool answers, call verify_question_answered ONCE, only when you already believe the answer is complete — it is a final gate, not a per-step checkpoint. Do not re-verify after every tool call; gather all the evidence first, draft the full answer, then verify.
+- If the one verification pass finds gaps, answer with the best evidence you already have and state the key caveat in one line. Do not start a verification loop.
 - If a tool returns answer_readiness or recheck_required with gaps, treat those as remaining_gaps until resolved.
-- Never present partial tool output as a complete answer (e.g. warranty@ as "the rep" when the user asked for a sales rep).
+- Never present partial tool output as a complete answer (e.g. warranty@ as "the rep" when the user asked for a sales rep).`}
 ${lightspeedInstructions}
 
 STORE CONTEXT

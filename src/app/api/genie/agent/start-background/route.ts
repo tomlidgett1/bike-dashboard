@@ -4,7 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { runGenieAgentJob } from "@/lib/genie/run-genie-agent-background-job";
 import { ensureGenieConversation } from "@/lib/genie/ensure-genie-conversation";
 import type { Message } from "@/lib/genie/agent/context";
-import type { GenieJobMetadata, GenieJobSource } from "@/lib/genie/genie-job-types";
+import type { GenieJobMetadata, GenieJobSource, GenieModelProfile } from "@/lib/genie/genie-job-types";
+import { normalizeGenieModelProfile } from "@/lib/genie/agent/model-profiles";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -113,11 +114,13 @@ export async function POST(request: NextRequest) {
       body.source === "homev2" || body.source === "panel"
         ? (body.source as GenieJobSource)
         : "panel";
+    const modelProfile: GenieModelProfile = normalizeGenieModelProfile(body.model_profile);
 
     const metadata: GenieJobMetadata = {
       composio_session_ids: composioSessionIds,
       client_assistant_id: clientAssistantId ?? undefined,
       source,
+      model_profile: modelProfile,
       step_index: 0,
     };
 

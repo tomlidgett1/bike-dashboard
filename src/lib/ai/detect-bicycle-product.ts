@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 
-const MODEL = "gpt-5.4-mini";
+const MODEL = "gpt-5.4-nano";
 
 const DETECT_PROMPT = `You classify cycling marketplace products as complete bicycles or not.
 

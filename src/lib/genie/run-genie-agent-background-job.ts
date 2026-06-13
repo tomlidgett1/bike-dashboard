@@ -7,7 +7,10 @@ import {
 import { executeGenieAgent } from "@/lib/genie/agent/execute";
 import type { ComposioSessionIds, Message } from "@/lib/genie/agent/context";
 import type { Supa } from "@/lib/genie/agent/tools";
-import type { GenieAssistantJobResult, GenieJobMetadata } from "@/lib/genie/genie-job-types";
+import type { GenieAssistantJobResult, GenieJobMetadata, GenieModelProfile } from "@/lib/genie/genie-job-types";
+import { normalizeGenieModelProfile } from "@/lib/genie/agent/model-profiles";
+import { appendRawDebugLog } from "@/lib/genie/analysis-events";
+import type { GenieRawDebugLogEntry } from "@/lib/genie/genie-job-types";
 
 export type RunGenieAgentJobParams = {
   jobId: string;
@@ -154,6 +157,14 @@ export async function runGenieAgentJob(params: RunGenieAgentJobParams) {
   const handleEvent = (event: Record<string, unknown>) => {
     params.onEvent?.(event);
 
+    if (event.event !== "heartbeat") {
+      const existing = metadata.raw_debug_logs ?? [];
+      metadata = {
+        ...metadata,
+        raw_debug_logs: appendRawDebugLog(existing, event) as GenieRawDebugLogEntry[],
+      };
+    }
+
     assistant = applyGenieSseEvent(event, assistant);
 
     if (PARTIAL_RESULT_EVENTS.has(String(event.event))) {
@@ -161,7 +172,7 @@ export async function runGenieAgentJob(params: RunGenieAgentJobParams) {
       if (ts - lastResultPersistAt >= RESULT_PERSIST_INTERVAL_MS) {
         lastResultPersistAt = ts;
         const result: GenieAssistantJobResult = { assistantMessage: assistant };
-        queueJobUpdate({ result });
+        queueJobUpdate({ result, metadata });
       }
     }
 
@@ -203,6 +214,7 @@ export async function runGenieAgentJob(params: RunGenieAgentJobParams) {
       messages: params.messages,
       conversationId: params.conversationId ?? null,
       composioSessionIds: (params.composioSessionIds ?? {}) as ComposioSessionIds,
+      modelProfile: normalizeGenieModelProfile(metadata.model_profile),
       emit: (data: object) => handleEvent(data as Record<string, unknown>),
       signal: abortController.signal,
     });
@@ -231,11 +243,13 @@ export async function runGenieAgentJob(params: RunGenieAgentJobParams) {
       return;
     }
 
-    await syncCompletedConversation(
-      params.conversationId,
-      params.messages as unknown as Record<string, unknown>[],
-      assistant,
-    );
+    if (metadata.model_profile !== "nano") {
+      await syncCompletedConversation(
+        params.conversationId,
+        params.messages as unknown as Record<string, unknown>[],
+        assistant,
+      );
+    }
 
     await updateJob(params.jobId, {
       status: "completed",

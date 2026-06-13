@@ -31,7 +31,6 @@ import {
   type CanonicalImage,
   type ImageRun,
   type OptimizerProduct,
-  IMAGE_CONCURRENCY,
   IMG_BUSY,
   LightboxOverlay,
   buildSpeedSearchQuery,
@@ -73,6 +72,8 @@ type FieldKey = "title" | "description" | "specs" | "photos" | "brand";
 type FieldSelection = Record<FieldKey, boolean>;
 
 type CopyDraft = { title: string; description: string; specs: string };
+
+type DirectDescriptionMode = "both" | "description" | "specs";
 
 const FIELD_LABELS: Record<FieldKey, string> = {
   title: "Title",
@@ -128,12 +129,13 @@ function isProductFullyOptimised(
 ): boolean {
   if (busy.copyBusy || busy.photoBusy || busy.brandBusy || busy.saving) return false;
 
+  const hasApprovedPhotos = hasSerperImage(product);
   const phase = imageRun?.phase;
   if (
     phase === "searching" ||
     phase === "selecting" ||
     phase === "saving" ||
-    phase === "ready"
+    (phase === "ready" && !hasApprovedPhotos)
   ) {
     return false;
   }
@@ -142,7 +144,7 @@ function isProductFullyOptimised(
     hasTitle(product) &&
     hasDesc(product) &&
     hasSpecs(product) &&
-    hasSerperImage(product)
+    hasApprovedPhotos
   );
 }
 
@@ -214,6 +216,28 @@ function saveSerperCache(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ canonicalProductId, ...payload }),
   });
+}
+
+function imageRunToSerperAiSelection(run: ImageRun): SerperAiSelectionCache | null {
+  if (!run.primaryUrl || run.selectedCandidates.length === 0) return null;
+
+  return {
+    selectedCandidates: run.selectedCandidates,
+    selectedUrls: run.selectedUrls,
+    primaryUrl: run.primaryUrl,
+    reasoning: run.reasoning,
+  };
+}
+
+function hasCopyFields(copyFields: CopyBatchFields) {
+  return copyFields.title || copyFields.description || copyFields.specs;
+}
+
+function directDescriptionMode(copyFields: CopyBatchFields): DirectDescriptionMode | null {
+  if (copyFields.description && copyFields.specs) return "both";
+  if (copyFields.description) return "description";
+  if (copyFields.specs) return "specs";
+  return null;
 }
 
 interface IdentifyBrandResult {
@@ -319,6 +343,7 @@ export function BulkOptimiseWorkspace() {
   const [savingIds, setSavingIds] = React.useState<Set<string>>(new Set());
   const [imageRuns, setImageRuns] = React.useState<Record<string, ImageRun>>({});
   const [photoProgress, setPhotoProgress] = React.useState<{ done: number; total: number } | null>(null);
+  const [directCopyProgress, setDirectCopyProgress] = React.useState<{ done: number; total: number } | null>(null);
   const [bicycleBusy, setBicycleBusy] = React.useState<Set<string>>(new Set());
   const [brandBusy, setBrandBusy] = React.useState<Set<string>>(new Set());
   const [brandErrors, setBrandErrors] = React.useState<Record<string, string>>({});
@@ -370,6 +395,33 @@ export function BulkOptimiseWorkspace() {
     }));
   }, []);
 
+  const updateImageRunForProduct = React.useCallback(
+    (
+      product: BulkProduct,
+      patch: Partial<ImageRun> | ((prev: ImageRun) => Partial<ImageRun>),
+    ) => {
+      const current = imageRunsRef.current[product.id] ?? emptyImageRun();
+      const nextPatch = typeof patch === "function" ? patch(current) : patch;
+      const nextRun = { ...current, ...nextPatch };
+
+      patchImageRun(product.id, nextPatch);
+
+      if (
+        product.canonical_product_id &&
+        !hasSerperImage(product) &&
+        nextRun.candidates.length > 0 &&
+        (nextRun.phase === "ready" || nextRun.phase === "selecting")
+      ) {
+        saveSerperCache(product.canonical_product_id, {
+          searchQuery: buildSpeedSearchQuery(toSpeedProduct(product)),
+          candidates: nextRun.candidates,
+          aiSelection: imageRunToSerperAiSelection(nextRun),
+        });
+      }
+    },
+    [patchImageRun],
+  );
+
   // ── Initial load ──────────────────────────────────────────────────────────
 
   const hydrateCachedImageRuns = React.useCallback(
@@ -385,6 +437,10 @@ export function BulkOptimiseWorkspace() {
           const next = { ...prev };
           for (const product of list) {
             if (!product.canonical_product_id) continue;
+            if (hasSerperImage(product)) {
+              next[product.id] = emptyImageRun();
+              continue;
+            }
             if (next[product.id] && next[product.id].phase !== "idle") continue;
             const cached = imageRunFromSerperCache(caches[product.canonical_product_id]);
             if (cached) next[product.id] = { ...emptyImageRun(), ...cached };
@@ -435,15 +491,17 @@ export function BulkOptimiseWorkspace() {
       ),
     [jobs, sessionJobIds],
   );
-  const copyRunning = activeSessionJobs.length > 0;
+  const backgroundCopyRunning = activeSessionJobs.length > 0;
+  const copyRunning = backgroundCopyRunning || directCopyProgress !== null;
 
   const copyProgress = React.useMemo(() => {
-    if (!copyRunning) return null;
+    if (directCopyProgress) return directCopyProgress;
+    if (!backgroundCopyRunning) return null;
     const sessionJobs = jobs.filter((job) => sessionJobIds.includes(job.id));
     const done = sessionJobs.reduce((sum, job) => sum + job.done, 0);
     const total = sessionJobs.reduce((sum, job) => sum + job.total, 0);
     return { done, total };
-  }, [copyRunning, jobs, sessionJobIds]);
+  }, [backgroundCopyRunning, directCopyProgress, jobs, sessionJobIds]);
 
   // While copy jobs are running, refresh the affected products so generated
   // titles/descriptions/specs and bicycle detections stream into the table.
@@ -482,6 +540,11 @@ export function BulkOptimiseWorkspace() {
 
   const runImageSearch = React.useCallback(
     async (product: BulkProduct, cacheEntry?: SerperImageCacheEntry | null) => {
+      if (hasSerperImage(product)) {
+        patchImageRun(product.id, emptyImageRun());
+        return true;
+      }
+
       if (!product.canonical_product_id) {
         patchImageRun(product.id, {
           phase: "error",
@@ -521,6 +584,12 @@ export function BulkOptimiseWorkspace() {
           });
           return false;
         }
+
+        saveSerperCache(product.canonical_product_id, {
+          searchQuery: entry?.searchQuery || searchQuery,
+          candidates,
+          aiSelection: null,
+        });
 
         patchImageRun(product.id, { phase: "selecting", candidates });
         const response = await fetch("/api/admin/images/ai-select-candidates", {
@@ -595,16 +664,11 @@ export function BulkOptimiseWorkspace() {
       setPhotoProgress({ done: 0, total: pending.length });
       let completed = 0;
 
-      for (let index = 0; index < pending.length; index += IMAGE_CONCURRENCY) {
-        const chunk = pending.slice(index, index + IMAGE_CONCURRENCY);
-        await Promise.all(
-          chunk.map(async (product) => {
-            const canonicalId = product.canonical_product_id;
-            await runImageSearch(product, canonicalId ? caches[canonicalId] ?? null : null);
-            completed += 1;
-            setPhotoProgress({ done: completed, total: pending.length });
-          }),
-        );
+      for (const product of pending) {
+        const canonicalId = product.canonical_product_id;
+        await runImageSearch(product, canonicalId ? caches[canonicalId] ?? null : null);
+        completed += 1;
+        setPhotoProgress({ done: completed, total: pending.length });
       }
 
       setPhotoProgress(null);
@@ -689,7 +753,7 @@ export function BulkOptimiseWorkspace() {
         }
 
         const enhancedUrl = json.url as string;
-        patchImageRun(product.id, (prev) => ({
+        updateImageRunForProduct(product, (prev) => ({
           selectedUrls: prev.selectedUrls.map((item) => (item === url ? enhancedUrl : item)),
           selectedCandidates: prev.selectedCandidates.map((candidate) =>
             candidate.url === url
@@ -706,7 +770,7 @@ export function BulkOptimiseWorkspace() {
         }));
       }
     },
-    [patchImageRun],
+    [patchImageRun, updateImageRunForProduct],
   );
 
   // ── Copy generation ───────────────────────────────────────────────────────
@@ -741,6 +805,96 @@ export function BulkOptimiseWorkspace() {
       }
     },
     [startCopyBatch],
+  );
+
+  const runTitleCopyForProduct = React.useCallback(
+    async (product: BulkProduct) => {
+      const response = await fetch("/api/products/generate-titles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productIds: [product.id] }),
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error("Title generation failed");
+      }
+
+      let completed = false;
+      let success = false;
+      await readSSE(response.body, (event) => {
+        if (event.event !== "product_complete" || event.productId !== product.id) return;
+        completed = true;
+        success = event.success === true;
+
+        if (typeof event.title === "string" && event.title.trim()) {
+          patchProduct(product.id, { display_name: event.title });
+        }
+      });
+
+      return completed ? success : response.ok;
+    },
+    [patchProduct],
+  );
+
+  const runDescriptionCopyForProduct = React.useCallback(
+    async (product: BulkProduct, mode: DirectDescriptionMode) => {
+      const response = await fetch("/api/products/generate-product-descriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productIds: [product.id], mode }),
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error("Copy generation failed");
+      }
+
+      let completed = false;
+      let success = false;
+      await readSSE(response.body, (event) => {
+        if (event.event !== "product_complete" || event.productId !== product.id) return;
+        completed = true;
+        success = event.success === true;
+
+        const patch: Partial<BulkProduct> = {};
+        if (typeof event.description === "string" && event.description.trim()) {
+          patch.product_description = event.description;
+        }
+        if (typeof event.specs === "string" && event.specs.trim()) {
+          patch.product_specs = event.specs;
+        }
+        if (typeof event.is_bicycle === "boolean") {
+          patch.is_bicycle = event.is_bicycle;
+        }
+        if (event.bike_specs) {
+          patch.bike_specs = event.bike_specs;
+        }
+
+        if (Object.keys(patch).length > 0) {
+          patchProduct(product.id, patch);
+        }
+      });
+
+      return completed ? success : response.ok;
+    },
+    [patchProduct],
+  );
+
+  const runCopyForProduct = React.useCallback(
+    async (product: BulkProduct, copyFields: CopyBatchFields) => {
+      let success = true;
+
+      if (copyFields.title) {
+        success = (await runTitleCopyForProduct(product)) && success;
+      }
+
+      const mode = directDescriptionMode(copyFields);
+      if (mode) {
+        success = (await runDescriptionCopyForProduct(product, mode)) && success;
+      }
+
+      return success;
+    },
+    [runDescriptionCopyForProduct, runTitleCopyForProduct],
   );
 
   // ── Brand identification ──────────────────────────────────────────────────
@@ -1088,7 +1242,8 @@ export function BulkOptimiseWorkspace() {
   );
 
   const photosBusy = photoProgress !== null;
-  const optimiseBusy = copyRunning || photosBusy;
+  const brandRunning = brandBusy.size > 0;
+  const optimiseBusy = copyRunning || photosBusy || brandRunning;
 
   const masterFieldState = React.useMemo(() => {
     const state: Record<FieldKey, boolean> = {
@@ -1122,29 +1277,72 @@ export function BulkOptimiseWorkspace() {
   const startOptimise = async () => {
     if (selectedProducts.length === 0 || optimiseBusy) return;
 
-    const copyTargets = selectedProducts
-      .map((product) => {
-        const selection = fields[product.id];
-        if (!selection) return null;
-        return {
-          product,
-          copyFields: {
-            title: selection.title,
-            description: selection.description,
-            specs: selection.specs,
-          },
-        };
-      })
-      .filter((item): item is { product: BulkProduct; copyFields: CopyBatchFields } => !!item);
+    const orderedTargets = selectedProducts.map((product) => {
+      const selection = fields[product.id] ?? defaultFieldSelection(product);
+      return {
+        product,
+        selection,
+        copyFields: {
+          title: selection.title,
+          description: selection.description,
+          specs: selection.specs,
+        },
+      };
+    });
 
-    const photoTargets = selectedProducts.filter((product) => fields[product.id]?.photos);
-    const brandTargets = selectedProducts
-      .filter((product) => fields[product.id]?.brand && !product.brand?.trim())
-      .map((product) => product.id);
+    const photoTotal = orderedTargets.filter(({ selection }) => selection.photos).length;
+    const copyTotal = orderedTargets.filter(({ copyFields }) => hasCopyFields(copyFields)).length;
+    let photoCaches: Record<string, SerperImageCacheEntry> = {};
+    if (photoTotal > 0) {
+      try {
+        photoCaches = await fetchSerperCaches(
+          orderedTargets
+            .filter(({ selection }) => selection.photos)
+            .map(({ product }) => product.canonical_product_id)
+            .filter((id): id is string => !!id),
+        );
+      } catch {
+        // Product-level image search still works without the warm cache lookup.
+      }
+    }
 
-    await startCopyForProducts(copyTargets);
-    if (brandTargets.length > 0) void fixBrands(brandTargets);
-    if (photoTargets.length > 0) void runPhotoPipeline(photoTargets);
+    let photosDone = 0;
+    let copyDone = 0;
+
+    if (photoTotal > 0) setPhotoProgress({ done: 0, total: photoTotal });
+    if (copyTotal > 0) setDirectCopyProgress({ done: 0, total: copyTotal });
+
+    try {
+      for (const { product, selection, copyFields } of orderedTargets) {
+        if (selection.photos) {
+          const canonicalId = product.canonical_product_id;
+          await runImageSearch(product, canonicalId ? photoCaches[canonicalId] ?? null : null);
+          photosDone += 1;
+          setPhotoProgress({ done: photosDone, total: photoTotal });
+        }
+
+        if (hasCopyFields(copyFields)) {
+          setCopyQueuedIds(new Set([product.id]));
+          try {
+            await runCopyForProduct(product, copyFields);
+          } catch {
+            /* Keep the ordered run moving if one product's AI request fails. */
+          } finally {
+            copyDone += 1;
+            setDirectCopyProgress({ done: copyDone, total: copyTotal });
+            setCopyQueuedIds(new Set());
+          }
+        }
+
+        if (selection.brand && !product.brand?.trim()) {
+          await fixBrands([product.id]);
+        }
+      }
+    } finally {
+      setPhotoProgress(null);
+      setDirectCopyProgress(null);
+      setCopyQueuedIds(new Set());
+    }
   };
 
   const approveAllReady = async () => {
@@ -1416,7 +1614,7 @@ export function BulkOptimiseWorkspace() {
               onAutoDetectBicycle={() => void autoDetectBicycle(product)}
               onIdentifyBrand={() => void fixBrands([product.id])}
               onFindPhotos={() => void runPhotoPipeline([product])}
-              onImageUpdate={(patch) => patchImageRun(product.id, patch)}
+              onImageUpdate={(patch) => updateImageRunForProduct(product, patch)}
               onEnhance={(url) => void enhanceImage(product, url)}
               onApproveImages={() => void approveImages(product)}
               onLightbox={setLightbox}
@@ -1711,7 +1909,7 @@ function ProductRow({
       {/* Photos — always visible, no expand needed */}
       {imageRun.phase !== "idle" || hasSerperImage(product) || fieldSelection.photos ? (
         <div className="border-t border-border/40 px-4 py-3">
-          {imageRun.phase === "idle" && hasSerperImage(product) ? (
+          {hasSerperImage(product) ? (
             <ApprovedImagesStrip product={product} onLightbox={onLightbox} />
           ) : imageRun.phase === "idle" ? (
             <div className="flex items-center gap-2.5">
@@ -1872,7 +2070,8 @@ function ApprovedImagesStrip({
   product: BulkProduct;
   onLightbox: (url: string) => void;
 }) {
-  const images = (product.canonical_images ?? [])
+  const images = [...(product.canonical_images ?? []), ...(product.product_images ?? [])]
+    .filter((img) => img.approval_status === "approved" || img.approval_status === null)
     .filter((img) => img.cloudinary_url || img.external_url)
     .slice(0, 8);
 
@@ -1886,14 +2085,16 @@ function ApprovedImagesStrip({
       <div className="flex gap-1.5 overflow-x-auto pb-1">
         {images.map((img) => {
           const url = (img.cloudinary_url || img.external_url)!;
+          const key = "id" in img && typeof img.id === "string" ? img.id : url;
+          const isPrimary = "is_primary" in img && img.is_primary === true;
           return (
             <button
-              key={img.id}
+              key={key}
               type="button"
               onClick={() => onLightbox(url)}
               className={cn(
                 "relative h-16 w-16 shrink-0 overflow-hidden rounded-md border bg-muted",
-                img.is_primary ? "border-foreground" : "border-border",
+                isPrimary ? "border-foreground" : "border-border",
               )}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}

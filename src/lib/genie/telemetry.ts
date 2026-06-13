@@ -6,7 +6,7 @@ export interface GenieAgentRunTelemetry {
   user_id: string
   route: GenieOrchestrationDecision['route'] | null
   status: 'completed' | 'error' | 'cancelled'
-  orchestration_source: 'model' | null
+  orchestration_source: 'deterministic' | 'model' | null
   router_invoked: boolean
   planner_used: boolean
   executor_model: string | null

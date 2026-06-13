@@ -18,8 +18,11 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-// Full model for manufacturer-grade detail (matches the bike specs build-out)
-const MODEL = 'gpt-5.4'
+const FAST_MODEL = 'gpt-5.4-mini'
+const FULL_MODEL = 'gpt-5.4'
+const FULL_MODEL_PRICE_THRESHOLD = 750
+const HIGH_RISK_SPEC_RE =
+  /\b(bike|bicycle|e-?bike|frameset|frame|fork|wheelset|wheel|rim|hub|groupset|crankset|crank|bottom bracket|derailleur|cassette|chainring|brake|rotor|caliper|shifter|power meter|suspension|shock|dropper|headset|seatpost|stem|handlebar|pedal)\b/i
 
 interface SpecSource {
   url: string
@@ -38,6 +41,23 @@ type ResponseOutputItem = {
       title?: string
     }>
   }>
+}
+
+type CopyProduct = {
+  id: string
+  description?: string | null
+  display_name?: string | null
+  brand?: string | null
+  manufacturer_name?: string | null
+  model?: string | null
+  marketplace_category?: string | null
+  price?: number | string | null
+  bike_type?: string | null
+  frame_size?: string | null
+  product_description?: string | null
+  product_specs?: string | null
+  product_spec_sources?: SpecSource[] | null
+  bike_specs?: unknown
 }
 
 const DESCRIPTION_PROMPT = `You are an expert ecommerce copywriter for Yellow Jersey, an Australian online cycling marketplace.
@@ -190,6 +210,32 @@ function collectText(output: ResponseOutputItem[] | undefined): string {
   return text
 }
 
+function modelForCopy(product: CopyProduct, runSpecs: boolean): string {
+  if (!runSpecs) return FAST_MODEL
+
+  const text = [
+    product.display_name,
+    product.description,
+    product.brand,
+    product.manufacturer_name,
+    product.model,
+    product.marketplace_category,
+    product.bike_type,
+    product.frame_size,
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  const price = Number(product.price) || 0
+  const weakSourceData = !(product.brand || product.manufacturer_name || product.model)
+
+  if (price >= FULL_MODEL_PRICE_THRESHOLD) return FULL_MODEL
+  if (HIGH_RISK_SPEC_RE.test(text)) return FULL_MODEL
+  if (weakSourceData) return FULL_MODEL
+
+  return FAST_MODEL
+}
+
 function collectCitations(
   output: ResponseOutputItem[] | undefined,
   into: Map<string, string>,
@@ -291,6 +337,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    const typedProducts = products as CopyProduct[]
     const encoder = new TextEncoder()
 
     const stream = new ReadableStream({
@@ -298,12 +345,12 @@ export async function POST(request: NextRequest) {
         const emit = (data: object) => send(controller, encoder, data)
 
         try {
-          emit({ event: 'start', total: products.length })
+          emit({ event: 'start', total: typedProducts.length })
 
-          for (let i = 0; i < products.length; i++) {
-            const product = products[i]
-            const productName = (product as any).display_name || product.description
-            const brand = (product as any).brand || (product as any).manufacturer_name || undefined
+          for (let i = 0; i < typedProducts.length; i++) {
+            const product = typedProducts[i]
+            const productName = product.display_name || product.description || ''
+            const brand = product.brand || product.manufacturer_name || undefined
             const brandWebsite = resolveBrandWebsite(brand)
             const brandDomain = brandWebsite ? brandWebsiteDomain(brandWebsite) : null
 
@@ -312,17 +359,17 @@ export async function POST(request: NextRequest) {
               productId: product.id,
               name: productName,
               index: i + 1,
-              total: products.length,
+              total: typedProducts.length,
             })
 
             try {
               const details = [
                 `Product: ${productName}`,
                 brand && `Brand: ${brand}`,
-                (product as any).model && `Model: ${(product as any).model}`,
-                (product as any).marketplace_category && `Category: ${(product as any).marketplace_category}`,
-                (product as any).bike_type && `Type: ${(product as any).bike_type}`,
-                (product as any).frame_size && `Size: ${(product as any).frame_size}`,
+                product.model && `Model: ${product.model}`,
+                product.marketplace_category && `Category: ${product.marketplace_category}`,
+                product.bike_type && `Type: ${product.bike_type}`,
+                product.frame_size && `Size: ${product.frame_size}`,
                 product.description && product.description !== productName && `Original description: ${product.description}`,
               ].filter(Boolean).join('\n')
 
@@ -331,10 +378,10 @@ export async function POST(request: NextRequest) {
 
                 const detectionContext = [
                   details,
-                  (product as { product_description?: string | null }).product_description &&
-                    `Description:\n${(product as { product_description?: string | null }).product_description!.slice(0, 600)}`,
-                  (product as { product_specs?: string | null }).product_specs &&
-                    `Specs:\n${(product as { product_specs?: string | null }).product_specs!.slice(0, 800)}`,
+                  product.product_description &&
+                    `Description:\n${product.product_description.slice(0, 600)}`,
+                  product.product_specs &&
+                    `Specs:\n${product.product_specs.slice(0, 800)}`,
                 ]
                   .filter(Boolean)
                   .join('\n\n')
@@ -346,14 +393,13 @@ export async function POST(request: NextRequest) {
                     : detection.is_bicycle
 
                 const existingSources =
-                  ((product as { product_spec_sources?: SpecSource[] | null })
-                    .product_spec_sources ?? []) as SpecSource[]
+                  (product.product_spec_sources ?? []) as SpecSource[]
 
                 let bikeSpecs: BikeSpecsData | null = null
                 if (isBicycle) {
                   bikeSpecs = syncBikeSpecsFromProductSpecs({
-                    productSpecs: (product as { product_specs?: string | null }).product_specs,
-                    existingBikeSpecs: (product as { bike_specs?: unknown }).bike_specs,
+                    productSpecs: product.product_specs,
+                    existingBikeSpecs: product.bike_specs,
                     productSpecSources: existingSources,
                     brand,
                   })
@@ -385,31 +431,32 @@ export async function POST(request: NextRequest) {
                   error: saveError,
                 })
 
-                if (i < products.length - 1) {
+                if (i < typedProducts.length - 1) {
                   await new Promise(resolve => setTimeout(resolve, 200))
                 }
                 continue
               }
 
-              const searchTerms = [brand, (product as any).model, productName]
+              const searchTerms = [brand, product.model, productName]
                 .filter(Boolean)
                 .join(' ')
 
               const officialSearchBlock = brandDomain
-                ? `Official manufacturer website (search this first): ${brandWebsite} (domain: ${brandDomain})\nRun site:${brandDomain} "${(product as any).model || productName}" before any other source.`
+                ? `Official manufacturer website (search this first): ${brandWebsite} (domain: ${brandDomain})\nRun site:${brandDomain} "${product.model || productName}" before any other source.`
                 : `Identify the manufacturer's official website, then search that domain first before any other source.`
 
               let description = ''
               let specs = ''
               let descResponseId: string | null = null
               const citations = new Map<string, string>()
+              const copyModel = modelForCopy(product, runSpecs)
 
               // ── Description ──────────────────────────────────────────
               if (runDesc) {
                 emit({ event: 'product_phase', productId: product.id, phase: 'description' })
 
                 const descResponse = await openai.responses.create({
-                  model: MODEL,
+                  model: copyModel,
                   instructions: DESCRIPTION_PROMPT,
                   tools: [
                     {
@@ -435,7 +482,7 @@ export async function POST(request: NextRequest) {
                 if (runDesc && descResponseId) {
                   // Chain off description — reuse official web search context
                   specsResponse = await openai.responses.create({
-                    model: MODEL,
+                    model: copyModel,
                     instructions: SPECS_CHAINED_PROMPT,
                     previous_response_id: descResponseId,
                     input: `Now produce the full specification sheet for the same product using the official web search results already in context. Return ONLY the formatted spec sheet — no preamble, no extra text.`,
@@ -443,7 +490,7 @@ export async function POST(request: NextRequest) {
                 } else {
                   // Standalone — run its own official-first web search
                   specsResponse = await openai.responses.create({
-                    model: MODEL,
+                    model: copyModel,
                     instructions: SPECS_STANDALONE_PROMPT,
                     tools: [
                       {
@@ -484,12 +531,11 @@ export async function POST(request: NextRequest) {
                 bikeSpecs = buildBikeSpecsFromProductSpecs(specs, sources, brand)
               } else if (isBicycle && !specs) {
                 bikeSpecs = syncBikeSpecsFromProductSpecs({
-                  productSpecs: (product as { product_specs?: string | null }).product_specs,
-                  existingBikeSpecs: (product as { bike_specs?: unknown }).bike_specs,
+                  productSpecs: product.product_specs,
+                  existingBikeSpecs: product.bike_specs,
                   productSpecSources: sources.length
                     ? sources
-                    : ((product as { product_spec_sources?: SpecSource[] | null })
-                        .product_spec_sources ?? []),
+                    : (product.product_spec_sources ?? []),
                   brand,
                 })
               }
@@ -541,7 +587,7 @@ export async function POST(request: NextRequest) {
                 error: saveError,
               })
 
-              if (i < products.length - 1) {
+              if (i < typedProducts.length - 1) {
                 await new Promise(resolve => setTimeout(resolve, 400))
               }
             } catch (err) {

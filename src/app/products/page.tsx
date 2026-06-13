@@ -381,6 +381,7 @@ export default function ProductsPage() {
   const paginationRef = React.useRef(pagination);
   const sortByRef = React.useRef(sortBy);
   const sortOrderRef = React.useRef(sortOrder);
+  const filterOptionsLoadedRef = React.useRef(false);
   const tableViewportRef = React.useRef<HTMLDivElement | null>(null);
   const tableScrollFrameRef = React.useRef<number | null>(null);
   const [tableViewport, setTableViewport] = React.useState({ scrollTop: 0, height: 640 });
@@ -422,6 +423,7 @@ export default function ProductsPage() {
     if (isInitialLoad) setLoading(true);
 
     try {
+      const includeFilterOptions = isInitialLoad || !filterOptionsLoadedRef.current;
       const params = new URLSearchParams({
         page: page.toString(),
         pageSize: pagination.pageSize.toString(),
@@ -433,6 +435,7 @@ export default function ProductsPage() {
         image: imageFilter,
         sortBy: sortBy,
         sortOrder: sortOrder,
+        includeFilters: includeFilterOptions ? 'true' : 'false',
       });
 
       const response = await fetch(`/api/products?${params}`, { signal: controller.signal });
@@ -443,8 +446,13 @@ export default function ProductsPage() {
 
       setProducts(data.products || []);
       setPagination(data.pagination);
-      setCategories(data.categories || []);
-      setBrands(data.brands || []);
+      if (Array.isArray(data.categories)) {
+        setCategories(data.categories);
+        filterOptionsLoadedRef.current = true;
+      }
+      if (Array.isArray(data.brands)) {
+        setBrands(data.brands);
+      }
     } catch (error) {
       if ((error as Error).name === 'AbortError') return;
       console.error('Error fetching products:', error);

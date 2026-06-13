@@ -10,7 +10,11 @@ import {
   type GenieOrchestrationDecision,
 } from '@/lib/genie/orchestration'
 
-import { ORCHESTRATOR_MODEL, PLANNER_MODEL, createGenieRunner } from './runtime'
+import { createGenieRunner } from './runtime'
+import {
+  DEFAULT_GENIE_MODELS,
+  type GenieModelConfig,
+} from './model-profiles'
 import { GenieExecutionPlanSchema, buildOrchestratorInstructions, buildPlannerInstructions, type GenieExecutionPlan } from './prompts'
 import { toRouterInputMessages, type Message } from './context'
 
@@ -20,10 +24,12 @@ async function createGenieOrchestrationDecision(args: {
   requestId: string
   messages: Message[]
   signal: AbortSignal
+  models?: GenieModelConfig
 }): Promise<GenieOrchestrationDecision> {
+  const models = args.models ?? DEFAULT_GENIE_MODELS
   const orchestratorAgent = new Agent({
     name: 'Yellow Jersey Orchestrator',
-    model: ORCHESTRATOR_MODEL,
+    model: models.orchestrator,
     instructions: buildOrchestratorInstructions(args.storeName),
     outputType: GenieOrchestrationDecisionSchema,
     modelSettings: {
@@ -72,12 +78,14 @@ async function createGenieExecutionPlan(args: {
   inputMessages: AgentInputItem[]
   route: GenieOrchestrationDecision['route']
   signal: AbortSignal
+  models?: GenieModelConfig
   /** Receives reasoning summary deltas so planning is no longer dead air in the UI. */
   emit?: (data: object) => void
 }): Promise<GenieExecutionPlan | null> {
+  const models = args.models ?? DEFAULT_GENIE_MODELS
   const plannerAgent = new Agent({
     name: 'Yellow Jersey Planning Agent',
-    model: PLANNER_MODEL,
+    model: models.planner,
     instructions: buildPlannerInstructions(args.storeName),
     outputType: GenieExecutionPlanSchema,
     modelSettings: {

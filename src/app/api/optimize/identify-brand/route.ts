@@ -22,7 +22,7 @@ import type { LightspeedManufacturer } from '@/lib/services/lightspeed'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
-const MODEL = 'gpt-5.4-mini'
+const MODEL = 'gpt-5.4-nano'
 const MAX_PRODUCTS_PER_REQUEST = 25
 
 const BRAND_PROMPT = `You identify the brand (manufacturer) of cycling products sold in an Australian bike shop.

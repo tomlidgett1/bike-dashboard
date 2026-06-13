@@ -44,6 +44,9 @@ interface SelectResult {
 const TRIAGE_POOL = 40;
 const SHORTLIST_MAX = 15;
 const TARGET_MIN = 3;
+const TRIAGE_MODEL = 'gpt-5.4-mini';
+const SELECT_FAST_MODEL = 'gpt-5.4-mini';
+const SELECT_FULL_MODEL = 'gpt-5.4';
 
 function identityLines(productName: string, brand?: string, upc?: string) {
   return [
@@ -187,9 +190,10 @@ async function visionJSON<T>(
   prompt: string,
   cands: Candidate[],
   detail: 'low' | 'high',
+  model: string,
 ): Promise<{ result: T; usage: TokenUsage }> {
   const completion = await openai.chat.completions.create({
-    model: 'gpt-5.4',
+    model,
     temperature: 0.2,
     max_completion_tokens: 1200,
     response_format: { type: 'json_object' },
@@ -244,6 +248,7 @@ export async function POST(request: NextRequest) {
     const pool = candidates.slice(0, TRIAGE_POOL);
     let triageReasoning = '';
     let totalUsage: TokenUsage = { promptTokens: 0, cachedTokens: 0, completionTokens: 0 };
+    const modelsUsed = new Set<string>();
 
     // ── Stage 1: triage (skip if the pool is already small enough to deep-analyse) ──
     let shortlist: Candidate[] = pool;
@@ -254,7 +259,9 @@ export async function POST(request: NextRequest) {
           buildTriagePrompt(productName, pool.length, brand, upc),
           pool,
           'low',
+          TRIAGE_MODEL,
         );
+        modelsUsed.add(TRIAGE_MODEL);
         triage = result;
         totalUsage = addUsage(totalUsage, usage);
       } catch (error) {
@@ -282,18 +289,20 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Stage 2: deep selection over the shortlist ──
-    const SELECT_ATTEMPTS = 3;
     let select: SelectResult | undefined;
     let selections: SelectResult['selectedImages'] = [];
     let lastSelectError: string | undefined;
+    const selectModels = [SELECT_FAST_MODEL, SELECT_FULL_MODEL];
 
-    for (let attempt = 1; attempt <= SELECT_ATTEMPTS; attempt++) {
+    for (const selectModel of selectModels) {
       try {
         const { result, usage } = await visionJSON<SelectResult>(
           buildSelectPrompt(productName, shortlist.length, maxImages, brand, upc),
           shortlist,
           'high',
+          selectModel,
         );
+        modelsUsed.add(selectModel);
         select = result;
         totalUsage = addUsage(totalUsage, usage);
       } catch (error) {
@@ -301,11 +310,15 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      selections = (select.selectedImages || []).filter(
+      const candidateSelections = (select.selectedImages || []).filter(
         (s) => Number.isInteger(s.index) && s.index >= 0 && s.index < shortlist.length,
       );
 
-      if (selections.length > 0) break;
+      if (candidateSelections.length > 0 || selections.length === 0) {
+        selections = candidateSelections;
+      }
+
+      if (selections.length >= TARGET_MIN || shortlist.length < TARGET_MIN) break;
     }
 
     if (selections.length === 0) {
@@ -355,6 +368,7 @@ export async function POST(request: NextRequest) {
       selectedUrls: selectedCandidates.map((c) => c.url),
       reasoning: [triageReasoning, select?.reasoning].filter(Boolean).join(' — '),
       stages: { triagePool: pool.length, shortlist: shortlist.length },
+      modelsUsed: [...modelsUsed],
       perImageReasons: orderedIndexes.map((i) => ({
         url: shortlist[i].url,
         isPrimary: i === primaryIndex,

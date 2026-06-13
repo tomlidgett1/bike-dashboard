@@ -1,4 +1,9 @@
 import type { GenieOrchestrationDecision } from '@/lib/genie/orchestration'
+import type { GenieModelProfile } from '@/lib/genie/agent/model-profiles'
+import {
+  canRunParallelToolsForProfile,
+  maxToolConcurrencyForProfile,
+} from '@/lib/genie/agent/model-profiles'
 
 export const COMMON_AGENT_TOOL_NAMES = [
   'record_answer_recheck',
@@ -203,15 +208,16 @@ export function shouldExposeHostedWebSearch(route: GenieOrchestrationDecision['r
   return route === 'web_research' || route === 'mixed'
 }
 
-export function canRunParallelTools(route: GenieOrchestrationDecision['route']): boolean {
-  return route === 'lightspeed_sql' || route === 'business_analysis' || route === 'web_research'
+export function canRunParallelTools(
+  route: GenieOrchestrationDecision['route'],
+  profile: GenieModelProfile = 'default',
+): boolean {
+  return canRunParallelToolsForProfile(route, profile)
 }
 
-export function maxToolConcurrencyForRoute(route: GenieOrchestrationDecision['route']): number {
-  // Independent reads (Xero reports, SQL queries, web lookups) have no reason
-  // to serialise. Higher concurrency cuts wall-clock time on analysis runs that
-  // batch many data calls in a single turn.
-  if (route === 'business_analysis') return 6
-  if (route === 'lightspeed_sql' || route === 'web_research') return 4
-  return 1
+export function maxToolConcurrencyForRoute(
+  route: GenieOrchestrationDecision['route'],
+  profile: GenieModelProfile = 'default',
+): number {
+  return maxToolConcurrencyForProfile(route, profile)
 }

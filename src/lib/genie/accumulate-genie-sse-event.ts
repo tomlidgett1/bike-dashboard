@@ -55,6 +55,10 @@ export function applyGenieSseEvent(
     next.content += event.text;
   }
 
+  if (event.event === "reasoning_delta" && typeof event.text === "string") {
+    next.reasoningSummary = `${next.reasoningSummary ?? ""}${event.text}`;
+  }
+
   if (event.event === "reasoning_done" && typeof event.text === "string") {
     next.reasoningSummary = event.text;
   }

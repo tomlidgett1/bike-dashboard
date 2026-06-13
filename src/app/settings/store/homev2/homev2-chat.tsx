@@ -70,6 +70,7 @@ import type {
 } from "@/lib/genie/visual-payloads";
 
 type ChatRole = "user" | "assistant";
+type ExperimentVariant = "default" | "nano";
 
 interface ProcessStep {
   id: string;
@@ -103,6 +104,206 @@ interface ChatMessage {
   isStreaming?: boolean;
   error?: string;
   backgroundJobId?: string;
+  turnId?: string;
+  experimentVariant?: ExperimentVariant;
+}
+
+interface ChatTurn {
+  turnId: string;
+  user: ChatMessage;
+  assistants: ChatMessage[];
+}
+
+function buildChatTurns(messages: ChatMessage[]): ChatTurn[] {
+  const turns: ChatTurn[] = [];
+  let current: ChatTurn | null = null;
+
+  for (const message of messages) {
+    if (message.role === "user") {
+      current = {
+        turnId: message.turnId ?? message.id,
+        user: message,
+        assistants: [],
+      };
+      turns.push(current);
+      continue;
+    }
+
+    if (current) {
+      current.assistants.push(message);
+    }
+  }
+
+  return turns;
+}
+
+function experimentColumnLabel(variant: ExperimentVariant) {
+  return variant === "default" ? "Current models" : "Nano (fast mode)";
+}
+
+function enrichAssistantFromJob(target: ChatMessage, merged: ChatMessage, job: GenieJob): ChatMessage {
+  let next: ChatMessage = { ...merged };
+
+  const jobLogs = job.metadata.raw_debug_logs;
+  if (jobLogs?.length) {
+    next = { ...next, rawDebugLogs: jobLogs };
+  }
+
+  if (isGenieJobRunning(job) && job.message) {
+    const step = createProcessStep(job.progressPhase ?? "thinking", job.message);
+    next = {
+      ...next,
+      processSteps: appendProcessStep(target.processSteps ?? next.processSteps, step),
+    };
+  }
+
+  const reasoningSummary = next.reasoningSummary?.trim() ?? "";
+  if (reasoningSummary) {
+    const reasoningPhase = reasoningSummary.startsWith("- ") ? "planning" : "thinking";
+    next = {
+      ...next,
+      processSteps: upsertLiveReasoningStep(
+        next.processSteps,
+        createProcessStep(reasoningPhase, reasoningSummary, "reasoning"),
+      ),
+    };
+  }
+
+  return next;
+}
+
+function AssistantResponseBody({
+  message,
+  onGmailConnected,
+}: {
+  message: ChatMessage;
+  onGmailConnected?: () => void;
+}) {
+  return (
+    <div className="w-full text-sm text-foreground">
+      <div className="space-y-4">
+        {message.processSteps?.length
+          || message.analysisPlan?.execution_steps.length
+          || message.analysisQueries?.length
+          || message.rawDebugLogs?.length ? (
+            <ProcessTimelineBox
+              steps={message.processSteps ?? []}
+              live={message.isStreaming}
+              analysisPlan={message.analysisPlan}
+              analysisQueries={message.analysisQueries}
+              rawDebugLogs={message.rawDebugLogs}
+            />
+          ) : null}
+        {message.products?.length ? (
+          <GenieStoreProductCards products={message.products} />
+        ) : null}
+        {message.webImages?.length ? (
+          <GenieWebImageCards images={message.webImages} />
+        ) : null}
+        {message.customerProfile ? (
+          <LightspeedCustomerProfileCard profile={message.customerProfile} />
+        ) : null}
+        {message.workorders?.workorders.length ? (
+          <LightspeedWorkorderCards payload={message.workorders} fullWidth />
+        ) : null}
+        {message.gmailConnect ? (
+          <GmailConnectCard
+            payload={message.gmailConnect}
+            onConnected={onGmailConnected}
+          />
+        ) : null}
+        {message.charts?.map((chart, index) => (
+          <GenieChart
+            key={`${chart.title}-${index}`}
+            chart={chart}
+          />
+        ))}
+        {message.pivotTables?.map((table, index) => (
+          <GeniePivotTable
+            key={`${table.title}-pivot-${index}`}
+            table={table}
+          />
+        ))}
+        {message.tables?.map((table, index) => (
+          <GenieDataTable
+            key={`${table.title}-${index}`}
+            table={table}
+          />
+        ))}
+        <AssistantMessageContent content={message.content} />
+        {!message.isStreaming
+          ? message.proposals?.map((proposal, proposalIndex) => (
+              <GenieProposalCard key={`${proposal.kind}-${proposalIndex}`} proposal={proposal} />
+            ))
+          : null}
+      </div>
+      {message.error && (
+        <p className="mt-2 text-sm font-medium text-destructive">{message.error}</p>
+      )}
+    </div>
+  );
+}
+
+function AssistantExperimentColumn({
+  message,
+  variant,
+  onGmailConnected,
+}: {
+  message: ChatMessage;
+  variant: ExperimentVariant;
+  onGmailConnected?: () => void;
+}) {
+  return (
+    <div className="min-w-0 rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+      <p className="mb-3 text-xs font-medium text-gray-500">
+        {experimentColumnLabel(variant)}
+      </p>
+      <AssistantResponseBody message={message} onGmailConnected={onGmailConnected} />
+    </div>
+  );
+}
+
+function ChatTurnView({
+  turn,
+  isLatestTurn,
+  lastMsgMinHeight,
+  lastUserMessageRef,
+  onGmailConnected,
+}: {
+  turn: ChatTurn;
+  isLatestTurn: boolean;
+  lastMsgMinHeight?: number;
+  lastUserMessageRef?: React.Ref<HTMLDivElement>;
+  onGmailConnected?: () => void;
+}) {
+  const defaultAssistant = turn.assistants.find((message) => message.experimentVariant === "default")
+    ?? turn.assistants[0];
+  const nanoAssistant = turn.assistants.find((message) => message.experimentVariant === "nano");
+  const isExperimentTurn = Boolean(defaultAssistant && nanoAssistant);
+
+  return (
+    <div
+      style={isLatestTurn && lastMsgMinHeight ? { minHeight: lastMsgMinHeight } : undefined}
+      className="space-y-4"
+    >
+      <div ref={lastUserMessageRef} className="flex justify-end">
+        <div className="max-w-[86%] rounded-[24px] bg-primary px-4 py-2 text-sm leading-snug text-primary-foreground shadow-sm sm:max-w-[78%]">
+          <span className="whitespace-pre-wrap">{turn.user.content}</span>
+        </div>
+      </div>
+
+      {isExperimentTurn ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <AssistantExperimentColumn message={defaultAssistant} variant="default" onGmailConnected={onGmailConnected} />
+          <AssistantExperimentColumn message={nanoAssistant!} variant="nano" onGmailConnected={onGmailConnected} />
+        </div>
+      ) : defaultAssistant ? (
+        <div className="flex justify-start">
+          <AssistantResponseBody message={defaultAssistant} onGmailConnected={onGmailConnected} />
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 interface QueuedPrompt {
@@ -440,7 +641,7 @@ function ProcessTimelineBox({
   const latestStep = visibleSteps[visibleSteps.length - 1];
   const hasAnalysis = Boolean(analysisPlan?.execution_steps.length || analysisQueries?.length);
 
-  if (visibleSteps.length === 0 && !hasAnalysis) return null;
+  if (visibleSteps.length === 0 && !hasAnalysis && !(rawDebugLogs?.length)) return null;
 
   const phaseLabel = latestStep ? processStepLabel(latestStep) : analysisPlan ? "Planning" : "Working";
   const progressText = latestStep
@@ -731,6 +932,8 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
   const activeConversationIdRef = React.useRef<string | null>(null);
   const composioSessionIdsRef = React.useRef<Record<string, string>>({});
   const isLoadingRef = React.useRef(false);
+  const jobsRef = React.useRef(jobs);
+  const stopRequestedAssistantIdsRef = React.useRef(new Set<string>());
   const runSendRef = React.useRef<(text: string, clearInputField?: boolean) => Promise<void>>(async () => {});
   const consumedPendingPromptRef = React.useRef(false);
   const hasStarted = messages.length > 0;
@@ -806,12 +1009,15 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     if (!messages.some((message) => message.role === "user")) return;
 
     const id = activeConversationId ?? crypto.randomUUID();
+    const persistedMessages = messages.filter(
+      (message) => message.experimentVariant !== "nano",
+    );
     const nextConversation: HomeV2SavedConversation = {
       id,
-      title: homeConversationTitle(messages),
+      title: homeConversationTitle(persistedMessages),
       updatedAt: new Date().toISOString(),
       messages: sanitizeStoredMessages(
-        messages.map((message) => ({
+        persistedMessages.map((message) => ({
           id: message.id,
           role: message.role,
           content: message.content,
@@ -981,11 +1187,74 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     };
   }, [searchParams, loadConversation, jobs]);
 
+  React.useEffect(() => {
+    jobsRef.current = jobs;
+  }, [jobs]);
+
+  const collectCancellableJobIds = React.useCallback((currentMessages: ChatMessage[]) => {
+    const jobIds = new Set<string>();
+    const streamingAssistantIds = new Set(
+      currentMessages
+        .filter((message) => message.role === "assistant" && message.isStreaming)
+        .map((message) => message.id),
+    );
+
+    for (const message of currentMessages) {
+      if (message.backgroundJobId && message.isStreaming) {
+        jobIds.add(message.backgroundJobId);
+      }
+    }
+
+    for (const job of jobsRef.current) {
+      const assistantId = job.metadata.client_assistant_id;
+      if (!assistantId || !streamingAssistantIds.has(assistantId)) continue;
+      if (isGenieJobRunning(job)) {
+        jobIds.add(job.id);
+      }
+    }
+
+    return jobIds;
+  }, []);
+
   const stopGeneration = React.useCallback(() => {
     abortRef.current?.abort();
-    const runningJob = messagesRef.current.find((message) => message.backgroundJobId)?.backgroundJobId;
-    if (runningJob) void cancelJob(runningJob);
-  }, [cancelJob]);
+
+    const streamingAssistants = messagesRef.current.filter(
+      (message) => message.role === "assistant" && message.isStreaming,
+    );
+    for (const message of streamingAssistants) {
+      stopRequestedAssistantIdsRef.current.add(message.id);
+    }
+
+    for (const jobId of collectCancellableJobIds(messagesRef.current)) {
+      void cancelJob(jobId);
+    }
+
+    flushSync(() => {
+      const next = messagesRef.current.map((message) =>
+        stopRequestedAssistantIdsRef.current.has(message.id)
+          ? {
+              ...message,
+              isStreaming: false,
+              status: undefined,
+              statusPhase: undefined,
+            }
+          : message,
+      );
+      messagesRef.current = next;
+      setMessages(next);
+      const stillStreaming = next.some((message) => message.isStreaming);
+      isLoadingRef.current = stillStreaming;
+      setIsLoading(stillStreaming);
+    });
+  }, [cancelJob, collectCancellableJobIds]);
+
+  React.useEffect(() => {
+    if (stopRequestedAssistantIdsRef.current.size === 0) return;
+    for (const jobId of collectCancellableJobIds(messagesRef.current)) {
+      void cancelJob(jobId);
+    }
+  }, [jobs, cancelJob, collectCancellableJobIds]);
 
   React.useEffect(() => {
     for (const job of jobs) {
@@ -1000,20 +1269,21 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
       setMessages((current) => {
         const target = current.find((message) => message.id === assistantId);
         if (!target) return current;
-        let merged = mergeGenieJobIntoAssistantMessage(target, job);
-        if (isGenieJobRunning(job) && job.message) {
-          const step = createProcessStep(job.progressPhase ?? "thinking", job.message);
-          merged = {
-            ...merged,
-            processSteps: appendProcessStep(target.processSteps, step),
-          };
-        }
+        let merged = enrichAssistantFromJob(
+          target,
+          mergeGenieJobIntoAssistantMessage(target, job) as ChatMessage,
+          job,
+        );
         if (
           target.status === merged.status &&
           target.content === merged.content &&
           target.isStreaming === merged.isStreaming &&
           target.error === merged.error &&
-          target.processSteps?.length === (merged as ChatMessage).processSteps?.length
+          target.processSteps?.length === merged.processSteps?.length &&
+          target.rawDebugLogs?.length === merged.rawDebugLogs?.length &&
+          target.reasoningSummary === merged.reasoningSummary &&
+          target.analysisPlan === merged.analysisPlan &&
+          target.analysisQueries?.length === merged.analysisQueries?.length
         ) {
           return current;
         }
@@ -1046,20 +1316,38 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     const trimmed = text.trim();
     if (!trimmed || isLoadingRef.current) return;
 
+    stopRequestedAssistantIdsRef.current.clear();
+
+    const turnId = crypto.randomUUID();
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
       role: "user",
       content: trimmed,
+      turnId,
     };
-    const assistantId = crypto.randomUUID();
-    const assistantMessage: ChatMessage = {
-      id: assistantId,
+    const defaultAssistantId = crypto.randomUUID();
+    const nanoAssistantId = crypto.randomUUID();
+    const defaultAssistantMessage: ChatMessage = {
+      id: defaultAssistantId,
       role: "assistant",
       content: "",
       isStreaming: true,
       status: "Thinking",
       statusPhase: "thinking",
       processSteps: [createProcessStep("thinking", "Thinking")],
+      turnId,
+      experimentVariant: "default",
+    };
+    const nanoAssistantMessage: ChatMessage = {
+      id: nanoAssistantId,
+      role: "assistant",
+      content: "",
+      isStreaming: true,
+      status: "Thinking",
+      statusPhase: "thinking",
+      processSteps: [createProcessStep("thinking", "Thinking")],
+      turnId,
+      experimentVariant: "nano",
     };
 
     const conversationId = activeConversationIdRef.current ?? crypto.randomUUID();
@@ -1073,7 +1361,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
       (typeof window === "undefined" ? 0 : Math.max(360, window.innerHeight - 180));
 
     flushSync(() => {
-      const updatedMessages = [...nextMessages, assistantMessage];
+      const updatedMessages = [...nextMessages, defaultAssistantMessage, nanoAssistantMessage];
       messagesRef.current = updatedMessages;
       setLastMsgMinHeight(containerHeight);
       setMessages(updatedMessages);
@@ -1099,45 +1387,75 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     snapLatestUserToTop();
     requestAnimationFrame(snapLatestUserToTop);
 
-    try {
+    const serializedMessages = nextMessages.map((message) => ({
+      role: message.role,
+      content: message.content,
+      charts: message.charts,
+      tables: message.tables,
+      pivotTables: message.pivotTables,
+      products: message.products,
+      webImages: message.webImages,
+      workorders: message.workorders,
+      customerProfile: message.customerProfile,
+      proposals: message.proposals,
+      gmailEmails: message.gmailEmails,
+      analysisPlan: message.analysisPlan,
+      analysisQueries: message.analysisQueries,
+    }));
+
+    const startVariantJob = async (
+      assistantId: string,
+      modelProfile: ExperimentVariant,
+    ) => {
       const jobId = await startAgentBackgroundJob({
-        messages: nextMessages.map((message) => ({
-          role: message.role,
-          content: message.content,
-          charts: message.charts,
-          tables: message.tables,
-          pivotTables: message.pivotTables,
-          products: message.products,
-          webImages: message.webImages,
-          workorders: message.workorders,
-          customerProfile: message.customerProfile,
-          proposals: message.proposals,
-          gmailEmails: message.gmailEmails,
-          analysisPlan: message.analysisPlan,
-          analysisQueries: message.analysisQueries,
-        })),
+        messages: serializedMessages,
         prompt: trimmed,
         conversationId,
         composioSessionIds: composioSessionIdsRef.current,
         clientAssistantId: assistantId,
         source: "homev2",
+        modelProfile,
       });
 
       if (jobId) {
+        if (stopRequestedAssistantIdsRef.current.has(assistantId)) {
+          void cancelJob(jobId);
+          setMessages((current) => current.map((message) =>
+            message.id === assistantId
+              ? {
+                  ...message,
+                  backgroundJobId: jobId,
+                  isStreaming: false,
+                  status: undefined,
+                  statusPhase: undefined,
+                }
+              : message
+          ));
+          return;
+        }
+
         setMessages((current) => current.map((message) =>
           message.id === assistantId
             ? { ...message, backgroundJobId: jobId }
             : message
         ));
       }
+    };
+
+    try {
+      await Promise.all([
+        startVariantJob(defaultAssistantId, "default"),
+        startVariantJob(nanoAssistantId, "nano"),
+      ]);
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to start Genie.";
       setMessages((current) => current.map((message) =>
-        message.id === assistantId
+        message.id === defaultAssistantId || message.id === nanoAssistantId
           ? {
               ...message,
               isStreaming: false,
               status: undefined,
-              error: error instanceof Error ? error.message : "Failed to start Genie.",
+              error: errorMessage,
             }
           : message
       ));
@@ -1149,7 +1467,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
         });
       });
     }
-  }, [startAgentBackgroundJob]);
+  }, [startAgentBackgroundJob, cancelJob]);
 
   React.useEffect(() => {
     runSendRef.current = runSend;
@@ -1273,6 +1591,10 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
             Welcome, today is {todayLabel}
           </h1>
 
+          <div className="max-w-2xl rounded-md border border-gray-200 bg-white px-4 py-3 text-center text-sm text-gray-600">
+            Model speed experiment: each question runs twice — current models on the left, nano fast mode on the right (nano models, parallel tools, no verify loops).
+          </div>
+
           <HomeV2MetricsCards />
 
           <div className="w-full max-w-3xl">
@@ -1306,94 +1628,24 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
       ) : (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
-            <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
-              {messages.map((message, index) => {
-                const isLatestUserMessage =
-                  message.role === "user" &&
-                  !messages.slice(index + 1).some((nextMessage) => nextMessage.role === "user");
-                const isLastMessage = index === messages.length - 1;
-
+            <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
+              {buildChatTurns(messages).map((turn, index, turns) => {
+                const isLatestTurn = index === turns.length - 1;
                 return (
-                  <div
-                    key={message.id}
-                    ref={isLatestUserMessage ? lastUserMessageRef : undefined}
-                    style={isLastMessage && lastMsgMinHeight ? { minHeight: lastMsgMinHeight } : undefined}
-                    className={cn("flex", message.role === "user" ? "justify-end" : "justify-start")}
-                  >
-	                    {message.role === "assistant" ? (
-	                      <div className="w-full max-w-none text-sm text-foreground">
-	                        <div className="space-y-4">
-		                          {message.processSteps?.length
-                            || message.analysisPlan?.execution_steps.length
-                            || message.analysisQueries?.length
-                            || message.rawDebugLogs?.length ? (
-		                            <ProcessTimelineBox
-                                steps={message.processSteps ?? []}
-                                live={message.isStreaming}
-                                analysisPlan={message.analysisPlan}
-                                analysisQueries={message.analysisQueries}
-                                rawDebugLogs={message.rawDebugLogs}
-                              />
-		                          ) : null}
-	                          {message.products?.length ? (
-	                            <GenieStoreProductCards products={message.products} />
-	                          ) : null}
-	                          {message.webImages?.length ? (
-	                            <GenieWebImageCards images={message.webImages} />
-	                          ) : null}
-	                          {message.customerProfile ? (
-	                            <LightspeedCustomerProfileCard profile={message.customerProfile} />
-	                          ) : null}
-	                          {message.workorders?.workorders.length ? (
-	                            <LightspeedWorkorderCards payload={message.workorders} fullWidth />
-	                          ) : null}
-	                          {message.gmailConnect ? (
-	                            <GmailConnectCard
-	                              payload={message.gmailConnect}
-	                              onConnected={() => setGmailConnectBanner(null)}
-	                            />
-	                          ) : null}
-	                          {message.charts?.map((chart, index) => (
-	                            <GenieChart
-	                              key={`${chart.title}-${index}`}
-	                              chart={chart}
-	                            />
-	                          ))}
-	                          {message.pivotTables?.map((table, index) => (
-	                            <GeniePivotTable
-	                              key={`${table.title}-pivot-${index}`}
-	                              table={table}
-	                            />
-	                          ))}
-	                          {message.tables?.map((table, index) => (
-	                            <GenieDataTable
-	                              key={`${table.title}-${index}`}
-	                              table={table}
-	                            />
-	                          ))}
-	                          <AssistantMessageContent content={message.content} />
-	                          {!message.isStreaming
-	                            ? message.proposals?.map((proposal, proposalIndex) => (
-	                                <GenieProposalCard key={`${proposal.kind}-${proposalIndex}`} proposal={proposal} />
-	                              ))
-	                            : null}
-	                        </div>
-                        {message.error && (
-                          <p className="mt-2 text-sm font-medium text-destructive">{message.error}</p>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="max-w-[86%] rounded-[24px] bg-primary px-4 py-2 text-sm leading-snug text-primary-foreground shadow-sm sm:max-w-[78%]">
-                        <span className="whitespace-pre-wrap">{message.content}</span>
-                      </div>
-                    )}
-                  </div>
+                  <ChatTurnView
+                    key={turn.turnId}
+                    turn={turn}
+                    isLatestTurn={isLatestTurn}
+                    lastMsgMinHeight={isLatestTurn ? lastMsgMinHeight : undefined}
+                    lastUserMessageRef={isLatestTurn ? lastUserMessageRef : undefined}
+                    onGmailConnected={() => setGmailConnectBanner(null)}
+                  />
                 );
               })}
             </div>
           </div>
 
-          <div className="sticky bottom-0 z-10 shrink-0 bg-gradient-to-t from-[#f8fafc] via-[#f8fafc] to-transparent px-5 pb-4 pt-6">
+          <div className="relative z-20 shrink-0 bg-gradient-to-t from-[#f8fafc] via-[#f8fafc] to-transparent px-5 pb-4 pt-6">
             <div className="mx-auto w-full max-w-3xl">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <ConversationHistoryDropdown

@@ -14,12 +14,17 @@ import {
 import { compactGenieProgressText } from '@/lib/genie/progress-text'
 import { persistGenieAgentRun } from '@/lib/genie/telemetry'
 import {
-  EXECUTOR_MODEL,
-  ORCHESTRATOR_MODEL,
   STREAM_HEARTBEAT_MS,
   createGenieRunner,
   genieTraceId,
 } from './runtime'
+import {
+  DEFAULT_GENIE_MODELS,
+  getGenieModelConfig,
+  getGenieRuntimePolicy,
+  type GenieModelConfig,
+  type GenieModelProfile,
+} from './model-profiles'
 import {
   buildCasualPrompt,
   buildDirectAnswerInstructions,
@@ -49,7 +54,6 @@ import {
   resolveDirectSalesSummaryPeriod,
 } from './direct-paths'
 import {
-  maxTurnsForRoute,
   statusAfterTool,
   statusForExecutionStart,
   statusForRoute,
@@ -69,13 +73,105 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
+function cleanDirectEntityQuery(value: string | undefined): string | null {
+  const cleaned = (value ?? '')
+    .replace(/\s+/g, ' ')
+    .replace(/[?.!]+$/g, '')
+    .replace(/\bplease\b$/i, '')
+    .trim()
+  if (cleaned.length < 2 || cleaned.length > 120) return null
+  return cleaned
+}
+
+function resolveObviousLightspeedDirectPath(
+  latestUserMessage: string,
+  messages: Message[],
+): Pick<GenieOrchestrationDecision, 'direct_path' | 'entity_query' | 'reason'> | null {
+  const text = latestUserMessage.trim()
+  const normalised = text.toLowerCase().replace(/\s+/g, ' ')
+  if (!normalised) return null
+
+  const salesLookup = resolveDirectSalesSummaryLookup(text)
+  const salesPeriodLookup = resolveDirectSalesSummaryPeriod(text)
+  const hasSimpleSalesIntent = /\b(any sales|sales?|takings?|revenue|turnover|gross sales|net sales|gross profit|profit|margin|made|took)\b/i.test(text)
+  const hasSalesBreakdownIntent = /\b(top|best|rank|ranking|list|every|each|transaction|transactions|receipt|receipts|orders?|line items?|products?|items?|services?|customers?|category|categories|breakdown|trend|chart|graph|compare|comparison|vs|versus|between|from .+ to)\b/i.test(text)
+  if (hasSimpleSalesIntent && salesPeriodLookup && !hasSalesBreakdownIntent) {
+    return {
+      direct_path: 'sales_summary',
+      entity_query: salesPeriodLookup.label,
+      reason: 'Deterministic fast path for a simple sales summary period.',
+    }
+  }
+  if (salesLookup) {
+    return {
+      direct_path: 'sales_summary',
+      entity_query: salesLookup.label,
+      reason: 'Deterministic fast path for a simple sales summary period.',
+    }
+  }
+
+  const fitmentIntent = /\b(bottom bracket|bb|brake|pad|rotor|headset|seatpost|axle|bearing|freehub|cassette|chain|tyre|tire|drivetrain|compatib|standard|need)\b/i
+  if (fitmentIntent.test(text)) return null
+
+  const priorCustomer = latestCustomerReferenceFromMessages(messages)
+  const pronounBikeLookup = /\bwhat\s+bikes?\s+(?:does|do)\s+(?:she|he|they|this customer|that customer)\s+(?:have|own|ride|use)\b/i
+  if (pronounBikeLookup.test(text) && priorCustomer?.query) {
+    return {
+      direct_path: 'customer_bikes',
+      entity_query: priorCustomer.query,
+      reason: 'Deterministic fast path for a customer bike follow-up.',
+    }
+  }
+
+  const bikePatterns = [
+    /\bwhat\s+bikes?\s+does\s+(.+?)\s+(?:have|own|ride|use)\b/i,
+    /\bwhat\s+bikes?\s+do\s+(.+?)\s+(?:have|own|ride|use)\b/i,
+    /\bwhich\s+bikes?\s+does\s+(.+?)\s+(?:have|own|ride|use)\b/i,
+    /\b(?:show|list)\s+(?:me\s+)?(?:the\s+)?bikes?\s+(?:for|owned by)\s+(.+?)$/i,
+    /\bcustomer\s+bikes?\s+(?:for\s+)?(.+?)$/i,
+    /^(.+?)'s\s+bikes?$/i,
+  ]
+  for (const pattern of bikePatterns) {
+    const entity = cleanDirectEntityQuery(text.match(pattern)?.[1])
+    if (entity) {
+      return {
+        direct_path: 'customer_bikes',
+        entity_query: entity,
+        reason: 'Deterministic fast path for a customer bike lookup.',
+      }
+    }
+  }
+
+  const profilePatterns = [
+    /^(?:customer|customer profile|profile for)\s+(.+?)$/i,
+    /^(?:tell me about|show me|show|pull up|history for|what do we know about)\s+customer\s+(.+?)$/i,
+  ]
+  for (const pattern of profilePatterns) {
+    const entity = cleanDirectEntityQuery(text.match(pattern)?.[1])
+    if (entity) {
+      return {
+        direct_path: 'customer_profile',
+        entity_query: entity,
+        reason: 'Deterministic fast path for a customer profile lookup.',
+      }
+    }
+  }
+
+  return null
+}
+
 // Matches the route segment's maxDuration. Past the warn ratio, every tool
 // result carries a wrap-up directive so long analyses land before the platform
 // kills the function instead of relying on turn count alone.
 const RUN_TIME_BUDGET_MS = 600_000
 const RUN_TIME_BUDGET_WARN_RATIO = 0.6
 
-function applyTimeBudgetToTools(tools: unknown[], startedAt: number, budgetMs: number): void {
+function applyTimeBudgetToTools(
+  tools: unknown[],
+  startedAt: number,
+  budgetMs: number,
+  fastMode = false,
+): void {
   for (const candidate of tools) {
     const fnTool = candidate as { type?: string; invoke?: (...args: never[]) => Promise<unknown> }
     if (fnTool.type !== 'function' || typeof fnTool.invoke !== 'function') continue
@@ -84,7 +180,9 @@ function applyTimeBudgetToTools(tools: unknown[], startedAt: number, budgetMs: n
       const output = await original(...args)
       const elapsed = Date.now() - startedAt
       if (elapsed < budgetMs * RUN_TIME_BUDGET_WARN_RATIO) return output
-      const note = `[time_budget] ${Math.round(elapsed / 1000)}s of the ${Math.round(budgetMs / 1000)}s run budget used — wrap up now: consolidate the evidence you already have into the final answer, run verify_question_answered, and do not start new broad lookups.`
+      const note = fastMode
+        ? `[time_budget] ${Math.round(elapsed / 1000)}s of the ${Math.round(budgetMs / 1000)}s run budget used — wrap up now: consolidate the evidence you already have into the final answer and do not start new broad lookups.`
+        : `[time_budget] ${Math.round(elapsed / 1000)}s of the ${Math.round(budgetMs / 1000)}s run budget used — wrap up now: consolidate the evidence you already have into the final answer, run verify_question_answered, and do not start new broad lookups.`
       if (typeof output === 'string') return `${output}\n\n${note}`
       if (isRecord(output)) return { ...output, time_budget: note }
       return output
@@ -107,6 +205,7 @@ async function streamGroundedDirectAnswer(args: {
   groundingLabel: string
   grounding: string
   fallbackAnswer: string
+  models: GenieModelConfig
   emit: (data: object) => void
   signal: AbortSignal
   onFirstText: () => void
@@ -115,7 +214,7 @@ async function streamGroundedDirectAnswer(args: {
   try {
     const directAgent = new Agent({
       name: 'Yellow Jersey Direct Answer Agent',
-      model: EXECUTOR_MODEL,
+      model: args.models.executor,
       instructions: buildDirectAnswerInstructions(args.storeName, args.groundingLabel, args.grounding),
       tools: [],
       modelSettings: {
@@ -181,6 +280,7 @@ export interface ExecuteGenieAgentArgs {
   messages: Message[]
   conversationId: string | null
   composioSessionIds: ComposioSessionIds
+  modelProfile?: GenieModelProfile
   /** Receives every SSE-shaped event ({event: 'status'|'text_delta'|...}). */
   emit: (data: object) => void
   /** Aborts the run (job cancellation or client disconnect when the caller ties it to the request). */
@@ -189,6 +289,9 @@ export interface ExecuteGenieAgentArgs {
 
 export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise<void> {
   const { supabase, userId, storeName, messages, conversationId, composioSessionIds, signal } = options
+  const modelProfile = options.modelProfile ?? 'default'
+  const models = getGenieModelConfig(modelProfile)
+  const runtime = getGenieRuntimePolicy(modelProfile)
   const visualPrefs = visualPrefsForMessages(messages)
   const requestId = randomUUID()
   const requestStartedAt = Date.now()
@@ -198,7 +301,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
   let lastStatusText = 'Working'
   let finalRoute: GenieOrchestrationDecision['route'] | null = null
   let plannerUsed = false
-  let orchestrationSource: 'model' | null = null
+  let orchestrationSource: 'model' | 'deterministic' | null = null
   let routerInvoked = false
   let executorModel: string | null = null
   let firstTextAt: number | null = null
@@ -250,23 +353,40 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
     const latestUserMessage = latestUserText(messages)
     const inputMessages = toAgentInputMessages(messages)
     const orchestrationStartedAt = Date.now()
-    routerInvoked = true
-    orchestrationSource = 'model'
-    emit({ event: 'status', phase: 'routing', text: 'Choosing the best workflow' })
-    const orchestration = await createGenieOrchestrationDecision({
-      storeName,
-      userId,
-      requestId,
-      messages,
-      signal,
-    })
+    const directPathOverride = resolveObviousLightspeedDirectPath(latestUserMessage, messages)
+    let orchestration: GenieOrchestrationDecision
+
+    if (directPathOverride) {
+      routerInvoked = false
+      orchestrationSource = 'deterministic'
+      orchestration = {
+        route: 'lightspeed_sql',
+        needs_plan: false,
+        direct_path: directPathOverride.direct_path,
+        entity_query: directPathOverride.entity_query,
+        reason: directPathOverride.reason,
+      }
+      emit({ event: 'status', phase: 'routing_done', text: 'Using fast Lightspeed path' })
+    } else {
+      routerInvoked = true
+      orchestrationSource = 'model'
+      emit({ event: 'status', phase: 'routing', text: 'Choosing the best workflow' })
+      orchestration = await createGenieOrchestrationDecision({
+        storeName,
+        userId,
+        requestId,
+        messages,
+        signal,
+        models,
+      })
+      emit({ event: 'status', phase: 'routing_done', text: statusForRoute(orchestration.route) })
+    }
     finalRoute = orchestration.route
-    emit({ event: 'status', phase: 'routing_done', text: statusForRoute(orchestration.route) })
     console.info('[Genie Agent] orchestration', {
       requestId,
       conversation_id: conversationId,
       orchestration_source: orchestrationSource,
-      router_model: ORCHESTRATOR_MODEL,
+      router_model: models.orchestrator,
       router_invoked: routerInvoked,
       route: orchestration.route,
       needs_plan: orchestration.needs_plan,
@@ -279,7 +399,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
     if (orchestration.route === 'casual_chat' || orchestration.route === 'unsupported') {
       const casualAgent = new Agent({
         name: 'Yellow Jersey Casual Agent',
-        model: EXECUTOR_MODEL,
+        model: models.executor,
         instructions: buildCasualPrompt(storeName),
         tools: [],
         modelSettings: {
@@ -356,9 +476,9 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
       return
     }
 
-    // Direct paths are decided by the LLM router (direct_path in the structured
-    // decision) — no keyword/regex gating. Data is prefetched deterministically,
-    // then a fast model streams an answer grounded in it.
+    // Direct paths come from either a conservative deterministic pre-router
+    // shortcut or the structured LLM router decision. Data is prefetched
+    // deterministically, then a fast model streams an answer grounded in it.
     const directPath = orchestration.route === 'lightspeed_sql' ? orchestration.direct_path : 'none'
     const entityQuery = orchestration.entity_query?.trim() || null
 
@@ -410,6 +530,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
         groundingLabel: directPath === 'customer_bikes' ? 'customer bikes + profile' : 'customer profile',
         grounding: compactCustomerProfileForContext(profile),
         fallbackAnswer,
+        models,
         emit,
         signal,
         onFirstText: markDirectFirstText(directPath),
@@ -439,6 +560,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
           groundingLabel: `sales summary for ${lookup.label}`,
           grounding: JSON.stringify(result, null, 1),
           fallbackAnswer: directSalesSummaryAnswer(result),
+          models,
           emit,
           signal,
           onFirstText: markDirectFirstText('direct_sales_summary'),
@@ -450,8 +572,9 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
     }
 
     let executionPlan: GenieExecutionPlan | null = null
+    const shouldPlan = orchestration.needs_plan && !runtime.skipPlanner
 
-    if (orchestration.needs_plan) {
+    if (shouldPlan) {
       plannerUsed = true
       emit({ event: 'status', phase: 'planning', text: 'Planning the smart workflow' })
       const planningStartedAt = Date.now()
@@ -462,6 +585,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
         inputMessages,
         route: orchestration.route,
         signal,
+        models,
         emit,
       })
       if (executionPlan) {
@@ -484,10 +608,15 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
         text: 'Plan ready',
       })
     } else {
-      emit({ event: 'status', phase: 'setup', text: 'Preparing route tools' })
+      if (orchestration.needs_plan && runtime.skipPlanner) {
+        emit({ event: 'status', phase: 'setup', text: 'Fast mode — skipping planner' })
+      } else {
+        emit({ event: 'status', phase: 'setup', text: 'Preparing route tools' })
+      }
     }
 
-    executorModel = executorModelForRoute(orchestration.route, orchestration.needs_plan)
+    const planned = shouldPlan && Boolean(executionPlan)
+    executorModel = executorModelForRoute(orchestration.route, planned, models)
     const agentTools = buildAgentTools(
       supabase,
       userId,
@@ -497,8 +626,10 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
       orchestration.route,
       executionPlan,
       composioSessionIds,
+      models,
+      modelProfile,
     )
-    applyTimeBudgetToTools(agentTools, requestStartedAt, RUN_TIME_BUDGET_MS)
+    applyTimeBudgetToTools(agentTools, requestStartedAt, RUN_TIME_BUDGET_MS, runtime.fastAnswerPrompt)
     const agentToolNames = agentTools.map(candidate =>
       'name' in candidate && candidate.name ? String(candidate.name) : 'hosted_web_search',
     )
@@ -514,22 +645,26 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
       model: executorModel,
       tool_count: agentTools.length,
       tool_names: agentToolNames,
-      parallel_tool_calls: canRunParallelTools(orchestration.route),
-      max_tool_concurrency: maxToolConcurrencyForRoute(orchestration.route),
+      parallel_tool_calls: canRunParallelTools(orchestration.route, modelProfile),
+      max_tool_concurrency: maxToolConcurrencyForRoute(orchestration.route, modelProfile),
+      model_profile: modelProfile,
     })
 
+    const reasoningEffort = runtime.executorReasoningEffort(orchestration.route, planned)
     const agent = new Agent({
       name: 'Yellow Jersey Store Agent',
       model: executorModel,
-      instructions: buildSystemPrompt(storeName, executionPlan, orchestration.route),
+      instructions: buildSystemPrompt(storeName, executionPlan, orchestration.route, runtime.fastAnswerPrompt),
       tools: agentTools,
       modelSettings: {
-        parallelToolCalls: canRunParallelTools(orchestration.route),
+        parallelToolCalls: canRunParallelTools(orchestration.route, modelProfile),
         store: false,
-        reasoning: orchestration.needs_plan || orchestration.route === 'business_analysis'
+        reasoning: reasoningEffort === 'medium'
           ? { effort: 'medium', summary: 'concise' }
-          : { effort: 'low', summary: 'auto' },
-        text: { verbosity: orchestration.route === 'business_analysis' ? 'medium' : 'low' },
+          : reasoningEffort === 'none'
+            ? { effort: 'none', summary: 'auto' }
+            : { effort: 'low', summary: 'auto' },
+        text: { verbosity: orchestration.route === 'business_analysis' && !runtime.fastAnswerPrompt ? 'medium' : 'low' },
       },
     })
 
@@ -544,9 +679,9 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
     const runExecutorStream = async () => {
       const agentStream = await executorRunner.run(agent, inputMessages, {
         stream: true,
-        maxTurns: maxTurnsForRoute(orchestration.route, orchestration.needs_plan),
+        maxTurns: runtime.maxTurnsForRoute(orchestration.route, planned),
         signal,
-        toolExecution: { maxFunctionToolConcurrency: maxToolConcurrencyForRoute(orchestration.route) },
+        toolExecution: { maxFunctionToolConcurrency: maxToolConcurrencyForRoute(orchestration.route, modelProfile) },
         toolNotFoundBehavior: 'return_error_to_model',
         reasoningItemIdPolicy: 'omit',
         errorHandlers: {

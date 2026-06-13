@@ -23,6 +23,7 @@ export interface MarketplaceReadinessInput {
   listing_status: string | null;
   listing_type: string | null;
   qoh: number | null;
+  hasApprovedImage?: boolean | null;
   selected_product_image_id?: string | null;
   productImages?: ResolvableProductImage[] | null;
   canonicalImages?: ResolvableProductImage[] | null;
@@ -134,7 +135,10 @@ export function getMarketplaceReadiness(
     });
   }
 
-  if (!resolveMarketplaceImageId(input)) {
+  const hasApprovedImage =
+    input.hasApprovedImage ?? Boolean(resolveMarketplaceImageId(input));
+
+  if (!hasApprovedImage) {
     blockers.push({
       id: 'no_approved_image',
       label: 'No approved image',

@@ -88,7 +88,14 @@ import { getOrCreateGmailComposioSession, type ComposioSessionNotice } from '@/l
 import { verifyQuestionAnsweredWithJudge } from '@/lib/genie/answer-verification'
 import { buildGmailAgentContextFromMessages, buildGmailAgentContextFromPayload } from '@/lib/genie/gmail-agent-context'
 
-import { FAST_EXECUTOR_MODEL, STRATEGIC_EXECUTOR_MODEL, STORE_TIME_ZONE, STORE_UTC_OFFSET, getStoreToday, storeDateFromDate, isGenieTracingEnabled } from './runtime'
+import { STORE_TIME_ZONE, STORE_UTC_OFFSET, getStoreToday, storeDateFromDate, isGenieTracingEnabled } from './runtime'
+import {
+  DEFAULT_GENIE_MODELS,
+  getGenieRuntimePolicy,
+  isToolExcludedForProfile,
+  type GenieModelConfig,
+  type GenieModelProfile,
+} from './model-profiles'
 import { type GenieExecutionPlan } from './prompts'
 import { buildVisibleGmailPayload, fullWorkorderForAgent, type ComposioSessionIds, type Message } from './context'
 import { DEPRECATED_LIGHTSPEED_ANALYTICAL_TOOL_NAMES, GENIE_LIGHTSPEED_INVENTORY_SQL_SCHEMA, GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW, GENIE_LIGHTSPEED_SQL_AVAILABLE_COLUMNS, GENIE_LIGHTSPEED_SQL_DEFAULT_LIMIT, GENIE_LIGHTSPEED_SQL_FALLBACK_MAX_LINES, GENIE_LIGHTSPEED_SQL_MAX_LIMIT, GENIE_LIGHTSPEED_SQL_RPC, GENIE_LIGHTSPEED_SQL_SCHEMA, GENIE_LIGHTSPEED_SQL_VIEW } from './sql-constants'
@@ -9277,19 +9284,26 @@ async function buildGmailEmailActionProposal(
   return { proposal, output: { staged: true, action: args.action, recipient_email: recipient } }
 }
 
-function executorModelForRoute(route: GenieOrchestrationDecision['route'], planned: boolean): string {
-  if (route === 'business_analysis') return STRATEGIC_EXECUTOR_MODEL
-  if (route === 'mixed' && planned) return STRATEGIC_EXECUTOR_MODEL
-  return FAST_EXECUTOR_MODEL
+function executorModelForRoute(
+  route: GenieOrchestrationDecision['route'],
+  planned: boolean,
+  models: GenieModelConfig = DEFAULT_GENIE_MODELS,
+): string {
+  if (route === 'business_analysis') return models.strategicExecutor
+  if (route === 'mixed' && planned) return models.strategicExecutor
+  return models.fastExecutor
 }
 
-function buildSpecialistAgentTools(route: GenieOrchestrationDecision['route']) {
+function buildSpecialistAgentTools(
+  route: GenieOrchestrationDecision['route'],
+  models: GenieModelConfig = DEFAULT_GENIE_MODELS,
+) {
   const tools = []
 
   if (route === 'web_research' || route === 'mixed') {
     const cyclingCompatibilityAgent = new Agent({
       name: 'Yellow Jersey Cycling Compatibility Specialist',
-      model: FAST_EXECUTOR_MODEL,
+      model: models.fastExecutor,
       instructions: [
         'You are a senior bicycle mechanic and product standards specialist.',
         'Review the supplied private bike evidence and public source notes. Identify the likely exact bike/frame, the standard or part needed, confidence, and any shop-floor verification still required.',
@@ -9327,7 +9341,7 @@ function buildSpecialistAgentTools(route: GenieOrchestrationDecision['route']) {
   if (route === 'business_analysis') {
     const bikeStoreAnalystAgent = new Agent({
       name: 'Yellow Jersey Bike Store Analyst',
-      model: STRATEGIC_EXECUTOR_MODEL,
+      model: models.strategicExecutor,
       instructions: [
         'You are a bike-store commercial analyst. Translate Lightspeed evidence into ranked profit, cash, inventory, customer, and workshop opportunities.',
         'Challenge generic advice. Every recommendation must connect to supplied numbers or explicitly state the missing data.',
@@ -9371,13 +9385,16 @@ function buildAgentTools(
   route: GenieOrchestrationDecision['route'],
   executionPlan: GenieExecutionPlan | null,
   composioSessionIds: ComposioSessionIds = {},
+  models: GenieModelConfig = DEFAULT_GENIE_MODELS,
+  modelProfile: GenieModelProfile = 'default',
 ) {
   const allowedToolNames = toolNameSetForRoute(route, executionPlan?.primary_tools ?? [])
+  const runtime = getGenieRuntimePolicy(modelProfile)
   // Hard cap on answer-verification passes. The model otherwise treats
   // verify_question_answered as a "keep working" checkpoint and loops it
   // 5-11x per run (each pass on high-stakes routes also fires the LLM judge),
   // which is the single biggest latency sink on business_analysis runs.
-  const MAX_VERIFY_CALLS = 3
+  const MAX_VERIFY_CALLS = runtime.maxVerifyCalls
   let verifyCallCount = 0
   let gmailComposioSessionId = composioSessionIds.gmail?.trim() || undefined
   const onGmailComposioSession = (notice: ComposioSessionNotice) => {
@@ -9502,7 +9519,7 @@ function buildAgentTools(
     }),
     tool({
       name: 'verify_question_answered',
-      description: 'MANDATORY before the final user-visible answer whenever you used tools this turn. Pass remaining_gaps=[] only when the draft fully answers the user question with evidence. If not_ready, run more tools — do not reply yet.',
+      description: 'Use at most once as a final gate for broad or high-stakes tool answers. Pass remaining_gaps=[] only when the draft answers the user question with evidence. If gaps remain, answer now with a concise caveat instead of looping through more verification passes.',
       parameters: z.object({
         user_question: z.string().min(3).describe('The user question you are answering, in their words.'),
         draft_answer: z.string().min(3).describe('Your draft final answer — not yet shown to the user.'),
@@ -9526,13 +9543,24 @@ function buildAgentTools(
         }
         // High-stakes routes get an extra nano-model judge pass once the
         // deterministic checks pass; everything else stays zero-LLM-cost.
-        const useJudge = route === 'business_analysis' || (route === 'mixed' && executionPlan != null)
+        const useJudge = runtime.useVerifyJudge
+          && (route === 'business_analysis' || (route === 'mixed' && executionPlan != null))
         const result = await verifyQuestionAnsweredWithJudge({
           user_question: args.user_question.trim(),
           draft_answer: args.draft_answer.trim(),
           remaining_gaps: args.remaining_gaps ?? [],
           success_criteria: args.success_criteria,
         }, { useJudge })
+        if (!result.ready && verifyCallCount >= MAX_VERIFY_CALLS) {
+          emitStatus(emit, 'responding', 'Answering with available evidence')
+          return {
+            ready: true,
+            status: 'ready' as const,
+            gaps: result.gaps,
+            instruction:
+              'One-pass verification found caveats. Write the final answer now from the evidence already gathered, mention the key caveat in one line, and do not call more tools.',
+          }
+        }
         if (!result.ready) {
           emitStatus(emit, 'rechecking', 'Answer incomplete — continuing lookup')
         } else {
@@ -9607,7 +9635,7 @@ function buildAgentTools(
         return runLightspeedSqlQuery(userId, args, emit, visualPrefs, latestUserMessage)
       },
     }),
-    ...buildSpecialistAgentTools(route),
+    ...(runtime.includeSpecialists ? buildSpecialistAgentTools(route, models) : []),
     tool({
       name: 'get_lightspeed_sales_summary',
       description: 'Aggregate completed Lightspeed sales totals, net sales, total cost, gross profit, and gross margin for an ISO date range from the lightspeed_sales_report_lines SQL table.',
@@ -10480,6 +10508,7 @@ function buildAgentTools(
     const name = 'name' in candidate ? String(candidate.name) : ''
     if (DEPRECATED_LIGHTSPEED_ANALYTICAL_TOOL_NAMES.has(name)) return false
     if (!name) return true
+    if (isToolExcludedForProfile(name, modelProfile)) return false
     return allowedToolNames.has(name)
   })
 }

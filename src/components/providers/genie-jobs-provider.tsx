@@ -7,11 +7,14 @@ import type {
   GenieJob,
   GenieJobMetadata,
   GenieJobStatus,
+  GenieModelProfile,
 } from "@/lib/genie/genie-job-types";
 import {
   applyGenieSseEvent,
   createEmptyGenieAssistant,
 } from "@/lib/genie/accumulate-genie-sse-event";
+import { appendRawDebugLog } from "@/lib/genie/analysis-events";
+import type { GenieRawDebugLogEntry } from "@/lib/genie/genie-job-types";
 import { readSSE } from "@/lib/optimize/read-sse";
 import { persistCompletedHomeV2Job } from "@/lib/genie/homev2-conversation-storage";
 import { loadGenieDismissedIds, saveGenieDismissedIds } from "@/lib/floating-panel-dismiss";
@@ -25,6 +28,7 @@ type StartBackgroundJobOptions = {
   composioSessionIds?: Record<string, string>;
   clientAssistantId?: string;
   source?: "homev2" | "panel";
+  modelProfile?: GenieModelProfile;
 };
 
 type GenieJobsContextValue = {
@@ -234,6 +238,7 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
       let assistant = createEmptyGenieAssistant();
       let message: string | null = null;
       let phase: string | null = null;
+      let rawDebugLogs: GenieRawDebugLogEntry[] = [];
       let terminal: { status: GenieJobStatus; errorMessage: string | null } | null = null;
       let flushTimer: number | null = null;
 
@@ -249,6 +254,10 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
               progressPhase: phase ?? job.progressPhase,
               errorMessage: terminal?.errorMessage ?? job.errorMessage,
               result: { assistantMessage: assistant as unknown as Record<string, unknown> },
+              metadata: {
+                ...job.metadata,
+                raw_debug_logs: rawDebugLogs,
+              },
               updatedAt: new Date().toISOString(),
               completedAt: completedAt ?? job.completedAt,
             };
@@ -279,7 +288,11 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
             }
             return;
           }
-          if (jobId == null || event.event === "heartbeat") return;
+          if (jobId == null) return;
+          if (event.event !== "heartbeat") {
+            rawDebugLogs = appendRawDebugLog(rawDebugLogs, event as Record<string, unknown>);
+          }
+          if (event.event === "heartbeat") return;
           if (event.event === "status") {
             const text = String(event.text ?? "").trim();
             if (text) message = text.slice(0, 240);
@@ -332,6 +345,7 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
           composio_session_ids: options.composioSessionIds ?? {},
           client_assistant_id: options.clientAssistantId,
           source: options.source ?? "panel",
+          model_profile: options.modelProfile ?? "default",
         }),
       });
 

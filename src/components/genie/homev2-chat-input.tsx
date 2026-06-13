@@ -113,9 +113,15 @@ export function HomeV2ChatInput({
         {endAccessory}
 
         <button
-          type={isRunning && !hasText ? "button" : "submit"}
+          type="button"
           disabled={!canAct}
-          onClick={isRunning && !hasText ? onStop : undefined}
+          onClick={() => {
+            if (isRunning && !hasText) {
+              onStop?.();
+              return;
+            }
+            if (hasText) onSubmit();
+          }}
           className={cn(
             "mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors",
             canAct ? "bg-gray-900 text-white hover:bg-gray-800" : "bg-gray-200 text-gray-400",
