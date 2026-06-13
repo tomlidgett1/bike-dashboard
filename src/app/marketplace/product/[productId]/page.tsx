@@ -3,6 +3,10 @@ import * as React from "react";
 import { unstable_cache } from "next/cache";
 import { notFound } from "next/navigation";
 import { ProductPageClient } from "./product-page-client";
+import type { Metadata } from "next";
+import { JsonLd } from "@/components/seo/json-ld";
+import { productSchema, breadcrumbSchema, type ProductLike } from "@/lib/seo/structured-data";
+import { productUrl, productPath, absoluteUrl, SITE_NAME } from "@/lib/seo/site";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import {
   getProductImages,
@@ -553,10 +557,66 @@ const fetchProductPageData = unstable_cache(
   },
 );
 
-export default async function ProductPage({ 
+export async function generateMetadata({
   params,
-  searchParams 
-}: { 
+}: {
+  params: Promise<{ productId: string }>;
+}): Promise<Metadata> {
+  const { productId } = await params;
+  const data = await fetchProductPageData(productId, false);
+  const product = (data?.product ?? undefined) as unknown as ProductLike | undefined;
+
+  if (!product) {
+    return { title: "Product not found", robots: { index: false, follow: true } };
+  }
+
+  const name = product.display_name || product.description || "Bike for sale";
+  const priceNum =
+    typeof product.price === "number" ? product.price : parseFloat(String(product.price ?? ""));
+  const priceLabel = Number.isFinite(priceNum)
+    ? new Intl.NumberFormat("en-AU", {
+        style: "currency",
+        currency: "AUD",
+        maximumFractionDigits: 0,
+      }).format(priceNum)
+    : null;
+  const conditionLabel = product.condition_rating ? `${product.condition_rating} condition. ` : "";
+  const seller = product.store_name
+    ? ` Available from ${product.store_name} on ${SITE_NAME}.`
+    : ` On ${SITE_NAME}.`;
+  const description = `${name}${priceLabel ? ` — ${priceLabel}` : ""}. ${conditionLabel}${seller} Buy now with delivery or local pickup.`
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 200);
+  const image =
+    product.primary_image_url && /^https?:\/\//i.test(product.primary_image_url)
+      ? product.primary_image_url
+      : undefined;
+
+  return {
+    title: name,
+    description,
+    alternates: { canonical: productPath(productId) },
+    openGraph: {
+      type: "website",
+      title: `${name} · ${SITE_NAME}`,
+      description,
+      url: productUrl(productId),
+      images: image ? [{ url: image, alt: name }] : undefined,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${name} · ${SITE_NAME}`,
+      description,
+      images: image ? [image] : undefined,
+    },
+  };
+}
+
+export default async function ProductPage({
+  params,
+  searchParams
+}: {
   params: Promise<{ productId: string }>;
   searchParams: Promise<{ fromPurchase?: string; fromUpload?: string }>;
 }) {
@@ -573,17 +633,33 @@ export default async function ProductPage({
     notFound();
   }
 
+  const seoProduct = data.product as unknown as ProductLike;
+
   // Pass all data to client component
   return (
-    <ProductPageClient
-      product={data.product}
-      sellerProducts={data.sellerData.products}
-      sellerInfo={data.sellerData.seller}
-      sellerProfile={data.sellerProfile}
-      brandProducts={data.brandProducts}
-      brandName={data.productBrand ?? null}
-      brandLogoUrl={data.brandLogoUrl}
-      showUploadBanner={fromUpload === 'true'}
-    />
+    <>
+      <JsonLd
+        data={[
+          productSchema(seoProduct, productUrl(productId)),
+          breadcrumbSchema([
+            { name: 'Marketplace', url: absoluteUrl('/marketplace') },
+            {
+              name: seoProduct.display_name || seoProduct.description || 'Product',
+              url: productUrl(productId),
+            },
+          ]),
+        ]}
+      />
+      <ProductPageClient
+        product={data.product}
+        sellerProducts={data.sellerData.products}
+        sellerInfo={data.sellerData.seller}
+        sellerProfile={data.sellerProfile}
+        brandProducts={data.brandProducts}
+        brandName={data.productBrand ?? null}
+        brandLogoUrl={data.brandLogoUrl}
+        showUploadBanner={fromUpload === 'true'}
+      />
+    </>
   );
 }

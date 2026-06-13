@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Inter, Caveat } from "next/font/google";
+import { SITE_URL, SITE_NAME, SITE_TITLE, SITE_DESCRIPTION, SITE_OG_IMAGE } from "@/lib/seo/site";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { AuthProvider } from "@/components/providers/auth-provider";
 import { ProfileProvider } from "@/components/providers/profile-provider";
@@ -40,12 +41,59 @@ const caveat = Caveat({
 });
 
 export const metadata: Metadata = {
-  title: "Bike Dashboard",
-  description: "Bicycle Marketplace Admin Dashboard",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: SITE_TITLE,
+    template: `%s · ${SITE_NAME}`,
+  },
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
+  keywords: [
+    "bike shop",
+    "bicycle marketplace",
+    "used bikes",
+    "new bikes",
+    "road bikes",
+    "mountain bikes",
+    "bike parts",
+    "cycling apparel",
+    "local bike store",
+    "buy bikes online",
+  ],
+  authors: [{ name: SITE_NAME }],
+  creator: SITE_NAME,
+  publisher: SITE_NAME,
+  formatDetection: { telephone: false },
+  openGraph: {
+    type: "website",
+    siteName: SITE_NAME,
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    url: SITE_URL,
+    locale: "en_AU",
+    images: [{ url: SITE_OG_IMAGE, alt: SITE_NAME }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    images: [SITE_OG_IMAGE],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Bike Dashboard",
+    title: SITE_NAME,
   },
   manifest: "/manifest.json",
 };

@@ -1,11 +1,26 @@
 import { Suspense } from "react";
+import type { Metadata } from "next";
 import { MarketplacePageContent } from "./marketplace-page-content";
 import { fetchInitialMarketplaceProducts } from "@/lib/server/fetch-initial-marketplace-products";
+import { JsonLd } from "@/components/seo/json-ld";
+import { organizationSchema, websiteSchema } from "@/lib/seo/structured-data";
+import { SITE_DESCRIPTION, SITE_TITLE } from "@/lib/seo/site";
 
 // Cache the rendered output briefly, then revalidate in the background (ISR).
 // The layout is dynamic (reads auth cookies) but the page data itself — the
 // initial product grid — is public and safe to cache at this level.
 export const revalidate = 15;
+
+export const metadata: Metadata = {
+  title: { absolute: SITE_TITLE },
+  description: SITE_DESCRIPTION,
+  alternates: { canonical: "/marketplace" },
+  openGraph: {
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    url: "/marketplace",
+  },
+};
 
 function LoadingFallback() {
   return (
@@ -34,8 +49,11 @@ async function MarketplaceDataFetcher() {
 
 export default function MarketplacePage() {
   return (
-    <Suspense fallback={<LoadingFallback />}>
-      <MarketplaceDataFetcher />
-    </Suspense>
+    <>
+      <JsonLd data={[organizationSchema(), websiteSchema()]} />
+      <Suspense fallback={<LoadingFallback />}>
+        <MarketplaceDataFetcher />
+      </Suspense>
+    </>
   );
 }

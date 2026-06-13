@@ -103,6 +103,8 @@ export interface LightspeedManufacturerOption {
 
 export interface StoreProfile {
   id: string;
+  /** URL slug derived from the store name, for SEO-friendly storefront URLs. Null until backfilled. */
+  slug?: string | null;
   store_name: string;
   logo_url: string | null;
   store_type: string;

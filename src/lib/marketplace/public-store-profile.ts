@@ -21,7 +21,7 @@ interface FetchPublicStoreProfileOptions {
 }
 
 const STORE_COLUMNS_FULL =
-  'user_id, business_name, logo_url, store_type, address, phone, opening_hours, homepage_config, cover_image_url, bio, website, social_links'
+  'user_id, business_name, logo_url, store_type, address, phone, opening_hours, homepage_config, cover_image_url, bio, website, social_links, store_slug'
 const STORE_COLUMNS_BASE =
   'user_id, business_name, logo_url, store_type, address, phone, opening_hours, cover_image_url, bio, website, social_links'
 
@@ -81,7 +81,7 @@ export async function fetchPublicStoreProfile(
       .eq('account_type', 'bicycle_store')
       .eq('bicycle_store', true)
       .single()
-    storeUser = fallback.data ? { ...fallback.data, homepage_config: null } : null
+    storeUser = fallback.data ? { ...fallback.data, homepage_config: null, store_slug: null } : null
     storeError = fallback.error
   }
 
@@ -433,6 +433,7 @@ export async function fetchPublicStoreProfile(
 
   return {
     id: storeId,
+    slug: (storeUser as any).store_slug ?? null,
     store_name: storeUser.business_name,
     logo_url: storeUser.logo_url,
     store_type: storeUser.store_type,
@@ -467,4 +468,36 @@ export const fetchCachedPublicStoreHomepageProfile = unstable_cache(
     }),
   ['public-store-homepage-profile-v1'],
   { revalidate: 60 },
+)
+
+const STORE_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * Resolve a storefront URL segment — either a UUID user_id or a store_slug — to
+ * the owning user_id. Returns null when no matching public store exists.
+ * Degrades gracefully (returns null) before the store_slug column exists.
+ */
+export const resolveStoreUserId = unstable_cache(
+  async (param: string): Promise<string | null> => {
+    if (!param) return null
+    if (STORE_UUID_RE.test(param)) return param
+
+    const supabase = createPublicSupabaseClient()
+    const { data, error } = await supabase
+      .from('users')
+      .select('user_id')
+      .eq('store_slug', param)
+      .eq('account_type', 'bicycle_store')
+      .eq('bicycle_store', true)
+      .maybeSingle()
+
+    if (error) {
+      console.warn('[store slug] resolve failed:', error.message)
+      return null
+    }
+    return (data as { user_id?: string } | null)?.user_id ?? null
+  },
+  ['resolve-store-user-id-v1'],
+  { revalidate: 300 },
 )
