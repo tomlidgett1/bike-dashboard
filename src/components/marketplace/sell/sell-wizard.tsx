@@ -81,6 +81,12 @@ export function SellWizard() {
   // Don't show method choice if we have a draftId (loading existing draft)
   const [showMethodChoice, setShowMethodChoice] = React.useState(!mode && !hasAiData && !draftId);
 
+  // Re-evaluate when the mode param changes via client navigation
+  // (e.g. closing the quick upload sheet returns to /marketplace/sell).
+  React.useEffect(() => {
+    setShowMethodChoice(!mode && !hasAiData && !draftId);
+  }, [mode, hasAiData, draftId]);
+
   // Quick listing handler - publish with minimal details
   const handleQuickList = async (quickData: any) => {
     try {
