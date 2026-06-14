@@ -20,6 +20,7 @@ export interface ProductLike {
   price?: string | number | null;
   sale_price?: string | number | null;
   discount_active?: boolean | null;
+  discount_ends_at?: string | null;
   brand?: string | null;
   manufacturer_name?: string | null;
   model?: string | null;
@@ -206,6 +207,7 @@ export function productSchema(p: ProductLike, url: string): Json {
     itemCondition: productCondition(p),
   };
   if (price != null) offer.price = price;
+  if (p.discount_active && p.discount_ends_at) offer.priceValidUntil = p.discount_ends_at;
   if (p.store_name) offer.seller = { '@type': 'Organization', name: p.store_name };
 
   const schema: Json = {
@@ -216,6 +218,7 @@ export function productSchema(p: ProductLike, url: string): Json {
     url,
     offers: offer,
   };
+  schema.sku = p.id;
   if (images.length) schema.image = images;
   const desc = p.product_description || p.description;
   if (desc) schema.description = desc.slice(0, 500);

@@ -1,6 +1,8 @@
 import type { MetadataRoute } from 'next';
 import { SITE_URL } from '@/lib/seo/site';
 import { createPublicSupabaseClient } from '@/lib/marketplace/public-card-feed';
+import { resolveProductImage } from '@/lib/services/image-resolver';
+import { toCurrentHeroPublicId } from '@/lib/utils/cloudinary-transforms';
 
 // Served at /sitemap.xml. Regenerated hourly (ISR) so new storefronts and
 // listings get discovered quickly. Enumerates every public storefront and
@@ -75,6 +77,34 @@ async function fetchStoreRows(supabase: SupabaseLike): Promise<StoreRow[]> {
   return (idOnly.data ?? []) as StoreRow[];
 }
 
+interface ProductSitemapRow {
+  id: string;
+  created_at: string | null;
+  resolved_image_id: string | null;
+  resolved_image_source: string | null;
+  resolved_external_url: string | null;
+  resolved_cloudinary_url: string | null;
+  resolved_cloudinary_public_id: string | null;
+}
+
+// Resolve a product's primary image to an absolute URL for the image sitemap.
+function resolveProductImageUrl(p: ProductSitemapRow): string | null {
+  try {
+    const publicId = toCurrentHeroPublicId(p.resolved_cloudinary_public_id, p.resolved_image_source);
+    const resolved = resolveProductImage({
+      id: p.resolved_image_id,
+      cloudinary_public_id: publicId,
+      cloudinary_url: p.resolved_cloudinary_url,
+      external_url: p.resolved_external_url,
+      approval_status: 'approved',
+    });
+    const url = resolved?.card_url ?? resolved?.original_url ?? null;
+    return url && /^https?:\/\//i.test(url) ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
   const entries: MetadataRoute.Sitemap = STATIC_ROUTES.map((r) => ({
@@ -89,12 +119,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
     const [stores, products] = await Promise.all([
       fetchStoreRows(supabase),
-      fetchAllRows<{ id: string; created_at: string | null }>(
+      fetchAllRows<ProductSitemapRow>(
         'products',
         (sb, from, to) =>
           sb
             .from('public_marketplace_cards')
-            .select('id, created_at')
+            .select(
+              'id, created_at, resolved_image_id, resolved_image_source, resolved_external_url, resolved_cloudinary_url, resolved_cloudinary_public_id',
+            )
             .order('created_at', { ascending: false })
             .range(from, to),
         supabase,
@@ -115,11 +147,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
     for (const p of products) {
       if (!p.id) continue;
+      const imageUrl = resolveProductImageUrl(p);
       entries.push({
         url: `${SITE_URL}/marketplace/product/${p.id}`,
         lastModified: p.created_at ? new Date(p.created_at) : now,
         changeFrequency: 'weekly',
         priority: 0.7,
+        // Image sitemap entry → helps the listing photo rank in Google Images.
+        ...(imageUrl ? { images: [imageUrl] } : {}),
       });
     }
   } catch (err) {
