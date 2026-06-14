@@ -40,10 +40,15 @@ export function ConditionalLayout({ children }: ConditionalLayoutProps) {
     pathname?.startsWith('/home2') ||
     pathname?.startsWith('/home/') ||
     false;
+  // Public SEO marketing pages ship their own full-bleed chrome
+  const isMarketing =
+    pathname === '/sell-your-bike' ||
+    pathname?.startsWith('/used-bikes') ||
+    false;
 
-  // Don't wrap marketplace, messages, login, auth, onboarding, ecommerce-hero, mockup, v2, or home pages with dashboard layout
+  // Don't wrap marketplace, messages, login, auth, onboarding, ecommerce-hero, mockup, v2, home, or marketing pages with dashboard layout
   // These pages manage their own layout
-  if (isMarketplace || isMessages || isLogin || isAuth || isOnboarding || isEcommerceHero || isMockup || isV2 || isHome) {
+  if (isMarketplace || isMessages || isLogin || isAuth || isOnboarding || isEcommerceHero || isMockup || isV2 || isHome || isMarketing) {
     return <>{children}</>;
   }
 

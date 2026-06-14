@@ -51,6 +51,8 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/marketplace/mobile-prototypes') || // Mobile redesign prototypes (mock data, no auth)
     request.nextUrl.pathname.startsWith('/marketplace/used-products') ||
     request.nextUrl.pathname.startsWith('/marketplace/new-products') ||
+    request.nextUrl.pathname === '/sell-your-bike' ||         // Public SEO content page
+    request.nextUrl.pathname.startsWith('/used-bikes') ||     // Public SEO used-bike hubs
     request.nextUrl.pathname.startsWith('/api/marketplace') ||
     request.nextUrl.pathname === '/api/store/analytics' || // Public storefront tracking; GET still enforces auth in the route handler.
     request.nextUrl.pathname.startsWith('/api/stripe') ||  // Stripe webhooks
