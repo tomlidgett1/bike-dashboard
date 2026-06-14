@@ -6,8 +6,10 @@ import {
   AlertCircle,
   ArrowLeft,
   ChevronDown,
+  ChevronRight,
   ExternalLink,
   EyeOff,
+  Inbox,
   Loader2,
   Mail,
   RefreshCw,
@@ -36,12 +38,22 @@ import type {
 type StatusFilter = CustomerInquiryStatus | "all";
 
 const STATUS_FILTERS: Array<{ id: StatusFilter; label: string }> = [
-  { id: "all", label: "All" },
   { id: "draft_ready", label: "Ready" },
+  { id: "all", label: "All" },
   { id: "new", label: "New" },
   { id: "sent", label: "Sent" },
   { id: "ignored", label: "Ignored" },
 ];
+
+const INTENT_LABELS: Record<string, string> = {
+  technical_question: "Technical",
+  service_booking: "Service",
+  stock_check: "Stock",
+  quote_request: "Quote",
+  warranty: "Warranty",
+  order_status: "Order",
+  general_reply: "General",
+};
 
 function statusLabel(status: CustomerInquiryStatus): string {
   if (status === "draft_ready") return "Ready";
@@ -49,20 +61,67 @@ function statusLabel(status: CustomerInquiryStatus): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
-function senderName(item: Pick<CustomerInquiryListItem, "sender_name" | "sender_email">): string {
+function senderName(
+  item: Pick<CustomerInquiryListItem, "sender_name" | "sender_email">,
+): string {
   return item.sender_name?.trim() || item.sender_email || "Customer";
+}
+
+function initials(name: string): string {
+  const parts = name
+    .replace(/[<>"]/g, "")
+    .replace(/\(.+?\)/g, "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
+function firstLine(text: string): string {
+  return text.split("\n").map((line) => line.trim()).find(Boolean) ?? "";
 }
 
 function enquirySummary(item: CustomerInquiryListItem): string {
   const preview = firstLine(item.body_preview || item.snippet);
-  if (preview) return preview.slice(0, 140);
+  if (preview) return preview.slice(0, 160);
   const subject = item.subject?.trim();
   if (subject && !/^re:/i.test(subject)) return subject;
   return "Customer enquiry";
 }
 
-function firstLine(text: string): string {
-  return text.split("\n").map((line) => line.trim()).find(Boolean) ?? "";
+function relativeTime(value: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const diffMs = Date.now() - date.getTime();
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d`;
+  return date.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
+}
+
+function fullTime(value: string | null): string {
+  if (!value) return "Unknown time";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown time";
+  return date.toLocaleString("en-AU", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function intentLabel(intent: string | null | undefined): string | null {
+  if (!intent) return null;
+  return INTENT_LABELS[intent] ?? null;
 }
 
 export function StoreCustomerInquiriesPanel() {
@@ -218,7 +277,12 @@ export function StoreCustomerInquiriesPanel() {
       setInquiries((rows) =>
         rows.map((row) =>
           row.id === inquiry.id
-            ? { ...row, status: inquiry.status, draft_body: inquiry.draft_body, updated_at: inquiry.updated_at }
+            ? {
+                ...row,
+                status: inquiry.status,
+                draft_body: inquiry.draft_body,
+                updated_at: inquiry.updated_at,
+              }
             : row,
         ),
       );
@@ -235,35 +299,33 @@ export function StoreCustomerInquiriesPanel() {
   const gmailConfigured = gmailState?.configured !== false;
   const lightspeedContext = detail?.lightspeed_context as
     | {
-        matched?: boolean
-        customer_name?: string | null
-        customer_email?: string | null
-        customer_phone?: string | null
-        bikes?: Array<{ label: string | null; serial: string | null }>
-        recent_workorders?: Array<{ id: string; title: string | null; status: string | null }>
-        summary?: string | null
+        matched?: boolean;
+        customer_name?: string | null;
+        customer_email?: string | null;
+        customer_phone?: string | null;
+        bikes?: Array<{ label: string | null; serial: string | null }>;
+        recent_workorders?: Array<{ id: string; title: string | null; status: string | null }>;
+        summary?: string | null;
       }
     | undefined;
 
-  const customerMessage = detail
-    ? firstLine(detail.body_preview || detail.snippet) || detail.subject || "Customer enquiry"
-    : "";
-
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#f7f7f5]">
-      <header className="shrink-0 border-b border-gray-200/80 bg-white/80 px-4 py-4 backdrop-blur-sm lg:px-8">
-        <div className="mx-auto flex max-w-3xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight text-gray-900">Customer enquiries</h1>
-            <p className="mt-0.5 text-sm text-gray-500">
-              Draft replies from your inbox. Nothing sends until you approve it.
+    <div className="flex h-full min-h-0 flex-col bg-[#f6f6f4]">
+      <header className="shrink-0 border-b border-gray-200/70 bg-white/70 px-4 py-4 backdrop-blur-sm lg:px-8">
+        <div className="mx-auto flex max-w-2xl items-center justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-[15px] font-semibold tracking-tight text-gray-900">
+              Customer enquiries
+            </h1>
+            <p className="mt-0.5 truncate text-[13px] text-gray-500">
+              AI drafts replies in your voice. Nothing sends until you approve.
             </p>
           </div>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="rounded-md shrink-0"
+            className="shrink-0 rounded-md"
             onClick={() => void handleRefresh()}
             disabled={refreshing || !gmailConnected}
           >
@@ -277,19 +339,19 @@ export function StoreCustomerInquiriesPanel() {
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto px-4 py-10 lg:px-8">
-        <div className="mx-auto max-w-3xl">
+      <main className="min-h-0 flex-1 overflow-y-auto px-4 py-6 lg:px-8 lg:py-8">
+        <div className="mx-auto max-w-2xl">
           {!gmailConfigured ? (
-            <div className="rounded-md border border-gray-200 bg-white p-6 text-center text-sm text-gray-600">
+            <div className="rounded-xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-600">
               Gmail integration is not configured for this environment.
             </div>
           ) : !gmailConnected ? (
-            <div className="rounded-md border border-gray-200 bg-white p-8 text-center">
-              <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-md bg-white ring-1 ring-black/[0.06]">
+            <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
+              <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-gray-50 ring-1 ring-black/[0.06]">
                 <GmailLogo />
               </span>
               <p className="mt-4 text-base font-medium text-gray-900">Connect your store inbox</p>
-              <p className="mt-1 text-sm text-gray-500">
+              <p className="mx-auto mt-1 max-w-sm text-sm text-gray-500">
                 Sync customer enquiries and draft replies in your shop voice.
               </p>
               <Button
@@ -307,385 +369,449 @@ export function StoreCustomerInquiriesPanel() {
               </Button>
             </div>
           ) : (
-            <>
-              <div className="flex justify-center">
-                <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
-                  {STATUS_FILTERS.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => {
-                        setFilter(item.id);
-                        setSelectedId(null);
-                      }}
-                      className={cn(
-                        "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
-                        filter === item.id
-                          ? "text-gray-800 bg-white shadow-sm"
-                          : "text-gray-600 hover:bg-gray-200/70",
-                      )}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {loading ? (
-                <div className="mt-16 flex items-center justify-center text-sm text-gray-500">
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Loading enquiries…
-                </div>
-              ) : error ? (
-                <div className="mt-10 rounded-md border border-gray-200 bg-white p-5 text-sm text-gray-700">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
-                    <span>{error}</span>
+            <AnimatePresence mode="wait" initial={false}>
+              {!selectedId ? (
+                <motion.div
+                  key="list"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.22, ease: [0.04, 0.62, 0.23, 0.98] }}
+                >
+                  <div className="mb-5 flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+                    {STATUS_FILTERS.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setFilter(item.id)}
+                        className={cn(
+                          "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+                          filter === item.id
+                            ? "text-gray-800 bg-white shadow-sm"
+                            : "text-gray-600 hover:bg-gray-200/70",
+                        )}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
                   </div>
-                </div>
-              ) : (
-                <AnimatePresence mode="wait">
-                  {!selectedId ? (
-                    <motion.div
-                      key="pills"
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -8 }}
-                      transition={{ duration: 0.25, ease: [0.04, 0.62, 0.23, 0.98] }}
-                      className="mt-12"
-                    >
-                      {inquiries.length === 0 ? (
-                        <p className="text-center text-sm text-gray-500">
-                          No enquiries in this view. New customer emails appear here after sync.
-                        </p>
-                      ) : (
-                        <div className="flex flex-wrap items-center justify-center gap-3">
-                          {inquiries.map((item) => (
+
+                  {loading ? (
+                    <div className="flex items-center justify-center py-20 text-sm text-gray-500">
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Loading enquiries…
+                    </div>
+                  ) : error ? (
+                    <div className="rounded-xl border border-gray-200 bg-white p-5 text-sm text-gray-700">
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                        <span>{error}</span>
+                      </div>
+                    </div>
+                  ) : inquiries.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white px-6 py-16 text-center">
+                      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-50 ring-1 ring-black/[0.05]">
+                        <Inbox className="h-5 w-5 text-gray-400" />
+                      </span>
+                      <p className="mt-4 text-sm font-medium text-gray-900">No enquiries here yet</p>
+                      <p className="mt-1 max-w-xs text-[13px] text-gray-500">
+                        New customer emails appear here automatically after each sync.
+                      </p>
+                    </div>
+                  ) : (
+                    <ul className="space-y-2.5">
+                      {inquiries.map((item, index) => {
+                        const name = senderName(item);
+                        const intent = intentLabel(item.intent);
+                        const time = relativeTime(item.received_at);
+                        const isReady = item.status === "draft_ready";
+                        return (
+                          <motion.li
+                            key={item.id}
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{
+                              duration: 0.25,
+                              delay: Math.min(index * 0.03, 0.2),
+                              ease: [0.04, 0.62, 0.23, 0.98],
+                            }}
+                          >
                             <button
-                              key={item.id}
                               type="button"
                               onClick={() => setSelectedId(item.id)}
-                              className="group max-w-sm rounded-full border border-gray-200 bg-white px-5 py-3 text-left shadow-sm transition-all hover:border-gray-300 hover:shadow-md"
+                              className="group flex w-full items-center gap-3.5 rounded-xl border border-gray-200/80 bg-white px-4 py-3.5 text-left shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-all hover:border-gray-300 hover:shadow-[0_2px_8px_rgba(0,0,0,0.06)]"
                             >
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-gray-900">
-                                  {senderName(item)}
+                              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-100 text-[13px] font-semibold text-gray-600">
+                                {initials(name)}
+                              </span>
+
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <p className="truncate text-sm font-semibold text-gray-900">
+                                    {name}
+                                  </p>
+                                  {intent ? (
+                                    <span className="hidden shrink-0 rounded-md border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-500 sm:inline">
+                                      {intent}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <p className="mt-0.5 truncate text-[13px] text-gray-500">
+                                  {enquirySummary(item)}
+                                </p>
+                              </div>
+
+                              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                                <span
+                                  className={cn(
+                                    "rounded-md px-2 py-0.5 text-[11px] font-medium",
+                                    isReady
+                                      ? "bg-gray-900 text-white"
+                                      : "border border-gray-200 bg-white text-gray-500",
+                                  )}
+                                >
+                                  {statusLabel(item.status)}
                                 </span>
-                                {item.status !== "draft_ready" ? (
-                                  <span className="rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[10px] font-medium text-gray-500">
-                                    {statusLabel(item.status)}
-                                  </span>
+                                {time ? (
+                                  <span className="text-[11px] text-gray-400">{time}</span>
                                 ) : null}
                               </div>
-                              <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-gray-500">
-                                {enquirySummary(item)}
-                              </p>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      key="detail"
-                      initial={{ opacity: 0, y: 24, scale: 0.96 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 16, scale: 0.98 }}
-                      transition={{ duration: 0.35, ease: [0.04, 0.62, 0.23, 0.98] }}
-                      className="mt-8"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setSelectedId(null)}
-                        className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 transition-colors hover:text-gray-800"
-                      >
-                        <ArrowLeft className="h-4 w-4" />
-                        Back
-                      </button>
 
-                      {detailLoading || !detail ? (
-                        <div className="flex items-center justify-center rounded-md border border-gray-200 bg-white py-20 text-sm text-gray-500">
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Loading enquiry…
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          <div className="rounded-md border border-gray-200 bg-white p-5">
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div>
-                                <p className="text-base font-semibold text-gray-900">
+                              <ChevronRight className="h-4 w-4 shrink-0 text-gray-300 transition-colors group-hover:text-gray-400" />
+                            </button>
+                          </motion.li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="detail"
+                  initial={{ opacity: 0, y: 20, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 14, scale: 0.98 }}
+                  transition={{ duration: 0.34, ease: [0.04, 0.62, 0.23, 0.98] }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(null)}
+                    className="mb-4 inline-flex items-center gap-1.5 text-sm text-gray-500 transition-colors hover:text-gray-900"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                    All enquiries
+                  </button>
+
+                  {detailLoading || !detail ? (
+                    <div className="flex items-center justify-center rounded-xl border border-gray-200 bg-white py-24 text-sm text-gray-500">
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Loading enquiry…
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="rounded-xl border border-gray-200 bg-white p-5">
+                        <div className="flex items-start gap-3.5">
+                          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-100 text-sm font-semibold text-gray-600">
+                            {initials(senderName(detail))}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="truncate text-base font-semibold text-gray-900">
                                   {senderName(detail)}
                                 </p>
-                                <p className="text-sm text-gray-500">{detail.sender_email}</p>
+                                <p className="truncate text-[13px] text-gray-500">
+                                  {detail.sender_email}
+                                </p>
                               </div>
-                              <span className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600">
+                              <span className="shrink-0 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-600">
                                 {statusLabel(detail.status)}
                               </span>
                             </div>
-                            <p className="mt-4 text-sm font-medium text-gray-800">{customerMessage}</p>
-                            <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-gray-600">
-                              {detail.body_preview || detail.snippet}
+                            <p className="mt-1 text-[11px] text-gray-400">
+                              {fullTime(detail.received_at)}
                             </p>
                           </div>
-
-                          {lightspeedContext ? (
-                            <div className="rounded-md border border-gray-200 bg-white">
-                              <button
-                                type="button"
-                                onClick={() => setLightspeedOpen((open) => !open)}
-                                className="flex w-full items-center justify-between px-5 py-4 text-left"
-                              >
-                                <span className="text-sm font-medium text-gray-900">Lightspeed</span>
-                                <ChevronDown
-                                  className={cn(
-                                    "h-4 w-4 text-gray-400 transition-transform duration-200",
-                                    lightspeedOpen && "rotate-180",
-                                  )}
-                                />
-                              </button>
-                              <AnimatePresence>
-                                {lightspeedOpen ? (
-                                  <motion.div
-                                    initial={{ height: 0, opacity: 0 }}
-                                    animate={{ height: "auto", opacity: 1 }}
-                                    exit={{ height: 0, opacity: 0 }}
-                                    transition={{
-                                      duration: 0.4,
-                                      ease: [0.04, 0.62, 0.23, 0.98],
-                                    }}
-                                    className="overflow-hidden"
-                                  >
-                                    <div className="border-t border-gray-100 px-5 pb-5 pt-1 text-sm text-gray-700">
-                                      {lightspeedContext.matched ? (
-                                        <div className="space-y-3">
-                                          <p>{lightspeedContext.summary}</p>
-                                          {lightspeedContext.customer_phone ? (
-                                            <p className="text-xs text-gray-500">
-                                              Phone: {lightspeedContext.customer_phone}
-                                            </p>
-                                          ) : null}
-                                          {lightspeedContext.bikes?.length ? (
-                                            <div>
-                                              <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
-                                                Bikes
-                                              </p>
-                                              <ul className="mt-1.5 space-y-1">
-                                                {lightspeedContext.bikes.map((bike, index) => (
-                                                  <li key={`${bike.serial ?? bike.label ?? index}`}>
-                                                    {bike.label || "Bike"}
-                                                    {bike.serial ? ` · ${bike.serial}` : ""}
-                                                  </li>
-                                                ))}
-                                              </ul>
-                                            </div>
-                                          ) : null}
-                                          {lightspeedContext.recent_workorders?.length ? (
-                                            <div>
-                                              <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
-                                                Recent workorders
-                                              </p>
-                                              <ul className="mt-1.5 space-y-1">
-                                                {lightspeedContext.recent_workorders.map((workorder) => (
-                                                  <li key={workorder.id}>
-                                                    {workorder.title || `Workorder ${workorder.id}`}
-                                                  </li>
-                                                ))}
-                                              </ul>
-                                            </div>
-                                          ) : null}
-                                        </div>
-                                      ) : (
-                                        <p>{lightspeedContext.summary || "No matching Lightspeed customer."}</p>
-                                      )}
-                                    </div>
-                                  </motion.div>
-                                ) : null}
-                              </AnimatePresence>
-                            </div>
-                          ) : null}
-
-                          {detail.citations?.length ? (
-                            <div className="rounded-md border border-gray-200 bg-white">
-                              <button
-                                type="button"
-                                onClick={() => setCitationsOpen((open) => !open)}
-                                className="flex w-full items-center justify-between px-5 py-4 text-left"
-                              >
-                                <span className="text-sm font-medium text-gray-900">
-                                  Sources ({detail.citations.length})
-                                </span>
-                                <ChevronDown
-                                  className={cn(
-                                    "h-4 w-4 text-gray-400 transition-transform duration-200",
-                                    citationsOpen && "rotate-180",
-                                  )}
-                                />
-                              </button>
-                              <AnimatePresence>
-                                {citationsOpen ? (
-                                  <motion.div
-                                    initial={{ height: 0, opacity: 0 }}
-                                    animate={{ height: "auto", opacity: 1 }}
-                                    exit={{ height: 0, opacity: 0 }}
-                                    transition={{
-                                      duration: 0.4,
-                                      ease: [0.04, 0.62, 0.23, 0.98],
-                                    }}
-                                    className="overflow-hidden"
-                                  >
-                                    <ul className="space-y-2 border-t border-gray-100 px-5 pb-5 pt-2">
-                                      {detail.citations.map((citation) => (
-                                        <li key={citation.url}>
-                                          <a
-                                            href={citation.url}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="inline-flex items-center gap-1.5 text-sm text-gray-700 hover:text-gray-900"
-                                          >
-                                            <span className="truncate">
-                                              {citation.title || citation.url}
-                                            </span>
-                                            <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-                                          </a>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </motion.div>
-                                ) : null}
-                              </AnimatePresence>
-                            </div>
-                          ) : null}
-
-                          <div className="rounded-md border border-gray-200 bg-white p-5">
-                            <div className="flex items-center justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-medium text-gray-900">Suggested reply</p>
-                                {detail.reasoning ? (
-                                  <p className="mt-1 text-xs text-gray-500">{detail.reasoning}</p>
-                                ) : null}
-                              </div>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="rounded-md"
-                                onClick={() => void handleRegenerate()}
-                                disabled={regenerating || detail.status === "sent"}
-                              >
-                                {regenerating ? (
-                                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-                                )}
-                                Regenerate
-                              </Button>
-                            </div>
-
-                            <textarea
-                              value={draft}
-                              onChange={(event) => setDraft(event.target.value)}
-                              disabled={detail.status === "sent" || detail.status === "ignored"}
-                              rows={10}
-                              className="mt-4 w-full rounded-md border border-gray-200 bg-white px-3 py-3 text-sm leading-relaxed text-gray-800 outline-none focus:border-gray-300"
-                              placeholder="Draft reply will appear once processing completes."
-                            />
-
-                            {detail.error_message ? (
-                              <p className="mt-3 text-xs text-gray-600">{detail.error_message}</p>
-                            ) : null}
-                            {actionMessage ? (
-                              <p className="mt-3 text-xs text-gray-600">{actionMessage}</p>
-                            ) : null}
-
-                            <div className="mt-5 flex flex-wrap items-center gap-2">
-                              <Button
-                                type="button"
-                                className="rounded-md"
-                                onClick={() => setSendConfirmOpen(true)}
-                                disabled={
-                                  sending ||
-                                  !draft.trim() ||
-                                  detail.status === "sent" ||
-                                  detail.status === "ignored" ||
-                                  detail.status === "processing"
-                                }
-                              >
-                                <Send className="mr-1.5 h-4 w-4" />
-                                Send reply
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                className="rounded-md"
-                                onClick={() => void handleIgnore()}
-                                disabled={detail.status === "sent" || detail.status === "ignored"}
-                              >
-                                <EyeOff className="mr-1.5 h-4 w-4" />
-                                Ignore
-                              </Button>
-                            </div>
-                          </div>
                         </div>
-                      )}
-                    </motion.div>
+
+                        <div className="mt-4 rounded-md bg-gray-50 p-4">
+                          {detail.subject ? (
+                            <p className="mb-1.5 text-[13px] font-medium text-gray-900">
+                              {detail.subject}
+                            </p>
+                          ) : null}
+                          <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-gray-600">
+                            {detail.body_preview || detail.snippet}
+                          </p>
+                        </div>
+                      </div>
+
+                      {lightspeedContext ? (
+                        <div className="rounded-xl border border-gray-200 bg-white">
+                          <button
+                            type="button"
+                            onClick={() => setLightspeedOpen((open) => !open)}
+                            className="flex w-full items-center justify-between px-5 py-3.5 text-left"
+                          >
+                            <span className="flex items-center gap-2 text-sm font-medium text-gray-900">
+                              Lightspeed
+                              <span
+                                className={cn(
+                                  "rounded-md px-1.5 py-0.5 text-[10px] font-medium",
+                                  lightspeedContext.matched
+                                    ? "bg-gray-900 text-white"
+                                    : "border border-gray-200 bg-white text-gray-400",
+                                )}
+                              >
+                                {lightspeedContext.matched ? "Matched" : "No match"}
+                              </span>
+                            </span>
+                            <ChevronDown
+                              className={cn(
+                                "h-4 w-4 text-gray-400 transition-transform duration-200",
+                                lightspeedOpen && "rotate-180",
+                              )}
+                            />
+                          </button>
+                          <AnimatePresence>
+                            {lightspeedOpen ? (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: "auto", opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+                                className="overflow-hidden"
+                              >
+                                <div className="border-t border-gray-100 px-5 pb-5 pt-3 text-[13px] text-gray-700">
+                                  {lightspeedContext.matched ? (
+                                    <div className="space-y-3">
+                                      {lightspeedContext.summary ? (
+                                        <p className="leading-relaxed">{lightspeedContext.summary}</p>
+                                      ) : null}
+                                      {lightspeedContext.customer_phone ? (
+                                        <p className="text-xs text-gray-500">
+                                          Phone: {lightspeedContext.customer_phone}
+                                        </p>
+                                      ) : null}
+                                      {lightspeedContext.bikes?.length ? (
+                                        <div>
+                                          <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">
+                                            Bikes
+                                          </p>
+                                          <ul className="mt-1.5 space-y-1">
+                                            {lightspeedContext.bikes.map((bike, idx) => (
+                                              <li key={`${bike.serial ?? bike.label ?? idx}`}>
+                                                {bike.label || "Bike"}
+                                                {bike.serial ? ` · ${bike.serial}` : ""}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      ) : null}
+                                      {lightspeedContext.recent_workorders?.length ? (
+                                        <div>
+                                          <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">
+                                            Recent workorders
+                                          </p>
+                                          <ul className="mt-1.5 space-y-1">
+                                            {lightspeedContext.recent_workorders.map((workorder) => (
+                                              <li key={workorder.id}>
+                                                {workorder.title || `Workorder ${workorder.id}`}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  ) : (
+                                    <p>
+                                      {lightspeedContext.summary ||
+                                        "No matching Lightspeed customer found for this sender."}
+                                    </p>
+                                  )}
+                                </div>
+                              </motion.div>
+                            ) : null}
+                          </AnimatePresence>
+                        </div>
+                      ) : null}
+
+                      {detail.citations?.length ? (
+                        <div className="rounded-xl border border-gray-200 bg-white">
+                          <button
+                            type="button"
+                            onClick={() => setCitationsOpen((open) => !open)}
+                            className="flex w-full items-center justify-between px-5 py-3.5 text-left"
+                          >
+                            <span className="text-sm font-medium text-gray-900">
+                              Sources ({detail.citations.length})
+                            </span>
+                            <ChevronDown
+                              className={cn(
+                                "h-4 w-4 text-gray-400 transition-transform duration-200",
+                                citationsOpen && "rotate-180",
+                              )}
+                            />
+                          </button>
+                          <AnimatePresence>
+                            {citationsOpen ? (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: "auto", opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+                                className="overflow-hidden"
+                              >
+                                <ul className="space-y-2 border-t border-gray-100 px-5 pb-5 pt-3">
+                                  {detail.citations.map((citation) => (
+                                    <li key={citation.url}>
+                                      <a
+                                        href={citation.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex items-center gap-1.5 text-[13px] text-gray-700 hover:text-gray-900"
+                                      >
+                                        <span className="truncate">
+                                          {citation.title || citation.url}
+                                        </span>
+                                        <ExternalLink className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                                      </a>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </motion.div>
+                            ) : null}
+                          </AnimatePresence>
+                        </div>
+                      ) : null}
+
+                      <div className="rounded-xl border border-gray-200 bg-white p-5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-900">Suggested reply</p>
+                            {detail.reasoning ? (
+                              <p className="mt-0.5 text-[12px] leading-relaxed text-gray-500">
+                                {detail.reasoning}
+                              </p>
+                            ) : null}
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="shrink-0 rounded-md"
+                            onClick={() => void handleRegenerate()}
+                            disabled={regenerating || detail.status === "sent"}
+                          >
+                            {regenerating ? (
+                              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                            )}
+                            Regenerate
+                          </Button>
+                        </div>
+
+                        <textarea
+                          value={draft}
+                          onChange={(event) => setDraft(event.target.value)}
+                          disabled={detail.status === "sent" || detail.status === "ignored"}
+                          rows={10}
+                          className="mt-3 w-full rounded-md border border-gray-200 bg-white px-3.5 py-3 text-[13px] leading-relaxed text-gray-800 outline-none transition-colors focus:border-gray-400 disabled:bg-gray-50 disabled:text-gray-500"
+                          placeholder="Draft reply will appear once processing completes."
+                        />
+
+                        {detail.error_message ? (
+                          <div className="mt-3 rounded-xl bg-white p-3 text-[12px] text-gray-600 ring-1 ring-gray-200">
+                            {detail.error_message}
+                          </div>
+                        ) : null}
+                        {actionMessage ? (
+                          <p className="mt-3 text-[12px] text-gray-600">{actionMessage}</p>
+                        ) : null}
+
+                        <div className="mt-4 flex flex-wrap items-center gap-2">
+                          <Button
+                            type="button"
+                            className="rounded-md"
+                            onClick={() => setSendConfirmOpen(true)}
+                            disabled={
+                              sending ||
+                              !draft.trim() ||
+                              detail.status === "sent" ||
+                              detail.status === "ignored" ||
+                              detail.status === "processing"
+                            }
+                          >
+                            <Send className="mr-1.5 h-4 w-4" />
+                            Send reply
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="rounded-md"
+                            onClick={() => void handleIgnore()}
+                            disabled={detail.status === "sent" || detail.status === "ignored"}
+                          >
+                            <EyeOff className="mr-1.5 h-4 w-4" />
+                            Ignore
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
                   )}
-                </AnimatePresence>
+                </motion.div>
               )}
-            </>
+            </AnimatePresence>
           )}
         </div>
       </main>
 
-      <AnimatePresence>
-        {sendConfirmOpen ? (
-          <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-            <button
-              type="button"
-              aria-label="Close dialog"
-              className="absolute inset-0 bg-black/40 animate-in fade-in duration-200"
-              onClick={() => !sending && setSendConfirmOpen(false)}
-            />
-            <motion.div
-              role="dialog"
-              aria-modal="true"
-              initial={{ opacity: 0, y: 16, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 12, scale: 0.97 }}
-              transition={{ duration: 0.3, ease: "easeOut" }}
-              className="relative z-10 w-full max-w-lg rounded-md border border-gray-200 bg-white p-5 sm:mx-4"
-            >
-              <h3 className="text-base font-semibold text-gray-900">Send this reply?</h3>
-              <p className="mt-2 text-sm text-gray-600">
-                This sends your edited draft to {detail?.sender_email}. Nothing goes out until you confirm.
-              </p>
-              <div className="mt-4 flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="rounded-md"
-                  onClick={() => setSendConfirmOpen(false)}
-                  disabled={sending}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  className="rounded-md"
-                  onClick={() => void handleSend()}
-                  disabled={sending || !draft.trim()}
-                >
-                  {sending ? (
-                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="mr-1.5 h-4 w-4" />
-                  )}
-                  Send now
-                </Button>
-              </div>
-            </motion.div>
+      {sendConfirmOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+          <button
+            type="button"
+            aria-label="Close dialog"
+            className="absolute inset-0 bg-black/40 animate-in fade-in duration-200"
+            onClick={() => !sending && setSendConfirmOpen(false)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="relative z-10 w-full max-w-lg overflow-hidden rounded-xl border border-gray-200 bg-white p-5 animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out sm:mx-4"
+          >
+            <h3 className="text-base font-semibold text-gray-900">Send this reply?</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              This sends your edited draft to {detail?.sender_email}. Nothing goes out until you
+              confirm.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-md"
+                onClick={() => setSendConfirmOpen(false)}
+                disabled={sending}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="rounded-md"
+                onClick={() => void handleSend()}
+                disabled={sending || !draft.trim()}
+              >
+                {sending ? (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="mr-1.5 h-4 w-4" />
+                )}
+                Send now
+              </Button>
+            </div>
           </div>
-        ) : null}
-      </AnimatePresence>
+        </div>
+      ) : null}
     </div>
   );
 }
