@@ -1,0 +1,152 @@
+import type {
+  CustomerInquiryListItem,
+  CustomerInquiryStatus,
+} from '@/lib/customer-inquiries/types'
+
+export type CustomerInquiryDetail = {
+  id: string
+  sender_name: string
+  sender_email: string
+  subject: string
+  snippet: string
+  body_preview: string
+  received_at: string | null
+  intent: string
+  priority: string
+  status: CustomerInquiryStatus
+  draft_body: string
+  draft_subject: string | null
+  citations: Array<{ url: string; title: string }>
+  lightspeed_context: Record<string, unknown>
+  reasoning: string
+  error_message: string | null
+  last_synced_at: string | null
+  draft_generated_at: string | null
+  sent_at: string | null
+  ignored_at: string | null
+  updated_at: string
+}
+
+export type CustomerInquiriesResponse = {
+  inquiries?: CustomerInquiryListItem[]
+  gmail?: {
+    configured?: boolean
+    connected?: boolean
+    connectUrl?: string | null
+    accounts?: Array<{
+      id: string
+      label: string
+      email_address: string | null
+      status: string
+    }>
+  }
+  sync?: {
+    inquiries_created?: number
+    inquiries_processed?: number
+    inquiries_failed?: number
+  }
+  error?: string
+}
+
+async function parseJson<T>(res: Response): Promise<T> {
+  return (await res.json()) as T
+}
+
+export async function fetchCustomerInquiries(
+  status?: CustomerInquiryStatus | 'all',
+): Promise<CustomerInquiriesResponse> {
+  const query = status && status !== 'all' ? `?status=${encodeURIComponent(status)}` : ''
+  const res = await fetch(`/api/store/customer-inquiries${query}`, { cache: 'no-store' })
+  const data = await parseJson<CustomerInquiriesResponse>(res)
+  if (!res.ok) {
+    throw new Error(data.error || 'Could not load customer inquiries.')
+  }
+  return data
+}
+
+export async function refreshCustomerInquiries(): Promise<CustomerInquiriesResponse> {
+  const res = await fetch('/api/store/customer-inquiries', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'refresh' }),
+  })
+  const data = await parseJson<CustomerInquiriesResponse>(res)
+  if (!res.ok) {
+    throw new Error(data.error || 'Could not refresh customer inquiries.')
+  }
+  return data
+}
+
+export async function fetchCustomerInquiry(id: string): Promise<{ inquiry: CustomerInquiryDetail }> {
+  const res = await fetch(`/api/store/customer-inquiries/${id}`, { cache: 'no-store' })
+  const data = await parseJson<{ inquiry?: CustomerInquiryDetail; error?: string }>(res)
+  if (!res.ok || !data.inquiry) {
+    throw new Error(data.error || 'Could not load inquiry.')
+  }
+  return { inquiry: data.inquiry }
+}
+
+export async function updateCustomerInquiry(
+  id: string,
+  payload: { draft_body?: string; status?: 'ignored' },
+): Promise<{ inquiry: CustomerInquiryDetail }> {
+  const res = await fetch(`/api/store/customer-inquiries/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  const data = await parseJson<{ inquiry?: CustomerInquiryDetail; error?: string }>(res)
+  if (!res.ok || !data.inquiry) {
+    throw new Error(data.error || 'Could not update inquiry.')
+  }
+  return { inquiry: data.inquiry }
+}
+
+export async function regenerateCustomerInquiryDraft(
+  id: string,
+): Promise<{ inquiry: CustomerInquiryDetail }> {
+  const res = await fetch(`/api/store/customer-inquiries/${id}/regenerate`, {
+    method: 'POST',
+  })
+  const data = await parseJson<{ inquiry?: CustomerInquiryDetail; error?: string }>(res)
+  if (!res.ok || !data.inquiry) {
+    throw new Error(data.error || 'Could not regenerate draft.')
+  }
+  return { inquiry: data.inquiry }
+}
+
+export async function sendCustomerInquiryReply(
+  id: string,
+  draftBody: string,
+): Promise<{ message: string; inquiry: CustomerInquiryDetail }> {
+  const res = await fetch(`/api/store/customer-inquiries/${id}/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ draft_body: draftBody }),
+  })
+  const data = await parseJson<{
+    message?: string
+    inquiry?: CustomerInquiryDetail
+    error?: string
+  }>(res)
+  if (!res.ok || !data.inquiry) {
+    throw new Error(data.error || 'Could not send reply.')
+  }
+  return {
+    message: data.message || 'Reply sent.',
+    inquiry: data.inquiry,
+  }
+}
+
+export async function mintCustomerInquiriesGmailConnectUrl(): Promise<string> {
+  const res = await fetch('/api/store/customer-inquiries', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'connect' }),
+  })
+  const data = await parseJson<{ connectUrl?: string; error?: string }>(res)
+  if (!res.ok || !data.connectUrl) {
+    throw new Error(data.error || 'Could not start Gmail connection.')
+  }
+  return data.connectUrl
+}

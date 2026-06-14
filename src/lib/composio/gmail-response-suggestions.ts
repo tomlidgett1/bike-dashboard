@@ -145,19 +145,19 @@ function firstName(name: string): string {
   return cleaned.split(/\s+/)[0] || 'there'
 }
 
-function emailLooksLowValue(email: GmailEmailPreview): boolean {
+export function emailLooksLowValue(email: GmailEmailPreview): boolean {
   const sender = email.from.toLowerCase()
   const haystack = `${email.from} ${email.subject} ${email.snippet}`
   if (LOW_VALUE_SIGNAL.some((pattern) => pattern.test(haystack))) return true
   return sender.includes('mailer-daemon') || sender.includes('postmaster@')
 }
 
-function hasBikeShopSignal(email: GmailEmailPreview): boolean {
+export function hasBikeShopSignal(email: GmailEmailPreview): boolean {
   const haystack = `${email.subject} ${email.snippet}`
   return BIKE_SHOP_SIGNAL.some((pattern) => pattern.test(haystack))
 }
 
-function inferIntent(email: GmailEmailPreview): GmailSuggestionIntent {
+export function inferIntent(email: GmailEmailPreview): GmailSuggestionIntent {
   const haystack = `${email.subject} ${email.snippet}`
   if (/\bwarranty\b|\breturn\b|\breplace\b|\bfault\b|\bbroken\b/i.test(haystack)) return 'warranty'
   if (/\border\b|\btracking\b|\bdelivery\b|\bpickup\b|\bcollect\b/i.test(haystack)) return 'order_status'
@@ -167,7 +167,7 @@ function inferIntent(email: GmailEmailPreview): GmailSuggestionIntent {
   return 'general_reply'
 }
 
-function inferPriority(email: GmailEmailPreview): GmailSuggestionPriority {
+export function inferPriority(email: GmailEmailPreview): GmailSuggestionPriority {
   const haystack = `${email.subject} ${email.snippet}`
   if (URGENT_SIGNAL.some((pattern) => pattern.test(haystack))) return 'urgent'
   if (/\bwhen can\b|\bcan you\b|\bdo you\b|\?/.test(haystack.toLowerCase())) return 'normal'
