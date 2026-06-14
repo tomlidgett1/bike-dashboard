@@ -1,14 +1,14 @@
 import {
   getLightspeedPhoneNameIndex,
-  isLightspeedPhoneNameIndexWarm,
   lookupLightspeedCustomerNameByPhone,
   resolveLightspeedNamesFromIndex,
-  warmLightspeedPhoneNameIndex,
 } from "@/lib/services/lightspeed/customer-search";
 import type { NestConversationDetail, NestConversationListItem } from "./types";
 
 const LIST_INDEX_TIMEOUT_MS = 2_500;
 const THREAD_LOOKUP_TIMEOUT_MS = 2_000;
+const LIST_INDEX_MAX_PAGES = process.env.NODE_ENV === "development" ? 4 : 12;
+const THREAD_SCAN_MAX_PAGES = process.env.NODE_ENV === "development" ? 4 : 12;
 
 function phoneDigits(value: string): string {
   return value.replace(/\D+/g, "");
@@ -55,16 +55,16 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: 
 export async function enrichNestChatsWithLightspeed(
   userId: string,
   chats: NestConversationListItem[],
+  options?: { allowPhoneScan?: boolean },
 ): Promise<NestConversationListItem[]> {
   if (!chats.some(chatNeedsNameEnrichment)) return chats;
 
   try {
-    if (!isLightspeedPhoneNameIndexWarm(userId)) {
-      warmLightspeedPhoneNameIndex(userId);
-    }
-
     const index = await withTimeout(
-      getLightspeedPhoneNameIndex(userId, { maxPages: 20, timeoutMs: LIST_INDEX_TIMEOUT_MS }),
+      getLightspeedPhoneNameIndex(userId, {
+        maxPages: LIST_INDEX_MAX_PAGES,
+        timeoutMs: LIST_INDEX_TIMEOUT_MS,
+      }),
       LIST_INDEX_TIMEOUT_MS,
       new Map<string, string>(),
     );
@@ -74,7 +74,9 @@ export async function enrichNestChatsWithLightspeed(
       .map((chat) => extractChatPhone(chat))
       .filter((phone): phone is string => Boolean(phone));
 
-    const namesByPhone = await resolveLightspeedNamesFromIndex(userId, phones, index);
+    const namesByPhone = await resolveLightspeedNamesFromIndex(userId, phones, index, {
+      allowScan: options?.allowPhoneScan ?? true,
+    });
     return chats.map((chat) => {
       if (!chatNeedsNameEnrichment(chat)) return chat;
       const phone = extractChatPhone(chat);
@@ -101,7 +103,10 @@ export async function enrichNestConversationWithLightspeed(
 
   try {
     const displayName = await withTimeout(
-      lookupLightspeedCustomerNameByPhone(userId, phone, { allowScan: true, maxScanPages: 20 }),
+      lookupLightspeedCustomerNameByPhone(userId, phone, {
+        allowScan: true,
+        maxScanPages: THREAD_SCAN_MAX_PAGES,
+      }),
       THREAD_LOOKUP_TIMEOUT_MS,
       null,
     );

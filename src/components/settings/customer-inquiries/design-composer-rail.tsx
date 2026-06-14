@@ -50,9 +50,14 @@ export function DesignComposerRail({ c }: { c: InquiriesController }) {
                     regenerating={c.regenerating}
                     onSend={() => c.setSendConfirmOpen(true)}
                     onIgnore={() => void c.handleIgnore()}
+                    onUnignore={() => void c.handleUnignore()}
                     onBanSender={() => c.setBanConfirmOpen(true)}
                     sending={c.sending}
                     banning={c.banning}
+                    revising={c.revising}
+                    reviseInstruction={c.reviseInstruction}
+                    setReviseInstruction={c.setReviseInstruction}
+                    onRevise={() => void c.handleReviseDraft()}
                     actionMessage={c.actionMessage}
                   />
                 </div>

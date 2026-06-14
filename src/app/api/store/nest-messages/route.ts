@@ -140,7 +140,7 @@ export async function GET(request: NextRequest) {
     });
 
     let lightspeedConnected = await isLightspeedApiAvailable(auth.userId);
-    if (lightspeedConnected) {
+    if (lightspeedConnected && !listOnly) {
       try {
         if (Array.isArray(data.chats) && !threadOnly) {
           data.chats = await enrichNestChatsWithLightspeed(
@@ -149,7 +149,6 @@ export async function GET(request: NextRequest) {
           );
         }
         if (
-          !listOnly &&
           data.conversation &&
           typeof data.conversation === "object"
         ) {

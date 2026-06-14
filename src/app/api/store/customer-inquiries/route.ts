@@ -8,7 +8,9 @@ import { requireStoreUser } from '@/lib/customer-inquiries/auth'
 import {
   mapCustomerInquiryRow,
   refreshCustomerInquiriesForUser,
+  reconcileAnsweredThreads,
 } from '@/lib/customer-inquiries/sync'
+import { inquiryNeedsReplyFromRow } from '@/lib/customer-inquiries/thread'
 import { serializeInquiryListItem } from '@/lib/customer-inquiries/serialize'
 import type { CustomerInquiryStatus } from '@/lib/customer-inquiries/types'
 
@@ -23,12 +25,39 @@ const VALID_STATUSES: CustomerInquiryStatus[] = [
   'error',
 ]
 
+const OPEN_STATUSES: CustomerInquiryStatus[] = ['new', 'processing', 'draft_ready', 'error']
+
+function shouldReconcileOnRead(statusParam: string | null | undefined): boolean {
+  if (!statusParam || statusParam === 'all') return true
+  return OPEN_STATUSES.includes(statusParam as CustomerInquiryStatus)
+}
+
+function filterInquiriesForDisplay(
+  rows: ReturnType<typeof mapCustomerInquiryRow>[],
+  statusParam: string | null | undefined,
+) {
+  return rows.filter((row) => {
+    if (row.status === 'sent' || row.status === 'ignored') return true
+    if (statusParam && statusParam !== 'all' && !OPEN_STATUSES.includes(statusParam as CustomerInquiryStatus)) {
+      return true
+    }
+    return inquiryNeedsReplyFromRow(row)
+  })
+}
+
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireStoreUser()
     if ('error' in auth) return auth.error
 
     const statusParam = request.nextUrl.searchParams.get('status')?.trim()
+    const configured = isComposioConfigured()
+    const connections = configured ? await listGmailConnections(auth.user.id).catch(() => []) : []
+
+    if (connections.length > 0 && shouldReconcileOnRead(statusParam)) {
+      await reconcileAnsweredThreads(auth.supabase, auth.user.id)
+    }
+
     let query = auth.supabase
       .from('store_customer_inquiries')
       .select('*')
@@ -45,13 +74,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Could not load customer inquiries.' }, { status: 500 })
     }
 
-    const configured = isComposioConfigured()
-    const connections = configured ? await listGmailConnections(auth.user.id).catch(() => []) : []
+    const mapped = (data ?? []).map((row) =>
+      mapCustomerInquiryRow(row as Record<string, unknown>),
+    )
 
     return NextResponse.json({
-      inquiries: (data ?? []).map((row) =>
-        serializeInquiryListItem(mapCustomerInquiryRow(row as Record<string, unknown>)),
-      ),
+      inquiries: filterInquiriesForDisplay(mapped, statusParam).map(serializeInquiryListItem),
       gmail: {
         configured,
         connected: connections.length > 0,
@@ -96,7 +124,7 @@ export async function POST(request: NextRequest) {
 
       const connections = await listGmailConnections(auth.user.id)
       if (connections.length === 0) {
-        return NextResponse.json({ error: 'Connect Gmail before refreshing inquiries.' }, { status: 409 })
+        return NextResponse.json({ error: 'Connect Gmail before refreshing enquiries.' }, { status: 409 })
       }
 
       const sync = await refreshCustomerInquiriesForUser(
@@ -116,10 +144,12 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Could not load customer inquiries.' }, { status: 500 })
       }
 
+      const mapped = (data ?? []).map((row) =>
+        mapCustomerInquiryRow(row as Record<string, unknown>),
+      )
+
       return NextResponse.json({
-        inquiries: (data ?? []).map((row) =>
-          serializeInquiryListItem(mapCustomerInquiryRow(row as Record<string, unknown>)),
-        ),
+        inquiries: filterInquiriesForDisplay(mapped, null).map(serializeInquiryListItem),
         sync,
         gmail: {
           configured: true,

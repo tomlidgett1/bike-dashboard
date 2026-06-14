@@ -37,6 +37,7 @@ const CRUMBS: Record<string, { section: string; page: string }> = {
   "/optimize": { section: "Store", page: "Product Optimise" },
   "/settings/store": { section: "Store", page: "Storefront" },
   "/settings/store/home": { section: "Store", page: "Home" },
+  "/settings/store/overivewo": { section: "Store", page: "Overivewo" },
   "/settings/store/nest": { section: "Customer service", page: "Nest" },
   "/settings/store/customer-inquiries": { section: "Customer service", page: "Customer inquiries" },
   "/settings/my-listings": { section: "Marketplace", page: "My listings" },

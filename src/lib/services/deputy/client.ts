@@ -131,6 +131,48 @@ function round2(value: number): number {
   return Math.round(value * 100) / 100
 }
 
+/** YYYY-MM-DD in the store timezone. */
+function storeDateFromInstant(date: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: DEPUTY_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
+/** Unix seconds at start of a store calendar day (Brisbane, UTC+10). */
+function storeDayStartUnix(isoDate: string): number {
+  return Math.floor(new Date(`${isoDate}T00:00:00+10:00`).getTime() / 1000)
+}
+
+/** Unix seconds at end of a store calendar day (Brisbane, UTC+10). */
+function storeDayEndUnix(isoDate: string): number {
+  return Math.floor(new Date(`${isoDate}T23:59:59+10:00`).getTime() / 1000)
+}
+
+/**
+ * Deputy returns Date as date-time (e.g. 2024-06-14T00:00:00+10:00) and it is
+ * optional — normalise to YYYY-MM-DD for grouping, falling back to StartTime.
+ */
+function normalizeStoreDate(
+  dateValue: string | null | undefined,
+  startTimeSeconds?: number | null,
+): string | null {
+  if (typeof dateValue === 'string' && dateValue.trim()) {
+    const trimmed = dateValue.trim()
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed
+    const parsed = new Date(trimmed)
+    if (!Number.isNaN(parsed.getTime())) return storeDateFromInstant(parsed)
+    const prefix = trimmed.slice(0, 10)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(prefix)) return prefix
+  }
+  if (typeof startTimeSeconds === 'number' && startTimeSeconds > 0) {
+    return storeDateFromInstant(new Date(startTimeSeconds * 1000))
+  }
+  return null
+}
+
 /** "HH:MM" for a unix-seconds timestamp in the store timezone. */
 function hhmmFromUnix(seconds: number): string | null {
   if (!Number.isFinite(seconds) || seconds <= 0) return null
@@ -342,9 +384,10 @@ export async function getDeputyRosters(userId: string, args: RosterArgs): Promis
   ])
 
   const toDate = args.toDate ?? args.fromDate
+  // StartTime is mandatory on Roster; Date is optional and often date-time shaped.
   const search: Record<string, DeputyQuerySearchCondition> = {
-    fromDate: { field: 'Date', type: 'ge', data: args.fromDate },
-    toDate: { field: 'Date', type: 'le', data: toDate },
+    fromStart: { field: 'StartTime', type: 'ge', data: storeDayStartUnix(args.fromDate) },
+    toStart: { field: 'StartTime', type: 'le', data: storeDayEndUnix(toDate) },
   }
 
   const matchedIds = args.employeeName ? resolveEmployeeIds(employeeMap, args.employeeName) : []
@@ -360,6 +403,11 @@ export async function getDeputyRosters(userId: string, args: RosterArgs): Promis
   }
   if (args.openOnly) records = records.filter(record => record.Open === true)
 
+  records = records.filter(record => {
+    const day = normalizeStoreDate(record.Date, record.StartTime)
+    return day !== null && day >= args.fromDate && day <= toDate
+  })
+
   records.sort((a, b) => (a.StartTime ?? 0) - (b.StartTime ?? 0))
 
   const rosters: DeputyRosterRow[] = records.map(record => {
@@ -367,7 +415,7 @@ export async function getDeputyRosters(userId: string, args: RosterArgs): Promis
     const open = record.Open === true || !record.Employee
     return {
       employee: open ? 'Open shift (unassigned)' : employeeMap.get(record.Employee)?.name ?? `Employee ${record.Employee}`,
-      date: record.Date ?? null,
+      date: normalizeStoreDate(record.Date, record.StartTime),
       start,
       end,
       hours: shiftHours(record),

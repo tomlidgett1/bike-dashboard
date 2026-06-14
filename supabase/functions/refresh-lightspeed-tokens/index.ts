@@ -80,6 +80,9 @@ function bytesToHex(bytes: Uint8Array): string {
     .join('')
 }
 
+const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000
+const TOKEN_REFRESH_SLACK_MS = 5 * 60 * 1000
+
 console.log('Function "refresh-lightspeed-tokens" up and running!')
 
 Deno.serve(async (req) => {
@@ -98,12 +101,20 @@ Deno.serve(async (req) => {
 
     console.log('🔄 Starting scheduled token refresh...')
 
-    // Get all connected Lightspeed accounts
+    // Only refresh tokens that are close to expiry. Lightspeed refresh tokens
+    // rotate, so refreshing every connected account on every cron run creates
+    // avoidable races with app requests that are refreshing at the same time.
+    const refreshCutoff = new Date(
+      Date.now() + TOKEN_EXPIRY_BUFFER_MS + TOKEN_REFRESH_SLACK_MS,
+    ).toISOString()
+
     const { data: connections, error: connError } = await supabaseAdmin
       .from('lightspeed_connections')
-      .select('user_id, refresh_token_encrypted, account_id, account_name')
+      .select('user_id, refresh_token_encrypted, account_id, account_name, token_expires_at, last_token_refresh_at')
       .eq('status', 'connected')
       .not('refresh_token_encrypted', 'is', null)
+      .not('token_expires_at', 'is', null)
+      .lt('token_expires_at', refreshCutoff)
 
     if (connError) {
       console.error('❌ Error fetching connections:', connError)
@@ -151,14 +162,45 @@ Deno.serve(async (req) => {
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}))
           console.error(`❌ Token refresh failed for user ${connection.user_id}:`, response.status, errorData)
-          
-          // If refresh token is invalid, mark connection as expired
-          if (response.status === 400 || errorData.error === 'invalid_grant') {
+
+          // Rotating refresh tokens can lose a race: another process may have
+          // refreshed first, making this request's refresh token invalid. Check
+          // the DB before marking the connection expired.
+          const { data: latest } = await supabaseAdmin
+            .from('lightspeed_connections')
+            .select('status, token_expires_at, last_token_refresh_at')
+            .eq('user_id', connection.user_id)
+            .maybeSingle()
+
+          const latestRefreshTime = latest?.last_token_refresh_at
+            ? new Date(latest.last_token_refresh_at).getTime()
+            : 0
+          const originalRefreshTime = connection.last_token_refresh_at
+            ? new Date(connection.last_token_refresh_at).getTime()
+            : 0
+          const latestExpiryTime = latest?.token_expires_at
+            ? new Date(latest.token_expires_at).getTime()
+            : 0
+
+          if (
+            latest?.status === 'connected' &&
+            latestExpiryTime > Date.now() + TOKEN_EXPIRY_BUFFER_MS &&
+            latestRefreshTime > originalRefreshTime
+          ) {
+            console.log(`ℹ️ Token refresh race lost for user ${connection.user_id}; using newer stored token`)
+            continue
+          }
+
+          // Only invalid_grant means the refresh token is actually revoked.
+          // Other 400s can be malformed requests or provider quirks and should
+          // not force users to reconnect.
+          if (errorData.error === 'invalid_grant') {
             await supabaseAdmin
               .from('lightspeed_connections')
               .update({ 
                 status: 'expired',
                 last_error: 'Refresh token invalid or expired. Please reconnect.',
+                last_error_at: new Date().toISOString(),
                 last_token_refresh_at: new Date().toISOString(),
               })
               .eq('user_id', connection.user_id)
@@ -173,6 +215,7 @@ Deno.serve(async (req) => {
               .update({ 
                 status: 'error',
                 last_error: `Token refresh failed: ${errorData.error || response.status}`,
+                last_error_at: new Date().toISOString(),
                 last_token_refresh_at: new Date().toISOString(),
               })
               .eq('user_id', connection.user_id)
@@ -204,6 +247,7 @@ Deno.serve(async (req) => {
             last_token_refresh_at: new Date().toISOString(),
             status: 'connected',
             last_error: null,
+            last_error_at: null,
           })
           .eq('user_id', connection.user_id)
 

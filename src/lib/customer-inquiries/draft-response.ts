@@ -282,3 +282,81 @@ Rules:
     }
   }
 }
+
+export async function reviseInquiryDraftWithInstruction(args: {
+  currentDraft: string
+  instruction: string
+  customerName: string
+  subject: string
+  customerMessage: string
+  styleProfile: EmailStyleProfile
+  storeName?: string | null
+}): Promise<{ draft_body: string; reasoning: string }> {
+  const trimmedDraft = args.currentDraft.trim()
+  const trimmedInstruction = args.instruction.trim()
+
+  if (!trimmedInstruction) {
+    throw new Error('Instruction is required.')
+  }
+
+  if (!trimmedDraft) {
+    throw new Error('Draft is empty.')
+  }
+
+  if (!openai) {
+    return {
+      draft_body: trimmedDraft,
+      reasoning: 'OpenAI is not configured; draft unchanged.',
+    }
+  }
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: MODEL,
+      temperature: 0.35,
+      max_tokens: 1200,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content: `You revise customer email drafts for an Australian bicycle shop.
+
+Rules:
+- Apply the staff instruction to the existing draft only.
+- Keep Australian English and match the store style profile.
+- Never invent stock, prices, appointments, or order status.
+- Do not add URLs or citation notes to the draft.
+- Return JSON only: { "draft_body": "...", "reasoning": "..." }`,
+        },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            store_name: args.storeName?.trim() || 'the bike shop',
+            customer_name: args.customerName,
+            subject: args.subject,
+            customer_message: args.customerMessage.slice(0, 2000),
+            style_profile: args.styleProfile,
+            current_draft: trimmedDraft,
+            instruction: trimmedInstruction,
+          }),
+        },
+      ],
+    })
+
+    const content = response.choices[0]?.message?.content
+    if (!content) {
+      return { draft_body: trimmedDraft, reasoning: 'No revision returned.' }
+    }
+
+    const parsed = JSON.parse(content) as { draft_body?: string; reasoning?: string }
+    const draftBody = String(parsed.draft_body ?? '').trim()
+
+    return {
+      draft_body: draftBody || trimmedDraft,
+      reasoning: String(parsed.reasoning ?? 'Draft revised from staff instruction.').trim(),
+    }
+  } catch (error) {
+    console.error('[customer-inquiries] draft revision failed:', error)
+    throw new Error('Could not revise draft.')
+  }
+}

@@ -310,8 +310,7 @@ export async function isLightspeedApiAvailable(userId: string): Promise<boolean>
   if (!connection) return false
   if (
     connection.status === 'disconnected' ||
-    connection.status === 'expired' ||
-    connection.status === 'error'
+    connection.status === 'expired'
   ) {
     return false
   }

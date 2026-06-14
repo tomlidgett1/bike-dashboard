@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createLightspeedClient } from '@/lib/services/lightspeed'
 import type { LightspeedManufacturer } from '@/lib/services/lightspeed'
+import { clearBrandSuggestionCacheUpdate } from '@/lib/missing-brands/suggestion-cache'
 
 export const dynamic = 'force-dynamic'
 
@@ -100,6 +101,7 @@ export async function POST(request: NextRequest) {
         manufacturer_name: resolvedBrandName,
         manufacturer_id: manufacturerId,
         updated_at: new Date().toISOString(),
+        ...clearBrandSuggestionCacheUpdate(),
       })
       .eq('id', product.id)
       .eq('user_id', user.id)

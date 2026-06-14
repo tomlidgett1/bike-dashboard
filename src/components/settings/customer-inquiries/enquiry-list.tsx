@@ -12,6 +12,7 @@ import {
   statusLabel,
 } from "./parts";
 import type { InquiriesController } from "./use-inquiries-controller";
+import { InquiryStyleSettings } from "./inquiry-style-settings";
 
 export function EnquiryList({
   c,
@@ -50,6 +51,8 @@ export function EnquiryList({
       <div className="shrink-0 px-4 pb-3">
         <FilterTabs value={c.filter} onChange={c.setFilter} />
       </div>
+
+      <InquiryStyleSettings c={c} />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {c.loading ? (

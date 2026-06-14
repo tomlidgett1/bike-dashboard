@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Database,
   Home,
+  LayoutGrid,
   LifeBuoy,
   Mail,
   MessageSquare,
@@ -64,6 +65,7 @@ const NAV: NavGroup[] = [
     label: "Store",
     items: [
       { title: "Home", href: "/settings/store/home", icon: Home, exact: true },
+      { title: "Overivewo", href: "/settings/store/overivewo", icon: LayoutGrid, exact: true },
       { title: "Products", href: "/products", icon: Package },
       {
         title: "Storefront",

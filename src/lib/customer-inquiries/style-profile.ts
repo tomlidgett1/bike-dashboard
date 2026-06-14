@@ -167,3 +167,69 @@ export async function getOrRefreshEmailStyleProfile(
 
   return { profile, version: samples.length }
 }
+
+export async function loadEmailStyleProfile(
+  supabase: SupabaseClient,
+  userId: string,
+  storeName?: string | null,
+): Promise<EmailStyleProfile> {
+  const { data: existing } = await supabase
+    .from('store_email_style_profiles')
+    .select('profile')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (existing?.profile && typeof existing.profile === 'object') {
+    return existing.profile as EmailStyleProfile
+  }
+
+  return defaultProfile(storeName)
+}
+
+export async function updateEmailStyleProfileFields(
+  supabase: SupabaseClient,
+  userId: string,
+  fields: { greeting_style?: string; signoff_style?: string },
+  storeName?: string | null,
+): Promise<EmailStyleProfile> {
+  const { data: existing } = await supabase
+    .from('store_email_style_profiles')
+    .select('*')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  const current =
+    existing?.profile && typeof existing.profile === 'object'
+      ? (existing.profile as EmailStyleProfile)
+      : defaultProfile(storeName)
+
+  const next: EmailStyleProfile = {
+    ...current,
+    ...(typeof fields.greeting_style === 'string'
+      ? { greeting_style: fields.greeting_style.trim() }
+      : {}),
+    ...(typeof fields.signoff_style === 'string'
+      ? { signoff_style: fields.signoff_style.trim() }
+      : {}),
+  }
+
+  const row = {
+    user_id: userId,
+    profile: next,
+    sample_message_ids: existing?.sample_message_ids ?? [],
+    sample_message_hashes: existing?.sample_message_hashes ?? [],
+    message_count: existing?.message_count ?? 0,
+    refreshed_at: existing?.refreshed_at ?? new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }
+
+  const { error } = await supabase.from('store_email_style_profiles').upsert(row, {
+    onConflict: 'user_id',
+  })
+
+  if (error) {
+    throw new Error(error.message || 'Could not save reply style.')
+  }
+
+  return next
+}

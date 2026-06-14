@@ -1,6 +1,6 @@
 import { parseGmailSender } from '@/lib/composio/gmail-response-suggestions'
 import type { GmailMessageContent } from '@/lib/types/genie-agent'
-import type { InquiryThreadMessage } from '@/lib/customer-inquiries/types'
+import type { CustomerInquiryStatus, InquiryThreadMessage } from '@/lib/customer-inquiries/types'
 
 const QUOTE_SPLIT_PATTERNS = [
   /\n\s*On .+ wrote:\s*\n/i,
@@ -46,10 +46,46 @@ export function isShopSender(from: string, shopEmails: string[]): boolean {
   return shopEmails.includes(sender)
 }
 
+export function resolveMessageRole(
+  from: string,
+  shopEmails: string[],
+  customerEmail?: string | null,
+): 'shop' | 'customer' {
+  const sender = parseGmailSender(from).email.toLowerCase()
+  const customer = customerEmail?.trim().toLowerCase() ?? ''
+
+  if (customer && sender === customer) return 'customer'
+  if (isShopSender(from, shopEmails)) return 'shop'
+
+  const senderDomain = sender.split('@')[1]
+  const shopDomains = new Set(
+    shopEmails
+      .map((email) => email.split('@')[1]?.toLowerCase())
+      .filter((domain): domain is string => Boolean(domain)),
+  )
+  if (senderDomain && shopDomains.has(senderDomain)) return 'shop'
+
+  // Enquiry threads are 1:1 with the customer — any other sender is the store.
+  if (customer && sender && sender !== customer) return 'shop'
+
+  return 'customer'
+}
+
+function applyLatestCustomerFlag(messages: InquiryThreadMessage[]): InquiryThreadMessage[] {
+  const latestCustomerId = [...messages]
+    .reverse()
+    .find((message) => message.role === 'customer')?.message_id
+
+  return messages.map((message) => ({
+    ...message,
+    is_latest_customer: message.message_id === latestCustomerId,
+  }))
+}
+
 export function buildThreadMessages(
   rawMessages: GmailMessageContent[],
   shopEmails: string[],
-  options?: { maxMessages?: number },
+  options?: { maxMessages?: number; customerEmail?: string | null },
 ): InquiryThreadMessage[] {
   const maxMessages = options?.maxMessages ?? 12
   const sorted = [...rawMessages].sort(
@@ -58,7 +94,7 @@ export function buildThreadMessages(
 
   const messages = sorted.slice(-maxMessages).map((message) => {
     const sender = parseGmailSender(message.from)
-    const role = isShopSender(message.from, shopEmails) ? 'shop' : 'customer'
+    const role = resolveMessageRole(message.from, shopEmails, options?.customerEmail)
     const receivedAt =
       message.internal_date_ms != null
         ? new Date(message.internal_date_ms).toISOString()
@@ -75,14 +111,21 @@ export function buildThreadMessages(
     } satisfies InquiryThreadMessage
   })
 
-  const latestCustomerId = [...messages]
-    .reverse()
-    .find((message) => message.role === 'customer')?.message_id
+  return applyLatestCustomerFlag(messages)
+}
 
-  return messages.map((message) => ({
-    ...message,
-    is_latest_customer: message.message_id === latestCustomerId,
-  }))
+/** Re-resolve roles on stored thread messages (fixes stale classifications after logic updates). */
+export function refreshThreadMessageRoles(
+  messages: InquiryThreadMessage[],
+  shopEmails: string[],
+  customerEmail?: string | null,
+): InquiryThreadMessage[] {
+  return applyLatestCustomerFlag(
+    messages.map((message) => ({
+      ...message,
+      role: resolveMessageRole(message.from, shopEmails, customerEmail),
+    })),
+  )
 }
 
 export function findLatestCustomerMessage(
@@ -131,4 +174,43 @@ export function threadReplyState(messages: InquiryThreadMessage[]): {
     lastCustomerAt: latestCustomer.received_at,
     lastShopReplyAt: latestShop?.received_at ?? null,
   }
+}
+
+const OPEN_INQUIRY_STATUSES: CustomerInquiryStatus[] = [
+  'new',
+  'processing',
+  'draft_ready',
+  'error',
+]
+
+/** Whether an inquiry still needs a shop reply (excludes externally answered threads). */
+export function inquiryNeedsReplyFromRow(row: {
+  status: CustomerInquiryStatus
+  sender_email?: string | null
+  thread_messages?: InquiryThreadMessage[] | null
+  last_customer_at?: string | null
+  last_shop_reply_at?: string | null
+}): boolean {
+  if (row.status === 'sent' || row.status === 'ignored') return false
+  if (!OPEN_INQUIRY_STATUSES.includes(row.status)) return false
+
+  if (row.thread_messages && row.thread_messages.length > 0) {
+    const refreshed = refreshThreadMessageRoles(
+      row.thread_messages,
+      [],
+      row.sender_email,
+    )
+    return threadReplyState(refreshed).needsReply
+  }
+
+  if (row.last_shop_reply_at && row.last_customer_at) {
+    return (
+      new Date(row.last_shop_reply_at).getTime() <
+      new Date(row.last_customer_at).getTime()
+    )
+  }
+
+  if (row.last_shop_reply_at && !row.last_customer_at) return false
+
+  return true
 }

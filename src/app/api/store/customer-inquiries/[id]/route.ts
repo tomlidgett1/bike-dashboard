@@ -81,6 +81,11 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       updates.ignored_at = new Date().toISOString()
     }
 
+    if (body.status === 'draft_ready' && loaded.inquiry.status === 'ignored') {
+      updates.status = 'draft_ready'
+      updates.ignored_at = null
+    }
+
     const { data, error } = await auth.supabase
       .from('store_customer_inquiries')
       .update(updates)
@@ -107,6 +112,15 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         inquiryId: id,
         userId: auth.user.id,
         eventType: 'ignored',
+      })
+    }
+
+    if (body.status === 'draft_ready' && loaded.inquiry.status === 'ignored') {
+      await recordInquiryEvent(auth.supabase, {
+        inquiryId: id,
+        userId: auth.user.id,
+        eventType: 'draft_edited',
+        payload: { restored: true },
       })
     }
 

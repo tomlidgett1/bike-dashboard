@@ -347,13 +347,18 @@ export async function searchLightspeedCustomersForNest(
     new Set([normalizeText(trimmed), ...queryTokens(trimmed)].filter((term) => term.length >= 2)),
   ).slice(0, 4);
 
-  const focusedResults = await Promise.all(
-    terms.flatMap((term) => [
-      fetchCustomers({ firstName: lightspeedContainsFilter(term) }),
-      fetchCustomers({ lastName: lightspeedContainsFilter(term) }),
-      fetchCustomers({ company: lightspeedContainsFilter(term) }),
-    ]),
-  );
+  // Run name/company searches sequentially — parallel bursts blow through Lightspeed's
+  // api-burst-limiter and stall the dev server behind long backoffs.
+  const focusedResults: LightspeedCustomer[][] = [];
+  for (const term of terms) {
+    for (const params of [
+      { firstName: lightspeedContainsFilter(term) },
+      { lastName: lightspeedContainsFilter(term) },
+      { company: lightspeedContainsFilter(term) },
+    ]) {
+      focusedResults.push(await fetchCustomers(params));
+    }
+  }
 
   for (const customers of focusedResults) {
     for (const customer of customers) {
@@ -405,9 +410,12 @@ export async function searchLightspeedCustomersForNest(
 }
 
 const phoneIndexCache = new Map<string, { expiresAt: number; index: Map<string, string> }>();
+const phoneIndexInflight = new Map<string, Promise<Map<string, string>>>();
 const phoneNameCache = new Map<string, { expiresAt: number; name: string | null }>();
 const PHONE_INDEX_TTL_MS = 5 * 60 * 1000;
 const PHONE_NAME_TTL_MS = 15 * 60 * 1000;
+const DEFAULT_PHONE_INDEX_MAX_PAGES =
+  process.env.NODE_ENV === "development" ? 4 : 12;
 
 function phoneNameCacheKey(userId: string, phone: string): string {
   const keys = phoneLookupKeys(phone);
@@ -483,7 +491,11 @@ export function isLightspeedPhoneNameIndexWarm(userId: string): boolean {
   return Boolean(cached && cached.expiresAt > Date.now());
 }
 
-export function warmLightspeedPhoneNameIndex(userId: string, maxPages = 12): void {
+export function warmLightspeedPhoneNameIndex(
+  userId: string,
+  maxPages = DEFAULT_PHONE_INDEX_MAX_PAGES,
+): void {
+  if (isLightspeedPhoneNameIndexWarm(userId) || phoneIndexInflight.has(userId)) return;
   void getLightspeedPhoneNameIndex(userId, { maxPages }).catch(() => {});
 }
 
@@ -527,12 +539,14 @@ export async function resolveLightspeedNamesFromIndex(
   userId: string,
   phones: string[],
   index?: Map<string, string>,
+  options?: { allowScan?: boolean },
 ): Promise<Map<string, string>> {
+  const allowScan = options?.allowScan ?? true;
   const unique = Array.from(new Set(phones.map((phone) => phone.trim()).filter(isLikelyPhone)));
   const resolved = new Map<string, string>();
   if (unique.length === 0) return resolved;
 
-  const phoneIndex = index ?? (await getLightspeedPhoneNameIndex(userId, { maxPages: 12 }));
+  const phoneIndex = index ?? (await getLightspeedPhoneNameIndex(userId, { maxPages: DEFAULT_PHONE_INDEX_MAX_PAGES }));
   const misses: string[] = [];
   for (const phone of unique) {
     const name = lookupLightspeedNameInIndex(phoneIndex, phone);
@@ -540,7 +554,7 @@ export async function resolveLightspeedNamesFromIndex(
     else misses.push(phone);
   }
 
-  if (misses.length === 0) return resolved;
+  if (misses.length === 0 || !allowScan) return resolved;
 
   const missesToLookup = misses.slice(0, 6);
   try {
@@ -571,41 +585,47 @@ export async function getLightspeedPhoneNameIndex(
   userId: string,
   options: PhoneIndexOptions = {},
 ): Promise<Map<string, string>> {
-  const maxPages = options.maxPages ?? 12;
+  const maxPages = options.maxPages ?? DEFAULT_PHONE_INDEX_MAX_PAGES;
   const cached = phoneIndexCache.get(userId);
   if (cached && cached.expiresAt > Date.now()) return cached.index;
 
-  const buildIndex = async (): Promise<Map<string, string>> => {
-    const client = createLightspeedClient(userId);
-    const index = new Map<string, string>();
+  let inflight = phoneIndexInflight.get(userId);
+  if (!inflight) {
+    inflight = (async () => {
+      const client = createLightspeedClient(userId);
+      const index = new Map<string, string>();
 
-    for (const archived of ["false", "true"] as const) {
-      const { customers } = await client.getAllCustomersCursor(
-        { load_relations: '["Contact"]', archived },
-        { maxPages, limit: 100 },
-      );
+      for (const archived of ["false", "true"] as const) {
+        const { customers } = await client.getAllCustomersCursor(
+          { load_relations: '["Contact"]', archived },
+          { maxPages, limit: 100 },
+        );
 
-      for (const customer of customers) {
-        const name = customerName(customer);
-        for (const phone of customerPhones(customer)) {
-          for (const key of phoneLookupKeys(phone)) {
-            if (!index.has(key)) index.set(key, name);
+        for (const customer of customers) {
+          const name = customerName(customer);
+          for (const phone of customerPhones(customer)) {
+            for (const key of phoneLookupKeys(phone)) {
+              if (!index.has(key)) index.set(key, name);
+            }
           }
         }
       }
-    }
 
-    phoneIndexCache.set(userId, { expiresAt: Date.now() + PHONE_INDEX_TTL_MS, index });
-    return index;
-  };
+      phoneIndexCache.set(userId, { expiresAt: Date.now() + PHONE_INDEX_TTL_MS, index });
+      return index;
+    })().finally(() => {
+      phoneIndexInflight.delete(userId);
+    });
+    phoneIndexInflight.set(userId, inflight);
+  }
 
   if (!options.timeoutMs || options.timeoutMs <= 0) {
-    return buildIndex();
+    return inflight;
   }
 
   const timedOut = new Promise<Map<string, string>>((resolve) => {
     setTimeout(() => resolve(cached?.index ?? new Map()), options.timeoutMs);
   });
 
-  return Promise.race([buildIndex(), timedOut]);
+  return Promise.race([inflight, timedOut]);
 }

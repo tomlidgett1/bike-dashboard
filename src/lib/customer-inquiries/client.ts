@@ -101,7 +101,7 @@ export async function fetchCustomerInquiry(id: string): Promise<{ inquiry: Custo
 
 export async function updateCustomerInquiry(
   id: string,
-  payload: { draft_body?: string; status?: 'ignored' },
+  payload: { draft_body?: string; status?: 'ignored' | 'draft_ready' },
 ): Promise<{ inquiry: CustomerInquiryDetail }> {
   const res = await fetch(`/api/store/customer-inquiries/${id}`, {
     method: 'PATCH',
@@ -182,4 +182,58 @@ export async function mintCustomerInquiriesGmailConnectUrl(): Promise<string> {
     throw new Error(data.error || 'Could not start Gmail connection.')
   }
   return data.connectUrl
+}
+
+export type EmailStyleProfileResponse = {
+  profile?: {
+    greeting_style: string
+    signoff_style: string
+    tone: string
+    brevity: string
+    common_phrases: string[]
+    policy_notes: string[]
+    sample_excerpt?: string | null
+  }
+  error?: string
+}
+
+export async function fetchEmailStyleProfile(): Promise<EmailStyleProfileResponse['profile']> {
+  const res = await fetch('/api/store/customer-inquiries/style-profile', { cache: 'no-store' })
+  const data = await parseJson<EmailStyleProfileResponse>(res)
+  if (!res.ok || !data.profile) {
+    throw new Error(data.error || 'Could not load reply style.')
+  }
+  return data.profile
+}
+
+export async function updateEmailStyleProfile(payload: {
+  greeting_style?: string
+  signoff_style?: string
+}): Promise<EmailStyleProfileResponse['profile']> {
+  const res = await fetch('/api/store/customer-inquiries/style-profile', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  const data = await parseJson<EmailStyleProfileResponse>(res)
+  if (!res.ok || !data.profile) {
+    throw new Error(data.error || 'Could not save reply style.')
+  }
+  return data.profile
+}
+
+export async function reviseCustomerInquiryDraft(
+  id: string,
+  payload: { instruction: string; draft_body: string },
+): Promise<{ inquiry: CustomerInquiryDetail }> {
+  const res = await fetch(`/api/store/customer-inquiries/${id}/revise`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  const data = await parseJson<{ inquiry?: CustomerInquiryDetail; error?: string }>(res)
+  if (!res.ok || !data.inquiry) {
+    throw new Error(data.error || 'Could not revise draft.')
+  }
+  return { inquiry: data.inquiry }
 }

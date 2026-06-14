@@ -5,11 +5,14 @@ import {
   fetchCustomerInquiries,
   fetchCustomerInquiry,
   banCustomerInquirySender,
+  fetchEmailStyleProfile,
   mintCustomerInquiriesGmailConnectUrl,
   refreshCustomerInquiries,
   regenerateCustomerInquiryDraft,
+  reviseCustomerInquiryDraft,
   sendCustomerInquiryReply,
   updateCustomerInquiry,
+  updateEmailStyleProfile,
   type CustomerInquiryDetail,
   type CustomerInquiriesResponse,
 } from "@/lib/customer-inquiries/client";
@@ -69,6 +72,13 @@ export function useInquiriesController() {
   const [sendConfirmOpen, setSendConfirmOpen] = React.useState(false);
   const [banConfirmOpen, setBanConfirmOpen] = React.useState(false);
   const [banning, setBanning] = React.useState(false);
+  const [revising, setRevising] = React.useState(false);
+  const [reviseInstruction, setReviseInstruction] = React.useState("");
+  const [styleLoading, setStyleLoading] = React.useState(true);
+  const [styleSaving, setStyleSaving] = React.useState(false);
+  const [greetingStyle, setGreetingStyle] = React.useState("");
+  const [signoffStyle, setSignoffStyle] = React.useState("");
+  const [styleMessage, setStyleMessage] = React.useState<string | null>(null);
 
   const loadList = React.useCallback(async (status: StatusFilter) => {
     setLoading(true);
@@ -87,6 +97,27 @@ export function useInquiriesController() {
   React.useEffect(() => {
     void loadList(filter);
   }, [filter, loadList]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setStyleLoading(true);
+    void fetchEmailStyleProfile()
+      .then((profile) => {
+        if (cancelled || !profile) return;
+        setGreetingStyle(profile.greeting_style ?? "");
+        setSignoffStyle(profile.signoff_style ?? "");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setStyleMessage(err instanceof Error ? err.message : "Could not load reply style.");
+      })
+      .finally(() => {
+        if (!cancelled) setStyleLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   React.useEffect(() => {
     if (!selectedId) {
@@ -158,6 +189,20 @@ export function useInquiriesController() {
       setActionMessage("Enquiry ignored.");
     } catch (err) {
       setActionMessage(err instanceof Error ? err.message : "Could not ignore enquiry.");
+    }
+  }, [selectedId, detail]);
+
+  const handleUnignore = React.useCallback(async () => {
+    if (!selectedId || !detail) return;
+    try {
+      const { inquiry } = await updateCustomerInquiry(selectedId, { status: "draft_ready" });
+      setDetail(inquiry);
+      setInquiries((rows) =>
+        rows.map((row) => (row.id === inquiry.id ? { ...row, status: inquiry.status } : row)),
+      );
+      setActionMessage("Enquiry restored.");
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : "Could not restore enquiry.");
     }
   }, [selectedId, detail]);
 
@@ -237,6 +282,56 @@ export function useInquiriesController() {
     }
   }, [selectedId, draft]);
 
+  const handleReviseDraft = React.useCallback(async () => {
+    if (!selectedId || !draft.trim() || !reviseInstruction.trim()) return;
+    setRevising(true);
+    setActionMessage(null);
+    try {
+      const { inquiry } = await reviseCustomerInquiryDraft(selectedId, {
+        instruction: reviseInstruction.trim(),
+        draft_body: draft.trim(),
+      });
+      setDetail(inquiry);
+      setDraft(stripReplyLinks(inquiry.draft_body));
+      setInquiries((rows) =>
+        rows.map((row) =>
+          row.id === inquiry.id
+            ? {
+                ...row,
+                status: inquiry.status,
+                draft_body: inquiry.draft_body,
+                updated_at: inquiry.updated_at,
+              }
+            : row,
+        ),
+      );
+      setReviseInstruction("");
+      setActionMessage("Draft updated from your instruction.");
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : "Could not revise draft.");
+    } finally {
+      setRevising(false);
+    }
+  }, [selectedId, draft, reviseInstruction]);
+
+  const handleSaveStyleProfile = React.useCallback(async () => {
+    setStyleSaving(true);
+    setStyleMessage(null);
+    try {
+      const profile = await updateEmailStyleProfile({
+        greeting_style: greetingStyle,
+        signoff_style: signoffStyle,
+      });
+      setGreetingStyle(profile?.greeting_style ?? greetingStyle);
+      setSignoffStyle(profile?.signoff_style ?? signoffStyle);
+      setStyleMessage("Reply style saved.");
+    } catch (err) {
+      setStyleMessage(err instanceof Error ? err.message : "Could not save reply style.");
+    } finally {
+      setStyleSaving(false);
+    }
+  }, [greetingStyle, signoffStyle]);
+
   const gmailStatusReady = gmailState !== undefined;
   const gmailConnected = gmailState?.connected === true;
   const gmailConfigured = gmailState?.configured === true;
@@ -273,9 +368,22 @@ export function useInquiriesController() {
     handleRefresh,
     handleConnectGmail,
     handleIgnore,
+    handleUnignore,
     handleBanSender,
     handleRegenerate,
+    handleReviseDraft,
     handleSend,
+    handleSaveStyleProfile,
+    revising,
+    reviseInstruction,
+    setReviseInstruction,
+    styleLoading,
+    styleSaving,
+    greetingStyle,
+    setGreetingStyle,
+    signoffStyle,
+    setSignoffStyle,
+    styleMessage,
     lightspeedContext,
   };
 }

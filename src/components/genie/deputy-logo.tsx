@@ -1,7 +1,7 @@
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 
-/** Deputy mark — scales cleanly from the 14px pill chip to the 16px progress avatar. */
+/** Deputy mark — circular crop for avatars and bento headers. */
 export function DeputyLogo({ className }: { className?: string }) {
   return (
     <Image
@@ -9,7 +9,7 @@ export function DeputyLogo({ className }: { className?: string }) {
       alt="Deputy"
       width={225}
       height={225}
-      className={cn("h-full w-full object-contain", className)}
+      className={cn("rounded-full object-cover", className)}
     />
   );
 }

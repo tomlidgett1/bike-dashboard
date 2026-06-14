@@ -68,7 +68,10 @@ export async function GET() {
     // ----------------------------------------------------------------
     let isConnected = false
 
-    if (connection.status === 'connected' && connection.access_token_encrypted) {
+    if (
+      (connection.status === 'connected' || connection.status === 'error') &&
+      connection.access_token_encrypted
+    ) {
       if (!connection.token_expires_at) {
         // No expiry stored — treat as connected (token will self-heal on next use)
         isConnected = true
@@ -86,7 +89,18 @@ export async function GET() {
         }
       }
     }
-    // Any other status ('disconnected', 'expired', 'error') → isConnected stays false
+    // Any other status ('disconnected', 'expired') → isConnected stays false
+
+    if (isConnected && connection.status === 'error') {
+      await supabase
+        .from('lightspeed_connections')
+        .update({
+          status: 'connected',
+          last_error: null,
+          last_error_at: null,
+        })
+        .eq('user_id', user.id)
+    }
 
     const safeConnection = {
       id: connection.id,

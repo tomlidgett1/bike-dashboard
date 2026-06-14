@@ -26,6 +26,7 @@ import {
   NestBentoVisual,
   WriteBackVisual,
 } from "./value-bentos";
+import { OverivewoShowcaseSection } from "./overivewo-showcase-section";
 
 const HeroScene = dynamic(() => import("./hero-scene"), { ssr: false });
 
@@ -372,6 +373,11 @@ export function Home2Client() {
           {/* Uber Direct delivery */}
           <Reveal delay={0.06}>
             <UberDeliveryBento />
+          </Reveal>
+
+          {/* Overivewo action cards */}
+          <Reveal delay={0.06}>
+            <OverivewoShowcaseSection />
           </Reveal>
 
           {/* Minor value props — three in a row */}

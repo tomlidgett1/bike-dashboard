@@ -535,9 +535,14 @@ export function ReplyComposer({
   regenerating,
   onSend,
   onIgnore,
+  onUnignore = () => {},
   onBanSender,
   sending,
   banning,
+  revising,
+  reviseInstruction,
+  setReviseInstruction,
+  onRevise,
   actionMessage,
 }: {
   detail: CustomerInquiryDetail;
@@ -547,12 +552,18 @@ export function ReplyComposer({
   regenerating: boolean;
   onSend: () => void;
   onIgnore: () => void;
+  onUnignore?: () => void;
   onBanSender?: () => void;
   sending: boolean;
   banning?: boolean;
+  revising?: boolean;
+  reviseInstruction?: string;
+  setReviseInstruction?: (value: string) => void;
+  onRevise?: () => void;
   actionMessage: string | null;
 }) {
-  const locked = detail.status === "sent" || detail.status === "ignored";
+  const locked = detail.status === "sent";
+  const ignored = detail.status === "ignored";
 
   return (
     <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
@@ -583,11 +594,45 @@ export function ReplyComposer({
         <textarea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          disabled={locked}
+          disabled={locked || ignored}
           rows={12}
           className="block min-h-[200px] max-h-[320px] w-full resize-y rounded-md border border-gray-200 bg-white px-3.5 py-3 text-[13px] leading-relaxed text-gray-800 outline-none transition-colors focus:border-gray-400 disabled:bg-gray-50 disabled:text-gray-500"
           placeholder="Draft reply will appear once processing completes."
         />
+
+        {!locked && !ignored && setReviseInstruction && onRevise ? (
+          <div className="mt-3 rounded-md border border-gray-200 bg-[#fafaf9] p-3">
+            <p className="text-[11px] font-medium text-gray-600">Adjust with AI</p>
+            <textarea
+              value={reviseInstruction ?? ""}
+              onChange={(event) => setReviseInstruction(event.target.value)}
+              rows={3}
+              placeholder='e.g. "Make it shorter and mention we can hold the bike until Saturday."'
+              className="mt-2 w-full resize-none rounded-md border border-gray-200 bg-white px-3 py-2 text-[12px] leading-relaxed text-gray-800 outline-none transition-colors focus:border-gray-300"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-2 rounded-md bg-white"
+              onClick={onRevise}
+              disabled={revising || !draft.trim() || !reviseInstruction?.trim()}
+            >
+              {revising ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              Apply instruction
+            </Button>
+          </div>
+        ) : null}
+
+        {ignored ? (
+          <p className="mt-2.5 text-[12px] text-gray-500">
+            This enquiry is ignored. Restore it to edit or send a reply.
+          </p>
+        ) : null}
         {actionMessage ? <p className="mt-2.5 text-[12px] text-gray-600">{actionMessage}</p> : null}
       </div>
 
@@ -611,11 +656,11 @@ export function ReplyComposer({
           type="button"
           variant="outline"
           className="rounded-md bg-white"
-          onClick={onIgnore}
+          onClick={ignored ? onUnignore : onIgnore}
           disabled={locked}
         >
           <EyeOff className="mr-1.5 h-4 w-4" />
-          Ignore
+          {ignored ? "Restore" : "Ignore"}
         </Button>
         {onBanSender ? (
           <Button

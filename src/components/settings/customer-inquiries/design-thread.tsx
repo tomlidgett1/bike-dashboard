@@ -140,6 +140,7 @@ export function DesignThread({ c }: { c: InquiriesController }) {
                   regenerating={c.regenerating}
                   onSend={() => c.setSendConfirmOpen(true)}
                   onIgnore={() => void c.handleIgnore()}
+                  onUnignore={() => void c.handleUnignore()}
                   sending={c.sending}
                   actionMessage={c.actionMessage}
                 />

@@ -107,7 +107,9 @@ export function StoreOverviewDashboard() {
   }
 
   return (
-    <div className="relative flex min-h-[calc(100dvh-10rem)] flex-col space-y-6 pb-24">
+    <div className="relative flex min-h-[calc(100dvh-10rem)] flex-col space-y-6">
+      <HomeGenieFloatingPrompt />
+
       <StoreSetupBanner />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -152,8 +154,6 @@ export function StoreOverviewDashboard() {
           hint="Products not yet live on the marketplace"
         />
       </div>
-
-      <HomeGenieFloatingPrompt />
     </div>
   );
 }
