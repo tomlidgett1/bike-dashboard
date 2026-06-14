@@ -50,3 +50,32 @@ export function storeUrl(storeId: string): string {
 export function productUrl(productId: string): string {
   return absoluteUrl(productPath(productId));
 }
+
+const PRODUCT_ID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
+/** Turn arbitrary text into a URL slug (lowercase, alphanumerics + hyphens, capped). */
+export function slugify(input?: string | null): string {
+  return (input || '')
+    .normalize('NFKD')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 70)
+    .replace(/-+$/g, '');
+}
+
+/**
+ * Extract the trailing product id (UUID) from a `slug-id` URL segment, or return
+ * the segment unchanged when it's already a bare id. The slug prefix is purely
+ * decorative — the id is what we look the product up by, so renames never break links.
+ */
+export function extractProductId(param: string): string {
+  const m = param?.match(PRODUCT_ID_RE);
+  return m ? m[1] : param;
+}
+
+/** Canonical, keyword-rich product path: `/marketplace/product/{name-slug}-{id}`. */
+export function productSlugId(id: string, name?: string | null): string {
+  const slug = slugify(name);
+  return slug ? `${slug}-${id}` : id;
+}

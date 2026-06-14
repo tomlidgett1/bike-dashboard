@@ -27,20 +27,39 @@ interface UseMarketplaceProductsReturn {
   loadMore: () => Promise<void>;
 }
 
+export interface MarketplaceInitialData {
+  products: MarketplaceProduct[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+    hasMore: boolean;
+  };
+}
+
 export function useMarketplaceProducts(
-  filters: MarketplaceFilters = {}
+  filters: MarketplaceFilters = {},
+  initialData?: MarketplaceInitialData
 ): UseMarketplaceProductsReturn {
-  const [products, setProducts] = useState<MarketplaceProduct[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState<MarketplaceProduct[]>(initialData?.products ?? []);
+  // Not loading when seeded from the server — the grid is already populated.
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pagination, setPagination] = useState({
-    page: 1,
-    pageSize: 24,
-    total: 0,
-    totalPages: 0,
-    hasMore: false,
-  });
+  const [pagination, setPagination] = useState(
+    initialData?.pagination ?? {
+      page: 1,
+      pageSize: 24,
+      total: 0,
+      totalPages: 0,
+      hasMore: false,
+    }
+  );
+
+  // When seeded with SSR data, skip the very first client fetch (same filters)
+  // so there's no refetch flash — the server-rendered grid stays put.
+  const skipInitialFetchRef = useRef(!!initialData);
 
   // Track if a request is in progress to prevent duplicate requests
   const isLoadingRef = useRef(false);
@@ -165,8 +184,13 @@ export function useMarketplaceProducts(
   useEffect(() => {
     if (filterKey !== prevFilterKey.current) {
       prevFilterKey.current = filterKey;
+      skipInitialFetchRef.current = false;
       setCurrentPage(1);
       fetchProducts(1, false);
+    } else if (skipInitialFetchRef.current) {
+      // Seeded from SSR for these exact filters — consume the skip once and
+      // keep the server-rendered products instead of refetching.
+      skipInitialFetchRef.current = false;
     } else if (currentPage === 1 && products.length === 0) {
       // Initial load
       fetchProducts(1, false);

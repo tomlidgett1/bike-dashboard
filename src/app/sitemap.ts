@@ -1,5 +1,5 @@
 import type { MetadataRoute } from 'next';
-import { SITE_URL } from '@/lib/seo/site';
+import { SITE_URL, productSlugId } from '@/lib/seo/site';
 import { createPublicSupabaseClient } from '@/lib/marketplace/public-card-feed';
 import { resolveProductImage } from '@/lib/services/image-resolver';
 import { toCurrentHeroPublicId } from '@/lib/utils/cloudinary-transforms';
@@ -80,6 +80,7 @@ async function fetchStoreRows(supabase: SupabaseLike): Promise<StoreRow[]> {
 interface ProductSitemapRow {
   id: string;
   created_at: string | null;
+  display_name: string | null;
   resolved_image_id: string | null;
   resolved_image_source: string | null;
   resolved_external_url: string | null;
@@ -125,7 +126,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
           sb
             .from('public_marketplace_cards')
             .select(
-              'id, created_at, resolved_image_id, resolved_image_source, resolved_external_url, resolved_cloudinary_url, resolved_cloudinary_public_id',
+              'id, created_at, display_name, resolved_image_id, resolved_image_source, resolved_external_url, resolved_cloudinary_url, resolved_cloudinary_public_id',
             )
             .order('created_at', { ascending: false })
             .range(from, to),
@@ -149,7 +150,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       if (!p.id) continue;
       const imageUrl = resolveProductImageUrl(p);
       entries.push({
-        url: `${SITE_URL}/marketplace/product/${p.id}`,
+        url: `${SITE_URL}/marketplace/product/${productSlugId(p.id, p.display_name)}`,
         lastModified: p.created_at ? new Date(p.created_at) : now,
         changeFrequency: 'weekly',
         priority: 0.7,

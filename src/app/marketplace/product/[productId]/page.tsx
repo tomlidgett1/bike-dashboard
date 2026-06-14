@@ -6,7 +6,7 @@ import { ProductPageClient } from "./product-page-client";
 import type { Metadata } from "next";
 import { JsonLd } from "@/components/seo/json-ld";
 import { productSchema, breadcrumbSchema, type ProductLike } from "@/lib/seo/structured-data";
-import { productUrl, productPath, absoluteUrl, SITE_NAME } from "@/lib/seo/site";
+import { productPath, absoluteUrl, SITE_NAME, extractProductId, productSlugId } from "@/lib/seo/site";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import {
   getProductImages,
@@ -562,13 +562,16 @@ export async function generateMetadata({
 }: {
   params: Promise<{ productId: string }>;
 }): Promise<Metadata> {
-  const { productId } = await params;
+  const { productId: param } = await params;
+  const productId = extractProductId(param);
   const data = await fetchProductPageData(productId, false);
   const product = (data?.product ?? undefined) as unknown as ProductLike | undefined;
 
   if (!product) {
     return { title: "Product not found", robots: { index: false, follow: true } };
   }
+
+  const canonicalPath = productPath(productSlugId(productId, product.display_name || product.description));
 
   const name = product.display_name || product.description || "Bike for sale";
   const priceNum =
@@ -596,12 +599,12 @@ export async function generateMetadata({
   return {
     title: name,
     description,
-    alternates: { canonical: productPath(productId) },
+    alternates: { canonical: canonicalPath },
     openGraph: {
       type: "website",
       title: `${name} · ${SITE_NAME}`,
       description,
-      url: productUrl(productId),
+      url: absoluteUrl(canonicalPath),
       images: image ? [{ url: image, alt: name }] : undefined,
     },
     twitter: {
@@ -620,9 +623,10 @@ export default async function ProductPage({
   params: Promise<{ productId: string }>;
   searchParams: Promise<{ fromPurchase?: string; fromUpload?: string }>;
 }) {
-  const { productId } = await params;
+  const { productId: param } = await params;
+  const productId = extractProductId(param);
   const { fromPurchase, fromUpload } = await searchParams;
-  
+
   // Allow viewing sold products if coming from purchase history
   const allowSoldProducts = fromPurchase === 'true';
 
@@ -634,18 +638,21 @@ export default async function ProductPage({
   }
 
   const seoProduct = data.product as unknown as ProductLike;
+  const canonicalUrl = absoluteUrl(
+    productPath(productSlugId(productId, seoProduct.display_name || seoProduct.description)),
+  );
 
   // Pass all data to client component
   return (
     <>
       <JsonLd
         data={[
-          productSchema(seoProduct, productUrl(productId)),
+          productSchema(seoProduct, canonicalUrl),
           breadcrumbSchema([
             { name: 'Marketplace', url: absoluteUrl('/marketplace') },
             {
               name: seoProduct.display_name || seoProduct.description || 'Product',
-              url: productUrl(productId),
+              url: canonicalUrl,
             },
           ]),
         ]}
