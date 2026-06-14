@@ -434,6 +434,84 @@ async function readGmailMessagesWithSession(
   return results
 }
 
+function messageHasDraftLabel(raw: Record<string, unknown>): boolean {
+  const labelIds = raw.labelIds ?? raw.label_ids
+  if (!Array.isArray(labelIds)) return false
+  return labelIds.some((label) => String(label).toUpperCase() === 'DRAFT')
+}
+
+export async function readGmailThread(
+  userId: string,
+  args: {
+    thread_id: string
+    connected_account_id?: string
+    max_body_chars?: number
+    max_messages?: number
+  } & GmailComposioSessionOptions,
+): Promise<GmailMessageContent[]> {
+  const threadId = args.thread_id.trim()
+  if (!threadId) return []
+
+  const connections = await listGmailConnections(userId)
+  const connectedAccountIds = args.connected_account_id
+    ? [args.connected_account_id]
+    : connections.map((connection) => connection.id)
+  const session = await getOrCreateGmailComposioSession({
+    userId,
+    sessionId: args.composio_session_id,
+    connectedAccountIds,
+    onSession: args.on_composio_session,
+  })
+
+  const maxBodyChars = args.max_body_chars ?? MAX_BODY_CHARS
+  const maxMessages = Math.min(Math.max(args.max_messages ?? 20, 1), 30)
+  const results: GmailMessageContent[] = []
+
+  for (const connectedAccountId of connectedAccountIds) {
+    try {
+      const result = await session.execute(
+        'GMAIL_FETCH_MESSAGE_BY_THREAD_ID',
+        { thread_id: threadId },
+        connectedAccountId,
+      )
+      const data = unwrapToolResult(result)
+      const messages = (
+        Array.isArray(data.messages) ? data.messages : []
+      ) as Array<Record<string, unknown>>
+
+      const sorted = [...messages].sort((a, b) => {
+        const aMs = extractEmailTimestampMs(a)
+        const bMs = extractEmailTimestampMs(b)
+        return (aMs ?? 0) - (bMs ?? 0)
+      })
+
+      for (const raw of sorted) {
+        if (messageHasDraftLabel(raw)) continue
+        const preview = normaliseEmailPreview(raw)
+        if (!preview) continue
+        const bodyText = extractBodyTextFromMessage(raw)
+        results.push(
+          toMessageContent(
+            {
+              ...preview,
+              connected_account_id: connectedAccountId,
+            },
+            bodyText,
+            maxBodyChars,
+          ),
+        )
+        if (results.length >= maxMessages) break
+      }
+
+      if (results.length > 0) break
+    } catch (error) {
+      console.error('[gmail] read thread failed:', threadId, error)
+    }
+  }
+
+  return results
+}
+
 async function hydrateMessageBodiesForAgent(
   userId: string,
   session: GmailComposioSessionExecutor,
@@ -890,6 +968,29 @@ export async function executeGmailSendEmail(
     ...(args.cc?.length ? { cc: args.cc } : {}),
     ...(args.bcc?.length ? { bcc: args.bcc } : {}),
     ...(args.is_html ? { is_html: true } : {}),
+  }, args.connected_account_id)
+  return unwrapToolResult(result)
+}
+
+export async function executeGmailReplyToThread(
+  userId: string,
+  args: {
+    thread_id: string
+    recipient_email: string
+    message_body: string
+    connected_account_id?: string
+  } & GmailComposioSessionOptions,
+): Promise<Record<string, unknown>> {
+  const session = await getOrCreateGmailComposioSession({
+    userId,
+    sessionId: args.composio_session_id,
+    connectedAccountIds: args.connected_account_id ? [args.connected_account_id] : undefined,
+    onSession: args.on_composio_session,
+  })
+  const result = await session.execute('GMAIL_REPLY_TO_THREAD', {
+    thread_id: args.thread_id,
+    recipient_email: args.recipient_email,
+    message_body: args.message_body,
   }, args.connected_account_id)
   return unwrapToolResult(result)
 }

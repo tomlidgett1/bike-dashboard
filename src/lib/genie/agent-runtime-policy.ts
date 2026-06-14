@@ -84,6 +84,13 @@ export const XERO_TOOL_NAMES = [
   'list_xero_accounts',
 ]
 
+export const DEPUTY_TOOL_NAMES = [
+  'get_deputy_connection_status',
+  'list_deputy_employees',
+  'get_deputy_timesheets',
+  'get_deputy_rosters',
+]
+
 export const WEB_RESEARCH_TOOL_NAMES = [
   'search_web_images',
 ]
@@ -139,12 +146,14 @@ export function toolNameSetForRoute(
   const planRequestsStorefrontProposal = planRequestsTool(plannedToolNames, /propose_carousel|propose_create_carousel|propose_rename_carousel|propose_discount|propose_remove_discount|propose_price_update|propose_product_brand_category_update|propose_lightspeed_category_create|\bcarousel\b|\bdiscount\b|\bprice\b|\bbrand\b|\bcategory\b/i)
   const planRequestsImageSearch = planRequestsTool(plannedToolNames, /search_web_images/i)
   const planRequestsXero = planRequestsTool(plannedToolNames, /\bxero\b|profit_and_loss|balance_sheet|trial_balance|aged_payable|aged_receivable|purchase_order|bank_transaction|chart_of_accounts/i)
+  const planRequestsDeputy = planRequestsTool(plannedToolNames, /\bdeputy\b|get_deputy|list_deputy|\broster\b|\btimesheet\b|\bshift\b|\bstaff\b|hours_worked|who_worked|who_is_working/i)
   const planRequestsBikeStoreSpecialist = planRequestsTool(plannedToolNames, /consult_bike_store_analyst/i)
   const planRequestsPurchaseOrder = planRequestsTool(plannedToolNames, /supplier_invoice|purchase_order|list_supplier_invoices|extract_supplier_invoice|propose_lightspeed_purchase_order|\binvoice\b/i)
 
   if (route === 'lightspeed_sql') {
     add(LIGHTSPEED_READ_TOOL_NAMES)
     add(XERO_TOOL_NAMES)
+    add(DEPUTY_TOOL_NAMES)
     add(PURCHASE_ORDER_TOOL_NAMES)
     if (planRequestsGmail) addPlannedGmailTools(plannedToolNames, add)
     return names
@@ -160,6 +169,7 @@ export function toolNameSetForRoute(
     }
     if (planRequestsBikeStoreSpecialist) add(['consult_bike_store_analyst'])
     if (planRequestsXero) add(XERO_TOOL_NAMES)
+    if (planRequestsDeputy) add(DEPUTY_TOOL_NAMES)
     if (planRequestsGmail) addPlannedGmailTools(plannedToolNames, add)
     return names
   }
@@ -175,6 +185,7 @@ export function toolNameSetForRoute(
     add(['record_lightspeed_plan'])
     add(LIGHTSPEED_READ_TOOL_NAMES)
     add(XERO_TOOL_NAMES)
+    add(DEPUTY_TOOL_NAMES)
     if (planRequestsPurchaseOrder) add(PURCHASE_ORDER_TOOL_NAMES)
     add(['find_discount_candidates', 'get_product_costs'])
     add(['consult_bike_store_analyst'])
@@ -188,6 +199,7 @@ export function toolNameSetForRoute(
     if (planRequestsPurchaseOrder) add(PURCHASE_ORDER_TOOL_NAMES)
     if (planRequestsBikeStoreSpecialist) add(['consult_bike_store_analyst'])
     if (planRequestsXero) add(XERO_TOOL_NAMES)
+    if (planRequestsDeputy) add(DEPUTY_TOOL_NAMES)
     if (planRequestsLightspeed) {
       add(['record_lightspeed_plan'])
       add(LIGHTSPEED_READ_TOOL_NAMES)

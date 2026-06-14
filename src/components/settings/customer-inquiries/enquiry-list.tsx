@@ -108,15 +108,22 @@ export function EnquiryList({
                         <p className="truncate text-[12.5px] text-gray-500">
                           {enquirySummary(item)}
                         </p>
-                        {isReady ? (
-                          <span className="shrink-0 rounded-md bg-gray-900 px-1.5 py-0.5 text-[10px] font-medium text-white">
-                            Ready
-                          </span>
-                        ) : item.status !== "new" ? (
-                          <span className="shrink-0 text-[10px] font-medium text-gray-400">
-                            {statusLabel(item.status)}
-                          </span>
-                        ) : null}
+                        <div className="flex shrink-0 items-center gap-1">
+                          {item.thread_message_count > 1 ? (
+                            <span className="rounded-md border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+                              {item.thread_message_count}
+                            </span>
+                          ) : null}
+                          {isReady ? (
+                            <span className="rounded-md bg-gray-900 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                              Ready
+                            </span>
+                          ) : item.status !== "new" ? (
+                            <span className="text-[10px] font-medium text-gray-400">
+                              {statusLabel(item.status)}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
                   </button>

@@ -16,6 +16,7 @@ export function serializeInquiryListItem(row: CustomerInquiryRow): CustomerInqui
     priority: row.priority,
     status: row.status,
     draft_body: row.draft_body,
+    thread_message_count: row.thread_message_count,
     updated_at: row.updated_at,
   }
 }
@@ -42,6 +43,10 @@ export function serializeInquiryDetail(row: CustomerInquiryRow) {
     draft_generated_at: row.draft_generated_at,
     sent_at: row.sent_at,
     ignored_at: row.ignored_at,
+    thread_messages: row.thread_messages,
+    thread_message_count: row.thread_message_count,
+    last_customer_at: row.last_customer_at,
+    last_shop_reply_at: row.last_shop_reply_at,
     updated_at: row.updated_at,
   }
 }

@@ -30,6 +30,7 @@ import {
 } from '@/lib/genie/store-product-previews'
 import { searchWebImages } from '@/lib/genie/web-image-search'
 import { buildXeroTools } from '@/lib/genie/agent/xero-tools'
+import { buildDeputyTools } from '@/lib/genie/agent/deputy-tools'
 import { buildPurchaseOrderTools } from '@/lib/genie/agent/purchase-order-tools'
 import { createLightspeedClient } from '@/lib/services/lightspeed'
 import { resolveCategoryCreationTarget } from '@/lib/services/lightspeed/category-helpers'
@@ -9416,6 +9417,7 @@ function buildAgentTools(
       ]
       : []),
     ...buildXeroTools(userId, emit),
+    ...buildDeputyTools(userId, emit),
     ...buildPurchaseOrderTools(supabase, userId, emit),
     tool({
       name: 'search_web_images',

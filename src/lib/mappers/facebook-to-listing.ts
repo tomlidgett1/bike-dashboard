@@ -22,9 +22,9 @@ export interface FacebookScrapedData {
 function mapCondition(fbCondition: string | null): ConditionRating | undefined {
   if (!fbCondition) return undefined;
 
-  const condition = fbCondition.toLowerCase().trim();
+  const condition = fbCondition.toLowerCase().trim().replace(/_/g, " ");
 
-  if (condition.includes("new") || condition === "brand new") {
+  if (condition.includes("new") && !condition.includes("like")) {
     return "New";
   }
   if (condition.includes("like new") || condition.includes("likenew")) {

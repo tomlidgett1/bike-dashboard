@@ -1,8 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   isComposioConfigured,
+  getGmailConnection,
   listGmailConnections,
   readGmailMessages,
+  readGmailThread,
   searchGmailEmails,
 } from '@/lib/composio/gmail'
 import {
@@ -21,8 +23,14 @@ import type {
   CustomerInquiryRow,
   CustomerInquiryStatus,
   InquiryCitation,
+  InquiryThreadMessage,
   LightspeedInquiryContext,
 } from '@/lib/customer-inquiries/types'
+import {
+  buildThreadMessages,
+  normaliseShopEmails,
+  threadReplyState,
+} from '@/lib/customer-inquiries/thread'
 
 const INBOX_QUERY = 'in:inbox newer_than:14d -category:promotions -category:social'
 const MAX_STORES_PER_RUN = 8
@@ -51,6 +59,12 @@ function mapRow(raw: Record<string, unknown>): CustomerInquiryRow {
     user_id: String(raw.user_id),
     gmail_message_id: String(raw.gmail_message_id),
     gmail_thread_id: raw.gmail_thread_id ? String(raw.gmail_thread_id) : null,
+    thread_messages: Array.isArray(raw.thread_messages)
+      ? (raw.thread_messages as InquiryThreadMessage[])
+      : [],
+    thread_message_count: Number(raw.thread_message_count ?? 1),
+    last_customer_at: raw.last_customer_at ? String(raw.last_customer_at) : null,
+    last_shop_reply_at: raw.last_shop_reply_at ? String(raw.last_shop_reply_at) : null,
     connected_account_id: raw.connected_account_id ? String(raw.connected_account_id) : null,
     sender_name: String(raw.sender_name ?? ''),
     sender_email: String(raw.sender_email ?? ''),
@@ -80,6 +94,63 @@ function mapRow(raw: Record<string, unknown>): CustomerInquiryRow {
 
 export function mapCustomerInquiryRow(raw: Record<string, unknown>): CustomerInquiryRow {
   return mapRow(raw)
+}
+
+type ExistingInquiryRef = {
+  id: string
+  gmail_message_id: string
+  gmail_thread_id: string | null
+  received_at: string | null
+  status: CustomerInquiryStatus
+}
+
+async function resolveThreadContext(
+  userId: string,
+  inquiry: CustomerInquiryRow,
+): Promise<{
+  threadMessages: InquiryThreadMessage[]
+  replyState: ReturnType<typeof threadReplyState>
+}> {
+  const connection =
+    (inquiry.connected_account_id
+      ? await getGmailConnection(userId, inquiry.connected_account_id)
+      : null) ?? (await getGmailConnection(userId))
+  const shopEmails = normaliseShopEmails([connection?.email_address])
+
+  if (!inquiry.gmail_thread_id) {
+    const fallback = inquiry.thread_messages ?? []
+    return { threadMessages: fallback, replyState: threadReplyState(fallback) }
+  }
+
+  const raw = await readGmailThread(userId, {
+    thread_id: inquiry.gmail_thread_id,
+    connected_account_id: inquiry.connected_account_id ?? undefined,
+    max_body_chars: 6000,
+  })
+  const threadMessages = buildThreadMessages(raw, shopEmails)
+  return { threadMessages, replyState: threadReplyState(threadMessages) }
+}
+
+async function markInquiryRepliedExternally(
+  supabase: SupabaseClient,
+  inquiry: CustomerInquiryRow,
+  threadMessages: InquiryThreadMessage[],
+  lastShopReplyAt: string | null,
+): Promise<void> {
+  const now = new Date().toISOString()
+  await supabase
+    .from('store_customer_inquiries')
+    .update({
+      status: 'sent',
+      thread_messages: threadMessages,
+      thread_message_count: threadMessages.length || 1,
+      last_shop_reply_at: lastShopReplyAt,
+      sent_at: inquiry.sent_at ?? lastShopReplyAt ?? now,
+      updated_at: now,
+      last_synced_at: now,
+    })
+    .eq('id', inquiry.id)
+    .eq('user_id', inquiry.user_id)
 }
 
 async function listStoreCandidates(supabase: SupabaseClient): Promise<string[]> {
@@ -125,12 +196,31 @@ async function syncInboxForStore(
 
   const { data: existingRows } = await supabase
     .from('store_customer_inquiries')
-    .select('gmail_message_id')
+    .select('id, gmail_message_id, gmail_thread_id, received_at, status')
     .eq('user_id', userId)
 
   const existingIds = new Set(
     (existingRows ?? []).map((row) => String(row.gmail_message_id ?? '')).filter(Boolean),
   )
+
+  const existingByThread = new Map<string, ExistingInquiryRef>()
+  for (const row of existingRows ?? []) {
+    const threadId = String(row.gmail_thread_id ?? '').trim()
+    if (!threadId) continue
+    const receivedAt = row.received_at ? String(row.received_at) : null
+    const current = existingByThread.get(threadId)
+    const currentTime = current?.received_at ? new Date(current.received_at).getTime() : 0
+    const nextTime = receivedAt ? new Date(receivedAt).getTime() : 0
+    if (!current || nextTime >= currentTime) {
+      existingByThread.set(threadId, {
+        id: String(row.id),
+        gmail_message_id: String(row.gmail_message_id ?? ''),
+        gmail_thread_id: threadId,
+        received_at: receivedAt,
+        status: row.status as CustomerInquiryStatus,
+      })
+    }
+  }
 
   const unscanned = payload.emails.filter(
     (email) => !existingIds.has(email.message_id) && passesInitialInboxGate(email),
@@ -172,13 +262,87 @@ async function syncInboxForStore(
       email.internal_date_ms != null
         ? new Date(email.internal_date_ms).toISOString()
         : null
+    const threadId = email.thread_id?.trim() || null
+
+    if (existingIds.has(email.message_id)) continue
+
+    const existingThread = threadId ? existingByThread.get(threadId) : null
+    if (existingThread) {
+      const previousTime = existingThread.received_at
+        ? new Date(existingThread.received_at).getTime()
+        : 0
+      const nextTime = receivedAt ? new Date(receivedAt).getTime() : Date.now()
+      if (nextTime <= previousTime) continue
+
+      const reopen =
+        existingThread.status === 'sent' ||
+        existingThread.status === 'ignored' ||
+        existingThread.gmail_message_id !== email.message_id
+
+      const { error } = await supabase
+        .from('store_customer_inquiries')
+        .update({
+          gmail_message_id: email.message_id,
+          sender_name: sender.name,
+          sender_email: sender.email,
+          subject: email.subject,
+          snippet: email.snippet || bodyText.slice(0, 280),
+          body_preview: bodyText.slice(0, 1200) || email.snippet,
+          received_at: receivedAt,
+          last_customer_at: receivedAt,
+          status: reopen ? 'new' : existingThread.status,
+          ...(reopen
+            ? {
+                draft_body: '',
+                error_message: null,
+                retry_count: 0,
+                sent_at: null,
+                ignored_at: null,
+              }
+            : {}),
+          last_synced_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingThread.id)
+        .eq('user_id', userId)
+
+      if (error) {
+        console.warn('[customer-inquiries] thread update failed:', error.message)
+        continue
+      }
+
+      existingThread.gmail_message_id = email.message_id
+      existingThread.received_at = receivedAt
+      existingThread.status = reopen ? 'new' : existingThread.status
+      existingIds.add(email.message_id)
+      created += 1
+
+      await recordInquiryEvent(supabase, {
+        inquiryId: existingThread.id,
+        userId,
+        eventType: 'synced',
+        payload: {
+          subject: email.subject,
+          sender_email: sender.email,
+          thread_follow_up: true,
+          classification: classification
+            ? {
+                category: classification.category,
+                confidence: classification.confidence,
+                reason: classification.reason,
+              }
+            : null,
+        },
+      })
+      continue
+    }
 
     const { data, error } = await supabase
       .from('store_customer_inquiries')
       .insert({
         user_id: userId,
         gmail_message_id: email.message_id,
-        gmail_thread_id: email.thread_id,
+        gmail_thread_id: threadId,
         connected_account_id: email.connected_account_id ?? null,
         sender_name: sender.name,
         sender_email: sender.email,
@@ -186,6 +350,7 @@ async function syncInboxForStore(
         snippet: email.snippet || bodyText.slice(0, 280),
         body_preview: bodyText.slice(0, 1200) || email.snippet,
         received_at: receivedAt,
+        last_customer_at: receivedAt,
         status: 'new',
         last_synced_at: new Date().toISOString(),
       })
@@ -199,6 +364,16 @@ async function syncInboxForStore(
 
     if (data?.id) {
       created += 1
+      existingIds.add(email.message_id)
+      if (threadId) {
+        existingByThread.set(threadId, {
+          id: String(data.id),
+          gmail_message_id: email.message_id,
+          gmail_thread_id: threadId,
+          received_at: receivedAt,
+          status: 'new',
+        })
+      }
       await recordInquiryEvent(supabase, {
         inquiryId: String(data.id),
         userId,
@@ -264,6 +439,19 @@ async function processPendingForStore(
       .eq('user_id', userId)
 
     try {
+      const { threadMessages, replyState } = await resolveThreadContext(userId, inquiry)
+
+      if (!replyState.needsReply && inquiry.status !== 'sent') {
+        await markInquiryRepliedExternally(
+          supabase,
+          inquiry,
+          threadMessages,
+          replyState.lastShopReplyAt,
+        )
+        processed += 1
+        continue
+      }
+
       const messages = await readGmailMessages(userId, {
         message_ids: [inquiry.gmail_message_id],
         connected_account_id: inquiry.connected_account_id ?? undefined,
@@ -282,6 +470,7 @@ async function processPendingForStore(
 
       const draft = await generateInquiryDraft({
         message,
+        threadMessages,
         storeName,
         styleProfile: profile,
         lightspeedContext,
@@ -300,6 +489,10 @@ async function processPendingForStore(
           lightspeed_context: lightspeedContext,
           style_profile_version: version,
           body_preview: message.body_text.slice(0, 1200) || inquiry.body_preview,
+          thread_messages: threadMessages,
+          thread_message_count: threadMessages.length || 1,
+          last_customer_at: replyState.lastCustomerAt ?? inquiry.received_at,
+          last_shop_reply_at: replyState.lastShopReplyAt,
           draft_generated_at: now,
           last_synced_at: now,
           error_message: null,
@@ -348,6 +541,42 @@ async function processPendingForStore(
   return { processed, failed }
 }
 
+async function reconcileAnsweredThreads(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<number> {
+  const { data, error } = await supabase
+    .from('store_customer_inquiries')
+    .select('*')
+    .eq('user_id', userId)
+    .in('status', ['draft_ready', 'new', 'processing'])
+    .not('gmail_thread_id', 'is', null)
+    .limit(20)
+
+  if (error) return 0
+
+  let reconciled = 0
+  for (const raw of data ?? []) {
+    const inquiry = mapRow(raw as Record<string, unknown>)
+    try {
+      const { threadMessages, replyState } = await resolveThreadContext(userId, inquiry)
+      if (!replyState.needsReply) {
+        await markInquiryRepliedExternally(
+          supabase,
+          inquiry,
+          threadMessages,
+          replyState.lastShopReplyAt,
+        )
+        reconciled += 1
+      }
+    } catch (threadError) {
+      console.warn('[customer-inquiries] thread reconcile failed:', inquiry.id, threadError)
+    }
+  }
+
+  return reconciled
+}
+
 export async function syncCustomerInquiriesForConnectedStores(): Promise<CustomerInquirySyncSummary> {
   const supabase = createServiceRoleClient()
   const summary: CustomerInquirySyncSummary = {
@@ -376,6 +605,7 @@ export async function syncCustomerInquiriesForConnectedStores(): Promise<Custome
       const storeName = profile?.business_name ?? null
       const inbox = await syncInboxForStore(supabase, userId, storeName)
       const pending = await processPendingForStore(supabase, userId, storeName)
+      await reconcileAnsweredThreads(supabase, userId)
       summary.inquiries_created += inbox.created
       summary.inquiries_processed += pending.processed
       summary.inquiries_failed += pending.failed
@@ -405,6 +635,7 @@ export async function refreshCustomerInquiriesForUser(
 
   const inbox = await syncInboxForStore(supabase, userId, storeName)
   const pending = await processPendingForStore(supabase, userId, storeName)
+  await reconcileAnsweredThreads(supabase, userId)
   summary.inquiries_created = inbox.created
   summary.inquiries_processed = pending.processed
   summary.inquiries_failed = pending.failed
@@ -433,6 +664,8 @@ export async function regenerateInquiryDraft(
     throw new Error('Could not load Gmail message body.')
   }
 
+  const { threadMessages, replyState } = await resolveThreadContext(inquiry.user_id, inquiry)
+
   const lightspeedContext = await buildLightspeedInquiryContext({
     userId: inquiry.user_id,
     senderEmail: inquiry.sender_email,
@@ -441,6 +674,7 @@ export async function regenerateInquiryDraft(
 
   const draft = await generateInquiryDraft({
     message,
+    threadMessages,
     storeName,
     styleProfile: profile,
     lightspeedContext,
@@ -460,6 +694,10 @@ export async function regenerateInquiryDraft(
       lightspeed_context: lightspeedContext,
       style_profile_version: version,
       body_preview: message.body_text.slice(0, 1200) || inquiry.body_preview,
+      thread_messages: threadMessages,
+      thread_message_count: threadMessages.length || 1,
+      last_customer_at: replyState.lastCustomerAt ?? inquiry.received_at,
+      last_shop_reply_at: replyState.lastShopReplyAt,
       draft_generated_at: now,
       error_message: null,
       updated_at: now,

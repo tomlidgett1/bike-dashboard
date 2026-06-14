@@ -8,7 +8,7 @@ import {
   LightspeedBody,
   LightspeedMark,
   MatchBadge,
-  CustomerMessageCard,
+  ThreadTimeline,
   ReplyComposer,
   SourcesBody,
   StatusChip,
@@ -32,18 +32,16 @@ export function DesignComposerRail({ c }: { c: InquiriesController }) {
           <div className="flex min-h-0 flex-1">
             {/* center: reply hero */}
             <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-5 lg:p-7">
-              <div className="mx-auto flex h-full max-w-2xl flex-col">
+              <div className="mx-auto flex max-w-2xl flex-col gap-3">
                 <button
                   type="button"
                   onClick={() => c.setSelectedId(null)}
-                  className="mb-3 inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 lg:hidden"
+                  className="inline-flex w-fit items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 lg:hidden"
                 >
                   <ArrowLeft className="h-4 w-4" /> Enquiries
                 </button>
 
-                <CustomerMessageCard detail={detail} />
-
-                <div className="mt-3 flex min-h-0 flex-1 flex-col rounded-md border border-gray-200 bg-white p-5">
+                <div className="sticky top-0 z-10 -mx-1 bg-[#f6f6f4] px-1 pb-3">
                   <ReplyComposer
                     detail={detail}
                     draft={c.draft}
@@ -58,6 +56,8 @@ export function DesignComposerRail({ c }: { c: InquiriesController }) {
                     actionMessage={c.actionMessage}
                   />
                 </div>
+
+                <ThreadTimeline detail={detail} />
               </div>
             </div>
 

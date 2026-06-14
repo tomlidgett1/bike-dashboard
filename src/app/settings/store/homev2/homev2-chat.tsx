@@ -15,6 +15,7 @@ import { LightspeedWorkorderCards } from "@/components/genie/lightspeed-workorde
 import { LightspeedCustomerProfileCard } from "@/components/genie/lightspeed-customer-profile-card";
 import { GmailConnectCard } from "@/components/genie/gmail-connect-card";
 import { XeroConnectPill } from "@/components/genie/xero-connect-pill";
+import { DeputyConnectPill } from "@/components/genie/deputy-connect-pill";
 import { SupplierInvoicePill } from "@/components/genie/supplier-invoice-pill";
 import { GenieStoreProductCards } from "@/components/genie/genie-store-product-cards";
 import { GenieWebImageCards } from "@/components/genie/genie-web-image-cards";
@@ -352,6 +353,8 @@ const PHASE_LABELS: Record<string, string> = {
   invoice_done: "Invoice",
   xero: "Xero",
   xero_done: "Xero",
+  deputy: "Deputy",
+  deputy_done: "Deputy",
   verifying: "Quality check",
 };
 
@@ -1607,6 +1610,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
               <div className="flex items-center gap-1.5">
                 <SupplierInvoicePill onProcess={(prompt) => submitPrompt(prompt)} />
                 <XeroConnectPill />
+                <DeputyConnectPill />
               </div>
             </div>
             <PromptQueueList
@@ -1658,6 +1662,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
                 <div className="flex items-center gap-1.5">
                   <SupplierInvoicePill onProcess={(prompt) => submitPrompt(prompt)} />
                   <XeroConnectPill />
+                  <DeputyConnectPill />
                 </div>
               </div>
 

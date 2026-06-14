@@ -142,7 +142,6 @@ export function DesignThread({ c }: { c: InquiriesController }) {
                   onIgnore={() => void c.handleIgnore()}
                   sending={c.sending}
                   actionMessage={c.actionMessage}
-                  showReasoning={false}
                 />
               </div>
             </div>

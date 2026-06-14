@@ -24,6 +24,19 @@ export type CustomerInquiryDetail = {
   draft_generated_at: string | null
   sent_at: string | null
   ignored_at: string | null
+  thread_messages: Array<{
+    message_id: string
+    role: 'customer' | 'shop'
+    from: string
+    from_name: string
+    body: string
+    received_at: string | null
+    date_label: string | null
+    is_latest_customer?: boolean
+  }>
+  thread_message_count: number
+  last_customer_at: string | null
+  last_shop_reply_at: string | null
   updated_at: string
 }
 

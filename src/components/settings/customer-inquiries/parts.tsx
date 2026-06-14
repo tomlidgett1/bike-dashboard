@@ -246,8 +246,8 @@ export function CustomerMessageCard({
 }) {
   const body = detail.body_preview || detail.snippet;
   return (
-    <div className="rounded-md border border-gray-200 bg-white">
-      <div className="border-b border-gray-100 px-3.5 py-2.5">
+    <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
+      <div className="border-b border-gray-100 px-4 py-3">
         <div className="flex items-center gap-1.5 text-[11px] font-medium text-gray-400">
           <GmailMark />
           {senderName(detail)} asked
@@ -256,8 +256,79 @@ export function CustomerMessageCard({
           <p className="mt-1 text-sm font-semibold text-gray-900">{detail.subject}</p>
         ) : null}
       </div>
-      <div className="max-h-[50vh] overflow-y-auto px-3.5 py-3">
+      <div className="max-h-[40vh] overflow-y-auto px-4 py-3">
         <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-gray-600">{body}</p>
+      </div>
+    </div>
+  );
+}
+
+export function ThreadTimeline({
+  detail,
+}: {
+  detail: CustomerInquiryDetail;
+}) {
+  const messages =
+    detail.thread_messages?.length > 0
+      ? detail.thread_messages
+      : [
+          {
+            message_id: detail.id,
+            role: "customer" as const,
+            from: detail.sender_email,
+            from_name: senderName(detail),
+            body: detail.body_preview || detail.snippet,
+            received_at: detail.received_at,
+            date_label: null,
+            is_latest_customer: true,
+          },
+        ];
+
+  return (
+    <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
+      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+        <div className="flex items-center gap-1.5 text-[11px] font-medium text-gray-400">
+          <GmailMark />
+          Conversation
+        </div>
+        {messages.length > 1 ? (
+          <span className="rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11px] font-medium text-gray-500">
+            {messages.length} messages
+          </span>
+        ) : null}
+      </div>
+      <div className="max-h-[40vh] space-y-3 overflow-y-auto px-4 py-3">
+        {detail.subject ? (
+          <p className="text-sm font-semibold text-gray-900">{detail.subject}</p>
+        ) : null}
+        {messages.map((message) => {
+          const isShop = message.role === "shop";
+          const isActive = Boolean(message.is_latest_customer);
+          return (
+            <div
+              key={message.message_id}
+              className={cn(
+                "rounded-md border px-3 py-2.5",
+                isShop
+                  ? "ml-6 border-gray-200 bg-[#fafaf9]"
+                  : "mr-6 border-gray-200 bg-white",
+                isActive && "ring-1 ring-[#FFC72C]/60",
+              )}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[11px] font-medium text-gray-500">
+                  {isShop ? "You" : message.from_name}
+                </p>
+                <p className="shrink-0 text-[10px] text-gray-400">
+                  {message.date_label || fullTime(message.received_at)}
+                </p>
+              </div>
+              <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-gray-700">
+                {message.body || "—"}
+              </p>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -468,7 +539,6 @@ export function ReplyComposer({
   sending,
   banning,
   actionMessage,
-  showReasoning = true,
 }: {
   detail: CustomerInquiryDetail;
   draft: string;
@@ -481,21 +551,17 @@ export function ReplyComposer({
   sending: boolean;
   banning?: boolean;
   actionMessage: string | null;
-  showReasoning?: boolean;
 }) {
   const locked = detail.status === "sent" || detail.status === "ignored";
+
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="flex items-center gap-1.5 text-sm font-medium text-gray-900">
-            <Sparkles className="h-3.5 w-3.5 text-gray-400" />
-            Suggested reply
-          </p>
-          {showReasoning && detail.reasoning ? (
-            <p className="mt-0.5 text-[12px] leading-relaxed text-gray-500">{detail.reasoning}</p>
-          ) : null}
-        </div>
+    <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
+      <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
+        <p className="flex items-center gap-1.5 text-sm font-medium text-gray-900">
+          <span className="h-4 w-0.5 rounded-full bg-[#FFC72C]" aria-hidden />
+          <Sparkles className="h-3.5 w-3.5 text-gray-400" />
+          Suggested reply
+        </p>
         <Button
           type="button"
           variant="outline"
@@ -513,20 +579,22 @@ export function ReplyComposer({
         </Button>
       </div>
 
-      <textarea
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        disabled={locked}
-        className="mt-3 min-h-[180px] flex-1 w-full resize-none rounded-md border border-gray-200 bg-white px-3.5 py-3 text-[13px] leading-relaxed text-gray-800 outline-none transition-colors focus:border-gray-400 disabled:bg-gray-50 disabled:text-gray-500"
-        placeholder="Draft reply will appear once processing completes."
-      />
+      <div className="p-4">
+        <textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          disabled={locked}
+          rows={12}
+          className="block min-h-[200px] max-h-[320px] w-full resize-y rounded-md border border-gray-200 bg-white px-3.5 py-3 text-[13px] leading-relaxed text-gray-800 outline-none transition-colors focus:border-gray-400 disabled:bg-gray-50 disabled:text-gray-500"
+          placeholder="Draft reply will appear once processing completes."
+        />
+        {actionMessage ? <p className="mt-2.5 text-[12px] text-gray-600">{actionMessage}</p> : null}
+      </div>
 
-      {actionMessage ? <p className="mt-3 text-[12px] text-gray-600">{actionMessage}</p> : null}
-
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 bg-[#fafaf9] px-4 py-3">
         <Button
           type="button"
-          className="rounded-md"
+          className="rounded-md bg-[#FFC72C] text-gray-900 hover:bg-[#E6B328]"
           onClick={onSend}
           disabled={
             sending ||
@@ -542,7 +610,7 @@ export function ReplyComposer({
         <Button
           type="button"
           variant="outline"
-          className="rounded-md"
+          className="rounded-md bg-white"
           onClick={onIgnore}
           disabled={locked}
         >
@@ -553,7 +621,7 @@ export function ReplyComposer({
           <Button
             type="button"
             variant="outline"
-            className="rounded-md"
+            className="rounded-md bg-white"
             onClick={onBanSender}
             disabled={locked || banning}
           >

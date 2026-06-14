@@ -18,6 +18,7 @@ import {
   SheetContent,
 } from "@/components/ui/sheet";
 import { processFacebookImages } from "@/lib/utils/facebook-image-handler";
+import { scrapeFacebookListing } from "@/lib/utils/facebook-scrape-client";
 import { mapFacebookToListing, validateFacebookData, type FacebookScrapedData } from "@/lib/mappers/facebook-to-listing";
 import type { ListingImage } from "@/lib/types/listing";
 
@@ -101,27 +102,7 @@ export function FacebookImportModal({ isOpen, onClose, onComplete }: FacebookImp
         throw new Error('You must be logged in to import listings');
       }
 
-      // Call Supabase Edge Function to scrape
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/scrape-facebook-listing`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            facebookUrl,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to scrape Facebook listing");
-      }
-
-      const result = await response.json();
+      const result = await scrapeFacebookListing(facebookUrl, session.access_token);
       console.log('✅ [FB IMPORT MODAL] Scrape successful:', result);
 
       const fbData = result.data as FacebookScrapedData;

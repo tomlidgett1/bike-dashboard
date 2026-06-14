@@ -18,6 +18,17 @@ export type InquiryCitation = {
   excerpt?: string | null
 }
 
+export type InquiryThreadMessage = {
+  message_id: string
+  role: 'customer' | 'shop'
+  from: string
+  from_name: string
+  body: string
+  received_at: string | null
+  date_label: string | null
+  is_latest_customer?: boolean
+}
+
 export type LightspeedInquiryContext = {
   matched: boolean
   customer_id?: string | null
@@ -61,6 +72,10 @@ export type CustomerInquiryRow = {
   user_id: string
   gmail_message_id: string
   gmail_thread_id: string | null
+  thread_messages: InquiryThreadMessage[]
+  thread_message_count: number
+  last_customer_at: string | null
+  last_shop_reply_at: string | null
   connected_account_id: string | null
   sender_name: string
   sender_email: string
@@ -100,6 +115,7 @@ export type CustomerInquiryListItem = Pick<
   | 'priority'
   | 'status'
   | 'draft_body'
+  | 'thread_message_count'
   | 'updated_at'
 >
 

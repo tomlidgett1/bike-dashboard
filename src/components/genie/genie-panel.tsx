@@ -87,6 +87,8 @@ type StatusPhase =
   | 'gmail_done'
   | 'xero'
   | 'xero_done'
+  | 'deputy'
+  | 'deputy_done'
   | 'verifying';
 
 interface StatusStep { phase: StatusPhase; text: string }
@@ -220,6 +222,8 @@ const PHASE_LABELS: Partial<Record<StatusPhase, string>> = {
   gmail_done: 'Gmail',
   xero: 'Xero',
   xero_done: 'Xero',
+  deputy: 'Deputy',
+  deputy_done: 'Deputy',
   verifying: 'Quality check',
 };
 

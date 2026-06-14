@@ -67,6 +67,10 @@ function phaseFallback(phase?: string): string {
       return 'Checking Xero'
     case 'xero_done':
       return 'Xero result ready'
+    case 'deputy':
+      return 'Checking Deputy'
+    case 'deputy_done':
+      return 'Deputy result ready'
     case 'verifying':
       return 'Quality check'
     case 'product_search':

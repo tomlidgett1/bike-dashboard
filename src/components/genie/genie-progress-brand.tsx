@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { GmailLogo } from "@/components/genie/gmail-logo";
+import { DeputyLogo } from "@/components/genie/deputy-logo";
 import { cn } from "@/lib/utils";
 
 const LIGHTSPEED_PHASES = new Set([
@@ -16,6 +17,8 @@ const GMAIL_PHASES = new Set(["gmail", "gmail_done"]);
 
 const XERO_PHASES = new Set(["xero", "xero_done"]);
 
+const DEPUTY_PHASES = new Set(["deputy", "deputy_done"]);
+
 function textLooksLikeGmail(text: string): boolean {
   return /\bgmail\b|\binbox\b|email content|composio|searching gmail|reading \d+ email/i.test(text);
 }
@@ -24,6 +27,10 @@ function textLooksLikeXero(text: string): boolean {
   return /\bxero\b|profit & loss|profit and loss|balance sheet|trial balance|aged payable|aged receivable|supplier bill|chart of accounts/i.test(
     text,
   );
+}
+
+function textLooksLikeDeputy(text: string): boolean {
+  return /\bdeputy\b|\broster\b|\btimesheet\b|\bshift\b|hours worked|who worked|clocked on/i.test(text);
 }
 
 function textLooksLikeLightspeed(text: string): boolean {
@@ -35,21 +42,24 @@ function textLooksLikeLightspeed(text: string): boolean {
 export function resolveGenieProgressBrand(
   phase?: string,
   text?: string,
-): "lightspeed" | "gmail" | "xero" | null {
+): "lightspeed" | "gmail" | "xero" | "deputy" | null {
   const normalizedPhase = phase?.trim() ?? "";
   const normalizedText = text?.trim().toLowerCase() ?? "";
 
   if (GMAIL_PHASES.has(normalizedPhase)) return "gmail";
   if (XERO_PHASES.has(normalizedPhase)) return "xero";
+  if (DEPUTY_PHASES.has(normalizedPhase)) return "deputy";
   if (LIGHTSPEED_PHASES.has(normalizedPhase)) {
     if (normalizedPhase === "rechecking" && textLooksLikeGmail(normalizedText)) return "gmail";
     if (normalizedPhase === "rechecking" && textLooksLikeXero(normalizedText)) return "xero";
+    if (normalizedPhase === "rechecking" && textLooksLikeDeputy(normalizedText)) return "deputy";
     return "lightspeed";
   }
 
   if (!normalizedText) return null;
   if (textLooksLikeGmail(normalizedText)) return "gmail";
   if (textLooksLikeXero(normalizedText)) return "xero";
+  if (textLooksLikeDeputy(normalizedText)) return "deputy";
   if (textLooksLikeLightspeed(normalizedText)) return "lightspeed";
   return null;
 }
@@ -89,6 +99,14 @@ export function GenieProgressBrandIcon({
           height={16}
           className="h-full w-full object-cover"
         />
+      </span>
+    );
+  }
+
+  if (brand === "deputy") {
+    return (
+      <span className={cn("flex h-4 w-4 shrink-0 overflow-hidden rounded-[4px]", className)}>
+        <DeputyLogo className="h-full w-full" />
       </span>
     );
   }

@@ -24,6 +24,8 @@ export interface GmailComposioSessionExecutor {
 const GMAIL_PRELOAD_TOOLS = [
   'GMAIL_FETCH_EMAILS',
   'GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID',
+  'GMAIL_FETCH_MESSAGE_BY_THREAD_ID',
+  'GMAIL_REPLY_TO_THREAD',
 ] as const
 
 function uniq(values: Array<string | null | undefined>): string[] {

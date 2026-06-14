@@ -83,6 +83,15 @@ function routeUsesXero(
     planMentionsTool(plan, /\bxero\b|get_xero|list_xero|search_xero|profit_and_loss|balance_sheet|trial_balance|aged_payable|aged_receivable|purchase_order/i)
 }
 
+function routeUsesDeputy(
+  route: GenieOrchestrationDecision['route'],
+  plan: GenieExecutionPlan | null,
+): boolean {
+  return route === 'lightspeed_sql' ||
+    route === 'business_analysis' ||
+    planMentionsTool(plan, /\bdeputy\b|get_deputy|list_deputy|\broster\b|\btimesheet\b|\bshift\b|hours worked|who worked|who is working/i)
+}
+
 function routeUsesPurchaseOrders(
   route: GenieOrchestrationDecision['route'],
   plan: GenieExecutionPlan | null,
@@ -124,6 +133,7 @@ function formatCapabilitiesForRoute(args: {
   includeStorefront: boolean
   includeWeb: boolean
   includeXero: boolean
+  includeDeputy: boolean
   includePurchaseOrders: boolean
 }): string {
   const capabilities: string[] = []
@@ -162,6 +172,12 @@ function formatCapabilitiesForRoute(args: {
     )
   }
 
+  if (args.includeDeputy) {
+    capabilities.push(
+      '11. Deputy staff scheduling — read the store\'s live rostering and time & attendance data: the team (employees), timesheets (hours actually worked, including who is clocked on right now), and rosters (scheduled/upcoming shifts, including open shifts). Answer "who worked this week", "who is on tomorrow", "how many hours did X do", and rota questions. Read-only: you never create, edit, approve, or publish anything in Deputy.',
+    )
+  }
+
   if (args.includePurchaseOrders) {
     capabilities.push(
       '10. Supplier invoices → Lightspeed purchase orders — detect PDF invoices in the connected Gmail inbox (or uploaded by the store), extract supplier and line details, match them to Lightspeed vendors/items, and stage a purchase order the store approves with one click. After approval the card links straight to the PO in Lightspeed.',
@@ -182,6 +198,7 @@ function formatWorkRulesForRoute(args: {
   includeStorefront: boolean
   includeWeb: boolean
   includeXero: boolean
+  includeDeputy: boolean
   includePurchaseOrders: boolean
 }): string {
   const rules = [
@@ -237,6 +254,15 @@ function formatWorkRulesForRoute(args: {
     )
   }
 
+  if (args.includeDeputy) {
+    rules.push(
+      `- Deputy is the store's staff scheduling and time & attendance system — the source of truth for who is rostered and who worked. Use get_deputy_timesheets for hours ACTUALLY WORKED ("who worked this week", "how many hours did X do", "who is clocked on now" with only_in_progress:true). Use get_deputy_rosters for SCHEDULED/upcoming shifts ("who is on tomorrow", "who is working this weekend", the rota). Do not confuse the two: timesheets are actuals (past/current), rosters are the plan (often future).`,
+      `- Always compute explicit from_date/to_date in ${STORE_TIME_ZONE} from STORE CONTEXT today before calling. "This week" = Monday to Sunday of the current week; "today" = today's date for both from_date and to_date; "tomorrow" = tomorrow's date; "next week" = next Monday..Sunday. Pass employee_name only for a single named person; the lookup matches names case-insensitively and reports unresolved_employee:true if the name is unknown (then offer list_deputy_employees to confirm spelling).`,
+      '- Lead with the figure the user asked for: the per-employee hours total (by_employee) for hours questions, the distinct people in the period for "who worked", or the roster rows grouped by day for "who is on". Quote hours and start/end times exactly as returned; never invent shifts, names, or totals. Times are in the store timezone.',
+      '- If any Deputy tool returns connected:false, do not guess. Tell the user Deputy is not connected and that they can connect it with the "Connect Deputy" pill on the Home page. Deputy data is separate from Lightspeed sales — do not substitute sales activity for rostered/worked hours.',
+    )
+  }
+
   if (args.includePurchaseOrders) {
     rules.push(
       '- Supplier invoice → purchase order workflow (PDF invoices from Gmail or uploads): 1) list_supplier_invoices (rescan:true if the user expects something new) to get invoice ids; 2) extract_supplier_invoice for the chosen id — it reads the PDF and returns vendor + per-line item match candidates; 3) propose_lightspeed_purchase_order immediately after. Pass auto-matched vendor/item ids as resolved; for ambiguous matches pass the candidates as vendor_options/item_options so the card shows clickable buttons. NEVER ask the user to resolve matches by typing — the card buttons handle every choice, and the user clicks Create to write the PO to Lightspeed.',
@@ -275,6 +301,7 @@ function formatAnswerContractForRoute(route: GenieOrchestrationDecision['route']
       '- For specific stock/product availability answers, include product links when product_url/product_links are returned, and rely on product cards for visual detail.',
       '- Use a table only for rankings, transaction lists, or comparisons; do not include a Plan section.',
       '- For Xero financial reports, lead with the headline figure in bold, then a tight table of the report sections with bold total rows and the period in the header.',
+      '- For Deputy staffing answers, lead with the direct answer (who worked / who is on / total hours), then a compact table — for hours questions one row per person with total hours; for roster/timesheet detail a row per shift with person, day, start–end, and hours. State the date range used.',
     ].join('\n')
   }
 
@@ -317,6 +344,7 @@ function buildSystemPrompt(
   const includeStorefront = routeUsesStorefront(route, executionPlan)
   const includeWeb = routeUsesWeb(route, executionPlan)
   const includeXero = routeUsesXero(route, executionPlan)
+  const includeDeputy = routeUsesDeputy(route, executionPlan)
   const includePurchaseOrders = routeUsesPurchaseOrders(route, executionPlan)
   const routeCapabilities = formatCapabilitiesForRoute({
     route,
@@ -325,6 +353,7 @@ function buildSystemPrompt(
     includeStorefront,
     includeWeb,
     includeXero,
+    includeDeputy,
     includePurchaseOrders,
   })
   const routeWorkRules = formatWorkRulesForRoute({
@@ -334,6 +363,7 @@ function buildSystemPrompt(
     includeStorefront,
     includeWeb,
     includeXero,
+    includeDeputy,
     includePurchaseOrders,
   })
   const gmailPlaybook = includeGmail ? `\n\nGMAIL PLANNING REFERENCE\n${GMAIL_SEARCH_PLAYBOOK}` : ''
@@ -377,7 +407,7 @@ STYLE
 - For Lightspeed answers, do not include a Plan section in the final answer. Give direct results for narrow questions; reserve planning status/tool output for broad or complex analysis only.
 - For strategic business analysis, produce an executive summary, key findings, ranked opportunities, recommended actions, and the exact data period used. Prefer tables for ranked opportunities and charts for trends when useful.
 - If a non-Lightspeed request is ambiguous or matches nothing, say so in one line and ask a single sharp question. For Lightspeed misses, recheck once with a different SQL strategy before asking.
-- Stay on storefront management, Lightspeed sales/inventory/cost/profit/margin/customer activity, Xero accounting/financials, Gmail workflows, and cycling product/market/compatibility research. Politely redirect anything else.
+- Stay on storefront management, Lightspeed sales/inventory/cost/profit/margin/customer activity, Xero accounting/financials, Deputy staff scheduling/rostering/timesheets, Gmail workflows, and cycling product/market/compatibility research. Politely redirect anything else.
 
 FINAL ANSWER CONTRACT
 ${formatAnswerContractForRoute(route)}
@@ -416,7 +446,7 @@ Decision process:
 
 Routes:
 - casual_chat: greetings, thanks, basic capability questions, or normal chat that does not need store data, Lightspeed data, web search, Gmail, or a storefront proposal. Do not use casual_chat for any customer, bike, work-order, sales, inventory, email, pricing, compatibility, or action request.
-- lightspeed_sql: any request about Lightspeed sales, customers, customer profiles/history/lifetime spend/service history/bikes, sold products, sale transactions, revenue, profit, margin, cost, services sold, product purchasers, current inventory/stock availability, or live/historical work orders, repairs, service jobs, public notes, internal notes, labour lines, parts, statuses, or dates. Also any narrow Xero accounting lookup: P&L / profit and loss / income statement, balance sheet, trial balance, net profit, expenses/overheads, cash position, GST/tax figures, accounts payable/receivable, what we owe a supplier / who owes us, invoices, supplier bills, bill/invoice payment status, bank transactions, payments, purchase orders, or connect/check Xero. The Xero tools are available on this route.
+- lightspeed_sql: any request about Lightspeed sales, customers, customer profiles/history/lifetime spend/service history/bikes, sold products, sale transactions, revenue, profit, margin, cost, services sold, product purchasers, current inventory/stock availability, or live/historical work orders, repairs, service jobs, public notes, internal notes, labour lines, parts, statuses, or dates. Also any narrow Xero accounting lookup: P&L / profit and loss / income statement, balance sheet, trial balance, net profit, expenses/overheads, cash position, GST/tax figures, accounts payable/receivable, what we owe a supplier / who owes us, invoices, supplier bills, bill/invoice payment status, bank transactions, payments, purchase orders, or connect/check Xero. The Xero tools are available on this route. Also any staff scheduling / time & attendance lookup from Deputy: who worked / is working / is rostered, hours worked by a person or the whole team, who is on today/tomorrow/this week/this weekend, the rota, open shifts, or connect/check Deputy. The Deputy tools are available on this route.
 - storefront_action: requests to read/change Yellow Jersey storefront carousels, discounts, product prices, store product lists, stage Lightspeed product brand/category write-back proposals, create new Lightspeed categories, connect/check Gmail/Composio email, search inbox, draft email, or send email. Also supplier-invoice → purchase-order work: processing a detected/uploaded supplier invoice PDF, extracting an invoice, creating/uploading a purchase order in Lightspeed from an invoice, or checking for new supplier invoices.
 - web_research: requests requiring current public external information, market facts, product compatibility for a known public bike/product, standards, events, suppliers, recalls, MSRP/RRP, manuals, or internet lookup.
 - business_analysis: broad strategy requests about making the bike store more profitable, making more money, improving revenue, improving margin, ranking opportunities, reducing wasted cash, reducing stale stock, or deciding what actions would improve the business.
@@ -439,6 +469,7 @@ Critical routing doctrine:
 - Store reporting: stock, inventory, QOH, on hand, available, sold, sales, revenue, GP, margin, cost, average sale, best customers, top customers, who bought, product purchasers = lightspeed_sql. Use needs_plan=false for a narrow report.
 - Business strategy: "how can we make more money", "how do we improve profit/revenue/margin", "what opportunities should we focus on", "where is cash tied up", "dead/stale stock strategy" = business_analysis with needs_plan=true.
 - Accounting/Xero: a single accounting report or lookup (P&L for a period, balance sheet, net profit, expenses, what do we owe supplier X, outstanding invoices, purchase orders, was bill Y paid, connect/check Xero) = lightspeed_sql with needs_plan=false. Broad financial-health, cash-flow-strategy, or "review our financials" work = business_analysis with needs_plan=true. POS-level product/stock/customer questions stay Lightspeed; Xero covers financial statements, expenses, bills, invoices, payments, and purchase orders.
+- Staffing/Deputy: who worked / is working / is rostered, hours worked by a person or the team, who is on today/tomorrow/this week/this weekend, the roster/rota, who is clocked on now, open shifts, or connect/check Deputy = lightspeed_sql with needs_plan=false. These are staff scheduling questions answered by the Deputy tools, NOT Lightspeed sales — do not treat "who worked" as a sales/customer query. Only use business_analysis (needs_plan=true) when staffing is part of a broad labour-cost or productivity review.
 - Business report email: requests to email/send/draft a sales, business performance, profit, inventory, customer, or Lightspeed report require both private store data and Gmail. Use route=mixed with needs_plan=true. The executor must gather the store/Lightspeed evidence first, then stage the Gmail email; this is not a Gmail-search-only task.
 - Storefront operations: make/create/rename/reorder/show/hide/move/feature a carousel, collection, homepage section, discount, sale, markdown, retail price, brand, category, product list, or approval proposal = storefront_action. Use needs_plan=false for a concrete single action; true for broad campaigns/homepage strategy.
 - Gmail/email without private store/report data: connect Gmail/Composio, check connection, search/summarise inbox, find supplier/customer emails, earliest/latest contact, invoices, issue/warranty correspondence, draft, reply, respond, write back, follow up, or send a simple message = storefront_action with needs_plan=true. "Respond to {name}" or "reply to {name}" without saying Gmail/email is still a Gmail task.
@@ -475,6 +506,12 @@ Routing examples:
 - "How can we make more money this quarter?" = business_analysis, needs_plan=true, direct_path="none".
 - "Show me the P&L for last month" = lightspeed_sql, needs_plan=false, direct_path="none".
 - "What's our net profit this financial year?" = lightspeed_sql, needs_plan=false, direct_path="none".
+- "Who worked this week?" = lightspeed_sql, needs_plan=false, direct_path="none" (Deputy timesheets).
+- "Who is working tomorrow?" = lightspeed_sql, needs_plan=false, direct_path="none" (Deputy roster).
+- "How many hours did Sarah work this week?" = lightspeed_sql, needs_plan=false, direct_path="none" (Deputy timesheets, employee_name).
+- "Who's on the roster this weekend?" = lightspeed_sql, needs_plan=false, direct_path="none" (Deputy roster).
+- "Who is clocked on right now?" = lightspeed_sql, needs_plan=false, direct_path="none" (Deputy timesheets, only_in_progress).
+- "Is Deputy connected?" = lightspeed_sql, needs_plan=false, direct_path="none".
 - "How much do we owe Shimano?" = lightspeed_sql, needs_plan=false, direct_path="none".
 - "What purchase orders are open?" = lightspeed_sql, needs_plan=false, direct_path="none".
 - "Connect Xero" / "Is Xero connected?" = lightspeed_sql, needs_plan=false, direct_path="none".
@@ -570,6 +607,7 @@ Planning rules:
 - For "best customers", "top customers", or "highest spenders", plan one SQL query ranked by gross_sales unless the user asks for frequency or average value.
 - Xero accounting tools are available for financial statements and accounting records: get_xero_financial_report (profit_and_loss, balance_sheet, trial_balance, bank_summary, executive_summary, budget_summary, aged_payables, aged_receivables), list_xero_invoices (ACCREC sales invoices / ACCPAY supplier bills), list_xero_bank_transactions, list_xero_payments, list_xero_purchase_orders, search_xero_contacts (resolves contact_id for aged reports), list_xero_accounts, get_xero_connection_status.
 - Use Xero (not Lightspeed SQL) for net profit, expenses/overheads, P&L, balance sheet, cash position, GST, supplier bills, accounts payable/receivable, invoice payment status, and purchase orders. Use Lightspeed for product-level sales, item margins, stock, and customer purchase history. For broad financial-health analysis, plan both: Lightspeed for revenue/margin drivers and Xero P&L + balance sheet + executive_summary for the bottom line, expenses, and cash. Plan compact Xero calls (periods+timeframe comparisons in one call) and include explicit date arguments computed from PLANNING CONTEXT.
+- Deputy staff scheduling tools are available for rostering and time & attendance: get_deputy_timesheets (hours actually worked over from_date..to_date, optional employee_name, only_in_progress for "who is on now"), get_deputy_rosters (scheduled/upcoming shifts over from_date..to_date, optional employee_name, open_only), list_deputy_employees (the team), get_deputy_connection_status. Use timesheets for actuals (who worked, hours done) and rosters for the plan (who is on tomorrow/this week). These are staffing data, not Lightspeed sales — compute explicit from_date/to_date in ${STORE_TIME_ZONE} from PLANNING CONTEXT (this week = Monday..Sunday).
 - For "last 3 years" or similar relative ranges, use ${STORE_TIME_ZONE} and set start_date to the same month/day three years before today's store date; set end_date to today's store date (see PLANNING CONTEXT).
 - For customer rankings, the correct grain is: aggregate line rows into distinct sale transactions first, then aggregate those sale totals by customer_id/customer_full_name. Exclude walk-in/unassigned customers unless the user asks to include them.
 - In sql_strategy.joins_needed, use [] when the current SQL table is enough. Mention future customer/contact joins only if the requested answer needs phone/email/address or customer metadata not in the sales report table.

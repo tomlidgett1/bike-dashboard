@@ -72,6 +72,14 @@ function detailedStatusForTool(toolName: string, args?: Record<string, unknown>)
     const who = argText(args, 'customer_query', 'query', 'name', 'customer_name')
     if (who) return { phase: 'lightspeed_customers', text: `Profile: ${clipDetail(who, 38)}` }
   }
+  if (toolName === 'get_deputy_timesheets') {
+    const who = argText(args, 'employee_name')
+    if (who) return { phase: 'deputy', text: `Deputy: hours for ${clipDetail(who, 30)}` }
+  }
+  if (toolName === 'get_deputy_rosters') {
+    const who = argText(args, 'employee_name')
+    if (who) return { phase: 'deputy', text: `Deputy: roster for ${clipDetail(who, 30)}` }
+  }
   if (toolName === 'search_gmail') {
     const query = argText(args, 'query', 'search')
     if (query) return { phase: 'gmail', text: `Gmail: "${clipDetail(query, 38)}"` }
@@ -102,6 +110,10 @@ function statusForTool(toolName: string, args?: Record<string, unknown>): { phas
   if (toolName === 'get_lightspeed_customer_profile') return { phase: 'lightspeed_customers', text: 'Customer profile' }
   if (toolName === 'get_lightspeed_customer_sales') return { phase: 'lightspeed_customers', text: 'Customer sales' }
   if (toolName === 'get_lightspeed_top_customers') return { phase: 'lightspeed_customers', text: 'Top customers' }
+  if (toolName === 'get_deputy_connection_status') return { phase: 'deputy', text: 'Checking Deputy connection' }
+  if (toolName === 'list_deputy_employees') return { phase: 'deputy', text: 'Deputy: staff list' }
+  if (toolName === 'get_deputy_timesheets') return { phase: 'deputy', text: 'Deputy: reading timesheets' }
+  if (toolName === 'get_deputy_rosters') return { phase: 'deputy', text: 'Deputy: reading roster' }
   if (toolName === 'get_xero_connection_status') return { phase: 'xero', text: 'Checking Xero connection' }
   if (toolName === 'get_xero_financial_report') return { phase: 'xero', text: 'Xero: pulling financial report' }
   if (toolName === 'list_xero_invoices') return { phase: 'xero', text: 'Xero: reading invoices' }
@@ -148,6 +160,7 @@ function statusAfterTool(toolName: string): { phase: string; text: string } {
   if (toolName === 'list_supplier_invoices' || toolName === 'extract_supplier_invoice') return { phase: 'invoice_done', text: 'Invoice result ready' }
   if (toolName === 'propose_lightspeed_purchase_order') return { phase: 'invoice_done', text: 'Purchase order staged' }
   if (toolName.startsWith('get_xero_') || toolName.startsWith('list_xero_') || toolName === 'search_xero_contacts') return { phase: 'xero_done', text: 'Xero result ready' }
+  if (toolName.startsWith('get_deputy_') || toolName.startsWith('list_deputy_')) return { phase: 'deputy_done', text: 'Deputy result ready' }
   if (toolName === 'search_web_images' || toolName === 'web_search' || toolName === 'web_search_preview' || toolName === 'web_search_call') return { phase: 'web_search_done', text: 'Web result ready' }
   // verify_question_answered emits its own result-aware status from the tool itself.
   if (toolName === 'record_answer_recheck' || toolName === 'record_lightspeed_recheck') return { phase: 'rechecking', text: 'Recheck strategy ready' }

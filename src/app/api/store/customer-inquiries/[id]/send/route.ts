@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
+  executeGmailReplyToThread,
   executeGmailSendEmail,
   getGmailConnection,
   isComposioConfigured,
@@ -69,12 +70,21 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const subject =
       inquiry.draft_subject?.trim() || gmailReplySubject(inquiry.subject)
 
-    await executeGmailSendEmail(auth.user.id, {
-      recipient_email: inquiry.sender_email,
-      subject,
-      body: finalDraft,
-      connected_account_id: connection.id,
-    })
+    if (inquiry.gmail_thread_id) {
+      await executeGmailReplyToThread(auth.user.id, {
+        thread_id: inquiry.gmail_thread_id,
+        recipient_email: inquiry.sender_email,
+        message_body: finalDraft,
+        connected_account_id: connection.id,
+      })
+    } else {
+      await executeGmailSendEmail(auth.user.id, {
+        recipient_email: inquiry.sender_email,
+        subject,
+        body: finalDraft,
+        connected_account_id: connection.id,
+      })
+    }
 
     const now = new Date().toISOString()
     const { data: updated, error: updateError } = await auth.supabase
@@ -84,6 +94,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         draft_body: finalDraft,
         draft_subject: subject,
         sent_at: now,
+        last_shop_reply_at: now,
         updated_at: now,
       })
       .eq('id', id)

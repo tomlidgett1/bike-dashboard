@@ -13,8 +13,10 @@ import type {
   CustomerInquiryPriority,
   EmailStyleProfile,
   InquiryCitation,
+  InquiryThreadMessage,
   LightspeedInquiryContext,
 } from '@/lib/customer-inquiries/types'
+import { stripQuotedEmailBody } from '@/lib/customer-inquiries/thread'
 
 const MODEL = 'gpt-4.1-mini'
 
@@ -99,12 +101,14 @@ function buildOfficialSearchHints(subject: string, body: string): string {
 
 export async function generateInquiryDraft(args: {
   message: GmailMessageContent
+  threadMessages?: InquiryThreadMessage[]
   storeName?: string | null
   styleProfile: EmailStyleProfile
   lightspeedContext: LightspeedInquiryContext
 }): Promise<DraftResult> {
   const sender = parseGmailSender(args.message.from)
-  const body = args.message.body_text.trim() || args.message.snippet.trim()
+  const body = stripQuotedEmailBody(args.message.body_text.trim() || args.message.snippet.trim())
+  const threadMessages = args.threadMessages ?? []
   const intent = inferInquiryIntent(args.message)
   const priority = inferPriority(args.message)
   const needsWebResearch = intent === 'technical_question' || looksTechnical(body)
@@ -136,7 +140,17 @@ Rules:
 - Never put URLs, web links, "source:" notes, or citation markers in draft_body. Write the answer in plain prose as if you already know it. Sources are recorded separately for staff and must never appear in the customer reply.
 - When web research is used, each staff citation must include a short excerpt (one or two sentences) quoting the specific fact from that source.
 - Keep the draft concise, professional, and ready for a staff member to edit.
+- When a conversation thread is provided, answer the latest customer message and stay consistent with prior shop replies.
+- Do not repeat information the shop already sent unless the customer asked again or a correction is needed.
 - Use Lightspeed customer context when it helps personalise the reply, but do not expose internal IDs.`
+
+  const conversation = threadMessages.map((entry) => ({
+    role: entry.role,
+    from: entry.from_name,
+    at: entry.received_at,
+    body: entry.body,
+    is_latest_customer: Boolean(entry.is_latest_customer),
+  }))
 
   const userPayload = {
     store_name: args.storeName?.trim() || 'the bike shop',
@@ -149,7 +163,9 @@ Rules:
       body,
       intent,
       priority,
+      reply_to_message_id: args.message.message_id,
     },
+    conversation,
     style_profile: args.styleProfile,
     lightspeed_context: args.lightspeedContext,
     official_search_hints: needsWebResearch ? buildOfficialSearchHints(args.message.subject, body) : null,
