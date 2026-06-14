@@ -8,6 +8,7 @@ import {
   Database,
   Home,
   LifeBuoy,
+  Mail,
   MessageSquare,
   Package,
   Settings,
@@ -63,6 +64,7 @@ const NAV: NavGroup[] = [
     items: [
       { title: "Home", href: "/settings/store/home", icon: Home, exact: true },
       { title: "Nest", href: "/settings/store/nest", icon: MessageSquare, exact: true },
+      { title: "Customer inquiries", href: "/settings/store/customer-inquiries", icon: Mail, exact: true },
       { title: "Products", href: "/products", icon: Package },
       {
         title: "Storefront",

@@ -38,6 +38,7 @@ const CRUMBS: Record<string, { section: string; page: string }> = {
   "/settings/store": { section: "Store", page: "Storefront" },
   "/settings/store/home": { section: "Store", page: "Home" },
   "/settings/store/nest": { section: "Store", page: "Nest" },
+  "/settings/store/customer-inquiries": { section: "Store", page: "Customer inquiries" },
   "/settings/my-listings": { section: "Marketplace", page: "My listings" },
   "/settings/drafts": { section: "Marketplace", page: "Drafts" },
   "/settings/purchases": { section: "Marketplace", page: "Orders" },
