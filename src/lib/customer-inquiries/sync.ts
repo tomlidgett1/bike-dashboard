@@ -7,7 +7,7 @@ import {
 } from '@/lib/composio/gmail'
 import {
   emailLooksLowValue,
-  hasBikeShopSignal,
+  isLikelyCustomerInquiryContent,
   parseGmailSender,
 } from '@/lib/composio/gmail-response-suggestions'
 import type { GmailEmailPreview } from '@/lib/types/genie-agent'
@@ -26,6 +26,7 @@ import type {
 const INBOX_QUERY = 'in:inbox newer_than:14d -category:promotions -category:social'
 const MAX_STORES_PER_RUN = 8
 const MAX_NEW_INQUIRIES_PER_STORE = 6
+const MAX_BODY_READS_PER_STORE = 14
 const MAX_PROCESS_PER_STORE = 4
 const MAX_RETRIES = 3
 
@@ -37,10 +38,10 @@ export type CustomerInquirySyncSummary = {
   failed: number
 }
 
-function isLikelyCustomerInquiry(email: GmailEmailPreview): boolean {
+function passesInitialInboxGate(email: GmailEmailPreview): boolean {
   if (emailLooksLowValue(email)) return false
   if (!parseGmailSender(email.from).email) return false
-  return hasBikeShopSignal(email) || email.snippet.includes('?') || /\?/.test(email.subject)
+  return true
 }
 
 function mapRow(raw: Record<string, unknown>): CustomerInquiryRow {
@@ -130,12 +131,34 @@ async function syncInboxForStore(
     (existingRows ?? []).map((row) => String(row.gmail_message_id ?? '')).filter(Boolean),
   )
 
-  const candidates = payload.emails.filter(
-    (email) => !existingIds.has(email.message_id) && isLikelyCustomerInquiry(email),
+  const unscanned = payload.emails.filter(
+    (email) => !existingIds.has(email.message_id) && passesInitialInboxGate(email),
   )
 
+  const toRead = unscanned.slice(0, MAX_BODY_READS_PER_STORE)
+  const bodyByMessageId = new Map<string, string>()
+
+  if (toRead.length > 0) {
+    const messages = await readGmailMessages(userId, {
+      message_ids: toRead.map((email) => email.message_id),
+      max_body_chars: 4000,
+    })
+    for (const message of messages) {
+      bodyByMessageId.set(message.message_id, message.body_text ?? '')
+    }
+  }
+
+  const candidates = toRead
+    .map((email) => ({
+      email,
+      bodyText: bodyByMessageId.get(email.message_id) ?? '',
+    }))
+    .filter(({ email, bodyText }) =>
+      isLikelyCustomerInquiryContent(email.subject, email.snippet, bodyText),
+    )
+
   let created = 0
-  for (const email of candidates.slice(0, MAX_NEW_INQUIRIES_PER_STORE)) {
+  for (const { email, bodyText } of candidates.slice(0, MAX_NEW_INQUIRIES_PER_STORE)) {
     const sender = parseGmailSender(email.from)
     const receivedAt =
       email.internal_date_ms != null
@@ -152,8 +175,8 @@ async function syncInboxForStore(
         sender_name: sender.name,
         sender_email: sender.email,
         subject: email.subject,
-        snippet: email.snippet,
-        body_preview: email.snippet,
+        snippet: email.snippet || bodyText.slice(0, 280),
+        body_preview: bodyText.slice(0, 1200) || email.snippet,
         received_at: receivedAt,
         status: 'new',
         last_synced_at: new Date().toISOString(),

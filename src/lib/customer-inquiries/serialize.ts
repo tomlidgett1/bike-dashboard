@@ -10,6 +10,7 @@ export function serializeInquiryListItem(row: CustomerInquiryRow): CustomerInqui
     sender_email: row.sender_email,
     subject: row.subject,
     snippet: row.snippet,
+    body_preview: row.body_preview,
     received_at: row.received_at,
     intent: row.intent,
     priority: row.priority,

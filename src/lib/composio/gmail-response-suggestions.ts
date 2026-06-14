@@ -157,6 +157,47 @@ export function hasBikeShopSignal(email: GmailEmailPreview): boolean {
   return BIKE_SHOP_SIGNAL.some((pattern) => pattern.test(haystack))
 }
 
+export function hasBikeShopSignalInText(
+  subject: string,
+  snippet: string,
+  bodyText = '',
+): boolean {
+  const haystack = `${subject} ${snippet} ${bodyText}`.slice(0, 12000)
+  return BIKE_SHOP_SIGNAL.some((pattern) => pattern.test(haystack))
+}
+
+const INQUIRY_SUBJECT_SIGNAL = [
+  /\bcustomer\s+question\b/i,
+  /\bcustomer\s+enquiry\b/i,
+  /\bcustomer\s+inquiry\b/i,
+  /\benquiry\b/i,
+  /\binquiry\b/i,
+  /\bquestion\s+about\b/i,
+  /\bneed\s+help\b/i,
+  /\bcan\s+you\s+help\b/i,
+]
+
+export function hasInquirySubjectSignal(subject: string): boolean {
+  const trimmed = subject.trim()
+  if (!trimmed) return false
+  return INQUIRY_SUBJECT_SIGNAL.some((pattern) => pattern.test(trimmed))
+}
+
+export function isLikelyCustomerInquiryContent(
+  subject: string,
+  snippet: string,
+  bodyText: string,
+): boolean {
+  const body = bodyText.trim()
+  return (
+    hasBikeShopSignalInText(subject, snippet, body) ||
+    hasInquirySubjectSignal(subject) ||
+    snippet.includes('?') ||
+    /\?/.test(subject) ||
+    /\?/.test(body)
+  )
+}
+
 export function inferIntent(email: GmailEmailPreview): GmailSuggestionIntent {
   const haystack = `${email.subject} ${email.snippet}`
   if (/\bwarranty\b|\breturn\b|\breplace\b|\bfault\b|\bbroken\b/i.test(haystack)) return 'warranty'

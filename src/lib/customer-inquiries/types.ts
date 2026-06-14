@@ -86,6 +86,7 @@ export type CustomerInquiryListItem = Pick<
   | 'sender_email'
   | 'subject'
   | 'snippet'
+  | 'body_preview'
   | 'received_at'
   | 'intent'
   | 'priority'
