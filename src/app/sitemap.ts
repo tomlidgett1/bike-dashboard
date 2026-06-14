@@ -23,6 +23,7 @@ const STATIC_ROUTES: Array<{
   { path: '/marketplace/new-products', priority: 0.8, changeFrequency: 'daily' },
   { path: '/marketplace/used-products', priority: 0.8, changeFrequency: 'daily' },
   { path: '/sell-your-bike', priority: 0.8, changeFrequency: 'monthly' },
+  { path: '/used-bikes', priority: 0.8, changeFrequency: 'daily' },
   { path: '/for-you', priority: 0.5, changeFrequency: 'daily' },
   { path: '/marketplace/help', priority: 0.3, changeFrequency: 'monthly' },
 ];
