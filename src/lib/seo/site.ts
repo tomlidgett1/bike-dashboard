@@ -25,8 +25,8 @@ export const SITE_DESCRIPTION =
 /** Strong, keyword-led title used for the homepage and as the default. */
 export const SITE_TITLE = `${SITE_NAME} — Bikes, parts & apparel from local bike shops`;
 
-/** Default Open Graph / Twitter image (brand). Relative — resolved via metadataBase. */
-export const SITE_OG_IMAGE = '/yjlogo.png';
+/** Default Open Graph / Twitter image (1200x630 brand card). Relative — resolved via metadataBase. */
+export const SITE_OG_IMAGE = '/og-default.png';
 
 /** Turn a path or already-absolute URL into an absolute production URL. */
 export function absoluteUrl(path = ''): string {

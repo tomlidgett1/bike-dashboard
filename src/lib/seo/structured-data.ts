@@ -144,6 +144,9 @@ export function organizationSchema(): Json {
     url: SITE_URL,
     logo: absoluteUrl('/yjlogo.png'),
     description: SITE_DESCRIPTION,
+    // Link the website entity to the Yellow Jersey Google Business Profile so
+    // Google associates the two (strengthens the brand/knowledge-graph link).
+    sameAs: ['https://share.google/rfp7zGekhvfjkC6hE'],
   };
 }
 
