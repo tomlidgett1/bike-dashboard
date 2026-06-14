@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   fetchCustomerInquiries,
   fetchCustomerInquiry,
+  banCustomerInquirySender,
   mintCustomerInquiriesGmailConnectUrl,
   refreshCustomerInquiries,
   regenerateCustomerInquiryDraft,
@@ -26,6 +27,13 @@ export type LightspeedContext = {
   customer_phone?: string | null;
   bikes?: Array<{ label: string | null; serial: string | null }>;
   recent_workorders?: Array<{ id: string; title: string | null; status: string | null }>;
+  sales_summary?: {
+    sale_count: number;
+    total_spend: number;
+    last_purchase_at: string | null;
+    last_purchase_total: number | null;
+    last_purchase_summary: string | null;
+  } | null;
   summary?: string | null;
 };
 
@@ -59,6 +67,8 @@ export function useInquiriesController() {
   const [connecting, setConnecting] = React.useState(false);
   const [actionMessage, setActionMessage] = React.useState<string | null>(null);
   const [sendConfirmOpen, setSendConfirmOpen] = React.useState(false);
+  const [banConfirmOpen, setBanConfirmOpen] = React.useState(false);
+  const [banning, setBanning] = React.useState(false);
 
   const loadList = React.useCallback(async (status: StatusFilter) => {
     setLoading(true);
@@ -151,6 +161,25 @@ export function useInquiriesController() {
     }
   }, [selectedId, detail]);
 
+  const handleBanSender = React.useCallback(async () => {
+    if (!selectedId || !detail) return;
+    setBanning(true);
+    setActionMessage(null);
+    try {
+      const { message, inquiry } = await banCustomerInquirySender(selectedId);
+      setDetail(inquiry);
+      setInquiries((rows) =>
+        rows.map((row) => (row.id === inquiry.id ? { ...row, status: inquiry.status } : row)),
+      );
+      setBanConfirmOpen(false);
+      setActionMessage(message);
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : "Could not ban sender.");
+    } finally {
+      setBanning(false);
+    }
+  }, [selectedId, detail]);
+
   const handleRegenerate = React.useCallback(async () => {
     if (!selectedId) return;
     setRegenerating(true);
@@ -236,9 +265,13 @@ export function useInquiriesController() {
     actionMessage,
     sendConfirmOpen,
     setSendConfirmOpen,
+    banConfirmOpen,
+    setBanConfirmOpen,
+    banning,
     handleRefresh,
     handleConnectGmail,
     handleIgnore,
+    handleBanSender,
     handleRegenerate,
     handleSend,
     lightspeedContext,

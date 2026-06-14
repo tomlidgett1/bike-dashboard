@@ -40,7 +40,16 @@ function extractCitations(response: Response | null | undefined): InquiryCitatio
       if (content.type !== 'output_text') continue
       for (const ann of content.annotations ?? []) {
         if (ann.type === 'url_citation' && ann.url) {
-          citations.push({ url: ann.url, title: ann.title ?? ann.url })
+          citations.push({
+            url: ann.url,
+            title: ann.title ?? ann.url,
+            excerpt: 'start_index' in ann && 'end_index' in ann && content.text
+              ? content.text.slice(
+                  Number((ann as { start_index?: number }).start_index ?? 0),
+                  Number((ann as { end_index?: number }).end_index ?? 0),
+                ).trim() || null
+              : null,
+          })
         }
       }
     }
@@ -125,6 +134,7 @@ Rules:
 - For technical cycling questions, prefer official manufacturer manuals, technical docs, standards bodies, or supplier technical pages.
 - Do not include a subject line in draft_body.
 - Never put URLs, web links, "source:" notes, or citation markers in draft_body. Write the answer in plain prose as if you already know it. Sources are recorded separately for staff and must never appear in the customer reply.
+- When web research is used, each staff citation must include a short excerpt (one or two sentences) quoting the specific fact from that source.
 - Keep the draft concise, professional, and ready for a staff member to edit.
 - Use Lightspeed customer context when it helps personalise the reply, but do not expose internal IDs.`
 
@@ -171,8 +181,21 @@ Rules:
             properties: {
               draft_body: { type: 'string' },
               reasoning: { type: 'string' },
+              citations: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    url: { type: 'string' },
+                    title: { type: 'string' },
+                    excerpt: { type: 'string' },
+                  },
+                  required: ['url', 'title', 'excerpt'],
+                },
+              },
             },
-            required: ['draft_body', 'reasoning'],
+            required: ['draft_body', 'reasoning', 'citations'],
           },
         },
       },
@@ -181,23 +204,43 @@ Rules:
     const outputText = response.output_text?.trim()
     let draftBody = ''
     let reasoning = 'Generated draft from inquiry context.'
+    let modelCitations: InquiryCitation[] = []
     if (outputText) {
       try {
-        const parsed = JSON.parse(outputText) as { draft_body?: string; reasoning?: string }
+        const parsed = JSON.parse(outputText) as {
+          draft_body?: string
+          reasoning?: string
+          citations?: InquiryCitation[]
+        }
         draftBody = String(parsed.draft_body ?? '').trim()
         reasoning = String(parsed.reasoning ?? reasoning).trim()
+        modelCitations = Array.isArray(parsed.citations)
+          ? parsed.citations
+              .map((citation) => ({
+                url: String(citation.url ?? '').trim(),
+                title: String(citation.title ?? citation.url ?? '').trim(),
+                excerpt: String(citation.excerpt ?? '').trim() || null,
+              }))
+              .filter((citation) => citation.url)
+          : []
       } catch {
         draftBody = outputText.trim()
       }
     }
 
-    const citations = extractCitations(response)
-    const seen = new Set<string>()
-    const uniqueCitations = citations.filter((citation) => {
-      if (seen.has(citation.url)) return false
-      seen.add(citation.url)
-      return true
-    })
+    const annotationCitations = extractCitations(response)
+    const merged = new Map<string, InquiryCitation>()
+    for (const citation of [...modelCitations, ...annotationCitations]) {
+      const existing = merged.get(citation.url)
+      if (!existing) {
+        merged.set(citation.url, citation)
+        continue
+      }
+      if (!existing.excerpt && citation.excerpt) {
+        merged.set(citation.url, { ...existing, excerpt: citation.excerpt })
+      }
+    }
+    const uniqueCitations = Array.from(merged.values())
 
     return {
       intent,

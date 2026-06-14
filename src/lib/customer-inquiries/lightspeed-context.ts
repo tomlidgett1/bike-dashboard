@@ -1,3 +1,4 @@
+import { fetchCustomerSalesSummary } from '@/lib/customer-inquiries/customer-sales-summary'
 import { createLightspeedClient } from '@/lib/services/lightspeed'
 import type { LightspeedCustomer } from '@/lib/services/lightspeed/types'
 import type { LightspeedInquiryContext } from '@/lib/customer-inquiries/types'
@@ -117,11 +118,14 @@ export async function buildLightspeedInquiryContext(args: {
 
     const client = createLightspeedClient(args.userId)
     const customerId = String(customer.customerID)
-    const bikes = await client.getCustomerBikes(customerId)
-    const workorders = await client.getRecentWorkorders(
-      { customerID: customerId },
-      { targetCount: 5, maxPages: 2, limit: 25 },
-    )
+    const [bikes, workorders, salesSummary] = await Promise.all([
+      client.getCustomerBikes(customerId),
+      client.getRecentWorkorders(
+        { customerID: customerId },
+        { targetCount: 5, maxPages: 2, limit: 25 },
+      ),
+      fetchCustomerSalesSummary(args.userId, customerId),
+    ])
 
     const context: LightspeedInquiryContext = {
       matched: true,
@@ -140,6 +144,7 @@ export async function buildLightspeedInquiryContext(args: {
         status: String(workorder.workorderStatusID ?? '') || null,
         updated_at: String(workorder.timeStamp ?? '') || null,
       })),
+      sales_summary: salesSummary,
       summary: `Matched Lightspeed customer ${customerName(customer)} (${customerId}).`,
     }
 

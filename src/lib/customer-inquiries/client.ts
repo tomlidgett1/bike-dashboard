@@ -16,7 +16,7 @@ export type CustomerInquiryDetail = {
   status: CustomerInquiryStatus
   draft_body: string
   draft_subject: string | null
-  citations: Array<{ url: string; title: string }>
+  citations: Array<{ url: string; title: string; excerpt?: string | null }>
   lightspeed_context: Record<string, unknown>
   reasoning: string
   error_message: string | null
@@ -134,6 +134,26 @@ export async function sendCustomerInquiryReply(
   }
   return {
     message: data.message || 'Reply sent.',
+    inquiry: data.inquiry,
+  }
+}
+
+export async function banCustomerInquirySender(
+  id: string,
+): Promise<{ message: string; inquiry: CustomerInquiryDetail }> {
+  const res = await fetch(`/api/store/customer-inquiries/${id}/ban`, {
+    method: 'POST',
+  })
+  const data = await parseJson<{
+    message?: string
+    inquiry?: CustomerInquiryDetail
+    error?: string
+  }>(res)
+  if (!res.ok || !data.inquiry) {
+    throw new Error(data.error || 'Could not ban sender.')
+  }
+  return {
+    message: data.message || 'Sender banned.',
     inquiry: data.inquiry,
   }
 }

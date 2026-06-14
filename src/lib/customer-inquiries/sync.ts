@@ -11,6 +11,7 @@ import {
 } from '@/lib/composio/gmail-response-suggestions'
 import type { GmailEmailPreview } from '@/lib/types/genie-agent'
 import { classifyInquiryEmails, isImportableInquiry } from '@/lib/customer-inquiries/classify-inquiry-email'
+import { isBannedSender, listBannedSenderEmails } from '@/lib/customer-inquiries/banned-senders'
 import { createServiceRoleClient } from '@/lib/supabase/server'
 import { recordInquiryEvent } from '@/lib/customer-inquiries/events'
 import { generateInquiryDraft } from '@/lib/customer-inquiries/draft-response'
@@ -154,8 +155,11 @@ async function syncInboxForStore(
   }))
 
   const classifications = await classifyInquiryEmails(withBodies)
+  const bannedSenders = await listBannedSenderEmails(supabase, userId)
 
   const candidates = withBodies.filter(({ email }) => {
+    const sender = parseGmailSender(email.from)
+    if (isBannedSender(sender.email, bannedSenders)) return false
     const classification = classifications.get(email.message_id)
     return isImportableInquiry(classification)
   })

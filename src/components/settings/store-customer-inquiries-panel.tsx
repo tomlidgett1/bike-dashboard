@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Mail, Send } from "lucide-react";
+import { Loader2, Mail, Send, UserX } from "lucide-react";
 import { GmailLogo } from "@/components/genie/gmail-logo";
 import { Button } from "@/components/ui/button";
 import { DesignComposerRail } from "@/components/settings/customer-inquiries/design-composer-rail";
@@ -93,6 +93,52 @@ export function StoreCustomerInquiriesPanel() {
                   <Send className="mr-1.5 h-4 w-4" />
                 )}
                 Send now
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {c.banConfirmOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+          <button
+            type="button"
+            aria-label="Close dialog"
+            className="absolute inset-0 bg-black/40 animate-in fade-in duration-200"
+            onClick={() => !c.banning && c.setBanConfirmOpen(false)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="relative z-10 w-full max-w-lg overflow-hidden rounded-xl border border-gray-200 bg-white p-5 animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out sm:mx-4"
+          >
+            <h3 className="text-base font-semibold text-gray-900">Ban this sender?</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              Future emails from {c.detail?.sender_email} will not be imported as customer enquiries.
+              This enquiry will be ignored.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-md"
+                onClick={() => c.setBanConfirmOpen(false)}
+                disabled={c.banning}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="rounded-md"
+                onClick={() => void c.handleBanSender()}
+                disabled={c.banning}
+              >
+                {c.banning ? (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                ) : (
+                  <UserX className="mr-1.5 h-4 w-4" />
+                )}
+                Ban sender
               </Button>
             </div>
           </div>

@@ -15,6 +15,7 @@ export type CustomerInquiryPriority = GmailSuggestionPriority
 export type InquiryCitation = {
   url: string
   title: string
+  excerpt?: string | null
 }
 
 export type LightspeedInquiryContext = {
@@ -35,6 +36,13 @@ export type LightspeedInquiryContext = {
     updated_at: string | null
   }>
   recent_sales_count?: number
+  sales_summary?: {
+    sale_count: number
+    total_spend: number
+    last_purchase_at: string | null
+    last_purchase_total: number | null
+    last_purchase_summary: string | null
+  } | null
   summary?: string | null
 }
 
@@ -101,6 +109,7 @@ export type CustomerInquiryEventType =
   | 'draft_edited'
   | 'regenerated'
   | 'ignored'
+  | 'sender_banned'
   | 'sent'
   | 'gmail_draft_created'
   | 'error'

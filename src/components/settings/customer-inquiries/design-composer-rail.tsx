@@ -5,10 +5,10 @@ import { cn } from "@/lib/utils";
 import { EnquiryList, DetailEmpty, DetailLoading } from "./enquiry-list";
 import {
   Avatar,
-  GmailMark,
   LightspeedBody,
   LightspeedMark,
   MatchBadge,
+  CustomerMessageCard,
   ReplyComposer,
   SourcesBody,
   StatusChip,
@@ -41,17 +41,9 @@ export function DesignComposerRail({ c }: { c: InquiriesController }) {
                   <ArrowLeft className="h-4 w-4" /> Enquiries
                 </button>
 
-                <div className="rounded-xl border border-gray-200 bg-white p-3.5">
-                  <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-gray-400">
-                    <GmailMark />
-                    {senderName(detail)} asked
-                  </div>
-                  <p className="line-clamp-3 whitespace-pre-wrap text-[13px] leading-relaxed text-gray-600">
-                    {detail.body_preview || detail.snippet}
-                  </p>
-                </div>
+                <CustomerMessageCard detail={detail} />
 
-                <div className="mt-3 flex flex-1 flex-col rounded-xl border border-gray-200 bg-white p-5">
+                <div className="mt-3 flex min-h-0 flex-1 flex-col rounded-md border border-gray-200 bg-white p-5">
                   <ReplyComposer
                     detail={detail}
                     draft={c.draft}
@@ -60,7 +52,9 @@ export function DesignComposerRail({ c }: { c: InquiriesController }) {
                     regenerating={c.regenerating}
                     onSend={() => c.setSendConfirmOpen(true)}
                     onIgnore={() => void c.handleIgnore()}
+                    onBanSender={() => c.setBanConfirmOpen(true)}
                     sending={c.sending}
+                    banning={c.banning}
                     actionMessage={c.actionMessage}
                   />
                 </div>
