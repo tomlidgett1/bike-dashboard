@@ -168,8 +168,69 @@ function statusAfterTool(toolName: string): { phase: string; text: string } {
   return { phase: 'tool_done', text: 'Tool result ready' }
 }
 
-function statusForRoute(route: GenieOrchestrationDecision['route']): string {
-  if (route === 'lightspeed_sql') return 'Workflow selected: Lightspeed lookup'
+function plannedToolsText(plannedToolNames?: Iterable<string>): string {
+  return Array.from(plannedToolNames ?? []).join(' ').toLowerCase()
+}
+
+function textLooksLikeGmail(text: string): boolean {
+  return /\bgmail\b|\binbox\b|(?:^|\s)email(?:s)?\b|composio|searching gmail|reading \d+ email/i.test(text)
+}
+
+function textLooksLikeXero(text: string): boolean {
+  return /\bxero\b|profit & loss|profit and loss|balance sheet|trial balance|aged payable|aged receivable|supplier bill|chart of accounts/i.test(
+    text,
+  )
+}
+
+function textLooksLikeDeputy(text: string): boolean {
+  return /\bdeputy\b|\broster\b|\btimesheet\b|\bshift\b|hours worked|who worked|clocked on/i.test(text)
+}
+
+function textLooksLikeLightspeed(text: string): boolean {
+  return /lightspeed|sales report|work order|inventory mirror|sql sales|workshop|customer profile|workorder|stock on hand|\bin stock\b|\bqoh\b/i.test(
+    text,
+  )
+}
+
+/** The lightspeed_sql route also covers Xero, Deputy, and PO tools — label from intent, not route id. */
+function inferStoreWorkflowLabel(plannedToolNames?: Iterable<string>, userMessage?: string): string {
+  const planned = plannedToolsText(plannedToolNames)
+  const user = userMessage?.trim().toLowerCase() ?? ''
+  const deputy =
+    /\bdeputy\b|get_deputy|list_deputy|\broster\b|\btimesheet\b|\bshift\b|\bstaff\b|hours_worked|who_worked|who_is_working/.test(
+      planned,
+    ) || textLooksLikeDeputy(user)
+  const xero =
+    /\bxero\b|get_xero|list_xero|search_xero|profit_and_loss|balance_sheet|trial_balance|aged_payable|aged_receivable|supplier bill|chart_of_accounts/.test(
+      planned,
+    ) || textLooksLikeXero(user)
+  const gmail =
+    /\bgmail\b|get_gmail|search_gmail|read_gmail|propose_gmail/.test(planned) || textLooksLikeGmail(user)
+  const lightspeed =
+    /run_lightspeed|get_lightspeed|search_lightspeed|list_lightspeed|workorder|inventory|sales|customer_profile|product_purchasers|stale_inventory/.test(
+      planned,
+    ) || textLooksLikeLightspeed(user)
+
+  const domains = [
+    deputy ? 'Deputy' : null,
+    xero ? 'Xero' : null,
+    gmail ? 'Gmail' : null,
+    lightspeed ? 'Lightspeed' : null,
+  ].filter(Boolean)
+
+  if (domains.length === 1) return `${domains[0]} lookup`
+  return 'store lookup'
+}
+
+function statusForRoute(
+  route: GenieOrchestrationDecision['route'],
+  plannedToolNames?: Iterable<string>,
+  userMessage?: string,
+): string {
+  if (route === 'lightspeed_sql') {
+    const label = inferStoreWorkflowLabel(plannedToolNames, userMessage)
+    return `Workflow selected: ${label.charAt(0).toUpperCase()}${label.slice(1)}`
+  }
   if (route === 'storefront_action') return 'Workflow selected: Storefront action'
   if (route === 'web_research') return 'Workflow selected: Web research'
   if (route === 'business_analysis') return 'Workflow selected: Business analysis'
@@ -179,9 +240,16 @@ function statusForRoute(route: GenieOrchestrationDecision['route']): string {
   return 'Workflow selected'
 }
 
-function statusForExecutionStart(route: GenieOrchestrationDecision['route'], toolCount: number): string {
+function statusForExecutionStart(
+  route: GenieOrchestrationDecision['route'],
+  toolCount: number,
+  plannedToolNames?: Iterable<string>,
+  userMessage?: string,
+): string {
   const suffix = toolCount > 0 ? ` with ${toolCount} tool${toolCount === 1 ? '' : 's'}` : ''
-  if (route === 'lightspeed_sql') return `Starting Lightspeed lookup${suffix}`
+  if (route === 'lightspeed_sql') {
+    return `Starting ${inferStoreWorkflowLabel(plannedToolNames, userMessage)}${suffix}`
+  }
   if (route === 'storefront_action') return `Starting storefront workflow${suffix}`
   if (route === 'web_research') return `Starting web research${suffix}`
   if (route === 'business_analysis') return `Starting business analysis${suffix}`

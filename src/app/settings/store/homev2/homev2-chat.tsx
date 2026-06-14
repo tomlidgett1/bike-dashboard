@@ -9,6 +9,7 @@ import { GenieChart } from "@/components/genie/genie-chart";
 import { GenieDataTable } from "@/components/genie/genie-data-table";
 import { GeniePivotTable } from "@/components/genie/genie-pivot-table";
 import { HomeV2ChatInput } from "@/components/genie/homev2-chat-input";
+import { GenieIntegrationAvatars } from "@/components/genie/genie-integration-avatars";
 import type { GeniePivotTablePayload } from "@/lib/genie/pivot-table";
 import { GenieProposalCard } from "@/components/genie/genie-proposal-card";
 import { LightspeedWorkorderCards } from "@/components/genie/lightspeed-workorder-cards";
@@ -71,7 +72,6 @@ import type {
 } from "@/lib/genie/visual-payloads";
 
 type ChatRole = "user" | "assistant";
-type ExperimentVariant = "default" | "nano";
 
 interface ProcessStep {
   id: string;
@@ -106,7 +106,6 @@ interface ChatMessage {
   error?: string;
   backgroundJobId?: string;
   turnId?: string;
-  experimentVariant?: ExperimentVariant;
 }
 
 interface ChatTurn {
@@ -136,10 +135,6 @@ function buildChatTurns(messages: ChatMessage[]): ChatTurn[] {
   }
 
   return turns;
-}
-
-function experimentColumnLabel(variant: ExperimentVariant) {
-  return variant === "default" ? "Current models" : "Nano (fast mode)";
 }
 
 function enrichAssistantFromJob(target: ChatMessage, merged: ChatMessage, job: GenieJob): ChatMessage {
@@ -245,25 +240,6 @@ function AssistantResponseBody({
   );
 }
 
-function AssistantExperimentColumn({
-  message,
-  variant,
-  onGmailConnected,
-}: {
-  message: ChatMessage;
-  variant: ExperimentVariant;
-  onGmailConnected?: () => void;
-}) {
-  return (
-    <div className="min-w-0 rounded-md border border-gray-200 bg-white p-4 shadow-sm">
-      <p className="mb-3 text-xs font-medium text-gray-500">
-        {experimentColumnLabel(variant)}
-      </p>
-      <AssistantResponseBody message={message} onGmailConnected={onGmailConnected} />
-    </div>
-  );
-}
-
 function ChatTurnView({
   turn,
   isLatestTurn,
@@ -277,10 +253,7 @@ function ChatTurnView({
   lastUserMessageRef?: React.Ref<HTMLDivElement>;
   onGmailConnected?: () => void;
 }) {
-  const defaultAssistant = turn.assistants.find((message) => message.experimentVariant === "default")
-    ?? turn.assistants[0];
-  const nanoAssistant = turn.assistants.find((message) => message.experimentVariant === "nano");
-  const isExperimentTurn = Boolean(defaultAssistant && nanoAssistant);
+  const assistant = turn.assistants[0];
 
   return (
     <div
@@ -293,14 +266,9 @@ function ChatTurnView({
         </div>
       </div>
 
-      {isExperimentTurn ? (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <AssistantExperimentColumn message={defaultAssistant} variant="default" onGmailConnected={onGmailConnected} />
-          <AssistantExperimentColumn message={nanoAssistant!} variant="nano" onGmailConnected={onGmailConnected} />
-        </div>
-      ) : defaultAssistant ? (
+      {assistant ? (
         <div className="flex justify-start">
-          <AssistantResponseBody message={defaultAssistant} onGmailConnected={onGmailConnected} />
+          <AssistantResponseBody message={assistant} onGmailConnected={onGmailConnected} />
         </div>
       ) : null}
     </div>
@@ -1012,9 +980,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     if (!messages.some((message) => message.role === "user")) return;
 
     const id = activeConversationId ?? crypto.randomUUID();
-    const persistedMessages = messages.filter(
-      (message) => message.experimentVariant !== "nano",
-    );
+    const persistedMessages = messages;
     const nextConversation: HomeV2SavedConversation = {
       id,
       title: homeConversationTitle(persistedMessages),
@@ -1328,10 +1294,9 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
       content: trimmed,
       turnId,
     };
-    const defaultAssistantId = crypto.randomUUID();
-    const nanoAssistantId = crypto.randomUUID();
-    const defaultAssistantMessage: ChatMessage = {
-      id: defaultAssistantId,
+    const assistantId = crypto.randomUUID();
+    const assistantMessage: ChatMessage = {
+      id: assistantId,
       role: "assistant",
       content: "",
       isStreaming: true,
@@ -1339,18 +1304,6 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
       statusPhase: "thinking",
       processSteps: [createProcessStep("thinking", "Thinking")],
       turnId,
-      experimentVariant: "default",
-    };
-    const nanoAssistantMessage: ChatMessage = {
-      id: nanoAssistantId,
-      role: "assistant",
-      content: "",
-      isStreaming: true,
-      status: "Thinking",
-      statusPhase: "thinking",
-      processSteps: [createProcessStep("thinking", "Thinking")],
-      turnId,
-      experimentVariant: "nano",
     };
 
     const conversationId = activeConversationIdRef.current ?? crypto.randomUUID();
@@ -1364,7 +1317,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
       (typeof window === "undefined" ? 0 : Math.max(360, window.innerHeight - 180));
 
     flushSync(() => {
-      const updatedMessages = [...nextMessages, defaultAssistantMessage, nanoAssistantMessage];
+      const updatedMessages = [...nextMessages, assistantMessage];
       messagesRef.current = updatedMessages;
       setLastMsgMinHeight(containerHeight);
       setMessages(updatedMessages);
@@ -1406,10 +1359,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
       analysisQueries: message.analysisQueries,
     }));
 
-    const startVariantJob = async (
-      assistantId: string,
-      modelProfile: ExperimentVariant,
-    ) => {
+    const startAssistantJob = async (assistantId: string) => {
       const jobId = await startAgentBackgroundJob({
         messages: serializedMessages,
         prompt: trimmed,
@@ -1417,7 +1367,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
         composioSessionIds: composioSessionIdsRef.current,
         clientAssistantId: assistantId,
         source: "homev2",
-        modelProfile,
+        modelProfile: "default",
       });
 
       if (jobId) {
@@ -1446,14 +1396,11 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     };
 
     try {
-      await Promise.all([
-        startVariantJob(defaultAssistantId, "default"),
-        startVariantJob(nanoAssistantId, "nano"),
-      ]);
+      await startAssistantJob(assistantId);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Failed to start Genie.";
       setMessages((current) => current.map((message) =>
-        message.id === defaultAssistantId || message.id === nanoAssistantId
+        message.id === assistantId
           ? {
               ...message,
               isStreaming: false,
@@ -1594,10 +1541,6 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
             Welcome, today is {todayLabel}
           </h1>
 
-          <div className="max-w-2xl rounded-md border border-gray-200 bg-white px-4 py-3 text-center text-sm text-gray-600">
-            Model speed experiment: each question runs twice — current models on the left, nano fast mode on the right (nano models, parallel tools, no verify loops).
-          </div>
-
           <HomeV2MetricsCards />
 
           <div className="w-full max-w-3xl">
@@ -1611,6 +1554,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
                 <SupplierInvoicePill onProcess={(prompt) => submitPrompt(prompt)} />
                 <XeroConnectPill />
                 <DeputyConnectPill />
+                <GenieIntegrationAvatars />
               </div>
             </div>
             <PromptQueueList
@@ -1632,7 +1576,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
       ) : (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
-            <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
+            <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
               {buildChatTurns(messages).map((turn, index, turns) => {
                 const isLatestTurn = index === turns.length - 1;
                 return (
@@ -1663,6 +1607,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
                   <SupplierInvoicePill onProcess={(prompt) => submitPrompt(prompt)} />
                   <XeroConnectPill />
                   <DeputyConnectPill />
+                  <GenieIntegrationAvatars />
                 </div>
               </div>
 

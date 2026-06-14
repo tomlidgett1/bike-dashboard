@@ -38,18 +38,7 @@ export function XeroConnectPill({ className }: { className?: string }) {
   if (!status || !status.configured) return null;
 
   if (status.connected) {
-    return (
-      <span
-        className={cn(
-          "inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700",
-          className,
-        )}
-        title={status.organisation_name ? `Xero connected — ${status.organisation_name}` : "Xero connected"}
-      >
-        <XeroMark className="h-3.5 w-3.5" />
-        Xero connected
-      </span>
-    );
+    return null;
   }
 
   return (

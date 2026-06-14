@@ -38,18 +38,7 @@ export function DeputyConnectPill({ className }: { className?: string }) {
   if (!status || !status.configured) return null;
 
   if (status.connected) {
-    return (
-      <span
-        className={cn(
-          "inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700",
-          className,
-        )}
-        title={status.account_name ? `Deputy connected — ${status.account_name}` : "Deputy connected"}
-      >
-        <DeputyLogo className="h-3.5 w-3.5 rounded-[3px]" />
-        Deputy connected
-      </span>
-    );
+    return null;
   }
 
   return (

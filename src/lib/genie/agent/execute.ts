@@ -366,7 +366,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
         entity_query: directPathOverride.entity_query,
         reason: directPathOverride.reason,
       }
-      emit({ event: 'status', phase: 'routing_done', text: 'Using fast Lightspeed path' })
+      emit({ event: 'status', phase: 'routing_done', text: 'Using fast lookup path' })
     } else {
       routerInvoked = true
       orchestrationSource = 'model'
@@ -379,7 +379,11 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
         signal,
         models,
       })
-      emit({ event: 'status', phase: 'routing_done', text: statusForRoute(orchestration.route) })
+      emit({
+        event: 'status',
+        phase: 'routing_done',
+        text: statusForRoute(orchestration.route, undefined, latestUserMessage),
+      })
     }
     finalRoute = orchestration.route
     console.info('[Genie Agent] orchestration', {
@@ -695,7 +699,12 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
       emit({
         event: 'status',
         phase: 'thinking',
-        text: statusForExecutionStart(orchestration.route, agentTools.length),
+        text: statusForExecutionStart(
+          orchestration.route,
+          agentTools.length,
+          executionPlan?.primary_tools,
+          latestUserMessage,
+        ),
       })
 
       for await (const event of agentStream) {

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, ExternalLink, FileText, Loader2, X } from "lucide-react";
+import { ChevronDown, FileText, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const POLL_INTERVAL_MS = 2 * 60 * 1000; // monitor the inbox every 2 minutes
@@ -106,43 +106,21 @@ export function SupplierInvoicePill({
   }, []);
 
   const pending = feed?.pending ?? [];
-  const processing = feed?.processing ?? [];
-  const lastCreated = feed?.recent?.[0];
 
-  if (!feed || (!feed.gmail_connected && pending.length === 0 && processing.length === 0)) return null;
-  if (pending.length === 0 && processing.length === 0 && !lastCreated) return null;
+  if (!feed || pending.length === 0) return null;
 
   return (
     <div ref={rootRef} className={cn("relative inline-flex", className)}>
-      {pending.length > 0 ? (
-        <button
-          type="button"
-          onClick={() => setOpen((current) => !current)}
-          className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 shadow-sm transition-colors hover:border-amber-400 hover:bg-amber-100"
-          title="Supplier invoices detected in your inbox — click to create purchase orders"
-        >
-          <FileText className="h-3.5 w-3.5" />
-          {pending.length} supplier invoice{pending.length === 1 ? "" : "s"}
-          <ChevronDown className={cn("h-3 w-3 opacity-70 transition-transform", open && "rotate-180")} />
-        </button>
-      ) : processing.length > 0 ? (
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          Processing invoice…
-        </span>
-      ) : lastCreated?.lightspeed_order_url ? (
-        <a
-          href={lastCreated.lightspeed_order_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
-          title={`Purchase order #${lastCreated.lightspeed_order_id} created — view in Lightspeed`}
-        >
-          <FileText className="h-3.5 w-3.5" />
-          PO #{lastCreated.lightspeed_order_id} created
-          <ExternalLink className="h-3 w-3" />
-        </a>
-      ) : null}
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 shadow-sm transition-colors hover:border-amber-400 hover:bg-amber-100"
+        title="Supplier invoices detected in your inbox — click to create purchase orders"
+      >
+        <FileText className="h-3.5 w-3.5" />
+        {pending.length} supplier invoice{pending.length === 1 ? "" : "s"}
+        <ChevronDown className={cn("h-3 w-3 opacity-70 transition-transform", open && "rotate-180")} />
+      </button>
 
       <AnimatePresence>
         {open && pending.length > 0 ? (

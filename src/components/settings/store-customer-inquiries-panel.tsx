@@ -6,8 +6,35 @@ import { Button } from "@/components/ui/button";
 import { DesignComposerRail } from "@/components/settings/customer-inquiries/design-composer-rail";
 import { useInquiriesController } from "@/components/settings/customer-inquiries/use-inquiries-controller";
 
+function InquiriesGmailStatusLoading() {
+  return (
+    <div className="flex h-full min-h-0 items-center justify-center bg-[#f6f6f4] p-6">
+      <div className="flex items-center gap-2 text-sm text-gray-500">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading enquiries…
+      </div>
+    </div>
+  );
+}
+
 export function StoreCustomerInquiriesPanel() {
   const c = useInquiriesController();
+
+  if (!c.gmailStatusReady) {
+    if (c.loading) {
+      return <InquiriesGmailStatusLoading />;
+    }
+    if (c.error) {
+      return (
+        <div className="flex h-full min-h-0 items-center justify-center bg-[#f6f6f4] p-6">
+          <div className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-600">
+            {c.error}
+          </div>
+        </div>
+      );
+    }
+    return <InquiriesGmailStatusLoading />;
+  }
 
   if (c.gmailConfigured && !c.gmailConnected) {
     return (

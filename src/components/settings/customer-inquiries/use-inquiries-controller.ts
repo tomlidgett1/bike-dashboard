@@ -237,8 +237,9 @@ export function useInquiriesController() {
     }
   }, [selectedId, draft]);
 
+  const gmailStatusReady = gmailState !== undefined;
   const gmailConnected = gmailState?.connected === true;
-  const gmailConfigured = gmailState?.configured !== false;
+  const gmailConfigured = gmailState?.configured === true;
   const gmailAccountEmail = gmailState?.accounts?.[0]?.email_address ?? null;
   const lightspeedContext = (detail?.lightspeed_context as LightspeedContext | undefined) ?? undefined;
 
@@ -249,6 +250,7 @@ export function useInquiriesController() {
     refreshing,
     error,
     gmailState,
+    gmailStatusReady,
     gmailConnected,
     gmailConfigured,
     gmailAccountEmail,
