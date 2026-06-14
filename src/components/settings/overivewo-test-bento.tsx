@@ -46,7 +46,7 @@ const MARKETING_PREVIEW_ENQUIRIES: CustomerInquiryListItem[] = [
     snippet: "Hi! Is my Orbea ready for pickup this afternoon?",
     body_preview: "Hi! Is my Orbea ready for pickup this afternoon?",
     received_at: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
-    intent: "pickup",
+    intent: "order_status",
     priority: "normal",
     status: "draft_ready",
     draft_body:
@@ -62,7 +62,7 @@ const MARKETING_PREVIEW_ENQUIRIES: CustomerInquiryListItem[] = [
     snippet: "Do you have the Giro Fixture MIPS in matte black, size M?",
     body_preview: "Do you have the Giro Fixture MIPS in matte black, size M?",
     received_at: new Date(Date.now() - 38 * 60 * 1000).toISOString(),
-    intent: "product_availability",
+    intent: "stock_check",
     priority: "normal",
     status: "draft_ready",
     draft_body:
@@ -78,7 +78,7 @@ const MARKETING_PREVIEW_ENQUIRIES: CustomerInquiryListItem[] = [
     snippet: "Thanks for the service update — can I collect Saturday morning?",
     body_preview: "Thanks for the service update — can I collect Saturday morning?",
     received_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-    intent: "service",
+    intent: "service_booking",
     priority: "normal",
     status: "draft_ready",
     draft_body:
