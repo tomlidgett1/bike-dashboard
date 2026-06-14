@@ -2,6 +2,12 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
+  if (request.nextUrl.pathname === '/why-yellow-jersey') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/home2/why-yellow-jersey'
+    return NextResponse.redirect(url)
+  }
+
   // OAuth sometimes lands on `/` if the provider redirect URI is wrong or not allowlisted.
   // Route to the correct handler:
   // - Lightspeed: state from our app is 64 hex chars (see generateOAuthState).
@@ -55,7 +61,7 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/mockup') ||      // Design mockup (no auth needed)
     request.nextUrl.pathname.startsWith('/preview-verify') || // TEMP sidebar check (no auth)
     request.nextUrl.pathname === '/home' ||
-    request.nextUrl.pathname === '/home2' ||
+    request.nextUrl.pathname.startsWith('/home2') ||
     request.nextUrl.pathname === '/v2'
   
   if (isPublicRoute) {

@@ -37,7 +37,7 @@ export function ConditionalLayout({ children }: ConditionalLayoutProps) {
   // Public marketing landing pages are full-bleed, no dashboard chrome
   const isHome =
     pathname === '/home' ||
-    pathname === '/home2' ||
+    pathname?.startsWith('/home2') ||
     pathname?.startsWith('/home/') ||
     false;
 

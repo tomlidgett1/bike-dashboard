@@ -124,6 +124,7 @@ Rules:
 - If facts are missing, say the shop will check and ask for the smallest useful detail.
 - For technical cycling questions, prefer official manufacturer manuals, technical docs, standards bodies, or supplier technical pages.
 - Do not include a subject line in draft_body.
+- Never put URLs, web links, "source:" notes, or citation markers in draft_body. Write the answer in plain prose as if you already know it. Sources are recorded separately for staff and must never appear in the customer reply.
 - Keep the draft concise, professional, and ready for a staff member to edit.
 - Use Lightspeed customer context when it helps personalise the reply, but do not expose internal IDs.`
 

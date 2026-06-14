@@ -7,10 +7,10 @@ import {
 } from '@/lib/composio/gmail'
 import {
   emailLooksLowValue,
-  isLikelyCustomerInquiryContent,
   parseGmailSender,
 } from '@/lib/composio/gmail-response-suggestions'
 import type { GmailEmailPreview } from '@/lib/types/genie-agent'
+import { classifyInquiryEmails, isImportableInquiry } from '@/lib/customer-inquiries/classify-inquiry-email'
 import { createServiceRoleClient } from '@/lib/supabase/server'
 import { recordInquiryEvent } from '@/lib/customer-inquiries/events'
 import { generateInquiryDraft } from '@/lib/customer-inquiries/draft-response'
@@ -148,17 +148,21 @@ async function syncInboxForStore(
     }
   }
 
-  const candidates = toRead
-    .map((email) => ({
-      email,
-      bodyText: bodyByMessageId.get(email.message_id) ?? '',
-    }))
-    .filter(({ email, bodyText }) =>
-      isLikelyCustomerInquiryContent(email.subject, email.snippet, bodyText),
-    )
+  const withBodies = toRead.map((email) => ({
+    email,
+    bodyText: bodyByMessageId.get(email.message_id) ?? '',
+  }))
+
+  const classifications = await classifyInquiryEmails(withBodies)
+
+  const candidates = withBodies.filter(({ email }) => {
+    const classification = classifications.get(email.message_id)
+    return isImportableInquiry(classification)
+  })
 
   let created = 0
   for (const { email, bodyText } of candidates.slice(0, MAX_NEW_INQUIRIES_PER_STORE)) {
+    const classification = classifications.get(email.message_id)
     const sender = parseGmailSender(email.from)
     const receivedAt =
       email.internal_date_ms != null
@@ -195,7 +199,17 @@ async function syncInboxForStore(
         inquiryId: String(data.id),
         userId,
         eventType: 'synced',
-        payload: { subject: email.subject, sender_email: sender.email },
+        payload: {
+          subject: email.subject,
+          sender_email: sender.email,
+          classification: classification
+            ? {
+                category: classification.category,
+                confidence: classification.confidence,
+                reason: classification.reason,
+              }
+            : null,
+        },
       })
     }
   }

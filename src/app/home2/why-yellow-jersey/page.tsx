@@ -1,21 +1,21 @@
 import type { Metadata } from "next";
 import { SITE_NAME, SITE_URL } from "@/lib/seo/site";
-import { Home2Client } from "./_components/home2-client";
+import { WhyYellowJerseyClient } from "../_components/why-yellow-jersey-client";
 
-const TITLE = "The connected commerce platform for independent bike shops";
+const TITLE = "Why bike shops need Yellow Jersey";
 const DESCRIPTION =
-  "Connect Lightspeed in minutes, launch a storefront, sell through the marketplace, and let AI handle the busywork behind the scenes.";
+  "Buyers shop online, but bikes still need real service. See why independent bike shops sell better with connected commerce instead of standalone sites or old marketplaces.";
 
 export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
-  alternates: { canonical: `${SITE_URL}/home2` },
+  alternates: { canonical: `${SITE_URL}/home2/why-yellow-jersey` },
   openGraph: {
     type: "website",
     siteName: SITE_NAME,
     title: `${SITE_NAME}: ${TITLE}`,
     description: DESCRIPTION,
-    url: `${SITE_URL}/home2`,
+    url: `${SITE_URL}/home2/why-yellow-jersey`,
     locale: "en_AU",
     images: [{ url: "/yjlogo.png", alt: SITE_NAME }],
   },
@@ -27,6 +27,6 @@ export const metadata: Metadata = {
   },
 };
 
-export default function Home2Page() {
-  return <Home2Client />;
+export default function WhyYellowJerseyPage() {
+  return <WhyYellowJerseyClient />;
 }

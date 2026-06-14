@@ -1,0 +1,465 @@
+"use client";
+
+import * as React from "react";
+import Image from "next/image";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  ChevronDown,
+  ExternalLink,
+  EyeOff,
+  Loader2,
+  Send,
+  Sparkles,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import type { CustomerInquiryDetail } from "@/lib/customer-inquiries/client";
+import type {
+  CustomerInquiryListItem,
+  CustomerInquiryStatus,
+} from "@/lib/customer-inquiries/types";
+import type { LightspeedContext, StatusFilter } from "./use-inquiries-controller";
+
+export const STATUS_FILTERS: Array<{ id: StatusFilter; label: string }> = [
+  { id: "draft_ready", label: "Ready" },
+  { id: "all", label: "All" },
+  { id: "new", label: "New" },
+  { id: "sent", label: "Sent" },
+  { id: "ignored", label: "Ignored" },
+];
+
+const INTENT_LABELS: Record<string, string> = {
+  technical_question: "Technical",
+  service_booking: "Service",
+  stock_check: "Stock",
+  quote_request: "Quote",
+  warranty: "Warranty",
+  order_status: "Order",
+  general_reply: "General",
+};
+
+export function statusLabel(status: CustomerInquiryStatus): string {
+  if (status === "draft_ready") return "Ready";
+  if (status === "processing") return "Processing";
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+export function intentLabel(intent: string | null | undefined): string | null {
+  if (!intent) return null;
+  return INTENT_LABELS[intent] ?? null;
+}
+
+export function senderName(
+  item: Pick<CustomerInquiryListItem, "sender_name" | "sender_email">,
+): string {
+  return item.sender_name?.trim() || item.sender_email || "Customer";
+}
+
+export function initials(name: string): string {
+  const parts = name
+    .replace(/[<>"]/g, "")
+    .replace(/\(.+?\)/g, "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
+function firstLine(text: string): string {
+  return text.split("\n").map((line) => line.trim()).find(Boolean) ?? "";
+}
+
+export function enquirySummary(item: CustomerInquiryListItem): string {
+  const preview = firstLine(item.body_preview || item.snippet);
+  if (preview) return preview.slice(0, 160);
+  const subject = item.subject?.trim();
+  if (subject && !/^re:/i.test(subject)) return subject;
+  return "Customer enquiry";
+}
+
+export function relativeTime(value: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const mins = Math.round((Date.now() - date.getTime()) / 60000);
+  if (mins < 1) return "Now";
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d`;
+  return date.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
+}
+
+export function fullTime(value: string | null): string {
+  if (!value) return "Unknown time";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown time";
+  return date.toLocaleString("en-AU", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/* ---------- brand marks ---------- */
+
+export function GmailMark({ className }: { className?: string }) {
+  return (
+    <Image
+      src="/gmail.png"
+      alt="Gmail"
+      width={1280}
+      height={960}
+      className={cn("h-3.5 w-auto object-contain", className)}
+      unoptimized
+    />
+  );
+}
+
+export function LightspeedMark({ className }: { className?: string }) {
+  return (
+    <Image
+      src="/ls.png"
+      alt="Lightspeed"
+      width={20}
+      height={20}
+      className={cn("h-4 w-4 rounded-full object-cover", className)}
+      unoptimized
+    />
+  );
+}
+
+/* ---------- atoms ---------- */
+
+export function Avatar({
+  name,
+  size = "md",
+  muted = false,
+  withGmail = false,
+}: {
+  name: string;
+  size?: "sm" | "md" | "lg";
+  muted?: boolean;
+  withGmail?: boolean;
+}) {
+  const dims = size === "lg" ? "h-12 w-12 text-sm" : size === "sm" ? "h-9 w-9 text-[12px]" : "h-11 w-11 text-sm";
+  return (
+    <span className="relative shrink-0">
+      <span
+        className={cn(
+          "flex items-center justify-center rounded-full font-semibold",
+          dims,
+          muted ? "bg-gray-100 text-gray-400" : "bg-gray-200/70 text-gray-700",
+        )}
+      >
+        {initials(name)}
+      </span>
+      {withGmail ? (
+        <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white ring-1 ring-gray-200">
+          <GmailMark className="h-2.5" />
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+export function StatusChip({ status, className }: { status: CustomerInquiryStatus; className?: string }) {
+  const ready = status === "draft_ready";
+  return (
+    <span
+      className={cn(
+        "rounded-md px-2 py-0.5 text-[11px] font-medium",
+        ready ? "bg-gray-900 text-white" : "border border-gray-200 bg-white text-gray-500",
+        className,
+      )}
+    >
+      {statusLabel(status)}
+    </span>
+  );
+}
+
+export function FilterTabs({
+  value,
+  onChange,
+  className,
+}: {
+  value: StatusFilter;
+  onChange: (next: StatusFilter) => void;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex items-center gap-0.5 overflow-x-auto rounded-md bg-gray-100 p-0.5", className)}>
+      {STATUS_FILTERS.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          onClick={() => onChange(item.id)}
+          className={cn(
+            "flex shrink-0 items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+            value === item.id
+              ? "bg-white text-gray-800 shadow-sm"
+              : "text-gray-600 hover:bg-gray-200/70",
+          )}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ---------- content blocks (shared by every design) ---------- */
+
+export function MessageBlock({
+  detail,
+  gmailAccountEmail,
+}: {
+  detail: CustomerInquiryDetail;
+  gmailAccountEmail?: string | null;
+}) {
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-gray-400">
+        <GmailMark />
+        <span>{gmailAccountEmail ? `via ${gmailAccountEmail}` : "via Gmail"}</span>
+      </div>
+      {detail.subject ? (
+        <p className="text-sm font-semibold text-gray-900">{detail.subject}</p>
+      ) : null}
+      <p className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-gray-600">
+        {detail.body_preview || detail.snippet}
+      </p>
+    </div>
+  );
+}
+
+export function LightspeedBody({ context }: { context: LightspeedContext }) {
+  if (!context.matched) {
+    return (
+      <p className="text-[13px] text-gray-500">
+        {context.summary || "No matching Lightspeed customer found for this sender."}
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-3 text-[13px] text-gray-700">
+      {context.summary ? <p className="leading-relaxed">{context.summary}</p> : null}
+      {context.customer_phone ? (
+        <p className="text-xs text-gray-500">Phone: {context.customer_phone}</p>
+      ) : null}
+      {context.bikes?.length ? (
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Bikes</p>
+          <ul className="mt-1.5 space-y-1">
+            {context.bikes.map((bike, idx) => (
+              <li key={`${bike.serial ?? bike.label ?? idx}`}>
+                {bike.label || "Bike"}
+                {bike.serial ? ` · ${bike.serial}` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {context.recent_workorders?.length ? (
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">
+            Recent workorders
+          </p>
+          <ul className="mt-1.5 space-y-1">
+            {context.recent_workorders.map((wo) => (
+              <li key={wo.id}>{wo.title || `Workorder ${wo.id}`}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function SourcesBody({
+  citations,
+}: {
+  citations: Array<{ url: string; title: string }>;
+}) {
+  return (
+    <div>
+      <p className="mb-2 text-[11px] text-gray-400">
+        Reference for staff only — not added to the customer reply.
+      </p>
+      <ul className="space-y-2">
+        {citations.map((citation) => (
+          <li key={citation.url}>
+            <a
+              href={citation.url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 text-[13px] text-gray-700 hover:text-gray-900"
+            >
+              <span className="truncate">{citation.title || citation.url}</span>
+              <ExternalLink className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export function Collapsible({
+  title,
+  icon,
+  badge,
+  defaultOpen = true,
+  children,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  badge?: React.ReactNode;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = React.useState(defaultOpen);
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between px-5 py-3.5 text-left"
+      >
+        <span className="flex items-center gap-2 text-sm font-medium text-gray-900">
+          {icon}
+          {title}
+          {badge}
+        </span>
+        <ChevronDown
+          className={cn("h-4 w-4 text-gray-400 transition-transform duration-200", open && "rotate-180")}
+        />
+      </button>
+      <AnimatePresence initial={false}>
+        {open ? (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+            className="overflow-hidden"
+          >
+            <div className="border-t border-gray-100 px-5 pb-5 pt-3">{children}</div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+export function MatchBadge({ matched }: { matched?: boolean }) {
+  return (
+    <span
+      className={cn(
+        "rounded-md px-1.5 py-0.5 text-[10px] font-medium",
+        matched ? "bg-gray-900 text-white" : "border border-gray-200 bg-white text-gray-400",
+      )}
+    >
+      {matched ? "Matched" : "No match"}
+    </span>
+  );
+}
+
+export function ReplyComposer({
+  detail,
+  draft,
+  setDraft,
+  onRegenerate,
+  regenerating,
+  onSend,
+  onIgnore,
+  sending,
+  actionMessage,
+  showReasoning = true,
+}: {
+  detail: CustomerInquiryDetail;
+  draft: string;
+  setDraft: (next: string) => void;
+  onRegenerate: () => void;
+  regenerating: boolean;
+  onSend: () => void;
+  onIgnore: () => void;
+  sending: boolean;
+  actionMessage: string | null;
+  showReasoning?: boolean;
+}) {
+  const locked = detail.status === "sent" || detail.status === "ignored";
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="flex items-center gap-1.5 text-sm font-medium text-gray-900">
+            <Sparkles className="h-3.5 w-3.5 text-gray-400" />
+            Suggested reply
+          </p>
+          {showReasoning && detail.reasoning ? (
+            <p className="mt-0.5 text-[12px] leading-relaxed text-gray-500">{detail.reasoning}</p>
+          ) : null}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="shrink-0 rounded-md"
+          onClick={onRegenerate}
+          disabled={regenerating || detail.status === "sent"}
+        >
+          {regenerating ? (
+            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+          )}
+          Regenerate
+        </Button>
+      </div>
+
+      <textarea
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        disabled={locked}
+        className="mt-3 min-h-[180px] flex-1 w-full resize-none rounded-md border border-gray-200 bg-white px-3.5 py-3 text-[13px] leading-relaxed text-gray-800 outline-none transition-colors focus:border-gray-400 disabled:bg-gray-50 disabled:text-gray-500"
+        placeholder="Draft reply will appear once processing completes."
+      />
+
+      {actionMessage ? <p className="mt-3 text-[12px] text-gray-600">{actionMessage}</p> : null}
+
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          className="rounded-md"
+          onClick={onSend}
+          disabled={
+            sending ||
+            !draft.trim() ||
+            detail.status === "sent" ||
+            detail.status === "ignored" ||
+            detail.status === "processing"
+          }
+        >
+          <Send className="mr-1.5 h-4 w-4" />
+          Send reply
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="rounded-md"
+          onClick={onIgnore}
+          disabled={locked}
+        >
+          <EyeOff className="mr-1.5 h-4 w-4" />
+          Ignore
+        </Button>
+      </div>
+    </div>
+  );
+}

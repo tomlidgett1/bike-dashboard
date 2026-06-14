@@ -349,6 +349,26 @@
   100% { transform: translateX(420%); }
 }
 
+@keyframes home2-uber-marquee-left {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.home2-uber-marquee-left {
+  animation: home2-uber-marquee-left 120s linear infinite;
+}
+
+.home2-uber-marquee-right {
+  animation: home2-uber-marquee-left 120s linear infinite reverse;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home2-uber-marquee-left,
+  .home2-uber-marquee-right {
+    animation: none;
+  }
+}
+
 @layer utilities {
   /* Skip rendering product cards below the fold until they're near the viewport */
   .product-card-root {

@@ -1,13 +1,30 @@
 "use client";
 
+import * as React from "react";
 import { Loader2, Mail, Send } from "lucide-react";
 import { GmailLogo } from "@/components/genie/gmail-logo";
 import { Button } from "@/components/ui/button";
-import { DesignComposerRail } from "@/components/settings/customer-inquiries/design-composer-rail";
-import { useInquiriesController } from "@/components/settings/customer-inquiries/use-inquiries-controller";
+import { cn } from "@/lib/utils";
+import { useInquiriesController } from "./use-inquiries-controller";
+import { DesignTabbed } from "./design-tabbed";
+import { DesignThreePane } from "./design-three-pane";
+import { DesignComposerRail } from "./design-composer-rail";
+import { DesignThread } from "./design-thread";
 
-export function StoreCustomerInquiriesPanel() {
+type ConceptId = "tabbed" | "three" | "rail" | "thread";
+
+const CONCEPTS: Array<{ id: ConceptId; label: string; blurb: string }> = [
+  { id: "tabbed", label: "1 · Tabbed", blurb: "Reply-first, tabs for message & context" },
+  { id: "three", label: "2 · Three-pane", blurb: "List · context · reply, all visible" },
+  { id: "rail", label: "3 · Composer", blurb: "Big reply, context rail on the right" },
+  { id: "thread", label: "4 · Thread", blurb: "Conversation with a chat composer" },
+];
+
+export function CustomerInquiriesConcepts() {
   const c = useInquiriesController();
+  const [concept, setConcept] = React.useState<ConceptId>("tabbed");
+
+  const active = CONCEPTS.find((x) => x.id === concept) ?? CONCEPTS[0];
 
   if (c.gmailConfigured && !c.gmailConnected) {
     return (
@@ -50,8 +67,34 @@ export function StoreCustomerInquiriesPanel() {
   }
 
   return (
-    <>
-      <DesignComposerRail c={c} />
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 py-2.5 lg:px-6">
+        <div className="flex items-center gap-1 overflow-x-auto rounded-md bg-gray-100 p-0.5">
+          {CONCEPTS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setConcept(item.id)}
+              className={cn(
+                "flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                concept === item.id
+                  ? "bg-white text-gray-800 shadow-sm"
+                  : "text-gray-600 hover:bg-gray-200/70",
+              )}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <p className="hidden text-[12px] text-gray-400 sm:block">{active.blurb}</p>
+      </div>
+
+      <div className="min-h-0 flex-1">
+        {concept === "tabbed" ? <DesignTabbed c={c} /> : null}
+        {concept === "three" ? <DesignThreePane c={c} /> : null}
+        {concept === "rail" ? <DesignComposerRail c={c} /> : null}
+        {concept === "thread" ? <DesignThread c={c} /> : null}
+      </div>
 
       {c.sendConfirmOpen ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
@@ -98,6 +141,6 @@ export function StoreCustomerInquiriesPanel() {
           </div>
         </div>
       ) : null}
-    </>
+    </div>
   );
 }
