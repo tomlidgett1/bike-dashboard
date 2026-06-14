@@ -8808,11 +8808,20 @@ async function buildLightspeedCustomerProfile(
 }
 
 const WORKORDER_CUSTOMER_INTENT_RE = /\b(work ?orders?|jobs?|service|repair|repairs?|history|open|finished|complete|completed|done|due|today|tomorrow|pickup|ready|eta|note|notes?|internal|warranty|customer|client)\b/
-const WORKORDER_NON_CUSTOMER_TOPIC_RE = /\b(bike|serial|serialized|pads?|brake|rotors?|chain|cassette|tyre|tire|bottom bracket|bb|labou?r|part|parts)\b/
+const WORKORDER_NON_CUSTOMER_TOPIC_RE =
+  /\b(bike|serial|serialized|pads?|brake|rotors?|chain|cassette|tyre|tire|bottom bracket|bb|labou?r|part|parts|frame|fork|crack(?:ed|s|ing)?|broken|damage(?:d)?|warranty|defect|creak(?:ing|s)?|noise|dent(?:ed)?|snap(?:ped|ping)?|fail(?:ure|ed|ing)?|recall|handlebar|derailleur|shifter|hub|wheel|rim|suspension|shock|carbon|dropout|headset|stem|crank|pedal|mention(?:ed|ing)?|containing)\b/
+
+function looksLikeWorkorderNoteSearch(query: string): boolean {
+  const normalized = normalizeText(query)
+  if (!normalized) return false
+  if (WORKORDER_NON_CUSTOMER_TOPIC_RE.test(normalized)) return true
+  return /\b(note|notes|internal note|mentioning|containing|search(?:ing)? for|with (?:a )?(?:note|issue|problem))\b/.test(normalized)
+}
 
 function workorderCustomerLookupQuery(query: string): string | null {
   const clean = query.replace(/\s+/g, ' ').trim()
   if (!clean) return null
+  if (looksLikeWorkorderNoteSearch(clean)) return null
   if (clean.includes('@') || phoneDigits(clean).length >= 7) return clean
   if (/^#?\d+$/.test(clean)) return null
 
@@ -10165,7 +10174,7 @@ function buildAgentTools(
     }),
     tool({
       name: 'list_lightspeed_workorders',
-      description: 'List live Lightspeed repair/service work orders with full details. Reuse recent private structured workorder context for follow-ups when it already answers the question. Use scope "open" for active/in-progress jobs, "finished" for completed, done, paid, or pickup-ready questions such as "what did X get done", or "all" only when the user truly needs active plus completed history. For every workorder question, inspect both note and internal_note plus warranty, labour line notes, item descriptions, item notes, serialized_id, sale_id, customer details, status, and dates before answering. For named-customer bike fitment questions, query the customer name with include_details:true and use work-order notes/parts to identify the bike before web compatibility research. For due-date questions ("due today", ETA on a date), pass due_on as YYYY-MM-DD in the store timezone. Use small limits for named-customer lookups. Answer-only — never create proposals.',
+      description: 'List live Lightspeed repair/service work orders with full details. Reuse recent private structured workorder context for follow-ups when it already answers the question. Use scope "open" for active/in-progress jobs, "finished" for completed, done, paid, or pickup-ready questions such as "what did X get done", or "all" only when the user truly needs active plus completed history. For note/keyword/issue searches such as "cracked frame" or "work orders mentioning warranty", pass query with the phrase and scope "all"; the tool searches public note, internal_note, labour line notes, and part descriptions without treating the phrase as a customer name. For every workorder question, inspect both note and internal_note plus warranty, labour line notes, item descriptions, item notes, serialized_id, sale_id, customer details, status, and dates before answering. For named-customer bike fitment questions, query the customer name with include_details:true and use work-order notes/parts to identify the bike before web compatibility research. For due-date questions ("due today", ETA on a date), pass due_on as YYYY-MM-DD in the store timezone. Use small limits for named-customer lookups. Answer-only — never create proposals.',
       parameters: z.object({
         scope: z.enum(['open', 'finished', 'all']).optional().describe('Defaults to open for active work orders.'),
         due_on: z.string().optional().describe('Filter by ETA out date (YYYY-MM-DD, store timezone). Use for "due today" and similar questions.'),
@@ -10179,9 +10188,12 @@ function buildAgentTools(
       async execute(args) {
         const dueOn = args.due_on?.trim() || ''
         const originalQuery = args.query?.trim() || ''
-        const customerLookupQuery = originalQuery ? workorderCustomerLookupQuery(originalQuery) : null
-        const likelyCustomerQuery = originalQuery ? shouldResolveWorkorderCustomerQuery(originalQuery) : false
-        const scope = args.scope ?? (likelyCustomerQuery ? 'all' : 'open')
+        const noteSearch = originalQuery ? looksLikeWorkorderNoteSearch(originalQuery) : false
+        const customerLookupQuery =
+          originalQuery && !noteSearch ? workorderCustomerLookupQuery(originalQuery) : null
+        const likelyCustomerQuery =
+          originalQuery && !noteSearch ? shouldResolveWorkorderCustomerQuery(originalQuery) : false
+        const scope = args.scope ?? (noteSearch || likelyCustomerQuery ? 'all' : 'open')
         let customerId = args.customer_id?.trim() || ''
         let query = originalQuery || undefined
         let resolvedCustomerName: string | null = null
@@ -10199,11 +10211,13 @@ function buildAgentTools(
         }
 
         const includeArchived = args.include_archived ?? (Boolean(customerId) && scope !== 'open')
-        const limit = args.limit ?? (customerId ? 30 : undefined)
+        const limit = args.limit ?? (customerId ? 30 : noteSearch ? 24 : undefined)
         emitStatus(
           emit,
           'lightspeed_workorders',
-          customerId
+          noteSearch
+            ? `Searching work order notes for "${originalQuery}"`
+            : customerId
             ? `Loading work orders for ${resolvedCustomerName ?? `customer ${customerId}`}`
             : dueOn
             ? `Loading work orders due ${dueOn}`
@@ -10219,7 +10233,8 @@ function buildAgentTools(
           limit,
           include_details: args.include_details,
           include_archived: includeArchived,
-          max_pages_per_status: args.max_pages_per_status ?? (query ? 1 : undefined),
+          note_search: noteSearch,
+          max_pages_per_status: args.max_pages_per_status ?? (noteSearch ? 6 : query ? 1 : undefined),
         })
         emitWorkorderCards(
           emit,
@@ -10537,6 +10552,7 @@ export {
   roundPercent,
   workorderCustomerLookupQuery,
   shouldResolveWorkorderCustomerQuery,
+  looksLikeWorkorderNoteSearch,
   addUtcDays,
   isoDateFromUtcDate,
   isoDateToUtcDate,

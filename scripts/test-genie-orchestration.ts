@@ -47,6 +47,7 @@ const storeProductPreviewSource = readFileSync(join(root, 'src/lib/genie/store-p
 const lightspeedClientSource = readFileSync(join(root, 'src/lib/services/lightspeed/lightspeed-client.ts'), 'utf8')
 const lightspeedTypesSource = readFileSync(join(root, 'src/lib/services/lightspeed/types.ts'), 'utf8')
 const workorderQuerySource = readFileSync(join(root, 'src/lib/services/lightspeed/workorder-queries.ts'), 'utf8')
+const lightspeedInstructionsSource = readFileSync(join(root, 'lightspeed.md'), 'utf8')
 const homeV2ChatSource = readFileSync(join(root, 'src/app/settings/store/homev2/homev2-chat.tsx'), 'utf8')
 const geniePanelSource = readFileSync(join(root, 'src/components/genie/genie-panel.tsx'), 'utf8')
 const telemetrySource = readFileSync(join(root, 'src/lib/genie/telemetry.ts'), 'utf8')
@@ -84,8 +85,8 @@ assert.match(
 )
 assert.match(
   agentRouteSource,
-  /new Agent\(\{\s*name: 'Yellow Jersey Orchestrator'[\s\S]*?model: ORCHESTRATOR_MODEL/,
-  'orchestrator agent must remain available for ambiguous routing',
+  /new Agent\(\{\s*name: 'Yellow Jersey Orchestrator'[\s\S]*?model: models\.orchestrator/,
+  'orchestrator agent must remain available for ambiguous routing via the configured model profile',
 )
 assert.match(
   agentRouteSource,
@@ -120,12 +121,12 @@ assert.match(
 assert.equal(
   /deterministicOrchestrationDecision/.test(agentRouteSource),
   false,
-  'agent route must not bypass the LLM router with deterministic fast paths',
+  'agent route must not use the removed broad deterministic orchestration helper',
 )
 assert.match(
   agentRouteSource,
-  /routerInvoked = true[\s\S]*?orchestrationSource = 'model'[\s\S]*?await createGenieOrchestrationDecision/,
-  'agent route must invoke the model router for every non-empty request',
+  /const directPathOverride = resolveObviousLightspeedDirectPath\(latestUserMessage, messages\)[\s\S]*?if \(directPathOverride\)[\s\S]*?routerInvoked = false[\s\S]*?orchestrationSource = 'deterministic'[\s\S]*?else[\s\S]*?routerInvoked = true[\s\S]*?orchestrationSource = 'model'[\s\S]*?await createGenieOrchestrationDecision/,
+  'agent route must use deterministic direct-path bypasses only before falling back to the model router',
 )
 assert.equal(
   /applyGmailPlanningPolicy/.test(agentRouteSource),
@@ -154,13 +155,23 @@ assert.match(
 )
 assert.match(
   agentRouteSource,
-  /router_model: ORCHESTRATOR_MODEL/,
-  'router model must be logged as the nano orchestrator model',
+  /router_model: models\.orchestrator/,
+  'router model must be logged from the configured model profile',
 )
 assert.match(
   agentRouteSource,
-  /This is the production routing gate\. There is no deterministic router before you — and no keyword shortcuts after you\./,
-  'router instructions must state that the LLM owns route selection',
+  /This is the model routing gate after any obvious deterministic fast-path bypass/,
+  'router instructions must accurately describe the deterministic fast-path bypass',
+)
+assert.match(
+  agentRouteSource,
+  /SQL mirror first for many-row reporting, totals, rankings, trends, sales history/,
+  'router/planner/executor instructions must include the SQL-vs-live Lightspeed data-source doctrine',
+)
+assert.match(
+  lightspeedInstructionsSource,
+  /SQL vs Live API Decision Rule/,
+  'loaded Lightspeed instructions must include the SQL-vs-live API decision rule',
 )
 assert.match(
   agentRouteSource,
@@ -299,8 +310,8 @@ assert.match(
 )
 assert.match(
   agentRouteSource,
-  /buildSystemPrompt\(storeName, executionPlan, orchestration\.route\)/,
-  'executor prompt must receive the route and LLM plan for route-specific prompt pruning',
+  /buildSystemPrompt\(storeName, executionPlan, orchestration\.route, runtime\.fastAnswerPrompt\)/,
+  'executor prompt must receive the route, LLM plan, and fast-mode flag for route-specific prompt pruning',
 )
 assert.match(
   agentRouteSource,
@@ -429,7 +440,7 @@ assert.match(
 )
 assert.match(
   homeV2ChatSource,
-  /renderGenieMarkdown\(normalized\)/,
+  /renderGenieMarkdown\(source\)/,
   'Home v2 Genie must use the shared Markdown renderer for assistant answers',
 )
 assert.match(
@@ -746,18 +757,33 @@ assert.match(
 )
 assert.match(
   agentRouteSource,
-  /const scope = args\.scope \?\? \(likelyCustomerQuery \? 'all' : 'open'\)/,
-  'bare customer workorder queries must default to all history, not open-only',
+  /const scope = args\.scope \?\? \(noteSearch \|\| likelyCustomerQuery \? 'all' : 'open'\)/,
+  'bare customer and note-style workorder queries must default to all history, not open-only',
 )
 assert.match(
   agentRouteSource,
-  /const customerLookupQuery = originalQuery \? workorderCustomerLookupQuery\(originalQuery\) : null/,
+  /const customerLookupQuery =[\s\S]*!noteSearch \? workorderCustomerLookupQuery\(originalQuery\) : null/,
   'list_lightspeed_workorders must derive a cleaned customer lookup query before deciding scope',
 )
 assert.match(
   agentRouteSource,
-  /resolveCustomerForProfile\(userId, \{ query: customerLookupQuery \}, emit\)/,
-  'bare customer workorder queries must resolve the customer before listing workorders',
+  /looksLikeWorkorderNoteSearch/,
+  'issue/note workorder searches must skip customer-name resolution',
+)
+assert.match(
+  agentRouteSource,
+  /note_search: noteSearch/,
+  'note-style workorder searches must use the note_search fetch path',
+)
+assert.match(
+  promptsModuleSource,
+  /Do not call search_lightspeed_customers or get_lightspeed_customer_profile for those searches/,
+  'executor instructions must route note/issue workorder searches away from customer lookup',
+)
+assert.match(
+  agentRouteSource,
+  /if \(looksLikeWorkorderNoteSearch\(clean\)\) return null/,
+  'issue/note phrases such as cracked frame must not be treated as customer names',
 )
 assert.match(
   agentRouteSource,
@@ -776,8 +802,13 @@ assert.match(
 )
 assert.match(
   agentRouteSource,
-  /max_pages_per_status: args\.max_pages_per_status \?\? \(query \? 1 : undefined\)/,
-  'unresolved text workorder fallbacks must be page-bounded for latency',
+  /max_pages_per_status: args\.max_pages_per_status \?\? \(noteSearch \? 6 : query \? 1 : undefined\)/,
+  'note-style workorder searches must scan more pages; other text fallbacks stay page-bounded',
+)
+assert.match(
+  workorderQuerySource,
+  /options\.note_search/,
+  'workorder query service must support note_search scanning mode',
 )
 assert.match(
   workorderQuerySource,
@@ -904,7 +935,7 @@ assert.match(
 // ── Time budget: long runs are told to wrap up before the platform kills them ─
 assert.match(
   executeModuleSource,
-  /applyTimeBudgetToTools\(agentTools, requestStartedAt, RUN_TIME_BUDGET_MS\)/,
+  /applyTimeBudgetToTools\(agentTools, requestStartedAt, RUN_TIME_BUDGET_MS, runtime\.fastAnswerPrompt\)/,
   'tool results must carry wrap-up directives when the run nears its time budget',
 )
 
@@ -1362,6 +1393,12 @@ const progressFixtures: Array<{ phase: string; input: string; compact: string; l
     input: 'Resolving customer profile for "Sarah Down"',
     compact: 'Resolving: Sarah Down',
     live: 'Resolving: Sarah Down',
+  },
+  {
+    phase: 'lightspeed_workorders',
+    input: 'Searching work order notes for "cracked frame"',
+    compact: 'Notes: cracked frame',
+    live: 'Notes: cracked frame',
   },
   {
     phase: 'lightspeed_customers',

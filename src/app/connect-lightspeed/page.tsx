@@ -3,7 +3,8 @@
 export const dynamic = 'force-dynamic';
 
 import * as React from "react";
-import { AlertCircle, CheckCircle2, Database, Loader2, Play, RefreshCw, RotateCcw, SlidersHorizontal, Zap } from "lucide-react";
+import { CheckCircle2, Database, Loader2, Play, RefreshCw, RotateCcw, SlidersHorizontal } from "lucide-react";
+import { ConnectLightspeedBento } from "@/components/lightspeed/connect-lightspeed-bento";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -814,52 +815,11 @@ export default function ConnectLightspeedPage() {
   // Not connected state
   if (!isConnected) {
     return (
-      <div className="flex items-center justify-center min-h-[70vh] p-6">
-        <div className="max-w-md w-full space-y-6 text-center">
-          <div className="flex justify-center">
-            <div className="h-16 w-16 rounded-md bg-secondary flex items-center justify-center">
-              <Zap className="h-8 w-8 text-foreground" />
-            </div>
-          </div>
-          
-          <div>
-            <h2 className="text-2xl font-semibold mb-2">Connect to Lightspeed</h2>
-            <p className="text-muted-foreground">
-              Connect your Lightspeed POS account to sync your inventory to the marketplace
-            </p>
-          </div>
-
-          {error && (
-            <div className="rounded-md bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900 p-4">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
-                <div className="text-sm text-red-900 dark:text-red-400">
-                  {error}
-                </div>
-              </div>
-            </div>
-          )}
-
-          <Button
-            onClick={connect}
-            disabled={isConnecting}
-            size="lg"
-            className="w-full rounded-md"
-          >
-            {isConnecting ? (
-              <>
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                Connecting...
-              </>
-            ) : (
-              <>
-                <Zap className="mr-2 h-5 w-5" />
-                Connect Lightspeed
-              </>
-            )}
-          </Button>
-        </div>
-      </div>
+      <ConnectLightspeedBento
+        error={error}
+        isConnecting={isConnecting}
+        onConnect={connect}
+      />
     );
   }
 

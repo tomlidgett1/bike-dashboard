@@ -44,6 +44,7 @@ import {
 import { NavUser } from "./nav-user";
 import { SidebarLightspeedStatus } from "./sidebar-lightspeed-status";
 import { SidebarViewStoreLink } from "./sidebar-view-store-link";
+import { SidebarCollapseTrigger } from "./sidebar-collapse-trigger";
 import { SidebarYjLogo } from "./sidebar-yj-logo";
 
 type SubItem = { title: string; href: string; exact?: boolean };
@@ -63,8 +64,6 @@ const NAV: NavGroup[] = [
     label: "Store",
     items: [
       { title: "Home", href: "/settings/store/home", icon: Home, exact: true },
-      { title: "Nest", href: "/settings/store/nest", icon: MessageSquare, exact: true },
-      { title: "Customer inquiries", href: "/settings/store/customer-inquiries", icon: Mail, exact: true },
       { title: "Products", href: "/products", icon: Package },
       {
         title: "Storefront",
@@ -81,6 +80,13 @@ const NAV: NavGroup[] = [
         ],
       },
       { title: "Product Optimise", href: "/optimize", icon: Sparkles },
+    ],
+  },
+  {
+    label: "Customer service",
+    items: [
+      { title: "Nest", href: "/settings/store/nest", icon: MessageSquare, exact: true },
+      { title: "Customer inquiries", href: "/settings/store/customer-inquiries", icon: Mail, exact: true },
     ],
   },
   {
@@ -220,8 +226,11 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader className="gap-1 p-2">
-        <div className="flex h-11 shrink-0 items-center">
-          <SidebarYjLogo />
+        <div className="flex h-11 shrink-0 items-center gap-1">
+          <div className="min-w-0 flex-1">
+            <SidebarYjLogo />
+          </div>
+          <SidebarCollapseTrigger />
         </div>
         <SidebarViewStoreLink />
       </SidebarHeader>

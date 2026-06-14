@@ -31,6 +31,7 @@ export const LIGHTSPEED_CONFIG = {
   // Retry settings
   MAX_RETRIES: 3,
   INITIAL_RETRY_DELAY_MS: 1000,
+  REQUEST_TIMEOUT_MS: 30_000,
   
   // State token settings
   STATE_TOKEN_EXPIRY_MS: 10 * 60 * 1000, // 10 minutes

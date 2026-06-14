@@ -15,6 +15,26 @@ Use the schema-aware SQL reporting path for Lightspeed analytics:
 
 The old fixed analytical Lightspeed tools are not the preferred interface. The SQL executor is the primary reporting tool because it can answer more complex questions with one validated query.
 
+## SQL vs Live API Decision Rule
+
+SQL is the fast local reporting copy. The live Lightspeed API is the source of truth for current object details.
+
+Use SQL first for:
+
+- Sales totals, revenue, gross profit, margin, discounts, tax estimates, sale counts, average sale value.
+- Rankings, trends, charts, period comparisons, broad analysis, and any question that needs many rows.
+- Sold products, product performance, product purchasers, customer purchase history, top customers, best customers, and historical spend.
+- Current inventory fields that exist in `genie_lightspeed_inventory`: QOH, sellable quantity, price, cost, brand, supplier, category, stock value, reorder data, and stale inventory.
+
+Use the live Lightspeed API for:
+
+- A specific customer profile/contact lookup where phone, email, address, archived status, or live profile details matter.
+- Serialized bike records linked to a customer or work order.
+- Active/finished work orders, work-order status, ETA, public notes, internal notes, warranty text, labour line notes, item notes, and parts on a service job.
+- One exact Lightspeed object by ID, or any staged write/proposal target that must reference a current Lightspeed object.
+
+Do not use broad live API scans for reporting if the SQL mirror has the needed fields. Do not use live customer search as a fallback for repair issue phrases or note keywords. For text like "cracked frame", "warranty claim", "brake noise", or "work orders mentioning X", use the work-order query path, not customer search.
+
 ## SQL Source Of Truth
 
 Use only the tenant-scoped reporting views:

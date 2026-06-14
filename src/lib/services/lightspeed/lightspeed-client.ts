@@ -84,40 +84,164 @@ export function mapLightspeedSerializedBike(record: LightspeedSerialized): Light
 }
 
 // ============================================================
-// Rate Limiter
+// Rate Limiter / Error Helpers
 // ============================================================
 
-class RateLimiter {
-  private timestamps: number[] = []
-  private readonly maxRequests: number
-  private readonly windowMs: number
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, Math.max(0, ms)))
+}
 
-  constructor(requestsPerSecond: number) {
-    this.maxRequests = requestsPerSecond
-    this.windowMs = 1000
+function parseRetryAfterMs(value: string | null): number | null {
+  if (!value) return null
+  const seconds = Number.parseFloat(value)
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000)
+  const dateMs = Date.parse(value)
+  return Number.isNaN(dateMs) ? null : Math.max(0, dateMs - Date.now())
+}
+
+function parseLimitFraction(value: string | null): { level: number; limit: number } | null {
+  const match = value?.match(/^\s*([\d.]+)\s*\/\s*([\d.]+)\s*$/)
+  if (!match) return null
+  const level = Number.parseFloat(match[1])
+  const limit = Number.parseFloat(match[2])
+  if (!Number.isFinite(level) || !Number.isFinite(limit) || limit <= 0) return null
+  return { level, limit }
+}
+
+export class LightspeedApiError extends Error {
+  readonly status: number
+  readonly body: string
+  readonly retryable: boolean
+  readonly rateLimitType: string | null
+  readonly cfRay: string | null
+
+  constructor(message: string, args: {
+    status: number
+    body: string
+    retryable?: boolean
+    rateLimitType?: string | null
+    cfRay?: string | null
+  }) {
+    super(message)
+    this.name = 'LightspeedApiError'
+    this.status = args.status
+    this.body = args.body
+    this.retryable = Boolean(args.retryable)
+    this.rateLimitType = args.rateLimitType ?? null
+    this.cfRay = args.cfRay ?? null
   }
+}
 
-  async waitForSlot(): Promise<void> {
-    const now = Date.now()
-    
-    // Remove timestamps outside the window
-    this.timestamps = this.timestamps.filter(t => now - t < this.windowMs)
-    
-    if (this.timestamps.length >= this.maxRequests) {
-      // Wait until the oldest request expires
-      const oldestTimestamp = this.timestamps[0]
-      const waitTime = this.windowMs - (now - oldestTimestamp)
-      
-      if (waitTime > 0) {
-        await new Promise(resolve => setTimeout(resolve, waitTime))
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && (error.name === 'AbortError' || error.message.includes('aborted'))
+}
+
+function isLightspeedApiError(error: unknown, status?: number): error is LightspeedApiError {
+  return error instanceof LightspeedApiError && (status == null || error.status === status)
+}
+
+class SharedLightspeedRateLimiter {
+  private queue: Promise<void> = Promise.resolve()
+  private bucketLevel = 0
+  private bucketSize = 90
+  private dripRate = 1
+  private burstTimestamps: number[] = []
+  private burstLimit: number = LIGHTSPEED_CONFIG.RATE_LIMIT_REQUESTS_PER_SECOND
+  private backoffUntil = 0
+  private lastBucketUpdate = Date.now()
+
+  async waitForRequest(estimatedCost = 1): Promise<void> {
+    const previous = this.queue
+    let release!: () => void
+    this.queue = new Promise(resolve => {
+      release = resolve
+    })
+
+    await previous
+    try {
+      while (true) {
+        const waitMs = this.nextWaitMs(Math.max(estimatedCost, 1))
+        if (waitMs <= 0) break
+        await sleep(waitMs)
       }
-      
-      // Recursively check again
-      return this.waitForSlot()
+      this.reserve(Math.max(estimatedCost, 1))
+    } finally {
+      release()
     }
-    
-    this.timestamps.push(now)
   }
+
+  updateFromResponse(response: Response): void {
+    const bucket = parseLimitFraction(response.headers.get('X-LS-Api-Bucket-Level'))
+      ?? parseLimitFraction(response.headers.get('X-LS-API-Bucket-Level'))
+    if (bucket) {
+      this.bucketLevel = bucket.level
+      this.bucketSize = bucket.limit
+      this.lastBucketUpdate = Date.now()
+    }
+
+    const burst = parseLimitFraction(response.headers.get('X-LS-Api-Burst-Level'))
+      ?? parseLimitFraction(response.headers.get('X-LS-API-Burst-Level'))
+    if (burst) {
+      this.burstLimit = Math.max(1, Math.floor(burst.limit))
+      const now = Date.now()
+      this.burstTimestamps = this.burstTimestamps
+        .filter(timestamp => now - timestamp < 1000)
+        .slice(-this.burstLimit)
+    }
+
+    const dripRate = Number.parseFloat(response.headers.get('X-LS-Api-Drip-Rate') ?? '')
+    if (Number.isFinite(dripRate) && dripRate > 0) this.dripRate = dripRate
+  }
+
+  applyRateLimit(response: Response, fallbackMs: number): number {
+    this.updateFromResponse(response)
+    const retryAfterMs = parseRetryAfterMs(response.headers.get('Retry-After')) ?? fallbackMs
+    const waitMs = Math.max(retryAfterMs, 1000)
+    this.backoffUntil = Math.max(this.backoffUntil, Date.now() + waitMs)
+    return waitMs
+  }
+
+  private nextWaitMs(cost: number): number {
+    const now = Date.now()
+    if (now < this.backoffUntil) return this.backoffUntil - now
+
+    this.drainBucket(now)
+    if (this.bucketLevel + cost > this.bucketSize) {
+      return Math.ceil(((this.bucketLevel + cost - this.bucketSize) / this.dripRate) * 1000)
+    }
+
+    this.burstTimestamps = this.burstTimestamps.filter(timestamp => now - timestamp < 1000)
+    if (this.burstTimestamps.length >= this.burstLimit) {
+      return 1000 - (now - this.burstTimestamps[0])
+    }
+
+    return 0
+  }
+
+  private reserve(cost: number): void {
+    const now = Date.now()
+    this.drainBucket(now)
+    this.bucketLevel += cost
+    this.burstTimestamps.push(now)
+  }
+
+  private drainBucket(now: number): void {
+    const elapsedSeconds = Math.max(0, (now - this.lastBucketUpdate) / 1000)
+    if (elapsedSeconds > 0) {
+      this.bucketLevel = Math.max(0, this.bucketLevel - elapsedSeconds * this.dripRate)
+      this.lastBucketUpdate = now
+    }
+  }
+}
+
+const sharedRateLimiters = new Map<string, SharedLightspeedRateLimiter>()
+
+function lightspeedRateLimiterFor(key: string): SharedLightspeedRateLimiter {
+  const existing = sharedRateLimiters.get(key)
+  if (existing) return existing
+  const limiter = new SharedLightspeedRateLimiter()
+  sharedRateLimiters.set(key, limiter)
+  return limiter
 }
 
 // ============================================================
@@ -126,7 +250,7 @@ class RateLimiter {
 
 export class LightspeedClient {
   private userId: string
-  private rateLimiter: RateLimiter
+  private rateLimiter: SharedLightspeedRateLimiter
   private accessToken: string | null = null
   private accessTokenPromise: Promise<string | null> | null = null
   private accountId: string | null = null
@@ -134,7 +258,7 @@ export class LightspeedClient {
 
   constructor(userId: string) {
     this.userId = userId
-    this.rateLimiter = new RateLimiter(LIGHTSPEED_CONFIG.RATE_LIMIT_REQUESTS_PER_SECOND)
+    this.rateLimiter = lightspeedRateLimiterFor(userId)
   }
 
   private async getCachedAccessToken(): Promise<string | null> {
@@ -183,18 +307,29 @@ export class LightspeedClient {
     let tokenRefreshed = false
 
     for (let attempt = 0; attempt < LIGHTSPEED_CONFIG.MAX_RETRIES; attempt++) {
-      await this.rateLimiter.waitForSlot()
+      await this.rateLimiter.waitForRequest()
 
       try {
-        const response = await fetch(url, {
-          ...options,
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            ...options.headers,
-          },
-        })
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), LIGHTSPEED_CONFIG.REQUEST_TIMEOUT_MS)
+        let response: Response
+        try {
+          response = await fetch(url, {
+            ...options,
+            signal: options.signal
+              ? AbortSignal.any([options.signal, controller.signal])
+              : controller.signal,
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+              ...options.headers,
+            },
+          })
+        } finally {
+          clearTimeout(timeout)
+        }
+        this.rateLimiter.updateFromResponse(response)
 
         // Token expired — refresh once and retry without consuming a retry slot
         if (response.status === 401 && !tokenRefreshed) {
@@ -211,12 +346,19 @@ export class LightspeedClient {
 
         // Handle rate limiting (429)
         if (response.status === 429) {
-          const retryAfter = response.headers.get('Retry-After')
-          const waitTime = retryAfter ? parseInt(retryAfter, 10) * 1000 :
-            LIGHTSPEED_CONFIG.INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt)
-
-          console.log(`Rate limited, waiting ${waitTime}ms before retry`)
-          await new Promise(resolve => setTimeout(resolve, waitTime))
+          const waitTime = this.rateLimiter.applyRateLimit(
+            response,
+            LIGHTSPEED_CONFIG.INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt),
+          )
+          console.log('[Lightspeed] Rate limited, shared backoff before retry', {
+            waitTime,
+            rateLimitType: response.headers.get('X-LS-API-RateLimit-Type'),
+            bucket: response.headers.get('X-LS-Api-Bucket-Level') ?? response.headers.get('X-LS-API-Bucket-Level'),
+            burst: response.headers.get('X-LS-Api-Burst-Level') ?? response.headers.get('X-LS-API-Burst-Level'),
+            requestCost: response.headers.get('X-LS-Api-Request-Cost'),
+            cfRay: response.headers.get('Cf-Ray'),
+          })
+          await sleep(waitTime)
           continue
         }
 
@@ -224,21 +366,30 @@ export class LightspeedClient {
         if (response.status >= 500) {
           const waitTime = LIGHTSPEED_CONFIG.INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt)
           console.log(`Server error ${response.status}, waiting ${waitTime}ms before retry`)
-          await new Promise(resolve => setTimeout(resolve, waitTime))
+          await sleep(waitTime)
           continue
         }
 
         if (!response.ok) {
           const errorBody = await response.text()
-          throw new Error(`Lightspeed API error: ${response.status} - ${errorBody}`)
+          throw new LightspeedApiError(`Lightspeed API error: ${response.status}`, {
+            status: response.status,
+            body: errorBody,
+            retryable: false,
+            rateLimitType: response.headers.get('X-LS-API-RateLimit-Type'),
+            cfRay: response.headers.get('Cf-Ray'),
+          })
         }
 
         return await response.json()
       } catch (error) {
-        lastError = error as Error
+        lastError = isAbortError(error)
+          ? new Error(`Lightspeed API request timed out after ${LIGHTSPEED_CONFIG.REQUEST_TIMEOUT_MS}ms`)
+          : error as Error
 
         // Don't retry on non-retryable errors
         if (
+          lastError instanceof LightspeedApiError ||
           lastError.message.includes('No valid access token') ||
           lastError.message.includes('Session expired')
         ) {
@@ -249,7 +400,7 @@ export class LightspeedClient {
         if (attempt < LIGHTSPEED_CONFIG.MAX_RETRIES - 1) {
           const waitTime = LIGHTSPEED_CONFIG.INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt)
           console.log(`Request failed, waiting ${waitTime}ms before retry:`, lastError.message)
-          await new Promise(resolve => setTimeout(resolve, waitTime))
+          await sleep(waitTime)
         }
       }
     }
@@ -369,30 +520,11 @@ export class LightspeedClient {
   }
 
   /**
-   * Get all items with automatic pagination
+   * Get all items with V3 cursor pagination.
    */
   async getAllItems(additionalParams?: Omit<LightspeedQueryParams, 'offset' | 'limit'>): Promise<LightspeedItem[]> {
-    const allItems: LightspeedItem[] = []
-    let offset = 0
-    const limit = 100 // Max per request
-    
-    while (true) {
-      const items = await this.getItems({
-        ...additionalParams,
-        offset,
-        limit,
-      })
-      
-      allItems.push(...items)
-      
-      if (items.length < limit) {
-        break
-      }
-      
-      offset += limit
-    }
-    
-    return allItems
+    const result = await this.getAllItemsCursor(additionalParams, { limit: 100, maxPages: 50 })
+    return result.items
   }
 
   /**
@@ -784,9 +916,31 @@ export class LightspeedClient {
         `/Account/${accountId}/Order/${orderId}.json?load_relations=${encodeURIComponent('["OrderLines","Vendor"]')}`,
       )
       return response.Order ?? null
-    } catch {
-      return null
+    } catch (error) {
+      if (isLightspeedApiError(error, 404)) return null
+      throw error
     }
+  }
+
+  /**
+   * Returns true for a typed Lightspeed 404 response.
+   */
+  isNotFoundError(error: unknown): boolean {
+    return isLightspeedApiError(error, 404)
+  }
+
+  /**
+   * Returns true for a typed Lightspeed rate-limit response.
+   */
+  isRateLimitError(error: unknown): boolean {
+    return isLightspeedApiError(error, 429)
+  }
+
+  /**
+   * Returns true for a retryable transport/server failure.
+   */
+  isRetryableError(error: unknown): boolean {
+    return error instanceof LightspeedApiError ? error.retryable : false
   }
 
   // ============================================================
@@ -906,8 +1060,9 @@ export class LightspeedClient {
         `/Account/${accountId}/Workorder/${workorderId}.json${queryString}`,
       )
       return response.Workorder ?? null
-    } catch {
-      return null
+    } catch (error) {
+      if (isLightspeedApiError(error, 404)) return null
+      throw error
     }
   }
 
@@ -953,8 +1108,9 @@ export class LightspeedClient {
         `/Account/${accountId}/Serialized/${serializedId}.json`,
       )
       return this.ensureArray(response.Serialized)[0] ?? null
-    } catch {
-      return null
+    } catch (error) {
+      if (isLightspeedApiError(error, 404)) return null
+      throw error
     }
   }
 

@@ -397,7 +397,7 @@ function ProcessTimelineBox({
               <div className="relative flex justify-center">
                 <span className={cn(
                   'mt-1.5 h-2 w-2 rounded-full ring-2 ring-background',
-                  step.kind === 'reasoning' ? 'bg-amber-500' : brand === 'lightspeed' ? 'bg-green-500' : 'bg-primary',
+                  step.kind === 'reasoning' ? 'bg-amber-500' : 'bg-primary',
                   live && isLast ? 'animate-pulse' : '',
                 )} />
                 {!isLast ? <span className="absolute top-4 bottom-0 w-px bg-border" /> : null}

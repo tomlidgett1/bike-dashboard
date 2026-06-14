@@ -11,7 +11,7 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
 } from "@/components/ui/breadcrumb";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { HeaderSidebarTrigger } from "@/components/layout/app-sidebar/sidebar-collapse-trigger";
 import { ThemeToggle } from "./theme-toggle";
 import { NotificationsDropdown } from "./notifications-dropdown";
 import { MessagesDropdown } from "./messages-dropdown";
@@ -37,8 +37,8 @@ const CRUMBS: Record<string, { section: string; page: string }> = {
   "/optimize": { section: "Store", page: "Product Optimise" },
   "/settings/store": { section: "Store", page: "Storefront" },
   "/settings/store/home": { section: "Store", page: "Home" },
-  "/settings/store/nest": { section: "Store", page: "Nest" },
-  "/settings/store/customer-inquiries": { section: "Store", page: "Customer inquiries" },
+  "/settings/store/nest": { section: "Customer service", page: "Nest" },
+  "/settings/store/customer-inquiries": { section: "Customer service", page: "Customer inquiries" },
   "/settings/my-listings": { section: "Marketplace", page: "My listings" },
   "/settings/drafts": { section: "Marketplace", page: "Drafts" },
   "/settings/purchases": { section: "Marketplace", page: "Orders" },
@@ -112,7 +112,7 @@ export function Topbar() {
         dashboardTopbarPadding,
       )}
     >
-      <SidebarTrigger className="-ml-1" />
+      <HeaderSidebarTrigger />
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>

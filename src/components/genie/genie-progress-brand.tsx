@@ -33,16 +33,10 @@ function textLooksLikeDeputy(text: string): boolean {
   return /\bdeputy\b|\broster\b|\btimesheet\b|\bshift\b|hours worked|who worked|clocked on/i.test(text);
 }
 
-function textLooksLikeLightspeed(text: string): boolean {
-  return /lightspeed|sales report|work order|inventory mirror|sql sales|workshop|customer profile|workorder/i.test(
-    text,
-  );
-}
-
 export function resolveGenieProgressBrand(
   phase?: string,
   text?: string,
-): "lightspeed" | "gmail" | "xero" | "deputy" | null {
+): "gmail" | "xero" | "deputy" | null {
   const normalizedPhase = phase?.trim() ?? "";
   const normalizedText = text?.trim().toLowerCase() ?? "";
 
@@ -53,14 +47,13 @@ export function resolveGenieProgressBrand(
     if (normalizedPhase === "rechecking" && textLooksLikeGmail(normalizedText)) return "gmail";
     if (normalizedPhase === "rechecking" && textLooksLikeXero(normalizedText)) return "xero";
     if (normalizedPhase === "rechecking" && textLooksLikeDeputy(normalizedText)) return "deputy";
-    return "lightspeed";
+    return null;
   }
 
   if (!normalizedText) return null;
   if (textLooksLikeGmail(normalizedText)) return "gmail";
   if (textLooksLikeXero(normalizedText)) return "xero";
   if (textLooksLikeDeputy(normalizedText)) return "deputy";
-  if (textLooksLikeLightspeed(normalizedText)) return "lightspeed";
   return null;
 }
 
@@ -111,15 +104,5 @@ export function GenieProgressBrandIcon({
     );
   }
 
-  return (
-    <span className={cn("flex h-4 w-4 shrink-0 overflow-hidden rounded-full", className)}>
-      <Image
-        src="/ls.png"
-        alt="Lightspeed"
-        width={16}
-        height={16}
-        className="h-full w-full object-cover"
-      />
-    </span>
-  );
+  return null;
 }

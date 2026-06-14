@@ -300,6 +300,25 @@ export async function getValidAccessToken(userId: string): Promise<string | null
   return tokens.accessToken
 }
 
+/**
+ * Whether Lightspeed API calls can be attempted for this user.
+ * Unlike connection.status alone, this also allows a stored access token
+ * when status is transiently "error" but the token has not expired yet.
+ */
+export async function isLightspeedApiAvailable(userId: string): Promise<boolean> {
+  const connection = await getConnection(userId)
+  if (!connection) return false
+  if (
+    connection.status === 'disconnected' ||
+    connection.status === 'expired' ||
+    connection.status === 'error'
+  ) {
+    return false
+  }
+
+  return Boolean(await getValidAccessToken(userId))
+}
+
 // ============================================================
 // Connection Management Functions
 // ============================================================

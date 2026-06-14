@@ -67,6 +67,13 @@ function planMentionsTool(plan: GenieExecutionPlan | null, pattern: RegExp): boo
     plan.execution_steps.some(step => pattern.test(step))
 }
 
+const LIGHTSPEED_DATA_SOURCE_DOCTRINE = `Lightspeed data-source doctrine:
+- SQL mirror first for many-row reporting, totals, rankings, trends, sales history, customer purchase history, product/customer analysis, and current inventory fields that exist in genie_lightspeed_sales_report_lines or genie_lightspeed_inventory. SQL is the fast local copy and avoids broad live API scans.
+- Live Lightspeed API only for one live object/detail lookup or fields not reliably mirrored: current customer contact/profile details, archived/customer status, Serialized bike records, active/finished work orders, public/internal work-order notes, labour/item notes, ETA/status, and write/proposal targets.
+- If the user asks "who/what/how many/top/best/sold/revenue/margin/stock value/history over a period", prefer run_lightspeed_sql_query or the inventory SQL mirror. Do not scan live customers/items/sales for broad analysis.
+- If the user asks for a specific customer profile, specific work order, current service-job status, contact detail, or notes on work orders, use the relevant live tool. For customer profiles, combine SQL sales history with live customer/work-order/bike details via get_lightspeed_customer_profile.
+- Never treat a repair issue or note keyword such as "cracked frame", "warranty claim", or "brake noise" as a customer name. Search work orders with list_lightspeed_workorders query/scope instead of search_lightspeed_customers.`
+
 function routeUsesGmail(
   _route: GenieOrchestrationDecision['route'],
   plan: GenieExecutionPlan | null,
@@ -207,10 +214,11 @@ function formatWorkRulesForRoute(args: {
 
   if (args.includeLightspeedSql) {
     rules.push(
-      '- For ordinary Lightspeed sales/cost/profit/margin/customer/inventory questions: execute directly with run_lightspeed_sql_query using one safe schema-aware SQL query whenever possible. For item-level current stock lookup, search_lightspeed_inventory is also available.',
+      LIGHTSPEED_DATA_SOURCE_DOCTRINE,
+      '- For ordinary Lightspeed sales/cost/profit/margin/customer/inventory reporting questions: execute directly with run_lightspeed_sql_query using one safe schema-aware SQL query whenever possible. For item-level current stock lookup, use genie_lightspeed_inventory or search_lightspeed_inventory; reserve live inventory scans for cases where the SQL mirror lacks the needed detail.',
       '- For item-level inventory/stock answers, if a tool returns product_links or product_url values, name the products as Markdown links and keep the quantities/prices beside them. The UI may also render product cards, so do not duplicate a long catalogue listing in prose.',
       '- For customer bike ownership/profile/history requests ("tell me about customer X", "customer X", "what bikes does X have", "X\'s bikes", "pull up this customer", "what do we know about X", lifetime spend, bikes owned, purchase history, service history, work-order history), call get_lightspeed_customer_profile first. It streams a profile card and dereferences customer/work-order Serialized bike records; keep the text answer to the key takeaways, risks, and any ambiguity.',
-      `- For work orders / repairs / service jobs: reuse recent private structured workorder context when it answers the follow-up. Otherwise use list_lightspeed_workorders (scope open for active jobs, finished for completed/pickup-ready, all if unclear) with include_details:true, or get_lightspeed_workorder for one ID. For every workorder question, inspect all returned workorder evidence before answering: note, internal_note, warranty, labour line notes, item/part descriptions, item notes, serialized_id, sale_id, customer details, status, and dates. For due-date questions, pass due_on as YYYY-MM-DD in ${STORE_TIME_ZONE} (today's date is in STORE CONTEXT). Keep text brief because the UI renders detailed work-order cards.`,
+      `- For work orders / repairs / service jobs: reuse recent private structured workorder context when it answers the follow-up. Otherwise use list_lightspeed_workorders (scope open for active jobs, finished for completed/pickup-ready, all if unclear) with include_details:true, or get_lightspeed_workorder for one ID. For every workorder question, inspect all returned workorder evidence before answering: note, internal_note, warranty, labour line notes, item/part descriptions, item notes, serialized_id, sale_id, customer details, status, and dates. For note/keyword/issue searches such as "cracked frame", "warranty claim", or "work orders mentioning X", call list_lightspeed_workorders with query set to the keyword phrase, scope "all", and include_details:true. Do not call search_lightspeed_customers or get_lightspeed_customer_profile for those searches. For due-date questions, pass due_on as YYYY-MM-DD in ${STORE_TIME_ZONE} (today's date is in STORE CONTEXT). Keep text brief because the UI renders detailed work-order cards.`,
       '- If a Lightspeed lookup returns no, weak, ambiguous, partial, or non-answering results, call record_lightspeed_recheck and try one materially different SQL/tool strategy before asking the user to clarify.',
       '- For customer-specific bike fitment or compatibility, do not answer from web search alone. First use resolve_customer_bike_context to resolve the customer, live Lightspeed Serialized bike records linked by customerID, customer profile availability, previous sales, active/finished work orders, work-order serializedID links, work-order notes, prior parts, and likely bike model/year/build. Treat Serialized.description as the strongest usual bike-ownership signal, but not the only proof; still compare it against workorders and sales. Then use hosted web_search for official manufacturer manuals, technical docs, standards pages, or supplier tech pages for the exact standard/part. If the bike context is ambiguous, still provide conditional answers for each plausible bike with confidence and the exact shop-floor check needed; do not stop at only asking which bike.',
     )
@@ -435,7 +443,7 @@ STORE CONTEXT
 const ORCHESTRATOR_STATIC_INSTRUCTIONS = `You are the only hidden router for the Yellow Jersey Store Agent.
 Return only the structured routing decision required by the schema. Do not answer the user.
 
-This is the production routing gate. There is no deterministic router before you — and no keyword shortcuts after you. Your direct_path decision is the only fast-path gate. A wrong route can hide the right tools from the executor, so classify from the full conversation with extreme care.
+This is the model routing gate after any obvious deterministic fast-path bypass. Your route, needs_plan, direct_path, and entity_query decision controls which tool families the executor can see. A wrong route can hide the right tools from the executor, so classify from the full conversation with extreme care.
 
 Decision process:
 1. Read the latest user message and the prior conversation, including private structured context appended to prior assistant messages.
@@ -452,6 +460,8 @@ Routes:
 - business_analysis: broad strategy requests about making the bike store more profitable, making more money, improving revenue, improving margin, ranking opportunities, reducing wasted cash, reducing stale stock, or deciding what actions would improve the business.
 - mixed: requests combining multiple non-casual routes, especially private store/customer data plus public web research.
 - unsupported: off-topic requests outside store management, Lightspeed reporting, Gmail/store operations, and cycling/store research.
+
+${LIGHTSPEED_DATA_SOURCE_DOCTRINE}
 
 Direct-path doctrine (direct_path is only ever non-"none" when route=lightspeed_sql):
 - direct_path="customer_profile": the request is a broad single-customer profile/history/overview — "tell me about customer X", "customer X", "what do we know about X", "pull up X", "profile/history for X", lifetime spend, purchase history, service history for one named customer. Set entity_query to the customer name or ID exactly as given.
@@ -590,6 +600,7 @@ Return only the structured execution plan required by the schema. Do not call to
 Planning rules:
 - Decide the route, tool set, date range, SQL/data strategy, and final answer shape for the executor.
 - Treat recent private structured context as already-grounded evidence. For continuation questions, plan fresh tool calls only for missing, ambiguous, stale, or explicitly refreshed information.
+${LIGHTSPEED_DATA_SOURCE_DOCTRINE}
 - Prefer one direct SQL query for narrow analytical Lightspeed questions.
 - For broad profitability, growth, or business-performance questions, plan a multi-pass analysis. Do not compress the work into one query when multiple lenses are needed.
 - For Lightspeed sales/customer/product reporting, the executor should use run_lightspeed_sql_query.

@@ -134,6 +134,7 @@ function applyPatternRules(text: string): string {
     [/looking up the sql customer profile|looking up customer \d+ in the sql sales report/i, 'Customer profile'],
     [/building customer profile for (.+)/i, (m) => `Profile: ${quoteFragment(m[1])}`],
     [/resolving customer profile for "(.+?)"/i, (m) => `Resolving: ${quoteFragment(m[1])}`],
+    [/searching work order notes for "(.+?)"/i, (m) => `Notes: ${quoteFragment(m[1])}`],
     [/reading sales, bikes, and workshop history for (.+)/i, (m) => `History: ${quoteFragment(m[1])}`],
     [/profiling (\d+) sale rows? and (\d+) work orders?/i, 'Profiling history'],
     [/customer profile ready/i, 'Profile ready'],

@@ -42,6 +42,13 @@ import {
   type NestConversationsResponse,
   type NestLightspeedCustomer,
 } from "@/lib/nest/types";
+import {
+  buildStubNestConversation,
+  getCachedNestThread,
+  mergeNestThreadFromList,
+  prefetchNestThread,
+  setCachedNestThread,
+} from "@/lib/nest/thread-cache";
 import { NestAutoServicePanel } from "@/components/settings/nest-auto-service-panel";
 import { NestHiddenPickupSuggestionsPanel } from "@/components/settings/nest-hidden-pickup-suggestions";
 import { NestPickupSuggestionsDropdown } from "@/components/settings/nest-pickup-suggestions-dropdown";
@@ -204,27 +211,39 @@ async function fetchNestConversations(params: {
   chatId?: string;
   listOnly?: boolean;
   threadOnly?: boolean;
-}): Promise<NestConversationsResponse> {
+}): Promise<NestConversationsResponse & { lightspeedConnected?: boolean }> {
   const search = new URLSearchParams();
   if (params.chatId) search.set("chatId", params.chatId);
   if (params.listOnly) search.set("listOnly", "1");
   if (params.threadOnly) search.set("threadOnly", "1");
 
   const res = await fetch(`/api/store/nest-messages?${search.toString()}`, { cache: "no-store" });
-  const data = (await res.json()) as NestConversationsResponse & { error?: string; configured?: boolean };
+  const data = (await res.json()) as NestConversationsResponse & {
+    error?: string;
+    configured?: boolean;
+    lightspeedConnected?: boolean;
+  };
 
   if (!res.ok) {
     throw new Error(data.error || "Could not load Nest messages.");
   }
 
-  return sanitiseNestConversationsResponse({
-    chats: Array.isArray(data.chats) ? data.chats : [],
-    selectedChatId: typeof data.selectedChatId === "string" ? data.selectedChatId : null,
-    conversation:
-      data.conversation && typeof data.conversation === "object"
-        ? (data.conversation as NestConversationDetail)
-        : null,
-  });
+  return {
+    ...sanitiseNestConversationsResponse({
+      chats: Array.isArray(data.chats) ? data.chats : [],
+      selectedChatId: typeof data.selectedChatId === "string" ? data.selectedChatId : null,
+      conversation:
+        data.conversation && typeof data.conversation === "object"
+          ? (data.conversation as NestConversationDetail)
+          : null,
+    }),
+    lightspeedConnected: data.lightspeedConnected !== false,
+  };
+}
+
+async function fetchNestThread(chatId: string): Promise<NestConversationDetail | null> {
+  const data = await fetchNestConversations({ chatId, threadOnly: true });
+  return data.conversation;
 }
 
 async function searchNestCustomers(query: string): Promise<NestLightspeedCustomer[]> {
@@ -304,10 +323,12 @@ function ConversationRow({
   chat,
   active,
   onClick,
+  onPrefetch,
 }: {
   chat: NestConversationListItem;
   active: boolean;
   onClick: () => void;
+  onPrefetch?: () => void;
 }) {
   const unread = isNestConversationUnread(chat);
   const displayTitle = chat.displayName || chat.title || chat.participantHandle || chat.chatId;
@@ -316,6 +337,8 @@ function ConversationRow({
     <button
       type="button"
       onClick={onClick}
+      onMouseEnter={onPrefetch}
+      onFocus={onPrefetch}
       className={cn(
         "w-full rounded-xl border px-3 py-2.5 text-left transition-colors",
         active
@@ -958,7 +981,11 @@ export function StoreNestMessagesPanel() {
   const [showMobileThread, setShowMobileThread] = React.useState(false);
   const [newMessageOpen, setNewMessageOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
+  const [lightspeedConnected, setLightspeedConnected] = React.useState(true);
   const threadRef = React.useRef<HTMLDivElement>(null);
+  const threadRequestRef = React.useRef<AbortController | null>(null);
+  const chatsRef = React.useRef(chats);
+  chatsRef.current = chats;
 
   const filteredChats = React.useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -984,6 +1011,7 @@ export function StoreNestMessagesPanel() {
     try {
       const data = await fetchNestConversations({ listOnly: true });
       setConfigured(true);
+      setLightspeedConnected(data.lightspeedConnected !== false);
       setChats(sortChats(data.chats));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not load messages.";
@@ -999,16 +1027,53 @@ export function StoreNestMessagesPanel() {
   }, []);
 
   const loadThread = React.useCallback(async (chatId: string, silent = false) => {
-    if (!silent) setThreadLoading(true);
+    if (threadRequestRef.current) {
+      threadRequestRef.current.abort();
+    }
+    const controller = new AbortController();
+    threadRequestRef.current = controller;
+
+    const cached = getCachedNestThread(chatId);
+    const listChat = chatsRef.current.find((item) => item.chatId === chatId);
+    if (cached) {
+      setConversation(mergeNestThreadFromList(cached, listChat));
+      setThreadLoading(false);
+    } else if (!silent) {
+      setThreadLoading(true);
+    }
+
     try {
-      const data = await fetchNestConversations({ chatId, threadOnly: true });
-      setConversation(data.conversation);
+      const search = new URLSearchParams();
+      search.set("chatId", chatId);
+      search.set("threadOnly", "1");
+      const res = await fetch(`/api/store/nest-messages?${search.toString()}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      const data = (await res.json()) as NestConversationsResponse & { error?: string };
+      if (!res.ok) {
+        throw new Error(data.error || "Could not load conversation.");
+      }
+      if (controller.signal.aborted) return;
+
+      const conversation = data.conversation ?? null;
+      if (conversation) {
+        const merged = mergeNestThreadFromList(conversation, listChat);
+        setCachedNestThread(merged);
+        setConversation(merged);
+      }
     } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
       if (!silent) {
         setError(err instanceof Error ? err.message : "Could not load conversation.");
       }
     } finally {
-      if (!silent) setThreadLoading(false);
+      if (threadRequestRef.current === controller) {
+        threadRequestRef.current = null;
+      }
+      if (!controller.signal.aborted) {
+        setThreadLoading(false);
+      }
     }
   }, []);
 
@@ -1031,6 +1096,15 @@ export function StoreNestMessagesPanel() {
       setConversation(null);
       return;
     }
+
+    const listChat = chatsRef.current.find((item) => item.chatId === selectedChatId);
+    const cached = getCachedNestThread(selectedChatId);
+    if (cached) {
+      setConversation(mergeNestThreadFromList(cached, listChat));
+    } else if (listChat) {
+      setConversation(buildStubNestConversation(listChat));
+    }
+
     void loadThread(selectedChatId);
   }, [selectedChatId, loadThread]);
 
@@ -1051,26 +1125,49 @@ export function StoreNestMessagesPanel() {
   }, [activeTab, selectedChatId, loadThread]);
 
   React.useEffect(() => {
+    if (!selectedChatId) return;
+    const listChat = chats.find((item) => item.chatId === selectedChatId);
+    if (!listChat) return;
+    setConversation((prev) => {
+      if (!prev || prev.chatId !== selectedChatId) return prev;
+      const merged = mergeNestThreadFromList(prev, listChat);
+      if (
+        merged.displayName === prev.displayName &&
+        merged.title === prev.title &&
+        merged.participantHandle === prev.participantHandle
+      ) {
+        return prev;
+      }
+      return merged;
+    });
+  }, [chats, selectedChatId]);
+
+  React.useEffect(() => {
     if (!conversation || !threadRef.current) return;
     threadRef.current.scrollTop = threadRef.current.scrollHeight;
   }, [conversation?.messages.length, selectedChatId]);
 
   function openConversation(chat: NestConversationListItem) {
     markNestConversationRead(chat);
-    setSelectedChatId(chat.chatId);
     setShowMobileThread(true);
+    setSelectedChatId(chat.chatId);
   }
+
+  const prefetchThread = React.useCallback((chatId: string) => {
+    prefetchNestThread(chatId, fetchNestThread);
+  }, []);
 
   function handleSent(message: NestConversationMessage) {
     if (!selectedChatId) return;
-    setConversation((prev) =>
-      prev
-        ? {
-            ...prev,
-            messages: [...prev.messages, message],
-          }
-        : prev,
-    );
+    setConversation((prev) => {
+      if (!prev) return prev;
+      const next = {
+        ...prev,
+        messages: [...prev.messages, message],
+      };
+      setCachedNestThread(next);
+      return next;
+    });
     setChats((prev) =>
       sortChats(
         prev.map((chat) =>
@@ -1116,15 +1213,23 @@ export function StoreNestMessagesPanel() {
       ]),
     );
     setSelectedChatId(chatId);
-    setConversation({
+    const nextConversation = {
       chatId,
       title: chatId,
-      displayName: null,
-      participantHandle: null,
-      source: "customer",
+      displayName:
+        typeof message.metadata?.customer_name === "string"
+          ? message.metadata.customer_name
+          : null,
+      participantHandle:
+        typeof message.metadata?.recipient_phone_e164 === "string"
+          ? message.metadata.recipient_phone_e164
+          : null,
+      source: "customer" as const,
       lastSeen: null,
       messages: [message],
-    });
+    };
+    setCachedNestThread(nextConversation);
+    setConversation(nextConversation);
     setShowMobileThread(true);
   }
 
@@ -1255,6 +1360,14 @@ export function StoreNestMessagesPanel() {
                       {unreadCount} unread conversation{unreadCount === 1 ? "" : "s"}
                     </p>
                   ) : null}
+                  {!lightspeedConnected ? (
+                    <div className="mt-3 rounded-md border border-gray-200 bg-white px-3 py-2.5 text-xs text-gray-600">
+                      Connect Lightspeed to show customer names instead of phone numbers.{" "}
+                      <a href="/connect-lightspeed" className="font-medium text-gray-900 underline">
+                        Reconnect Lightspeed
+                      </a>
+                    </div>
+                  ) : null}
                 </div>
                 <div
                   className="h-0 min-h-0 flex-1 overflow-y-auto overscroll-contain"
@@ -1280,6 +1393,7 @@ export function StoreNestMessagesPanel() {
                           chat={chat}
                           active={chat.chatId === selectedChatId}
                           onClick={() => openConversation(chat)}
+                          onPrefetch={() => prefetchThread(chat.chatId)}
                         />
                       ))
                     )}

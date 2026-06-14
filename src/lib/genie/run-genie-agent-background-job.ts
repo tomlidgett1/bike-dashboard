@@ -106,7 +106,7 @@ export async function runGenieAgentJob(params: RunGenieAgentJobParams) {
   await updateJob(params.jobId, {
     status: "running",
     started_at: new Date().toISOString(),
-    message: "Starting Genie…",
+    message: "Thinking",
     progress_phase: "setup",
   });
 

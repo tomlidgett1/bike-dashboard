@@ -146,6 +146,8 @@ export type ListGenieWorkordersOptions = {
   limit?: number
   include_details?: boolean
   include_archived?: boolean
+  /** Scan notes/parts across recent work orders instead of per-status buckets. */
+  note_search?: boolean
   max_pages_per_status?: number
 }
 
@@ -406,6 +408,52 @@ async function fetchRecentWorkordersUnscoped(
   )
 }
 
+function lightspeedContainsFilter(term: string): string {
+  return `~,%${term.replace(/%/g, '').trim()}%`
+}
+
+async function fetchWorkordersByServerNoteQuery(
+  userId: string,
+  query: string,
+  options?: { targetCount?: number; maxPages?: number },
+): Promise<LightspeedWorkorderWithRelations[] | null> {
+  const cleanQuery = query.replace(/\s+/g, ' ').trim()
+  if (!cleanQuery) return null
+
+  const client = createLightspeedClient(userId)
+  const loadRelations = '["Customer","WorkorderLines","WorkorderStatus"]'
+  const targetCount = Math.max(options?.targetCount ?? 80, 1)
+  const requestOptions = {
+    targetCount,
+    limit: 100,
+    maxPages: Math.max(options?.maxPages ?? 4, 1),
+  }
+  const filter = lightspeedContainsFilter(cleanQuery)
+  const baseParams = {
+    archived: 'false',
+    sort: '-timeStamp',
+    load_relations: loadRelations,
+  }
+
+  const results = await Promise.allSettled([
+    client.getRecentWorkorders({ ...baseParams, note: filter }, requestOptions),
+    client.getRecentWorkorders({ ...baseParams, internalNote: filter }, requestOptions),
+  ])
+  const fulfilled = results
+    .filter((result): result is PromiseFulfilledResult<LightspeedWorkorderWithRelations[]> => result.status === 'fulfilled')
+    .flatMap(result => result.value)
+
+  if (fulfilled.length === 0 && results.some(result => result.status === 'rejected')) {
+    return null
+  }
+
+  const byId = new Map<string, LightspeedWorkorderWithRelations>()
+  for (const workorder of fulfilled) {
+    byId.set(String(workorder.workorderID), workorder)
+  }
+  return [...byId.values()].sort((a, b) => parseTimestamp(b.timeStamp) - parseTimestamp(a.timeStamp))
+}
+
 function workorderMatchesScope(
   workorder: LightspeedWorkorderWithRelations,
   scope: GenieWorkorderScope,
@@ -479,6 +527,17 @@ export async function listGenieWorkorders(
       targetCount: Math.max(limit * 8, 120),
       maxPages: options.max_pages_per_status ?? 4,
     })
+  } else if (query && options.note_search) {
+    const serverFiltered = await fetchWorkordersByServerNoteQuery(userId, query, {
+      targetCount: Math.max(limit * 12, 240),
+      maxPages: options.max_pages_per_status ?? 6,
+    })
+    rawWorkorders = serverFiltered && serverFiltered.length > 0
+      ? serverFiltered
+      : await fetchRecentWorkordersUnscoped(userId, {
+          targetCount: Math.max(limit * 12, 240),
+          maxPages: options.max_pages_per_status ?? 6,
+        })
   } else {
     const targetStatusIds = statuses
       .filter(status => {

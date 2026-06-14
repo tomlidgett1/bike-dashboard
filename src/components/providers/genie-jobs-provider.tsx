@@ -73,7 +73,7 @@ function buildOptimisticJob(jobId: string, options: StartBackgroundJobOptions): 
     id: jobId,
     status: "running",
     prompt: options.prompt ?? "",
-    message: "Starting Genie…",
+    message: "Thinking",
     progressPhase: "setup",
     errorMessage: null,
     conversationId: options.conversationId ?? null,

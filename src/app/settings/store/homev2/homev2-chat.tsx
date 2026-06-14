@@ -55,7 +55,6 @@ import {
 } from "@/lib/genie/homev2-conversation-storage";
 import type { GenieJob } from "@/lib/genie/genie-job-types";
 import { useSearchParams } from "next/navigation";
-import { compactGenieProgressText, liveGenieProgressPreview } from "@/lib/genie/progress-text";
 import {
   GenieProgressBrandIcon,
   resolveGenieProgressBrand,
@@ -77,6 +76,7 @@ interface ProcessStep {
   id: string;
   phase: string;
   text: string;
+  sourceText?: string;
   kind: "status" | "reasoning";
   at: string;
 }
@@ -326,8 +326,12 @@ const PHASE_LABELS: Record<string, string> = {
   verifying: "Quality check",
 };
 
-function normalizeStartupStatusText(text: string, phase?: string): string {
-  return compactGenieProgressText(text, phase);
+function normalizeStartupStatusText(_text: string, _phase?: string): string {
+  return "Thinking";
+}
+
+function progressBrandText(step: ProcessStep): string {
+  return step.sourceText ?? step.text;
 }
 
 function processTimestamp(): string {
@@ -350,10 +354,12 @@ function createProcessStep(
   text: string,
   kind: ProcessStep["kind"] = "status",
 ): ProcessStep {
+  const trimmed = text.trim();
   return {
     id: processStepId(),
     phase,
-    text: kind === "status" ? normalizeStartupStatusText(text.trim(), phase) : text.trim(),
+    text: kind === "status" ? normalizeStartupStatusText(trimmed, phase) : trimmed,
+    sourceText: kind === "status" ? trimmed : undefined,
     kind,
     at: processTimestamp(),
   };
@@ -405,7 +411,7 @@ function ProcessStepDetail({
   isLast: boolean;
   live?: boolean;
 }) {
-  const progressBrand = resolveGenieProgressBrand(step.phase, step.text);
+  const progressBrand = resolveGenieProgressBrand(step.phase, progressBrandText(step));
 
   return (
     <div className="grid grid-cols-[18px_1fr] gap-2.5">
@@ -421,7 +427,7 @@ function ProcessStepDetail({
       <div className="pb-3">
         <div className="mb-1 flex items-center gap-1.5 text-[10px] text-gray-400">
           {progressBrand ? (
-            <GenieProgressBrandIcon phase={step.phase} text={step.text} />
+            <GenieProgressBrandIcon phase={step.phase} text={progressBrandText(step)} />
           ) : null}
           <span className="font-medium text-gray-500">{processStepLabel(step)}</span>
           <span className="text-gray-300">{step.at}</span>
@@ -615,9 +621,9 @@ function ProcessTimelineBox({
   if (visibleSteps.length === 0 && !hasAnalysis && !(rawDebugLogs?.length)) return null;
 
   const phaseLabel = latestStep ? processStepLabel(latestStep) : analysisPlan ? "Planning" : "Working";
-  const progressText = latestStep
-    ? liveGenieProgressPreview(latestStep.text, latestStep.phase) || phaseLabel
-    : "Thinking…";
+  const liveBrand = latestStep
+    ? resolveGenieProgressBrand(latestStep.phase, progressBrandText(latestStep))
+    : null;
 
   return (
     <>
@@ -630,8 +636,11 @@ function ProcessTimelineBox({
         )}
         aria-label="Open thinking and progress details"
       >
-        {live && latestStep ? (
-          <GenieProgressBrandIcon phase={latestStep.phase} text={latestStep.text} />
+        {live && liveBrand ? (
+          <GenieProgressBrandIcon
+            phase={latestStep?.phase}
+            text={latestStep ? progressBrandText(latestStep) : undefined}
+          />
         ) : null}
         <span
           className={cn(
@@ -642,7 +651,7 @@ function ProcessTimelineBox({
           )}
           style={live ? THINKING_SHIMMER_STYLE : undefined}
         >
-          {live ? progressText : "View thought process"}
+          {live ? "Thinking…" : "View thought process"}
         </span>
       </button>
 
