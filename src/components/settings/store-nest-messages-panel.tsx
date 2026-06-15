@@ -252,7 +252,9 @@ function isLikelyPhoneLabel(value: string | null | undefined): boolean {
   return phoneDigits(value).length >= 8;
 }
 
-function nestConversationDisplayTitle(chat: NestConversationListItem): string {
+function nestConversationDisplayTitle(
+  chat: Pick<NestConversationListItem, "chatId" | "displayName" | "title" | "participantHandle">,
+): string {
   const name = chat.displayName?.trim();
   if (name && !isLikelyPhoneLabel(name)) return name;
   const title = chat.title?.trim();
