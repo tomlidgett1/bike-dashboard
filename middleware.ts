@@ -30,6 +30,20 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(callbackUrl)
   }
 
+  // Canonical homepage. The site's home experience permanently lives at
+  // /marketplace, so the root domain must redirect there with a PERMANENT
+  // (308) status — not the temporary (307) the generic auth fallback below
+  // would emit. The root is the single most authoritative URL on the domain;
+  // a temporary redirect tells Google not to consolidate its signals onto the
+  // real home, leaking ranking equity. This dedicated branch runs before the
+  // auth logic so it applies to logged-out crawlers and signed-in users alike.
+  // (OAuth `?code=` on `/` is already handled above and returns first.)
+  if (request.nextUrl.pathname === '/') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/marketplace'
+    return NextResponse.redirect(url, 308)
+  }
+
   // Check if this is a public route that doesn't require authentication
   const isPublicRoute =
     request.nextUrl.pathname.startsWith('/auth') ||
