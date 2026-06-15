@@ -15,6 +15,7 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-active: var(--sidebar-active);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
@@ -102,7 +103,8 @@
   --sidebar-primary-foreground: oklch(0.987 0.026 102.212);
   --sidebar-accent: oklch(0.97 0.001 106.424);
   --sidebar-accent-foreground: oklch(0.216 0.006 56.043);
-  --sidebar-border: oklch(0.923 0.003 48.717);
+  --sidebar-active: oklch(0.955 0.002 106.424);
+  --sidebar-border: oklch(0.94 0.002 48.717);
   --sidebar-ring: oklch(0.709 0.01 56.259);
 
   /* Custom Notion-specific */
@@ -169,6 +171,7 @@
   --sidebar-primary-foreground: oklch(0.987 0.026 102.212);
   --sidebar-accent: oklch(0.268 0.007 34.298);
   --sidebar-accent-foreground: oklch(0.985 0.001 106.423);
+  --sidebar-active: oklch(0.25 0.006 34.298);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.553 0.013 58.071);
 
@@ -212,7 +215,8 @@
   --sidebar-primary-foreground: oklch(0.987 0.026 102.212);
   --sidebar-accent: oklch(0.97 0.001 106.424);
   --sidebar-accent-foreground: oklch(0.216 0.006 56.043);
-  --sidebar-border: oklch(0.923 0.003 48.717);
+  --sidebar-active: oklch(0.955 0.002 106.424);
+  --sidebar-border: oklch(0.94 0.002 48.717);
   --sidebar-ring: oklch(0.709 0.01 56.259);
 }
 
@@ -251,6 +255,57 @@
   html.dark:has(.dashboard-light-surface) body {
     background-color: #ffffff !important;
     color-scheme: light;
+  }
+
+  html:has(.dashboard-shell),
+  html:has(.dashboard-shell) body,
+  html.dark:has(.dashboard-shell),
+  html.dark:has(.dashboard-shell) body {
+    background-color: var(--dashboard-header-bg, #5c5c5c) !important;
+    color-scheme: light;
+  }
+
+  .dashboard-shell {
+    --dashboard-header-bg: #5c5c5c;
+    --dashboard-header-fg: rgba(255, 255, 255, 0.92);
+    --dashboard-header-control-bg: rgba(255, 255, 255, 0.1);
+    --dashboard-header-control-border: rgba(255, 255, 255, 0.22);
+    --dashboard-header-control-fg: rgba(255, 255, 255, 0.84);
+    --dashboard-header-control-hover-bg: rgba(255, 255, 255, 0.16);
+    --dashboard-header-control-hover-fg: #ffffff;
+    --dashboard-header-control-active-bg: rgba(255, 255, 255, 0.22);
+    --dashboard-header-logo-filter: brightness(0) invert(1);
+    background-color: var(--dashboard-header-bg, #5c5c5c);
+  }
+
+  .dashboard-header {
+    background-color: var(--dashboard-header-bg, #5c5c5c);
+    color: var(--dashboard-header-fg);
+  }
+
+  .dashboard-shell-body [data-slot="sidebar-container"] {
+    position: absolute !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    height: auto !important;
+  }
+
+  .dashboard-shell-body [data-slot="sidebar-gap"] {
+    min-height: 100%;
+  }
+
+  .dashboard-app-sidebar [data-sidebar="sidebar"] {
+    background-color: #f6f6f7;
+    border-top-left-radius: 1rem;
+  }
+
+  .dashboard-app-sidebar [data-slot="sidebar-container"] {
+    border-right: 0;
+  }
+
+  .dashboard-shell-body [data-slot="sidebar-inset"] {
+    border-top-right-radius: 1rem;
   }
 
   /* Discreet scrollbars — thin, low contrast, slightly stronger on hover */

@@ -3,9 +3,10 @@
 import * as React from "react";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { topbarIconButtonClass } from "@/components/layout/topbar-nav-pills";
 import { useUserProfile } from "@/lib/hooks/use-user-profile";
 import { isStoreSetupComplete, storeSetupProgress } from "@/lib/store/setup-steps";
+import { cn } from "@/lib/utils";
 import { StoreSetupModal } from "@/components/settings/store-setup-modal";
 
 function useStoreSetup() {
@@ -29,10 +30,8 @@ export function StoreSetupButton({
   if (iconOnly) {
     return (
       <>
-        <Button
+        <button
           type="button"
-          variant="ghost"
-          size="icon"
           onClick={() => setOpen(true)}
           aria-label={
             complete
@@ -41,16 +40,13 @@ export function StoreSetupButton({
                 ? `Onboarding or setup, ${progress}% complete`
                 : "Onboarding or setup"
           }
-          className={cn(
-            "relative size-8 text-muted-foreground hover:text-foreground",
-            className,
-          )}
+          className={cn(topbarIconButtonClass, className)}
         >
           <Sparkles className="size-4" />
           {!complete ? (
             <span className="absolute right-1 top-1 size-1.5 rounded-full bg-[#FFC72C]" />
           ) : null}
-        </Button>
+        </button>
 
         <StoreSetupModal
           open={open}

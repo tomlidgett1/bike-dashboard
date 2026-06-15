@@ -228,7 +228,7 @@ function ShiftRow({
             </span>
           ) : null}
         </div>
-        <p className="mt-0.5 truncate text-[11px] font-medium tabular-nums text-gray-700">{shift.time}</p>
+        <p className="mt-0.5 truncate text-[11px] font-medium tabular-nums text-gray-950">{shift.time}</p>
         {shift.hours != null ? (
           <p className="mt-0.5 truncate text-[10px] text-gray-500">{shift.hours} hrs</p>
         ) : shift.area ? (
@@ -502,7 +502,7 @@ function RemoveStaffPanel({
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[12px] font-semibold text-gray-900">{shift.employee}</p>
-                <p className="mt-0.5 truncate text-[11px] font-medium tabular-nums text-gray-700">{shift.time}</p>
+                <p className="mt-0.5 truncate text-[11px] font-medium tabular-nums text-gray-950">{shift.time}</p>
               </div>
               <button
                 type="button"

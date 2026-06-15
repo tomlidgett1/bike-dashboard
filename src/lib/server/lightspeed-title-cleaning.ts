@@ -1,7 +1,11 @@
 import OpenAI from 'openai'
 import { createServiceRoleClient } from '@/lib/supabase/server'
 import { createLightspeedClient } from '@/lib/services/lightspeed'
-import { ensureTitlePreservesSizes } from '@/lib/product-title-size-guard'
+import {
+  buildTitleGenerationContext,
+  ensureTitlePreservesVariants,
+  TITLE_VARIANT_RULES,
+} from '@/lib/product-copy-context'
 
 const MODEL = 'gpt-5.4-mini'
 const DEFAULT_BATCH_SIZE = 2
@@ -21,9 +25,8 @@ STEPS:
 TITLE RULES:
 - Use the manufacturer's official capitalisation.
 - CRITICAL SIZE RULE: If the raw Lightspeed title, SKU/UPC context, or official product page includes a size, dimension, fit, capacity, speed, tooth count, width, length, diameter, wheel size, frame size, clothing size, shoe size, volume, or other variant size, the final title MUST include it.
-- Never drop size details such as 700x25c, 29x2.4, 27.5x2.6, 160mm, 172.5mm, 31.8mm, 11-34T, 12-speed, 42cm, 56cm, S, M, L, XL, 500ml, 1-1/8", EU 43, or similar sizing.
-- Include the correct model suffix, generation, colour, size, or key variant when confidently identified.
-- Keep the title concise, but preserving size is more important than hitting the word target.
+${TITLE_VARIANT_RULES}
+- Keep the title concise, but preserving variant details is more important than hitting the word target.
 - Australian English spelling.
 - Do not include internal POS codes, stock codes, price, or availability.
 - Return ONLY the final title. No explanation, no quotes, no trailing punctuation.
@@ -92,39 +95,25 @@ function extractOutputText(response: ResponseWithOutput): string {
 }
 
 async function generateCleanTitle(row: InventoryTitleRow): Promise<string> {
-  const rawTitle = row.description || ''
+  const product = {
+    description: row.description,
+    marketplace_category: row.category_id,
+  }
+  const { lightspeedTitle, searchTerms, contextBlock } = buildTitleGenerationContext(product)
 
-  if (!rawTitle.trim()) {
+  if (!lightspeedTitle) {
     throw new Error('Missing Lightspeed description')
   }
-
-  const searchTerms = [
-    rawTitle,
-    row.upc,
-    row.system_sku,
-    row.category_id ? `category ${row.category_id}` : null,
-  ].filter(Boolean).join(' ')
-
-  const context = [
-    `Raw Lightspeed title: ${rawTitle}`,
-    row.system_sku && `System SKU: ${row.system_sku}`,
-    row.upc && `UPC: ${row.upc}`,
-    row.category_id && `Lightspeed category ID: ${row.category_id}`,
-    row.manufacturer_id && `Lightspeed manufacturer ID: ${row.manufacturer_id}`,
-    row.price !== null && row.price !== undefined && `Price: ${row.price}`,
-  ].filter(Boolean).join('\n')
 
   const response = await openai.responses.create({
     model: MODEL,
     instructions: TITLE_PROMPT,
     tools: [{ type: 'web_search_preview' as const }],
     tool_choice: 'required',
-    input: `Search the web for "${searchTerms}" and return the clean ecommerce title for this Lightspeed item:\n\n${context}\n\nReturn ONLY the clean title.`,
+    input: `Search the web for "${searchTerms}" and return the clean ecommerce title for this Lightspeed item:\n\n${contextBlock}\nSystem SKU: ${row.system_sku || 'n/a'}\nUPC: ${row.upc || 'n/a'}\nLightspeed category ID: ${row.category_id || 'n/a'}\nLightspeed manufacturer ID: ${row.manufacturer_id || 'n/a'}\nPrice: ${row.price ?? 'n/a'}\n\nReturn ONLY the clean title.`,
   })
 
-  const title = ensureTitlePreservesSizes(extractOutputText(response), {
-    rawTitle,
-  })
+  const title = ensureTitlePreservesVariants(extractOutputText(response), product)
   if (!title) throw new Error('No title generated')
   return title
 }

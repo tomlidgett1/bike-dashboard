@@ -7,7 +7,7 @@ import type { Metadata } from "next";
 import { JsonLd } from "@/components/seo/json-ld";
 import { productSchema, breadcrumbSchema, type ProductLike } from "@/lib/seo/structured-data";
 import { productPath, absoluteUrl, SITE_NAME, extractProductId, productSlugId } from "@/lib/seo/site";
-import type { MarketplaceProduct } from "@/lib/types/marketplace";
+import type { MarketplaceProduct, ProductVariantInfo } from "@/lib/types/marketplace";
 import {
   getProductImages,
   orderProductImagesForPublicDisplay,
@@ -110,6 +110,8 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
         manufacturer_name,
         brand,
         model,
+        variant_group_id,
+        variant_master_title,
         reason_for_selling,
         is_negotiable,
         shipping_available,
@@ -229,6 +231,11 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
       }
     }
 
+    const variantGroupId = (product as { variant_group_id?: string | null }).variant_group_id;
+    const variants = variantGroupId
+      ? await fetchVariantInfo(supabase, productId, variantGroupId)
+      : null;
+
     return {
       ...product,
       primary_image_url: primaryImageUrl,
@@ -237,6 +244,9 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
       image_variants: null,
       immersive_page: immersivePage,
       uber_delivery_enabled: product.uber_delivery_enabled ?? false,
+      // Members of a variant group present the shared master title.
+      display_name: variants?.masterTitle || (product as { display_name?: string }).display_name,
+      variants,
       brand: product.brand || product.manufacturer_name || null,
       store_name: displayName,
       store_logo_url: user?.logo_url || null,
@@ -247,6 +257,68 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
     console.error('Error fetching product:', error);
     return null;
   }
+}
+
+// Load the variant group for the product page selector. Public client reads
+// are allowed by the storefront RLS policies on the variant tables.
+async function fetchVariantInfo(
+  supabase: ReturnType<typeof createPublicSupabaseClient>,
+  currentProductId: string,
+  groupId: string,
+): Promise<ProductVariantInfo | null> {
+  const { data: group } = await supabase
+    .from('product_variant_groups')
+    .select('id, master_title, status')
+    .eq('id', groupId)
+    .maybeSingle();
+  if (!group || (group as { status?: string }).status !== 'active') return null;
+
+  const [{ data: optionRows }, { data: itemRows }] = await Promise.all([
+    supabase
+      .from('product_variant_options')
+      .select('name, position')
+      .eq('group_id', groupId)
+      .order('position', { ascending: true }),
+    supabase
+      .from('product_variant_group_items')
+      .select('product_id, is_master, value_assignments, position, products!inner(display_name, description, price, qoh)')
+      .eq('group_id', groupId)
+      .order('position', { ascending: true }),
+  ]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const items = (itemRows ?? []).map((row: any) => {
+    const p = row.products;
+    const title = (p?.display_name || p?.description || '').trim();
+    return {
+      productId: row.product_id as string,
+      title,
+      price: typeof p?.price === 'number' ? p.price : p?.price ? Number(p.price) : null,
+      qoh: typeof p?.qoh === 'number' ? p.qoh : p?.qoh ? Number(p.qoh) : null,
+      valueAssignments: (row.value_assignments ?? {}) as Record<string, string>,
+      isMaster: Boolean(row.is_master),
+      isCurrent: row.product_id === currentProductId,
+      url: productPath(productSlugId(row.product_id as string, title)),
+    };
+  });
+
+  if (items.length < 2) return null;
+
+  const optionNames = (optionRows ?? []).length
+    ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (optionRows ?? []).map((o: any) => o.name as string)
+    : Array.from(new Set(items.flatMap((i) => Object.keys(i.valueAssignments))));
+
+  const options = optionNames.map((name) => {
+    const values: string[] = [];
+    for (const item of items) {
+      const v = item.valueAssignments[name];
+      if (v && !values.includes(v)) values.push(v);
+    }
+    return { name, values };
+  });
+
+  return { groupId, masterTitle: (group as { master_title: string }).master_title, options, items };
 }
 
 async function fetchImmersivePageFlag(
@@ -345,6 +417,7 @@ async function fetchBrandProducts(productId: string, brand: string): Promise<Mar
       .or(`brand.ilike.${normalizedBrand},manufacturer_name.ilike.${normalizedBrand}`)
       .neq('id', productId)
       .is('sold_at', null)
+      .eq('variant_hidden_from_grid', false)
       .order('created_at', { ascending: false })
       .limit(12);
 
@@ -460,6 +533,7 @@ async function fetchSellerProducts(product: MarketplaceProduct): Promise<{ produ
       .eq('user_id', product.user_id)
       .neq('id', product.id)
       .is('sold_at', null)
+      .eq('variant_hidden_from_grid', false)
       .order('created_at', { ascending: false })
       .limit(12);
 

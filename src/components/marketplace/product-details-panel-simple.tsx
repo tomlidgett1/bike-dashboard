@@ -12,6 +12,7 @@ import { ProductInquiryButton } from "./product-inquiry-button";
 import { MakeOfferButton } from "./make-offer-button";
 import { BuyNowButton } from "./buy-now-button";
 import { AddToCartButton } from "./add-to-cart-button";
+import { VariantSelector } from "./product-detail/variant-selector";
 import { ProductAskGenieButton } from "./product-ask-genie-button";
 import { ProductBrandLogoBadge } from "./product-detail/product-brand-logo-badge";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -304,6 +305,10 @@ export function ProductDetailsPanelSimple({
           )}
           {!isSold && !isOwner && isUberDeliveryEligible && <UberDeliveryInlineBadge />}
         </div>
+
+        {product.variants && product.variants.items.length > 1 && (
+          <VariantSelector variants={product.variants} />
+        )}
 
         {(product as any).pickup_location && (
           <div className="mt-2.5 flex items-center gap-1.5">

@@ -6,6 +6,7 @@ import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import { Package, Store, User, Clock, Settings, ShoppingBag, PanelLeftClose, PanelLeft, HelpCircle, LogOut } from "lucide-react";
 import {
   bicycleStoreNavLabels,
+  getMarketplaceSettingsRoute,
   individualUserNavLabels,
 } from "@/lib/marketplace-nav";
 import { cn } from "@/lib/utils";
@@ -143,7 +144,13 @@ function MarketplaceSidebarContent() {
   // Determine active view based on pathname and search params
   const getActiveView = () => {
     const path = pathname;
-    if (path === "/settings" || path === "/marketplace/settings") return "settings";
+    if (
+      path === "/settings" ||
+      path === "/marketplace/settings" ||
+      path.startsWith("/settings/store")
+    ) {
+      return "settings";
+    }
     if (path === "/settings/purchases" || path === "/marketplace/purchases") return "purchases";
     // Check if user is viewing their own store
     const storeMatch = path.match(/^\/marketplace\/store\/(.+)$/);
@@ -183,13 +190,7 @@ function MarketplaceSidebarContent() {
     return !!profile?.logo_url;
   };
 
-  // Get the appropriate settings route based on account type
-  const getSettingsRoute = () => {
-    if (profile?.account_type === 'bicycle_store' && profile?.bicycle_store === true) {
-      return '/settings'; // Bike store settings
-    }
-    return '/marketplace/settings'; // Individual user settings
-  };
+  const getSettingsRoute = () => getMarketplaceSettingsRoute(isVerifiedStore);
 
   // All authenticated users can access settings
   const canAccessSettings = () => {
@@ -237,7 +238,7 @@ function MarketplaceSidebarContent() {
         // Bike Stores space
         url = "/marketplace?space=stores";
       } else if (item.value === "settings") {
-        url = isVerifiedStore ? "/settings" : "/marketplace/settings";
+        url = getMarketplaceSettingsRoute(isVerifiedStore);
       } else if (item.value === "purchases") {
         // Bicycle stores use marketplace route, individual users use settings route
         url = isVerifiedStore ? "/marketplace/purchases" : "/settings/purchases";

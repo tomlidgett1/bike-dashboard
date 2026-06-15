@@ -93,7 +93,7 @@ function MessageListItem({
           <span className="shrink-0 text-[10px] text-gray-400">{message.receivedAt}</span>
         </div>
         <p className="mt-0.5 truncate text-[11px] text-gray-500">{message.phone}</p>
-        <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-gray-500">{message.preview}</p>
+        <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-gray-900">{message.preview}</p>
       </div>
 
       <BentoInboxPrimaryButton
@@ -154,7 +154,7 @@ function ReplyFace({
       >
         <div className="shrink-0 border-b border-gray-100 px-3 py-2.5">
           <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Their message</p>
-          <p className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-gray-600">{message.body}</p>
+          <p className="mt-1 whitespace-pre-wrap text-[11px] leading-relaxed text-gray-900">{message.body}</p>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">

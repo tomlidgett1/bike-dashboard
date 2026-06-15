@@ -8,7 +8,10 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { InstantSearch } from "./instant-search";
 import { DesktopHeaderPill } from "./desktop-header-pill";
-import { getMarketplaceUserNavLabels } from "@/lib/marketplace-nav";
+import {
+  getMarketplaceSettingsRoute,
+  getMarketplaceUserNavLabels,
+} from "@/lib/marketplace-nav";
 import { CartButton } from "./cart-button";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -343,13 +346,11 @@ export function MarketplaceHeader({
     return !!user;
   };
 
-  // Get the appropriate settings route based on account type
-  const getSettingsRoute = () => {
-    if (profile?.account_type === 'bicycle_store' && profile?.bicycle_store === true) {
-      return '/settings'; // Bike store settings
-    }
-    return '/marketplace/settings'; // Individual user settings
-  };
+  const isVerifiedStore =
+    profile?.account_type === "bicycle_store" && profile?.bicycle_store === true;
+
+  const getSettingsRoute = () =>
+    getMarketplaceSettingsRoute(isVerifiedStore);
 
   const navLabels = getMarketplaceUserNavLabels(profile?.account_type);
 

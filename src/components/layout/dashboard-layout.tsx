@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppSidebar } from "./app-sidebar";
+import { DashboardHeader } from "./dashboard-header";
+import { DashboardHeaderColorProvider } from "./dashboard-header-color";
 import { ForceLightChrome } from "./force-light-chrome";
 import { Topbar } from "./topbar";
 
@@ -25,17 +27,22 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
   return (
     <ForceLightChrome>
+    <DashboardHeaderColorProvider>
     <TooltipProvider delayDuration={0}>
-      <SidebarProvider className="dashboard-light-surface h-svh overflow-hidden bg-background text-foreground">
-        <AppSidebar />
-        <SidebarInset className="h-svh min-w-0 overflow-hidden bg-background">
-          <Topbar />
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-background">
-            {children}
-          </div>
-        </SidebarInset>
+      <SidebarProvider className="dashboard-light-surface dashboard-shell flex h-svh flex-col overflow-hidden text-foreground">
+        <DashboardHeader />
+        <div className="dashboard-shell-body relative flex min-h-0 w-full flex-1 overflow-hidden rounded-t-2xl border border-b-0 border-border/60 bg-[#f6f6f7] md:flex-row">
+          <AppSidebar />
+          <SidebarInset className="min-h-0 min-w-0 flex-1 overflow-hidden bg-white">
+            <Topbar />
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-white">
+              {children}
+            </div>
+          </SidebarInset>
+        </div>
       </SidebarProvider>
     </TooltipProvider>
+    </DashboardHeaderColorProvider>
     </ForceLightChrome>
   );
 }

@@ -1,7 +1,11 @@
 import { NextRequest } from 'next/server'
 import OpenAI from 'openai'
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server'
-import { ensureTitlePreservesSizes } from '@/lib/product-title-size-guard'
+import {
+  buildTitleGenerationContext,
+  ensureTitlePreservesVariants,
+  TITLE_VARIANT_RULES,
+} from '@/lib/product-copy-context'
 import { brandWebsiteDomain, resolveBrandWebsite } from '@/lib/bikes/brand-websites'
 
 export const dynamic = 'force-dynamic'
@@ -33,10 +37,9 @@ STEPS (follow in order):
 TITLE RULES (apply after searching):
 - Use the manufacturer's official capitalisation (e.g. Wahoo stylises as "ELEMNT", not "Elemnt")
 - Include the correct model suffix/generation if found (e.g. "v2", "Gen 3", "2024")
-- CRITICAL SIZE RULE: If the raw POS name or official product page includes a size, dimension, fit, capacity, speed, tooth count, width, length, diameter, wheel size, frame size, clothing size, shoe size, volume, or other variant size, the final title MUST include it.
-- Never drop size details such as 700x25c, 29x2.4, 27.5x2.6, 160mm, 172.5mm, 31.8mm, 11-34T, 12-speed, 42cm, 56cm, S, M, L, XL, 500ml, 1-1/8", EU 43, or similar sizing.
+${TITLE_VARIANT_RULES}
 - Remove generic filler words only if the real product name doesn't include them
-- Keep it concise, but preserving size is more important than hitting the word target
+- Keep it concise, but preserving variant details is more important than hitting the word target
 - Australian English spelling
 - Return ONLY the final title — no explanation, no quotes, no trailing punctuation
 
@@ -102,7 +105,9 @@ export async function POST(request: NextRequest) {
     // Fetch the products — must belong to this user
     const { data: products, error: dbError } = await supabase
       .from('products')
-      .select('id, description, display_name, brand, model, manufacturer_name, marketplace_category, price')
+      .select(
+        'id, description, display_name, brand, model, manufacturer_name, marketplace_category, price, frame_size, size, wheel_size, color_primary, color_secondary',
+      )
       .eq('user_id', userId)
       .in('id', productIds)
 
@@ -124,8 +129,18 @@ export async function POST(request: NextRequest) {
 
           for (let i = 0; i < products.length; i++) {
             const product = products[i]
-            const rawName = product.description
-            const searchTerms = [product.brand, product.model, rawName].filter(Boolean).join(' ')
+            const { lightspeedTitle, searchTerms, contextBlock } = buildTitleGenerationContext(product)
+
+            if (!lightspeedTitle) {
+              emit({
+                event: 'product_complete',
+                productId: product.id,
+                success: false,
+                title: null,
+                error: 'Missing Lightspeed title',
+              })
+              continue
+            }
 
             emit({ event: 'product_start', productId: product.id, index: i + 1, total: products.length })
 
@@ -134,26 +149,15 @@ export async function POST(request: NextRequest) {
               const brandWebsite = resolveBrandWebsite(brand)
               const brandDomain = brandWebsite ? brandWebsiteDomain(brandWebsite) : null
 
-              const context = [
-                `Raw product name: ${rawName}`,
-                brand && `Brand: ${brand}`,
-                product.model && `Model: ${product.model}`,
-                product.marketplace_category && `Category: ${product.marketplace_category}`,
-                brandDomain && `Official manufacturer website: ${brandWebsite} (search site:${brandDomain} first for the exact official product name)`,
-              ].filter(Boolean).join('\n')
-
               const response = await openai.responses.create({
                 model: MODEL,
                 instructions: TITLE_PROMPT,
                 tools: [{ type: 'web_search_preview' as const }],
                 tool_choice: 'required',
-                input: `Search the web for "${searchTerms}" — prioritising the official manufacturer website${brandDomain ? ` (site:${brandDomain})` : ''} — then return the clean ecommerce title for this product:\n\n${context}\n\nReturn ONLY the title.`,
+                input: `Search the web for "${searchTerms}" — prioritising the official manufacturer website${brandDomain ? ` (site:${brandDomain})` : ''} — then return the clean ecommerce title for this Lightspeed product:\n\n${contextBlock}${brandDomain ? `\nOfficial manufacturer website: ${brandWebsite} (search site:${brandDomain} first for the exact official product name)` : ''}\n\nReturn ONLY the title.`,
               })
 
-              const title = ensureTitlePreservesSizes(extractOutputText(response), {
-                rawTitle: rawName,
-                category: product.marketplace_category,
-              })
+              const title = ensureTitlePreservesVariants(extractOutputText(response), product)
 
               if (!title) throw new Error('No title generated')
 

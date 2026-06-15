@@ -135,7 +135,7 @@ function AgentInsightBanner() {
         <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#fafaf9] ring-1 ring-black/[0.06]">
           <Sparkles className="h-3.5 w-3.5 text-gray-600" />
         </span>
-        <p className="text-[11px] leading-relaxed text-gray-600">
+        <p className="text-[11px] leading-relaxed text-gray-900">
           These SKUs have not sold in 90+ days while holding above-average stock. Suggested discounts
           prioritise clearing aged inventory without racing to the bottom.
         </p>
@@ -457,7 +457,7 @@ function ReviewFace({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
           <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Agent note</p>
-          <p className="mt-1.5 text-[11px] leading-relaxed text-gray-600">{product.insight}</p>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-gray-900">{product.insight}</p>
 
           <div className="my-3 h-px bg-gray-100" />
 

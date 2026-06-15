@@ -1059,8 +1059,10 @@ export function ProductOptimizePanel({
                   size="sm"
                   className="w-full gap-2"
                   onClick={() => {
-                    void runTitle();
-                    void runDescriptions("both");
+                    void (async () => {
+                      await runTitle();
+                      await runDescriptions("both");
+                    })();
                   }}
                   disabled={running}
                 >

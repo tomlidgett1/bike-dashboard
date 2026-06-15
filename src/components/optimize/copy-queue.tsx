@@ -366,13 +366,13 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
       return next;
     });
 
-    const jobs: Promise<unknown>[] = [];
-    if (fields.title) jobs.push(runTitles(ids));
-    if (fields.description && fields.specs) jobs.push(runDescriptions(ids, "both"));
-    else if (fields.description) jobs.push(runDescriptions(ids, "description"));
-    else if (fields.specs) jobs.push(runDescriptions(ids, "specs"));
+    if (fields.title) {
+      await runTitles(ids);
+    }
+    if (fields.description && fields.specs) await runDescriptions(ids, "both");
+    else if (fields.description) await runDescriptions(ids, "description");
+    else if (fields.specs) await runDescriptions(ids, "specs");
 
-    await Promise.all(jobs);
     setRunning(false);
     abortRef.current = null;
   };

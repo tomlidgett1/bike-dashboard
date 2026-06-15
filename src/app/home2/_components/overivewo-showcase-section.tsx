@@ -22,7 +22,7 @@ export function OverivewoShowcaseSection() {
             Action cards on your shop home.
           </h3>
           <p className="mt-3 text-[15px] leading-relaxed text-zinc-500">
-            Overivewo surfaces what needs attention — customer enquiries, Nest messages, and missing
+            Actions surfaces what needs attention — customer enquiries, Nest messages, and missing
             brands — in swipeable cards your team can act on in seconds.
           </p>
           <Link

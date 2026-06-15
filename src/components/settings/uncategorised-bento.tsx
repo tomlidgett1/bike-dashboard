@@ -98,7 +98,7 @@ function ProductListItem({
           {product.sku}
           {product.brand ? ` · ${product.brand}` : ""}
         </p>
-        <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-gray-500">{product.preview}</p>
+        <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-gray-900">{product.preview}</p>
       </div>
 
       <BentoInboxPrimaryButton
@@ -167,7 +167,7 @@ function AssignCategoryFace({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
           <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Why it needs a category</p>
-          <p className="mt-1.5 text-[11px] leading-relaxed text-gray-600">{product.preview}</p>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-gray-900">{product.preview}</p>
 
           <div className="my-3 h-px bg-gray-100" />
 

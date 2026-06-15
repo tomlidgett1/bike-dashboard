@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { isLightspeedProduct } from '@/lib/products/catalog-helpers'
+import { countPendingVariantReviewProducts } from '@/lib/variants/enrich-product-variants'
 
 const BATCH_SIZE = 1000
 
@@ -30,14 +31,31 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorised. Please log in first.' }, { status: 401 })
     }
 
-    const { count: liveCount, error: liveError } = await supabase
-      .from('marketplace_ready_products')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user.id)
+    const [
+      { count: liveCount, error: liveError },
+      { count: variantGroupedCount, error: variantGroupedError },
+      pendingVariantReview,
+    ] = await Promise.all([
+      supabase
+        .from('marketplace_ready_products')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id),
+      supabase
+        .from('products')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .not('variant_group_id', 'is', null),
+      countPendingVariantReviewProducts(supabase, user.id),
+    ])
 
     if (liveError) {
       console.error('[Products Stats API] Live count error:', liveError)
       throw liveError
+    }
+
+    if (variantGroupedError) {
+      console.error('[Products Stats API] Variant grouped count error:', variantGroupedError)
+      throw variantGroupedError
     }
 
     let from = 0
@@ -48,6 +66,8 @@ export async function GET() {
       needsImages: 0,
       lightspeed: 0,
       manual: 0,
+      variantGrouped: variantGroupedCount ?? 0,
+      variantPendingReview: pendingVariantReview,
     }
 
     while (true) {

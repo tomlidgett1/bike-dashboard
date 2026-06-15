@@ -52,6 +52,15 @@ export function getMarketplaceUserNavLabels(
     : individualUserNavLabels;
 }
 
+/** Default landing page for verified bike stores leaving the marketplace. */
+export const VERIFIED_STORE_SETTINGS_PATH = "/settings/store/home";
+
+export function getMarketplaceSettingsRoute(isVerifiedStore: boolean): string {
+  return isVerifiedStore
+    ? VERIFIED_STORE_SETTINGS_PATH
+    : "/marketplace/settings";
+}
+
 export const marketplaceIndividualUserNavItems: MarketplaceNavItem[] = [
   { type: "separator" },
   {
@@ -109,7 +118,11 @@ export function getMarketplaceActiveView(
   profileUserId: string | undefined,
   authUserId: string | undefined
 ): string {
-  if (pathname === "/settings" || pathname === "/marketplace/settings") {
+  if (
+    pathname === "/settings" ||
+    pathname === "/marketplace/settings" ||
+    pathname.startsWith("/settings/store")
+  ) {
     return "settings";
   }
   if (pathname === "/settings/purchases" || pathname === "/marketplace/purchases") {
@@ -149,7 +162,7 @@ export function buildMarketplaceNavUrl(
     case "stores":
       return "/marketplace?space=stores";
     case "settings":
-      return isVerifiedStore ? "/settings" : "/marketplace/settings";
+      return getMarketplaceSettingsRoute(isVerifiedStore);
     case "purchases":
       return isVerifiedStore
         ? "/marketplace/purchases"

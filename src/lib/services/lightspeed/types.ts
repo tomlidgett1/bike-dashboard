@@ -149,12 +149,21 @@ export interface LightspeedItem {
   seasonID: string
   defaultVendorID: string
   itemECommerceID?: string
+  ItemAttributes?: LightspeedItemAttributes
   Prices: {
     ItemPrice: LightspeedItemPrice[]
   }
   Images?: {
     Image: LightspeedItemImage[]
   }
+}
+
+/** Matrix attribute values carried by a child item of an ItemMatrix. */
+export interface LightspeedItemAttributes {
+  itemAttributeSetID: string
+  attribute1?: string
+  attribute2?: string
+  attribute3?: string
 }
 
 export interface LightspeedItemPrice {
@@ -806,6 +815,56 @@ export interface SyncOption {
   title: string
   description: string
   enabled: boolean
+}
+
+// ============================================================
+// Item Matrix / Attribute Sets (variant products)
+// ============================================================
+
+/**
+ * An attribute set defines the dimensions of a matrix. System sets are
+ * "Color/Size", "Size", "Color", "3 Attributes"; custom sets may be created
+ * with any name + attributeName1..3.
+ */
+export interface LightspeedItemAttributeSet {
+  itemAttributeSetID: string
+  name: string
+  attributeName1: string
+  attributeName2: string
+  attributeName3: string
+  system?: string
+  archived?: string
+}
+
+export interface LightspeedItemAttributeSetsResponse {
+  ItemAttributeSet: LightspeedItemAttributeSet | LightspeedItemAttributeSet[]
+  '@attributes'?: {
+    count?: string
+    next?: string
+    previous?: string
+  }
+}
+
+/** A matrix (parent) groups child items that vary by attribute1..3. */
+export interface LightspeedItemMatrix {
+  itemMatrixID: string
+  description: string
+  itemAttributeSetID: string
+  manufacturerID?: string
+  categoryID?: string
+  taxClassID?: string
+  archived?: string
+  timeStamp?: string
+  attribute1Values?: string
+  attribute2Values?: string
+  attribute3Values?: string
+}
+
+export interface LightspeedItemMatrixResponse {
+  ItemMatrix: LightspeedItemMatrix
+  '@attributes'?: {
+    count?: string
+  }
 }
 
 

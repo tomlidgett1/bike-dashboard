@@ -43,6 +43,7 @@ import { MarketplaceLayout } from '@/components/layout/marketplace-layout'
 import { MarketplaceHeader } from '@/components/marketplace/marketplace-header'
 import { MobileSettingsView } from '@/components/marketplace/settings'
 import { StripeConnectCard } from '@/components/settings/stripe-connect-card'
+import { VERIFIED_STORE_SETTINGS_PATH } from '@/lib/marketplace-nav'
 
 // Strava icon component (not in lucide)
 function StravaIcon({ className }: { className?: string }) {
@@ -108,7 +109,7 @@ export default function MarketplaceSettingsPage() {
     if (!profileLoading && profile) {
       const isBikeStore = profile.account_type === 'bicycle_store' && profile.bicycle_store === true
       if (isBikeStore) {
-        router.replace('/settings')
+        router.replace(VERIFIED_STORE_SETTINGS_PATH)
       }
     }
   }, [profile, profileLoading, router])

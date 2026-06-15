@@ -32,6 +32,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  getMarketplaceSettingsRoute,
   getMarketplaceUserNavLabels,
   shouldShowMarketplaceSidebar,
 } from "@/lib/marketplace-nav";
@@ -77,7 +78,7 @@ function DesktopHeaderPillContent() {
   const showLogo = !!profile?.logo_url;
 
   const getSettingsRoute = () =>
-    isVerifiedStore ? "/settings" : "/marketplace/settings";
+    getMarketplaceSettingsRoute(isVerifiedStore);
 
   const getPurchasesRoute = () =>
     isVerifiedStore ? "/marketplace/purchases" : "/settings/purchases";

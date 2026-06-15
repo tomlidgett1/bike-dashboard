@@ -116,13 +116,13 @@ function ProductListItem({
       <div className="min-w-0 flex-1 pr-1">
         <p className="truncate text-[13px] font-semibold text-gray-900">{product.name}</p>
         <p className="mt-0.5 truncate text-[12px] font-medium text-gray-700">{product.sku}</p>
-        <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-gray-500">
+        <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-gray-900">
           {suggesting ? (
             <span className="inline-block h-3 w-32 max-w-full animate-pulse rounded-md bg-gray-100" />
           ) : recommendedBrand ? (
             <>
               Suggested{" "}
-              <span className="font-medium text-gray-700">{recommendedBrand}</span>
+              <span className="font-medium text-gray-950">{recommendedBrand}</span>
               <button
                 type="button"
                 onClick={() => onAddBrand(product)}
@@ -220,7 +220,7 @@ function AssignBrandFace({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
           <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Issue</p>
-          <p className="mt-1.5 text-[11px] leading-relaxed text-gray-600">{product.preview}</p>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-gray-900">{product.preview}</p>
 
           <div className="my-3 h-px bg-gray-100" />
 

@@ -30,6 +30,30 @@ export const MARKETPLACE_SUBCATEGORIES: MarketplaceSubcategories = {
   Nutrition: ['Energy Bars', 'Gels', 'Drinks', 'Supplements', 'Other'],
 };
 
+/** A selectable variant within a master product group (storefront display). */
+export interface ProductVariantOptionDisplay {
+  name: string;
+  values: string[];
+}
+
+export interface ProductVariantItemDisplay {
+  productId: string;
+  title: string;
+  price: number | null;
+  qoh: number | null;
+  valueAssignments: Record<string, string>;
+  isMaster: boolean;
+  isCurrent: boolean;
+  url: string;
+}
+
+export interface ProductVariantInfo {
+  groupId: string;
+  masterTitle: string;
+  options: ProductVariantOptionDisplay[];
+  items: ProductVariantItemDisplay[];
+}
+
 export interface MarketplaceProduct {
   id: string;
   canonical_product_id?: string | null; // Link to canonical product for image discovery
@@ -80,6 +104,10 @@ export interface MarketplaceProduct {
 
   // Brand — from Lightspeed manufacturer_name or manually entered during upload
   brand?: string | null;
+
+  // Variant group (size/colour/etc.). Present when this product is part of a
+  // master product with selectable variants. Display only — drives the selector.
+  variants?: ProductVariantInfo | null;
 
   // Extended fields for private listings
   listing_type?: 'store_inventory' | 'private_listing';

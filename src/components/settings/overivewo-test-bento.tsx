@@ -155,8 +155,8 @@ function EnquiryListItem({
             <span className="shrink-0 text-[10px] text-gray-400">{relativeTime(enquiry.received_at)}</span>
           ) : null}
         </div>
-        <p className="mt-0.5 truncate text-[12px] font-medium text-gray-700">{enquiry.subject}</p>
-        <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-gray-500">{enquirySummary(enquiry)}</p>
+        <p className="mt-0.5 truncate text-[12px] font-medium text-gray-950">{enquiry.subject}</p>
+        <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-gray-900">{enquirySummary(enquiry)}</p>
       </div>
 
       <BentoInboxPrimaryButton
@@ -260,7 +260,7 @@ function ReplyFace({
                   Loading thread…
                 </div>
               ) : (
-                <p className="mt-1.5 whitespace-pre-wrap text-[11px] leading-relaxed text-gray-600">{customerBody}</p>
+                <p className="mt-1.5 whitespace-pre-wrap text-[11px] leading-relaxed text-gray-900">{customerBody}</p>
               )}
 
               <div className="my-3 h-px bg-gray-100" />
@@ -292,7 +292,7 @@ function ReplyFace({
           </div>
 
           {!editing ? (
-            <p className="mt-1.5 line-clamp-6 whitespace-pre-wrap text-[11px] leading-relaxed text-gray-700">
+            <p className="mt-1.5 line-clamp-6 whitespace-pre-wrap text-[11px] leading-relaxed text-gray-900">
               {replyText.trim() || "No draft yet."}
             </p>
           ) : (
@@ -610,7 +610,7 @@ export function OverivewoTestBento({
           <span className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-white ring-1 ring-black/[0.06]">
             <GmailLogo className="h-6 w-6 opacity-90" />
           </span>
-          <p className="text-[12px] font-medium text-gray-700">Connect Gmail to sync customer enquiries</p>
+          <p className="text-[12px] font-medium text-gray-950">Connect Gmail to sync customer enquiries</p>
           <p className="mt-1 text-[11px] text-gray-500">Draft replies will appear here once Gmail is linked.</p>
           <button
             type="button"

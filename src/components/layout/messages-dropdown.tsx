@@ -15,6 +15,7 @@ import { useNotifications } from '@/lib/hooks/use-notifications';
 import { useMessages } from '@/components/providers/messages-provider';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { topbarIconButtonClass } from '@/components/layout/topbar-nav-pills';
 import {
   StoreHeaderDropdownBody,
   StoreHeaderDropdownEmpty,
@@ -54,7 +55,7 @@ export function MessagesDropdown() {
     <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
         <button
-          className="relative flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground cursor-pointer"
+          className={topbarIconButtonClass}
           aria-label="Messages"
         >
           <MessageCircle className="size-4 stroke-[1.75]" />

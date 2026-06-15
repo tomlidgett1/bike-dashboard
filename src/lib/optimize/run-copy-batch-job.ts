@@ -143,30 +143,42 @@ async function runProductCopy(
   copyFields: CopyBatchFields,
   bicycleOverrides: Record<string, boolean>,
 ): Promise<boolean> {
-  const tasks: Promise<boolean>[] = [];
   const descMode = descriptionMode(copyFields);
   const runsCopyContent = copyFields.description || copyFields.specs;
+  let success = true;
 
+  // Title cleaning must complete first — description/specs are derived from the cleaned title.
   if (copyFields.title) {
-    tasks.push(runTitlesForProduct(origin, internalSecret, userId, productId));
+    success = (await runTitlesForProduct(origin, internalSecret, userId, productId)) && success;
   }
 
   if (descMode) {
-    tasks.push(
-      runDescriptionsForProduct(origin, internalSecret, userId, productId, descMode, bicycleOverrides),
-    );
+    success =
+      (await runDescriptionsForProduct(
+        origin,
+        internalSecret,
+        userId,
+        productId,
+        descMode,
+        bicycleOverrides,
+      )) && success;
   }
 
   if (!runsCopyContent) {
-    tasks.push(
-      runDescriptionsForProduct(origin, internalSecret, userId, productId, "bicycle", bicycleOverrides),
-    );
+    success =
+      (await runDescriptionsForProduct(
+        origin,
+        internalSecret,
+        userId,
+        productId,
+        "bicycle",
+        bicycleOverrides,
+      )) && success;
   }
 
-  if (tasks.length === 0) return true;
+  if (!copyFields.title && !descMode && !runsCopyContent) return true;
 
-  const results = await Promise.all(tasks);
-  return results.every(Boolean);
+  return success;
 }
 
 /**

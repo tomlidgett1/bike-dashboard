@@ -1299,8 +1299,10 @@ export function EditProductPanel({
                       className="h-7 shrink-0 text-xs"
                       disabled={running}
                       onClick={() => {
-                        void runTitle();
-                        void runDescriptions("both");
+                        void (async () => {
+                          await runTitle();
+                          await runDescriptions("both");
+                        })();
                       }}
                     >
                       <Sparkles className="mr-1 size-3" />

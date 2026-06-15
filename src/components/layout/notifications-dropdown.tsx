@@ -44,6 +44,7 @@ import { useMessages } from '@/components/providers/messages-provider';
 import type { OrderNotification } from '@/lib/hooks/use-order-notifications';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { topbarIconButtonClass } from '@/components/layout/topbar-nav-pills';
 import Image from 'next/image';
 import {
   StoreHeaderDropdownBody,
@@ -448,10 +449,10 @@ export function NotificationsDropdown() {
       <>
         <button
           onClick={handleBellClick}
-          className="relative h-9 w-9 rounded-full hover:bg-gray-100 transition-colors cursor-pointer flex items-center justify-center"
+          className={topbarIconButtonClass}
           aria-label="Notifications"
         >
-          <Bell className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
+          <Bell className="size-4 stroke-[1.75]" />
           {unreadCount > 0 && (
             <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
               {unreadCount > 99 ? '99+' : unreadCount}
@@ -512,7 +513,7 @@ export function NotificationsDropdown() {
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <button
-          className="relative flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground cursor-pointer"
+          className={topbarIconButtonClass}
           aria-label="Notifications"
         >
           <Bell className="size-4 stroke-[1.75]" />

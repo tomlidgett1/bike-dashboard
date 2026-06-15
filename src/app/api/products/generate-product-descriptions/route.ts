@@ -12,6 +12,11 @@ import {
   buildBikeSpecsFromProductSpecs,
   syncBikeSpecsFromProductSpecs,
 } from '@/lib/bikes/sync-bike-specs-from-product-specs'
+import {
+  buildCopyGenerationContext,
+  COPY_VARIANT_RULES,
+  getCleanedTitle,
+} from '@/lib/product-copy-context'
 import type { BikeSpecsData } from '@/lib/types/bike-specs'
 
 export const dynamic = 'force-dynamic'
@@ -54,6 +59,10 @@ type CopyProduct = {
   price?: number | string | null
   bike_type?: string | null
   frame_size?: string | null
+  size?: string | null
+  wheel_size?: string | null
+  color_primary?: string | null
+  color_secondary?: string | null
   product_description?: string | null
   product_specs?: string | null
   product_spec_sources?: SpecSource[] | null
@@ -72,7 +81,7 @@ SEARCH STRATEGY (follow in order):
 
 RULES:
 - Benefits-first language — focus on what it does for the rider, not just what it is
-- Australian English spelling (colour, aluminium, tyres, etc.)
+${COPY_VARIANT_RULES}
 - Under 200 words total
 - No pricing mentions
 - No promotional fluff ("amazing", "incredible", "revolutionary")
@@ -166,7 +175,7 @@ const SPECS_CHAINED_PROMPT = `You are a technical cycling product specialist. Us
 RULES:
 - Every spec must be accurate and verified against the manufacturer's official data — only include what you know
 - Use exact model numbers, measurements, and material names where known
-- Australian English spelling (colour, aluminium, tyres, etc.)
+${COPY_VARIANT_RULES}
 - NEVER include URLs, website addresses, domain names, or source citations inside the spec text
 - NEVER guess or fabricate specs — omit a spec entirely rather than guess
 
@@ -179,7 +188,7 @@ RULES:
 - Search the official manufacturer website first; only fall back to a reputable source if the official site lacks a page for this exact product
 - Every spec must be accurate — only include what you find from official manufacturer data
 - Use exact model numbers, measurements, and material names where known
-- Australian English spelling (colour, aluminium, tyres, etc.)
+${COPY_VARIANT_RULES}
 - NEVER include URLs, website addresses, domain names, or source citations inside the spec text
 - NEVER guess or fabricate specs — omit a spec entirely rather than guess
 
@@ -214,7 +223,7 @@ function modelForCopy(product: CopyProduct, runSpecs: boolean): string {
   if (!runSpecs) return FAST_MODEL
 
   const text = [
-    product.display_name,
+    getCleanedTitle(product),
     product.description,
     product.brand,
     product.manufacturer_name,
@@ -222,6 +231,10 @@ function modelForCopy(product: CopyProduct, runSpecs: boolean): string {
     product.marketplace_category,
     product.bike_type,
     product.frame_size,
+    product.size,
+    product.wheel_size,
+    product.color_primary,
+    product.color_secondary,
   ]
     .filter(Boolean)
     .join(' ')
@@ -326,7 +339,9 @@ export async function POST(request: NextRequest) {
 
     const { data: products, error: dbError } = await supabase
       .from('products')
-      .select('id, description, display_name, brand, model, manufacturer_name, marketplace_category, price, bike_type, frame_size, condition_rating, is_bicycle, bike_specs, product_specs, product_spec_sources')
+      .select(
+        'id, description, display_name, brand, model, manufacturer_name, marketplace_category, price, bike_type, frame_size, size, wheel_size, color_primary, color_secondary, condition_rating, is_bicycle, bike_specs, product_specs, product_spec_sources',
+      )
       .eq('user_id', userId)
       .in('id', productIds)
 
@@ -349,7 +364,7 @@ export async function POST(request: NextRequest) {
 
           for (let i = 0; i < typedProducts.length; i++) {
             const product = typedProducts[i]
-            const productName = product.display_name || product.description || ''
+            const { cleanedTitle, detailsBlock, searchTerms } = buildCopyGenerationContext(product)
             const brand = product.brand || product.manufacturer_name || undefined
             const brandWebsite = resolveBrandWebsite(brand)
             const brandDomain = brandWebsite ? brandWebsiteDomain(brandWebsite) : null
@@ -357,27 +372,17 @@ export async function POST(request: NextRequest) {
             emit({
               event: 'product_start',
               productId: product.id,
-              name: productName,
+              name: cleanedTitle,
               index: i + 1,
               total: typedProducts.length,
             })
 
             try {
-              const details = [
-                `Product: ${productName}`,
-                brand && `Brand: ${brand}`,
-                product.model && `Model: ${product.model}`,
-                product.marketplace_category && `Category: ${product.marketplace_category}`,
-                product.bike_type && `Type: ${product.bike_type}`,
-                product.frame_size && `Size: ${product.frame_size}`,
-                product.description && product.description !== productName && `Original description: ${product.description}`,
-              ].filter(Boolean).join('\n')
-
               if (runBicycleOnly) {
                 emit({ event: 'product_phase', productId: product.id, phase: 'bicycle' })
 
                 const detectionContext = [
-                  details,
+                  detailsBlock,
                   product.product_description &&
                     `Description:\n${product.product_description.slice(0, 600)}`,
                   product.product_specs &&
@@ -437,12 +442,8 @@ export async function POST(request: NextRequest) {
                 continue
               }
 
-              const searchTerms = [brand, product.model, productName]
-                .filter(Boolean)
-                .join(' ')
-
               const officialSearchBlock = brandDomain
-                ? `Official manufacturer website (search this first): ${brandWebsite} (domain: ${brandDomain})\nRun site:${brandDomain} "${product.model || productName}" before any other source.`
+                ? `Official manufacturer website (search this first): ${brandWebsite} (domain: ${brandDomain})\nRun site:${brandDomain} "${product.model || cleanedTitle}" before any other source.`
                 : `Identify the manufacturer's official website, then search that domain first before any other source.`
 
               let description = ''
@@ -465,7 +466,7 @@ export async function POST(request: NextRequest) {
                       user_location: { type: 'approximate' as const, country: 'AU' },
                     },
                   ],
-                  input: `Write an ecommerce product description for this cycling product:\n\n${details}\n\n${officialSearchBlock}\nSearch for "${searchTerms}" to confirm accurate specifications and features. Return ONLY the formatted description text — no preamble, no labels, no metadata.`,
+                  input: `Write an ecommerce product description for this cycling product:\n\n${detailsBlock}\n\n${officialSearchBlock}\nSearch for "${searchTerms}" to confirm accurate specifications and features. Return ONLY the formatted description text — no preamble, no labels, no metadata.`,
                 })
 
                 description = sanitise(collectText(descResponse.output as ResponseOutputItem[] | undefined))
@@ -499,7 +500,7 @@ export async function POST(request: NextRequest) {
                         user_location: { type: 'approximate' as const, country: 'AU' },
                       },
                     ],
-                    input: `Produce a full specification sheet for this cycling product:\n\n${details}\n\n${officialSearchBlock}\nSearch for "${searchTerms}" to find accurate manufacturer specifications. Return ONLY the formatted spec sheet — no preamble, no extra text.`,
+                    input: `Produce a full specification sheet for this cycling product:\n\n${detailsBlock}\n\n${officialSearchBlock}\nSearch for "${searchTerms}" to find accurate manufacturer specifications. Return ONLY the formatted spec sheet — no preamble, no extra text.`,
                   })
                 }
 
@@ -507,13 +508,13 @@ export async function POST(request: NextRequest) {
                 collectCitations(specsResponse.output as ResponseOutputItem[] | undefined, citations)
               }
 
-              const sources = rankSources(citations, brand, productName)
+              const sources = rankSources(citations, brand, cleanedTitle)
 
               // ── Bicycle detection ─────────────────────────────────────
               emit({ event: 'product_phase', productId: product.id, phase: 'bicycle' })
 
               const detectionContext = [
-                details,
+                detailsBlock,
                 description && `Generated description:\n${description.slice(0, 600)}`,
                 specs && `Generated specs:\n${specs.slice(0, 800)}`,
               ]

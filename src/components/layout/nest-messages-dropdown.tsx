@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useNestNotificationsContext } from "@/components/providers/nest-notifications-provider";
+import { topbarIconButtonClass } from "@/components/layout/topbar-nav-pills";
 import { isNestConversationUnread } from "@/lib/nest/conversation-read-state";
 import {
   StoreHeaderDropdownBody,
@@ -74,7 +75,7 @@ export function NestMessagesDropdown() {
     <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
         <button
-          className="relative flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground cursor-pointer"
+          className={topbarIconButtonClass}
           aria-label="Nest messages"
         >
           <MessageSquare className="size-4 stroke-[1.75]" />

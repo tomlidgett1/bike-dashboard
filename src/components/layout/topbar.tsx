@@ -1,45 +1,30 @@
 "use client";
 
-import * as React from "react";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import dynamic from "next/dynamic";
-import { AgentHeaderButton } from "@/components/genie/agent-header-button";
 import {
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbList,
   BreadcrumbPage,
+  BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { HeaderSidebarTrigger } from "@/components/layout/app-sidebar/sidebar-collapse-trigger";
-import { ThemeToggle } from "./theme-toggle";
-import { NotificationsDropdown } from "./notifications-dropdown";
-import { MessagesDropdown } from "./messages-dropdown";
-import { NestMessagesDropdown } from "./nest-messages-dropdown";
-import { StoreSetupButton } from "@/components/settings/store-setup-button";
-import { FloatingTomFeedbackButton } from "@/components/feedback/floating-tom-feedback-button";
-import { useAuth } from "@/components/providers/auth-provider";
 import { dashboardTopbarPadding } from "@/lib/layout/dashboard-padding";
-import { isStoreDashboardPath } from "@/lib/routes/store-dashboard";
 import { cn } from "@/lib/utils";
-
-const LazyFloatingImageApprovalCard = dynamic(
-  () =>
-    import("@/components/optimize/floating-image-approval-card").then(
-      (mod) => mod.FloatingImageApprovalCard,
-    ),
-  { ssr: false },
-);
 
 // Route → breadcrumb labels. Falls back to a title-cased last segment.
 const CRUMBS: Record<string, { section: string; page: string }> = {
   "/products": { section: "Store", page: "Products" },
   "/optimize": { section: "Store", page: "Product Optimise" },
+  "/optimize/variants": { section: "Store", page: "Variant finder" },
   "/settings/store": { section: "Store", page: "Storefront" },
   "/settings/store/home": { section: "Store", page: "Home" },
-  "/settings/store/overivewo": { section: "Store", page: "Overivewo" },
+  "/settings/store/overivewo": { section: "Store", page: "Actions" },
   "/settings/store/nest": { section: "Customer service", page: "Nest" },
-  "/settings/store/customer-inquiries": { section: "Customer service", page: "Customer inquiries" },
+  "/settings/store/customer-inquiries": {
+    section: "Customer service",
+    page: "Customer inquiries",
+  },
   "/settings/my-listings": { section: "Marketplace", page: "My listings" },
   "/settings/drafts": { section: "Marketplace", page: "Drafts" },
   "/settings/purchases": { section: "Marketplace", page: "Orders" },
@@ -72,86 +57,48 @@ function useCrumb(pathname: string) {
     return { section: "Storefront", page };
   }
   const segments = pathname.split("/").filter(Boolean);
-  const page = segments.length ? titleCase(segments[segments.length - 1]) : "Dashboard";
+  const page = segments.length
+    ? titleCase(segments[segments.length - 1])
+    : "Dashboard";
   const section = segments.length > 1 ? titleCase(segments[0]) : "Store";
   return { section, page };
 }
 
-function useDeferredTopbarActions() {
-  const [ready, setReady] = React.useState(false);
-
-  React.useEffect(() => {
-    const win = window as Window & {
-      requestIdleCallback?: (cb: IdleRequestCallback, options?: IdleRequestOptions) => number;
-      cancelIdleCallback?: (id: number) => void;
-    };
-
-    if (win.requestIdleCallback) {
-      const id = win.requestIdleCallback(() => setReady(true), { timeout: 1200 });
-      return () => win.cancelIdleCallback?.(id);
-    }
-
-    const id = window.setTimeout(() => setReady(true), 800);
-    return () => window.clearTimeout(id);
-  }, []);
-
-  return ready;
-}
-
 export function Topbar() {
   const pathname = usePathname() ?? "/products";
-  const showAgentInHeader = isStoreDashboardPath(pathname);
   const isNestPage = pathname === "/settings/store/nest";
   const crumb = useCrumb(pathname);
-  const { user } = useAuth();
-  const showDeferredActions = useDeferredTopbarActions();
 
   return (
     <header
       className={cn(
-        "sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b border-border/40 bg-background",
+        "sticky top-0 z-30 flex h-12 shrink-0 items-center gap-3 border-b border-border/50 bg-white",
         dashboardTopbarPadding,
       )}
     >
-      <HeaderSidebarTrigger />
-      <Breadcrumb>
-        <BreadcrumbList>
-          <BreadcrumbItem>
-            <BreadcrumbPage className="flex items-center gap-2 text-sm font-medium text-foreground">
+      <Breadcrumb className="min-w-0">
+        <BreadcrumbList className="flex-nowrap gap-2 text-sm sm:gap-2.5">
+          <BreadcrumbItem className="hidden min-w-0 sm:inline-flex">
+            <span className="truncate text-muted-foreground">{crumb.section}</span>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator className="hidden sm:block" />
+          <BreadcrumbItem className="min-w-0">
+            <BreadcrumbPage className="flex min-w-0 items-center gap-2 truncate font-semibold text-foreground">
               {isNestPage ? (
                 <Image
                   src="/nest-logo.png"
                   alt=""
-                  width={20}
-                  height={20}
-                  className="rounded-full"
+                  width={18}
+                  height={18}
+                  className="shrink-0 rounded-full"
                   aria-hidden
                 />
               ) : null}
-              {crumb.page}
+              <span className="truncate">{crumb.page}</span>
             </BreadcrumbPage>
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
-
-      <div className="ml-auto flex items-center gap-1">
-        {showAgentInHeader && user ? (
-          <FloatingTomFeedbackButton placement="header" />
-        ) : null}
-        {showAgentInHeader && showDeferredActions ? (
-          <LazyFloatingImageApprovalCard placement="header" />
-        ) : null}
-        {showAgentInHeader ? <AgentHeaderButton /> : null}
-        {showDeferredActions ? (
-          <>
-            {showAgentInHeader ? <StoreSetupButton iconOnly /> : null}
-            {showAgentInHeader && user ? <NestMessagesDropdown /> : null}
-            {user ? <NotificationsDropdown /> : null}
-            {user ? <MessagesDropdown /> : null}
-          </>
-        ) : null}
-        <ThemeToggle />
-      </div>
     </header>
   );
 }

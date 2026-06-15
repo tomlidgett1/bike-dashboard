@@ -40,13 +40,16 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
+  SidebarRail,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { NavUser } from "./nav-user";
 import { SidebarLightspeedStatus } from "./sidebar-lightspeed-status";
 import { SidebarViewStoreLink } from "./sidebar-view-store-link";
 import { SidebarCollapseTrigger } from "./sidebar-collapse-trigger";
-import { SidebarYjLogo } from "./sidebar-yj-logo";
+
+const COMPRESSED_NAV_BUTTON =
+  "data-active:bg-white data-active:shadow-sm";
 
 type SubItem = { title: string; href: string; exact?: boolean };
 type NavItem = {
@@ -65,7 +68,7 @@ const NAV: NavGroup[] = [
     label: "Store",
     items: [
       { title: "Home", href: "/settings/store/home", icon: Home, exact: true },
-      { title: "Overivewo", href: "/settings/store/overivewo", icon: LayoutGrid, exact: true },
+      { title: "Actions", href: "/settings/store/overivewo", icon: LayoutGrid, exact: true },
       { title: "Products", href: "/products", icon: Package },
       {
         title: "Storefront",
@@ -142,7 +145,12 @@ function CollapsibleNavItem({
     <Collapsible asChild defaultOpen={open} className="group/collapsible">
       <SidebarMenuItem>
         <CollapsibleTrigger asChild>
-          <SidebarMenuButton tooltip={item.title} isActive={open}>
+          <SidebarMenuButton
+            tooltip={item.title}
+            isActive={open}
+            size="sm"
+            className={COMPRESSED_NAV_BUTTON}
+          >
             <item.icon />
             <span>{item.title}</span>
             <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
@@ -154,7 +162,9 @@ function CollapsibleNavItem({
               <SidebarMenuSubItem key={sub.href}>
                 <SidebarMenuSubButton
                   asChild
+                  size="sm"
                   isActive={sub.exact ? pathname === sub.href : pathname.startsWith(sub.href)}
+                  className="data-active:bg-white data-active:shadow-sm"
                 >
                   <Link
                     href={sub.href}
@@ -188,6 +198,7 @@ function FlatNavItem({
         <SidebarMenuButton
           tooltip={`${item.title} — coming soon`}
           aria-disabled
+          size="sm"
           className="cursor-not-allowed opacity-50"
         >
           <item.icon />
@@ -199,7 +210,13 @@ function FlatNavItem({
   }
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton asChild tooltip={item.title} isActive={flatActive(pathname, item)}>
+      <SidebarMenuButton
+        asChild
+        tooltip={item.title}
+        isActive={flatActive(pathname, item)}
+        size="sm"
+        className={COMPRESSED_NAV_BUTTON}
+      >
         <Link
           href={item.href!}
           onFocus={() => onPrefetch(item.href!)}
@@ -226,24 +243,23 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   );
 
   return (
-    <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader className="gap-1 p-2">
-        <div className="flex h-11 shrink-0 items-center gap-1">
-          <div className="min-w-0 flex-1">
-            <SidebarYjLogo />
+    <Sidebar collapsible="icon" className="dashboard-app-sidebar" {...props}>
+      <SidebarHeader className="gap-1 p-1.5">
+        <div className="flex items-center gap-1">
+          <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+            <SidebarViewStoreLink />
           </div>
-          <SidebarCollapseTrigger />
+          <SidebarCollapseTrigger className="hover:bg-white/80" />
         </div>
-        <SidebarViewStoreLink />
       </SidebarHeader>
 
-      <SidebarContent className="gap-0.5">
+      <SidebarContent className="gap-0">
         {NAV.map((group) => (
-          <SidebarGroup key={group.label} className="p-2">
-            <SidebarGroupLabel className="h-7 text-xs text-sidebar-foreground/70">
+          <SidebarGroup key={group.label} className="px-1.5 py-1">
+            <SidebarGroupLabel className="h-6 px-2 text-[11px] font-medium uppercase tracking-wide text-sidebar-foreground/55">
               {group.label}
             </SidebarGroupLabel>
-            <SidebarMenu>
+            <SidebarMenu className="gap-0.5">
               {group.items.map((item) =>
                 item.items ? (
                   <CollapsibleNavItem
@@ -265,8 +281,8 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
           </SidebarGroup>
         ))}
 
-        <SidebarGroup className="mt-auto p-2">
-          <SidebarMenu>
+        <SidebarGroup className="mt-auto px-1.5 py-1">
+          <SidebarMenu className="gap-0.5">
             {FOOTER_ITEMS.map((item) => (
               <FlatNavItem
                 key={item.title}
@@ -279,11 +295,12 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="gap-1">
+      <SidebarFooter className="gap-1 p-1.5">
         <SidebarSeparator className="mx-0 w-full" />
         <SidebarLightspeedStatus />
         <NavUser />
       </SidebarFooter>
+      <SidebarRail />
     </Sidebar>
   );
 }

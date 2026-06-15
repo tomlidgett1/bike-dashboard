@@ -47,6 +47,11 @@ import type {
   LightspeedVendorsResponse,
   LightspeedOrder,
   LightspeedOrderLine,
+  LightspeedItemAttributes,
+  LightspeedItemAttributeSet,
+  LightspeedItemAttributeSetsResponse,
+  LightspeedItemMatrix,
+  LightspeedItemMatrixResponse,
 } from './types'
 
 interface CursorPageProgress {
@@ -506,7 +511,11 @@ export class LightspeedClient {
       | 'categoryID'
       | 'manufacturerID'
       | 'defaultCost'
-    >>
+    >> & {
+      /** Re-parent an existing item into a matrix (variant products). */
+      itemMatrixID?: string
+      ItemAttributes?: LightspeedItemAttributes
+    }
   ): Promise<LightspeedItem> {
     const accountId = await this.getAccountId()
     const response = await this.request<{ Item: LightspeedItem }>(
@@ -517,6 +526,73 @@ export class LightspeedClient {
       }
     )
     return response.Item
+  }
+
+  // ============================================================
+  // Item Matrix / Attribute Set Methods (variant products)
+  // ============================================================
+
+  /**
+   * Get all item attribute sets (matrix dimensions) for the account.
+   * System sets include "Color/Size", "Size", "Color", "3 Attributes".
+   */
+  async getItemAttributeSets(): Promise<LightspeedItemAttributeSet[]> {
+    const accountId = await this.getAccountId()
+    const response = await this.request<LightspeedItemAttributeSetsResponse>(
+      `/Account/${accountId}/ItemAttributeSet.json`
+    )
+    return this.ensureArray(response.ItemAttributeSet)
+  }
+
+  /**
+   * Create a new item attribute set. `name` + `attributeName1` are required;
+   * attributeName2/3 are optional (for two/three-dimension matrices).
+   */
+  async createItemAttributeSet(payload: {
+    name: string
+    attributeName1: string
+    attributeName2?: string
+    attributeName3?: string
+  }): Promise<LightspeedItemAttributeSet> {
+    const accountId = await this.getAccountId()
+    const body: Record<string, string> = {
+      name: payload.name,
+      attributeName1: payload.attributeName1,
+    }
+    if (payload.attributeName2) body.attributeName2 = payload.attributeName2
+    if (payload.attributeName3) body.attributeName3 = payload.attributeName3
+    const response = await this.request<{ ItemAttributeSet: LightspeedItemAttributeSet }>(
+      `/Account/${accountId}/ItemAttributeSet.json`,
+      { method: 'POST', body: JSON.stringify(body) }
+    )
+    return response.ItemAttributeSet
+  }
+
+  /**
+   * Create an item matrix (parent). Only `description` + `itemAttributeSetID`
+   * are required; carry over manufacturer/category/tax from a child item where
+   * available so the matrix matches its products.
+   */
+  async createItemMatrix(payload: {
+    description: string
+    itemAttributeSetID: string
+    manufacturerID?: string
+    categoryID?: string
+    taxClassID?: string
+  }): Promise<LightspeedItemMatrix> {
+    const accountId = await this.getAccountId()
+    const body: Record<string, string> = {
+      description: payload.description.trim().slice(0, 255),
+      itemAttributeSetID: String(payload.itemAttributeSetID),
+    }
+    if (payload.manufacturerID && payload.manufacturerID !== '0') body.manufacturerID = String(payload.manufacturerID)
+    if (payload.categoryID && payload.categoryID !== '0') body.categoryID = String(payload.categoryID)
+    if (payload.taxClassID && payload.taxClassID !== '0') body.taxClassID = String(payload.taxClassID)
+    const response = await this.request<LightspeedItemMatrixResponse>(
+      `/Account/${accountId}/ItemMatrix.json`,
+      { method: 'POST', body: JSON.stringify(body) }
+    )
+    return response.ItemMatrix
   }
 
   /**

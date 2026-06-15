@@ -54,6 +54,14 @@ export function bentoCardShellClassName(className?: string) {
   );
 }
 
+/** Hub / picker cards — same bento shell without the footy aspect ratio. */
+export function bentoHubCardShellClassName(className?: string) {
+  return cn(
+    "relative flex w-full min-h-[220px] flex-col overflow-hidden rounded-[32px] border border-gray-200/80 bg-white shadow-sm",
+    className,
+  );
+}
+
 /** Wider Overivewo bento — spans ~2 standard cards for dashboard-style panels. */
 export function bentoWideCardShellClassName(className?: string) {
   return cn(

@@ -33,6 +33,7 @@ import {
   X,
   Pencil,
   Tags,
+  Layers,
 } from "lucide-react";
 import Image from "next/image";
 import NextDynamic from "next/dynamic";
@@ -85,6 +86,7 @@ import {
 import type { MarketplaceReadiness } from "@/lib/marketplace/product-readiness";
 import { BULK_OPTIMISE_STORAGE_KEY } from "@/lib/optimize/bulk-optimise-session";
 import { ProductBrandCell } from "@/components/products/product-brand-cell";
+import { ProductVariantCell } from "@/components/products/product-variant-cell";
 
 // Dialog (lazy — avoids SSR issues)
 const Dialog = NextDynamic(() => import("@/components/ui/dialog").then((m) => m.Dialog), { ssr: false });
@@ -131,6 +133,13 @@ interface Product {
   is_bicycle?: boolean;
   bike_specs?: unknown;
   display_name?: string | null;
+  variant_group_id?: string | null;
+  variant_master_title?: string | null;
+  variant_hidden_from_grid?: boolean;
+  variant_is_master?: boolean | null;
+  variant_option_label?: string | null;
+  variant_sibling_count?: number | null;
+  variant_group_title?: string | null;
 }
 
 interface DiscoveredImage {
@@ -154,6 +163,8 @@ interface ProductStats {
   needsImages: number;
   lightspeed?: number;
   manual?: number;
+  variantGrouped?: number;
+  variantPendingReview?: number;
 }
 
 // ── Row helpers ──────────────────────────────────────────────────────────────
@@ -304,6 +315,8 @@ function productColumnClassName(columnId: string) {
       return "min-w-[80px]";
     case "marketplace":
       return "min-w-[120px]";
+    case "variants":
+      return "min-w-[110px]";
     case "visible":
       return "min-w-[76px] text-center";
     case "actions":
@@ -806,7 +819,19 @@ export default function ProductsPage() {
   const rangeEnd = Math.min(pagination.page * pagination.pageSize, pagination.total);
 
   const statsLine = stats
-    ? `${totalCount.toLocaleString()} products · ${stats.live.toLocaleString()} live on marketplace · ${stats.needsImages.toLocaleString()} need optimisation`
+    ? [
+        `${totalCount.toLocaleString()} products`,
+        `${stats.live.toLocaleString()} live on marketplace`,
+        `${stats.needsImages.toLocaleString()} need photos`,
+        stats.variantGrouped
+          ? `${stats.variantGrouped.toLocaleString()} in variant groups`
+          : null,
+        stats.variantPendingReview
+          ? `${stats.variantPendingReview.toLocaleString()} suggested merges`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
     : `${totalCount.toLocaleString()} products`;
 
   const productColumns: ColumnDef<Product>[] = [
@@ -856,6 +881,24 @@ export default function ProductsPage() {
           const status = deriveStatus(row.original);
           return <StatusBadge label={status.label} tone={status.tone} className="h-5 rounded-md text-[10px]" />;
         },
+      },
+      {
+        id: "variants",
+        accessorFn: (product) => product.variant_group_id ?? "",
+        header: "Variants",
+        cell: ({ row }) => (
+          <ProductVariantCell
+            summary={{
+              variant_group_id: row.original.variant_group_id ?? null,
+              variant_master_title: row.original.variant_master_title ?? null,
+              variant_hidden_from_grid: row.original.variant_hidden_from_grid ?? false,
+              variant_is_master: row.original.variant_is_master ?? null,
+              variant_option_label: row.original.variant_option_label ?? null,
+              variant_sibling_count: row.original.variant_sibling_count ?? null,
+              variant_group_title: row.original.variant_group_title ?? null,
+            }}
+          />
+        ),
       },
       {
         id: "product",
@@ -1162,6 +1205,28 @@ export default function ProductsPage() {
         }
       />
 
+      {stats?.variantPendingReview ? (
+        <div className="mx-4 mb-0 mt-3 rounded-xl border border-border/60 bg-white px-4 py-3 md:mx-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">
+                {stats.variantPendingReview.toLocaleString()} product
+                {stats.variantPendingReview === 1 ? "" : "s"} may be variants of each other
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Review suggested merges in Product Optimise to combine sizes and colours into one listing.
+              </p>
+            </div>
+            <Button variant="outline" size="sm" className="shrink-0 rounded-md" asChild>
+              <Link href="/optimize/variants">
+                <Layers className="size-4" />
+                Review variants
+              </Link>
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       <PageBody className="mt-4 space-y-0">
         <section className="flex min-h-[calc(100vh-170px)] flex-col bg-white">
           <div className="flex flex-col gap-2 border-y border-border/60 px-4 py-3 sm:flex-row sm:items-center md:px-5">
@@ -1231,7 +1296,7 @@ export default function ProductsPage() {
                 <SelectContent position="popper" align="start" className="w-[var(--radix-select-trigger-width)]">
                   <SelectItem value="all">Any images</SelectItem>
                   <SelectItem value="approved">Approved photos</SelectItem>
-                  <SelectItem value="needs-images">Needs optimisation</SelectItem>
+                  <SelectItem value="needs-images">Needs photos</SelectItem>
                 </SelectContent>
               </Select>
 

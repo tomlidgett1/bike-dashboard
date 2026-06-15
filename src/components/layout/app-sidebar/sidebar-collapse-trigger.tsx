@@ -1,6 +1,7 @@
 "use client";
 
 import { SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
+import { topbarIconButtonClass } from "@/components/layout/topbar-nav-pills";
 import { cn } from "@/lib/utils";
 
 export function SidebarCollapseTrigger({
@@ -8,9 +9,9 @@ export function SidebarCollapseTrigger({
 }: {
   className?: string;
 }) {
-  const { state, isMobile } = useSidebar();
+  const { isMobile } = useSidebar();
 
-  if (state !== "expanded" || isMobile) {
+  if (isMobile) {
     return null;
   }
 
@@ -26,11 +27,11 @@ export function HeaderSidebarTrigger({
 }: {
   className?: string;
 }) {
-  const { state, isMobile } = useSidebar();
+  const { isMobile } = useSidebar();
 
-  if (state === "expanded" && !isMobile) {
+  if (!isMobile) {
     return null;
   }
 
-  return <SidebarTrigger className={cn("-ml-1", className)} />;
+  return <SidebarTrigger className={cn(topbarIconButtonClass, className)} />;
 }

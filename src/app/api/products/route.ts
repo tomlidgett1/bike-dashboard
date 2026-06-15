@@ -13,6 +13,7 @@ import {
   LIGHTSPEED_SOURCE_OR_FILTER,
   MANUAL_SOURCE_OR_FILTER,
 } from '@/lib/products/catalog-helpers'
+import { enrichProductsWithVariantMetadata } from '@/lib/variants/enrich-product-variants'
 
 const PRODUCT_LIST_SELECT = `
   id,
@@ -45,6 +46,9 @@ const PRODUCT_LIST_SELECT = `
   bike_specs,
   display_name,
   selected_product_image_id,
+  variant_group_id,
+  variant_master_title,
+  variant_hidden_from_grid,
   created_at
 `
 
@@ -302,8 +306,13 @@ export async function GET(request: NextRequest) {
       ? processedProducts.slice(from, to + 1)
       : processedProducts
 
+    const productsWithVariants = await enrichProductsWithVariantMetadata(
+      supabase,
+      paginatedProducts,
+    )
+
     return NextResponse.json({
-      products: paginatedProducts,
+      products: productsWithVariants,
       pagination: {
         page,
         pageSize,
