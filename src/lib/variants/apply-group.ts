@@ -55,8 +55,12 @@ export function pickMasterIndex(items: VariantCandidateItem[]): number {
   return best;
 }
 
-export function buildRpcItems(items: VariantCandidateItem[]): RpcItem[] {
-  const masterIndex = pickMasterIndex(items);
+export function buildRpcItems(items: VariantCandidateItem[], masterProductId?: string | null): RpcItem[] {
+  let masterIndex = pickMasterIndex(items);
+  if (masterProductId) {
+    const explicit = items.findIndex((i) => i.product_id === masterProductId);
+    if (explicit >= 0) masterIndex = explicit;
+  }
   return items.map((item, i) => ({
     product_id: item.product_id,
     is_master: i === masterIndex,
@@ -122,7 +126,7 @@ export async function applyCandidateLocally(
   supabase: SupabaseClient<any>,
   userId: string,
   candidate: CandidateForApply,
-  opts: { visibilityMode: VisibilityMode; syncTarget: SyncTarget; lightspeedCategoryId?: string | null },
+  opts: { visibilityMode: VisibilityMode; syncTarget: SyncTarget; lightspeedCategoryId?: string | null; masterProductId?: string | null },
 ): Promise<ApplyResult> {
   if (candidate.status === "applied_local" || candidate.status === "applied_lightspeed") {
     return { ok: false, reason: "This group has already been applied." };
@@ -141,7 +145,7 @@ export async function applyCandidateLocally(
     p_visibility_mode: opts.visibilityMode,
     p_sync_target: opts.syncTarget,
     p_options: buildRpcOptions(candidate.option_types, candidate.items),
-    p_items: buildRpcItems(candidate.items),
+    p_items: buildRpcItems(candidate.items, opts.masterProductId),
   });
 
   if (error) {

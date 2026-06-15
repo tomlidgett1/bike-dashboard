@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import type { ReactNode } from "react";
 
-import { PageContainer, PageHeader } from "@/components/dashboard";
+import { PageContainer } from "@/components/dashboard";
 import { DeputyRosterBento } from "@/components/settings/deputy-roster-bento";
 import { EcommerceAgentBento } from "@/components/settings/ecommerce-agent-bento";
 import { ActionsPageHeader } from "@/components/settings/actions-page-header";
@@ -37,21 +37,14 @@ function ActionsSection({
   );
 }
 
-export default function StoreOverivewoPage() {
+export default function StoreActionsPage() {
   return (
     <PageContainer
       size="full"
-      className="flex min-h-[calc(100svh-3rem)] items-start justify-center px-2 pt-2 sm:px-3 lg:px-4"
+      className="flex min-h-full items-start justify-center !pb-6 !pt-2.5 px-2 sm:px-3 lg:px-4"
     >
-      <div className="flex w-full max-w-[1400px] flex-col gap-10">
-        <div className="space-y-5">
-          <PageHeader
-            title="Actions"
-            description="What needs your attention — customer messages and Lightspeed catalog tasks in one place."
-            className="px-0.5"
-          />
-          <ActionsPageHeader />
-        </div>
+      <div className="flex w-full max-w-[1400px] flex-col gap-8">
+        <ActionsPageHeader className="px-0.5" />
 
         <section className="w-full space-y-4">
           <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between lg:gap-6">

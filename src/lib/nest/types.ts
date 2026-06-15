@@ -10,6 +10,8 @@ export type NestConversationListItem = {
   hasManualMessages?: boolean;
   latestManualMessageAt?: string | null;
   source: "customer" | "portal_test";
+  /** True when the thread was started by the Twilio missed-call webhook auto-text. */
+  triggeredByTwilio?: boolean;
 };
 
 export type NestConversationMessage = {
@@ -54,6 +56,20 @@ export function isNestPortalTestChat(
 
 export function filterNestCustomerChats(chats: NestConversationListItem[]): NestConversationListItem[] {
   return chats.filter((chat) => !isNestPortalTestChat(chat));
+}
+
+export function isNestMissedCallChat(
+  chat: Pick<NestConversationListItem, "chatId" | "triggeredByTwilio">,
+): boolean {
+  return chat.triggeredByTwilio === true;
+}
+
+export function filterNestMissedCallChats(chats: NestConversationListItem[]): NestConversationListItem[] {
+  return chats.filter(isNestMissedCallChat);
+}
+
+export function filterNestInboxChats(chats: NestConversationListItem[]): NestConversationListItem[] {
+  return chats.filter((chat) => !isNestMissedCallChat(chat));
 }
 
 export function sanitiseNestConversationsResponse(

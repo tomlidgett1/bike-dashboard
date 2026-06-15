@@ -4,7 +4,6 @@ import * as React from "react";
 import Image from "next/image";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, EyeOff, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,9 +47,11 @@ async function fetchSuggestions() {
 export function NestPickupSuggestionsDropdown({
   disabled = false,
   onMessageSent,
+  triggerClassName,
 }: {
   disabled?: boolean;
   onMessageSent?: () => void;
+  triggerClassName?: string;
 }) {
   const [open, setOpen] = React.useState(false);
   const [suggestions, setSuggestions] = React.useState<NestPickupSuggestion[]>([]);
@@ -212,12 +213,14 @@ export function NestPickupSuggestionsDropdown({
     <>
       <DropdownMenu open={open} onOpenChange={setOpen}>
         <DropdownMenuTrigger asChild>
-          <Button
+          <button
             type="button"
-            variant="outline"
-            size="sm"
             disabled={disabled}
-            className="gap-1.5 rounded-md"
+            className={cn(
+              triggerClassName ??
+                "inline-flex h-8 items-center gap-1.5 rounded-md border border-gray-200/80 bg-white px-3 text-sm font-medium text-gray-950 shadow-sm transition-colors hover:bg-gray-50",
+              disabled && "cursor-not-allowed opacity-50 hover:bg-white",
+            )}
           >
             <span className="flex h-3.5 w-3.5 shrink-0 overflow-hidden rounded-full">
               <Image
@@ -240,7 +243,7 @@ export function NestPickupSuggestionsDropdown({
                 open && "rotate-180",
               )}
             />
-          </Button>
+          </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="end"

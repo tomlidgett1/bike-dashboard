@@ -236,13 +236,15 @@ export async function refreshAccessToken(userId: string): Promise<{
       const errorData = await response.json().catch(() => ({}))
       console.error('Token refresh failed:', errorData)
 
-      // Before marking as expired, check whether a concurrent caller already
-      // refreshed the token successfully (rotating refresh token race condition).
-      // If the DB now holds a fresh token, return it instead of poisoning the status.
-      const latest = await getDecryptedTokens(userId)
-      if (latest && !tokenNeedsRefresh(latest.expiresAt)) {
-        console.log('[Lightspeed] Refresh lost race but concurrent refresh succeeded — using fresh token')
-        return { accessToken: latest.accessToken, expiresAt: latest.expiresAt }
+      // Rotating refresh-token race: another request may have refreshed successfully.
+      // Never reuse a stale access token when Lightspeed says invalid_grant — the stored
+      // access token is revoked even if token_expires_at has not elapsed yet.
+      if (errorData.error !== 'invalid_grant') {
+        const latest = await getDecryptedTokens(userId)
+        if (latest && !tokenNeedsRefresh(latest.expiresAt)) {
+          console.log('[Lightspeed] Refresh lost race but concurrent refresh succeeded — using fresh token')
+          return { accessToken: latest.accessToken, expiresAt: latest.expiresAt }
+        }
       }
 
       // Genuine failure — mark expired only for invalid_grant (truly revoked token).
@@ -316,6 +318,12 @@ export async function isLightspeedApiAvailable(userId: string): Promise<boolean>
   }
 
   return Boolean(await getValidAccessToken(userId))
+}
+
+/** DB-only check — no token refresh, no Lightspeed API calls. */
+export async function isLightspeedConnected(userId: string): Promise<boolean> {
+  const connection = await getConnection(userId)
+  return connection?.status === 'connected'
 }
 
 // ============================================================

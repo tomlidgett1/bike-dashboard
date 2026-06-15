@@ -62,6 +62,21 @@ export function VariantApplyDialog({
   const [error, setError] = React.useState<string | null>(null);
   const values = optionValueMap(candidate);
 
+  // Default the hero/master to the best-stocked variant.
+  const defaultMaster = React.useMemo(() => {
+    let best = candidate.items[0]?.product_id ?? null;
+    let bestQoh = -Infinity;
+    for (const it of candidate.items) {
+      const qoh = typeof it.qoh === "number" ? it.qoh : -1;
+      if (qoh > bestQoh) {
+        bestQoh = qoh;
+        best = it.product_id;
+      }
+    }
+    return best;
+  }, [candidate.items]);
+  const [masterProductId, setMasterProductId] = React.useState<string | null>(defaultMaster);
+
   async function apply() {
     setSubmitting(true);
     setError(null);
@@ -69,7 +84,7 @@ export function VariantApplyDialog({
       const res = await fetch(`/api/optimize/variants/candidates/${candidate.id}/apply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ visibilityMode: visibility, syncTarget: target }),
+        body: JSON.stringify({ visibilityMode: visibility, syncTarget: target, masterProductId }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Could not apply this group");
@@ -116,6 +131,41 @@ export function VariantApplyDialog({
             <Choice id="vis-both" value="individual_and_master" current={visibility} title="Keep individual listings too" description="Each product still appears separately, and the variant options also show on every product page." />
           </RadioGroup>
         </div>
+
+        {/* Hero / master image — only relevant when showing one listing */}
+        {visibility === "master_only" && candidate.items.length > 1 && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">Which photo represents the listing?</p>
+            <p className="text-xs text-muted-foreground">This variant&apos;s image and details become the product card.</p>
+            <div className="flex flex-wrap gap-2">
+              {candidate.items.map((it) => {
+                const selected = masterProductId === it.product_id;
+                return (
+                  <button
+                    key={it.product_id}
+                    type="button"
+                    onClick={() => setMasterProductId(it.product_id)}
+                    className={cn(
+                      "relative w-20 overflow-hidden rounded-md border-2 text-left transition-colors",
+                      selected ? "border-foreground" : "border-transparent hover:border-foreground/30",
+                    )}
+                    title={it.title}
+                  >
+                    {it.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={it.image_url} alt={it.title} className="h-20 w-20 object-cover" />
+                    ) : (
+                      <div className="flex h-20 w-20 items-center justify-center bg-gray-100 text-[10px] text-gray-400">No photo</div>
+                    )}
+                    <span className="block truncate px-1 py-0.5 text-[10px] text-muted-foreground">
+                      {Object.values(it.variant_values).join(" · ") || it.title}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Sync target */}
         <div className="space-y-2">

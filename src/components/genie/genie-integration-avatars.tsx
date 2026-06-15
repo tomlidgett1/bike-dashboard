@@ -40,9 +40,8 @@ function buildAvatars(status: IntegrationStatus): AvatarCircleItem[] {
 
   if (status.gmail?.connected) {
     avatars.push({
-      imageUrl: "/gmailcircle.webp",
+      imageUrl: "/gmailnew.webp",
       label: status.gmail.email ? `Gmail — ${status.gmail.email}` : "Gmail connected",
-      imageScale: 1.5,
     });
   }
 

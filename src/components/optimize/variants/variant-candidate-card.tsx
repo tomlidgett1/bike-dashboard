@@ -8,6 +8,7 @@ import { StatusBadge, type StatusTone } from "@/components/dashboard";
 import { cn } from "@/lib/utils";
 import { VariantCandidateEditor } from "./variant-candidate-editor";
 import { VariantApplyDialog } from "./variant-apply-dialog";
+import { VariantGroupManager } from "./variant-group-manager";
 import {
   formatPrice,
   optionValueMap,
@@ -100,6 +101,7 @@ export function VariantCandidateCard({
   const [busy, setBusy] = React.useState<string | null>(null);
   const [editing, setEditing] = React.useState(false);
   const [applying, setApplying] = React.useState(false);
+  const [managing, setManaging] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   const values = optionValueMap(candidate);
@@ -230,6 +232,13 @@ export function VariantCandidateCard({
           </Button>
         )}
 
+        {applied && candidate.applied_group_id && (
+          <Button size="sm" variant="outline" onClick={() => setManaging(true)} disabled={!!busy}>
+            <Pencil className="size-4" />
+            Manage / choose hero
+          </Button>
+        )}
+
         {candidate.status === "applied_local" && group && group.lightspeed_status !== "synced" && (
           <Button
             size="sm"
@@ -263,6 +272,14 @@ export function VariantCandidateCard({
             setApplying(false);
             onChanged();
           }}
+        />
+      )}
+      {managing && candidate.applied_group_id && (
+        <VariantGroupManager
+          groupId={candidate.applied_group_id}
+          open={managing}
+          onOpenChange={setManaging}
+          onChanged={onChanged}
         />
       )}
     </div>

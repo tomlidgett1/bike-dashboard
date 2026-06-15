@@ -33,7 +33,7 @@ export function AvatarCircles({ className, avatarUrls, size = "sm" }: AvatarCirc
         {avatarUrls.map((item, index) => {
           const shellClass = cn(
             shell,
-            "relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full",
+            "relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-gray-200/90 bg-white",
             index > 0 && "-ml-2.5",
           );
           const shellStyle = { zIndex: index };
@@ -67,7 +67,7 @@ export function AvatarCircles({ className, avatarUrls, size = "sm" }: AvatarCirc
           ) : (
             <button
               type="button"
-              className={cn(shellClass, "cursor-default border-0 bg-transparent p-0")}
+              className={cn(shellClass, "cursor-default p-0")}
               style={shellStyle}
               aria-label={item.label}
             >

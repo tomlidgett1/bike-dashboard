@@ -13,12 +13,13 @@ export const topbarActionClass = cn(
 
 /** Shared bordered control chrome for dashboard header actions. */
 export const dashboardHeaderBoxClass = cn(
-  "inline-flex h-8 shrink-0 items-center justify-center rounded-md border transition-colors",
+  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors",
   "!bg-[var(--dashboard-header-control-bg)]",
   "!border-[color:var(--dashboard-header-control-border)]",
   "!text-[color:var(--dashboard-header-control-fg)]",
   "hover:!bg-[var(--dashboard-header-control-hover-bg)]",
   "hover:!text-[color:var(--dashboard-header-control-hover-fg)]",
+  "[&_svg]:!stroke-[1.5]",
 );
 
 /** Active/pressed state for dashboard header controls. */
@@ -28,7 +29,7 @@ export const dashboardHeaderControlActiveClass =
 /** Text controls in the dashboard header (Docs, Ask, Feedback). */
 export const topbarOutlinePillClass = cn(
   dashboardHeaderBoxClass,
-  "gap-1.5 px-3 text-xs font-medium",
+  "h-8 w-auto gap-1.5 px-3 text-xs font-medium !text-[#171717]",
 );
 
 /** Icon-only controls in the dashboard header. */

@@ -66,11 +66,30 @@ function customerName(customer: LightspeedCustomer): string {
 }
 
 function customerPhones(customer: LightspeedCustomer): string[] {
-  const phones = ensureArray(customer.Contact?.Phones?.ContactPhone);
-  return phones
+  const contact = customer.Contact;
+  const fromNested = ensureArray(contact?.Phones?.ContactPhone)
     .map((phone) => String(phone.number ?? "").trim())
     .filter(Boolean);
+  const fromFlat = [
+    contact?.mobile,
+    contact?.phoneHome,
+    contact?.phoneWork,
+    contact?.pager,
+    contact?.fax,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+  return Array.from(new Set([...fromNested, ...fromFlat]));
 }
+
+/** Lightspeed Customer search params documented for telephone lookup. */
+const LIGHTSPEED_CONTACT_PHONE_QUERY_FIELDS = [
+  "Contact.mobile",
+  "Contact.phoneHome",
+  "Contact.phoneWork",
+  "Contact.pager",
+  "Contact.fax",
+] as const;
 
 function pickCustomerMobile(customer: LightspeedCustomer): string | null {
   const phones = ensureArray(customer.Contact?.Phones?.ContactPhone);
@@ -133,7 +152,7 @@ function isPhoneQuery(query: string): boolean {
   return phoneDigits(query).length >= 8;
 }
 
-function formatAustralianSpacedMobile(digits: string): string | null {
+export function formatAustralianSpacedMobile(digits: string): string | null {
   const local =
     digits.startsWith("61") && digits.length >= 11
       ? `0${digits.slice(2)}`
@@ -176,6 +195,113 @@ function pickResultPhone(customer: LightspeedCustomer, query: string): string | 
   return pickCustomerMobile(customer) ?? phones[0] ?? null;
 }
 
+const RECENT_CUSTOMERS_DAYS_BACK = 180;
+
+function createTimeRangeFilter(daysBack: number): string {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - daysBack);
+  const fmt = (date: Date) => date.toISOString().split("T")[0];
+  return `><,${fmt(start)},${fmt(end)}`;
+}
+
+async function fetchRecentCustomers(
+  userId: string,
+  daysBack = RECENT_CUSTOMERS_DAYS_BACK,
+): Promise<LightspeedCustomer[]> {
+  const client = createLightspeedClient(userId);
+  const customerById = new Map<string, LightspeedCustomer>();
+
+  for (const archived of ["false", "true"] as const) {
+    try {
+      const { customers } = await client.getAllCustomersCursor(
+        {
+          load_relations: '["Contact"]',
+          archived,
+          createTime: createTimeRangeFilter(daysBack),
+        },
+        { maxPages: 10, limit: 100 },
+      );
+      for (const customer of customers) {
+        customerById.set(String(customer.customerID), customer);
+      }
+    } catch {
+      // createTime filter may not be supported on all accounts.
+    }
+  }
+
+  return Array.from(customerById.values());
+}
+
+function findCustomerInListByPhone(
+  customers: LightspeedCustomer[],
+  phone: string,
+): LightspeedCustomer | null {
+  for (const customer of customers) {
+    if (customerPhones(customer).some((entry) => phonesMatch(phone, entry))) {
+      return customer;
+    }
+  }
+  return null;
+}
+
+async function findCustomersInListByPhones(
+  userId: string,
+  customers: LightspeedCustomer[],
+  phones: string[],
+): Promise<Map<string, LightspeedCustomer>> {
+  const results = new Map<string, LightspeedCustomer>();
+  const unmatched = new Set(phones.map((phone) => phone.trim()).filter(isLikelyPhone));
+  if (unmatched.size === 0) return results;
+
+  for (const customer of customers) {
+    for (const entry of customerPhones(customer)) {
+      for (const phone of unmatched) {
+        if (phonesMatch(phone, entry)) {
+          results.set(phone, customer);
+          unmatched.delete(phone);
+        }
+      }
+    }
+    if (unmatched.size === 0) break;
+  }
+
+  if (unmatched.size > 0) {
+    await hydrateCustomersMissingPhones(
+      userId,
+      customers,
+      (customer) => {
+        for (const phone of unmatched) {
+          if (customerPhones(customer).some((entry) => phonesMatch(phone, entry))) {
+            results.set(phone, customer);
+            unmatched.delete(phone);
+          }
+        }
+        return unmatched.size === 0;
+      },
+      40,
+    );
+  }
+
+  return results;
+}
+
+function rememberCustomerInPhoneIndex(
+  userId: string,
+  phone: string,
+  customer: LightspeedCustomer,
+  index: Map<string, string>,
+): string {
+  const name = customerName(customer);
+  rememberPhoneName(userId, phone, name, index);
+  for (const entry of customerPhones(customer)) {
+    for (const key of phoneLookupKeys(entry)) {
+      if (!index.has(key)) index.set(key, name);
+    }
+  }
+  return name;
+}
+
 async function fetchCustomersByPhoneFilters(
   userId: string,
   phone: string,
@@ -188,7 +314,32 @@ async function fetchCustomersByPhoneFilters(
     limit: 25,
   };
 
+  let phoneFilterBroken = false;
+
+  const tryFilter = async (field: string, filter: string): Promise<boolean> => {
+    try {
+      const customers = await client.getCustomers({
+        ...baseParams,
+        [field]: filter,
+      });
+      let matchedAny = false;
+      for (const customer of customers) {
+        if (customerPhones(customer).some((entry) => phonesMatch(phone, entry))) {
+          customerById.set(String(customer.customerID), customer);
+          matchedAny = true;
+        }
+      }
+      if (customers.length > 0 && !matchedAny) {
+        phoneFilterBroken = true;
+      }
+      return matchedAny;
+    } catch {
+      return false;
+    }
+  };
+
   for (const variant of phoneSearchVariants(phone)) {
+    if (phoneFilterBroken) break;
     const digitVariant = phoneDigits(variant);
     const filters = [
       variant,
@@ -197,16 +348,17 @@ async function fetchCustomersByPhoneFilters(
     ].filter(Boolean) as string[];
 
     for (const filter of filters) {
-      try {
-        const customers = await client.getCustomers({
-          ...baseParams,
-          "Contact.Phones.ContactPhone.number": filter,
-        });
-        for (const customer of customers) {
-          customerById.set(String(customer.customerID), customer);
+      if (phoneFilterBroken) break;
+
+      for (const field of LIGHTSPEED_CONTACT_PHONE_QUERY_FIELDS) {
+        if (await tryFilter(field, filter)) {
+          return Array.from(customerById.values());
         }
-      } catch {
-        // Some Lightspeed accounts reject nested phone filters.
+      }
+
+      if (phoneFilterBroken) break;
+      if (await tryFilter("Contact.Phones.ContactPhone.number", filter)) {
+        return Array.from(customerById.values());
       }
     }
   }
@@ -321,17 +473,11 @@ export async function searchLightspeedCustomersForNest(
   };
 
   if (isPhoneQuery(trimmed)) {
-    const filtered = await fetchCustomersByPhoneFilters(userId, trimmed);
-    for (const customer of filtered) {
-      customerById.set(String(customer.customerID), customer);
-    }
-    if (customerById.size === 0) {
-      const scanned = await findCustomerByPhone(userId, trimmed, {
-        allowScan: true,
-        maxScanPages: 30,
-      });
-      if (scanned) customerById.set(String(scanned.customerID), scanned);
-    }
+    const matched = await findCustomerByPhone(userId, trimmed, {
+      allowScan: true,
+      maxScanPages: 100,
+    });
+    if (matched) customerById.set(String(matched.customerID), matched);
   }
 
   if (/^\d+$/.test(trimmed)) {
@@ -459,8 +605,27 @@ async function findCustomerByPhone(
   phone: string,
   options: PhoneLookupOptions = {},
 ): Promise<LightspeedCustomer | null> {
-  const allowScan = options.allowScan ?? false;
-  const maxScanPages = options.maxScanPages ?? 20;
+  const allowScan = options.allowScan ?? true;
+  const maxScanPages = options.maxScanPages ?? 80;
+
+  // Primary path: paginate GET Customer.json?load_relations=["Contact"] and match locally.
+  // This is the reliable Lightspeed approach — nested phone filters are inconsistent across accounts.
+  if (allowScan) {
+    const fromScan = await scanCustomersForPhone(userId, phone, maxScanPages);
+    if (fromScan) return fromScan;
+
+    const recentCustomers = await fetchRecentCustomers(userId);
+    const fromRecent = findCustomerInListByPhone(recentCustomers, phone);
+    if (fromRecent) return fromRecent;
+
+    const hydratedRecent = await hydrateCustomersMissingPhones(
+      userId,
+      recentCustomers,
+      (customer) => customerPhones(customer).some((entry) => phonesMatch(phone, entry)),
+      40,
+    );
+    if (hydratedRecent) return hydratedRecent;
+  }
 
   const filtered = await fetchCustomersByPhoneFilters(userId, phone);
   for (const customer of filtered) {
@@ -469,21 +634,67 @@ async function findCustomerByPhone(
     }
   }
 
-  for (const customer of filtered.slice(0, 3)) {
-    try {
-      const full = await createLightspeedClient(userId).getCustomer(String(customer.customerID), {
-        load_relations: '["Contact"]',
+  return null;
+}
+
+function customerEmails(customer: LightspeedCustomer): string[] {
+  return ensureArray(customer.Contact?.Emails?.ContactEmail)
+    .map((email) => String(email.address ?? "").trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/** Match a Gmail/Nest sender to a Lightspeed customer via paginated Customer.json + Contact. */
+export async function findLightspeedCustomerForInquiry(
+  userId: string,
+  args: { senderEmail: string; senderName: string },
+  options?: { maxScanPages?: number },
+): Promise<LightspeedCustomer | null> {
+  const maxScanPages = options?.maxScanPages ?? 100;
+  const email = args.senderEmail.trim().toLowerCase();
+  const name = args.senderName.trim();
+
+  for (const candidate of [args.senderEmail, args.senderName]) {
+    if (isLikelyPhone(candidate)) {
+      const byPhone = await findCustomerByPhone(userId, candidate, {
+        allowScan: true,
+        maxScanPages,
       });
-      if (customerPhones(full).some((entry) => phonesMatch(phone, entry))) {
-        return full;
-      }
-    } catch {
-      // Try the next filter hit.
+      if (byPhone) return byPhone;
     }
   }
 
-  if (!allowScan) return null;
-  return scanCustomersForPhone(userId, phone, maxScanPages);
+  const client = createLightspeedClient(userId);
+  let best: { customer: LightspeedCustomer; score: number } | null = null;
+
+  for (const archived of ["false", "true"] as const) {
+    const batch = await client.getAllCustomersCursor(
+      { load_relations: '["Contact"]', archived },
+      { maxPages: maxScanPages, limit: 100 },
+    );
+
+    for (const customer of batch.customers) {
+      let score = 0;
+
+      if (email && customerEmails(customer).includes(email)) {
+        score += 200;
+      }
+
+      if (name.length >= 2) {
+        const fullName = customerName(customer).toLowerCase();
+        const needle = name.toLowerCase();
+        if (fullName === needle) score += 80;
+        else if (fullName.includes(needle)) score += 40;
+      }
+
+      if (score <= 0) continue;
+      if (score >= 200) return customer;
+      if (!best || score > best.score) best = { customer, score };
+    }
+
+    if (best && best.score >= 200) break;
+  }
+
+  return best?.customer ?? null;
 }
 
 export function isLightspeedPhoneNameIndexWarm(userId: string): boolean {
@@ -519,29 +730,41 @@ export async function lookupLightspeedCustomerNameByPhone(
   }
 
   const customer = await findCustomerByPhone(userId, trimmed, options);
-  const name = customer ? customerName(customer) : null;
-  rememberPhoneName(userId, trimmed, name, index);
-  if (customer && name) {
-    for (const entry of customerPhones(customer)) {
-      for (const key of phoneLookupKeys(entry)) {
-        if (!index.has(key)) index.set(key, name);
-      }
-    }
+  if (!customer) {
+    rememberPhoneName(userId, trimmed, null, index);
+    return null;
   }
-  return name;
+  return rememberCustomerInPhoneIndex(userId, trimmed, customer, index);
 }
 
 function isLikelyPhone(value: string): boolean {
   return phoneDigits(value).length >= 8;
 }
 
+export async function resolveRecentCustomerPhoneNames(
+  userId: string,
+  phones: string[],
+): Promise<Map<string, string>> {
+  const unique = Array.from(new Set(phones.map((phone) => phone.trim()).filter(isLikelyPhone)));
+  if (unique.length === 0) return new Map();
+
+  const recentCustomers = await fetchRecentCustomers(userId);
+  const matches = await findCustomersInListByPhones(userId, recentCustomers, unique);
+  const resolved = new Map<string, string>();
+  for (const [phone, customer] of matches) {
+    resolved.set(phone, customerName(customer));
+  }
+  return resolved;
+}
+
 export async function resolveLightspeedNamesFromIndex(
   userId: string,
   phones: string[],
   index?: Map<string, string>,
-  options?: { allowScan?: boolean },
+  options?: { allowScan?: boolean; directLookupLimit?: number },
 ): Promise<Map<string, string>> {
   const allowScan = options?.allowScan ?? true;
+  const directLookupLimit = options?.directLookupLimit ?? 12;
   const unique = Array.from(new Set(phones.map((phone) => phone.trim()).filter(isLikelyPhone)));
   const resolved = new Map<string, string>();
   if (unique.length === 0) return resolved;
@@ -556,21 +779,30 @@ export async function resolveLightspeedNamesFromIndex(
 
   if (misses.length === 0 || !allowScan) return resolved;
 
-  const missesToLookup = misses.slice(0, 6);
+  const missesToLookup = misses.slice(0, directLookupLimit);
+
   try {
-    const scanned = await scanCustomersForPhones(userId, missesToLookup, 20);
-    for (const [phone, customer] of scanned) {
-      const name = customerName(customer);
+    const recentCustomers = await fetchRecentCustomers(userId);
+    const fromRecent = await findCustomersInListByPhones(userId, recentCustomers, missesToLookup);
+    for (const [phone, customer] of fromRecent) {
+      const name = rememberCustomerInPhoneIndex(userId, phone, customer, phoneIndex);
       resolved.set(phone, name);
-      rememberPhoneName(userId, phone, name, phoneIndex);
-      for (const entry of customerPhones(customer)) {
-        for (const key of phoneLookupKeys(entry)) {
-          if (!phoneIndex.has(key)) phoneIndex.set(key, name);
-        }
-      }
     }
   } catch (error) {
-    console.error("[lightspeed] Phone scan enrichment failed:", error);
+    console.error("[lightspeed] Recent customer phone batch lookup failed:", error);
+  }
+
+  for (const phone of missesToLookup) {
+    if (resolved.has(phone)) continue;
+    try {
+      const name = await lookupLightspeedCustomerNameByPhone(userId, phone, {
+        allowScan: true,
+        maxScanPages: 40,
+      });
+      if (name) resolved.set(phone, name);
+    } catch (error) {
+      console.error("[lightspeed] Nest phone name lookup failed:", phone, error);
+    }
   }
 
   return resolved;
@@ -609,6 +841,20 @@ export async function getLightspeedPhoneNameIndex(
             }
           }
         }
+      }
+
+      try {
+        const recentCustomers = await fetchRecentCustomers(userId);
+        for (const customer of recentCustomers) {
+          const name = customerName(customer);
+          for (const phone of customerPhones(customer)) {
+            for (const key of phoneLookupKeys(phone)) {
+              if (!index.has(key)) index.set(key, name);
+            }
+          }
+        }
+      } catch {
+        // Index is still usable without the recent-customer pass.
       }
 
       phoneIndexCache.set(userId, { expiresAt: Date.now() + PHONE_INDEX_TTL_MS, index });

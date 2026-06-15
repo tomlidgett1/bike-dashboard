@@ -22,7 +22,7 @@ export function TopbarAskButton() {
       aria-pressed={isOpen}
       className={cn(topbarOutlinePillClass, isOpen && dashboardHeaderControlActiveClass)}
     >
-      <MessageSquare className="size-3.5 opacity-80" />
+      <MessageSquare className="size-3.5" />
       Ask
     </button>
   );

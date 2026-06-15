@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { after } from 'next/server'
 import {
   isComposioConfigured,
   listGmailConnections,
   mintGmailConnectLink,
 } from '@/lib/composio/gmail'
 import { requireStoreUser } from '@/lib/customer-inquiries/auth'
+import { resolveGmailState } from '@/lib/customer-inquiries/inbox-connection-state'
 import {
   mapCustomerInquiryRow,
   refreshCustomerInquiriesForUser,
-  reconcileAnsweredThreads,
 } from '@/lib/customer-inquiries/sync'
 import { inquiryNeedsReplyFromRow } from '@/lib/customer-inquiries/thread'
 import { serializeInquiryListItem } from '@/lib/customer-inquiries/serialize'
+import { backgroundReconcileGmailThreads } from '@/lib/store/unified-inbox-sync'
 import type { CustomerInquiryStatus } from '@/lib/customer-inquiries/types'
 
 export const dynamic = 'force-dynamic'
@@ -26,11 +28,6 @@ const VALID_STATUSES: CustomerInquiryStatus[] = [
 ]
 
 const OPEN_STATUSES: CustomerInquiryStatus[] = ['new', 'processing', 'draft_ready', 'error']
-
-function shouldReconcileOnRead(statusParam: string | null | undefined): boolean {
-  if (!statusParam || statusParam === 'all') return true
-  return OPEN_STATUSES.includes(statusParam as CustomerInquiryStatus)
-}
 
 function filterInquiriesForDisplay(
   rows: ReturnType<typeof mapCustomerInquiryRow>[],
@@ -51,12 +48,6 @@ export async function GET(request: NextRequest) {
     if ('error' in auth) return auth.error
 
     const statusParam = request.nextUrl.searchParams.get('status')?.trim()
-    const configured = isComposioConfigured()
-    const connections = configured ? await listGmailConnections(auth.user.id).catch(() => []) : []
-
-    if (connections.length > 0 && shouldReconcileOnRead(statusParam)) {
-      await reconcileAnsweredThreads(auth.supabase, auth.user.id)
-    }
 
     let query = auth.supabase
       .from('store_customer_inquiries')
@@ -78,19 +69,14 @@ export async function GET(request: NextRequest) {
       mapCustomerInquiryRow(row as Record<string, unknown>),
     )
 
+    const gmail = await resolveGmailState(auth.supabase, auth.user.id)
+
+    after(() => backgroundReconcileGmailThreads(auth.supabase, auth.user.id))
+
     return NextResponse.json({
       inquiries: filterInquiriesForDisplay(mapped, statusParam).map(serializeInquiryListItem),
-      gmail: {
-        configured,
-        connected: connections.length > 0,
-        connectUrl: null,
-        accounts: connections.map((connection) => ({
-          id: connection.id,
-          label: connection.label,
-          email_address: connection.email_address ?? null,
-          status: connection.status,
-        })),
-      },
+      gmail,
+      cached: true,
     })
   } catch (error) {
     console.error('[customer-inquiries] GET failed:', error)

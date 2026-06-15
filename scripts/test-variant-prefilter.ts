@@ -82,6 +82,32 @@ const catProducts = [
 const catBucket = buildVariantBuckets(catProducts)[0];
 checkTrue("category mismatch triggers category_mismatch", catBucket.warnings.includes("category_mismatch"));
 
+console.log("messy bike titles auto-group by model (colour names collapsed):");
+{
+  const bikes = [
+    product({ product_id: "o1", title: "Orbea Alma H30 Mountain Bike X-Large Espace Green Matt", brand: "Orbea", category_name: "Mountain Bikes", price: 1500 }),
+    product({ product_id: "o2", title: "Orbea Alma H30 26×2.20 Small Silver Blue", brand: "Orbea", category_name: "Mountain Bikes", price: 1500 }),
+    product({ product_id: "o3", title: "Orbea Alma H30 Large Halo Silver Tanzanite Blue Bicycle", brand: "Orbea", category_name: "Mountain Bikes", price: 1500 }),
+    product({ product_id: "o4", title: "Orbea Alma H30 26″ Medium Green White", brand: "Orbea", category_name: "Mountain Bikes", price: 1500 }),
+  ];
+  const bikeBuckets = buildVariantBuckets(bikes);
+  checkTrue("all four Orbea Alma H30 form one bucket", bikeBuckets.length === 1 && bikeBuckets[0].products.length === 4);
+  checkTrue("different model H50 not merged with H30", buildVariantBuckets([
+    product({ product_id: "h30", title: "Orbea Alma H30 Small", brand: "Orbea", category_name: "Mountain Bikes" }),
+    product({ product_id: "h50", title: "Orbea Alma H50 Small", brand: "Orbea", category_name: "Mountain Bikes" }),
+  ]).length === 0);
+}
+
+console.log("parts keep precise grouping (cassette ≠ chain):");
+{
+  const parts = [
+    product({ product_id: "c1", title: "Shimano 105 R7000 Cassette 11-28", brand: "Shimano", category_name: "Components" }),
+    product({ product_id: "c2", title: "Shimano 105 R7000 Chain", brand: "Shimano", category_name: "Components" }),
+  ];
+  // Different products that merely share a groupset number must NOT bucket together.
+  checkTrue("cassette and chain are not grouped", buildVariantBuckets(parts).length === 0);
+}
+
 console.log("exclude already-grouped products:");
 const excluded = buildVariantBuckets(products, { excludeProductIds: new Set(["g1", "g2"]) });
 checkTrue("Giro bucket dropped once only 1 product remains", !excluded.some((b) => b.brand === "Giro"));

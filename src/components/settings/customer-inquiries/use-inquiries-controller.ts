@@ -53,9 +53,9 @@ export function stripReplyLinks(text: string): string {
 
 export type InquiriesController = ReturnType<typeof useInquiriesController>;
 
-export function useInquiriesController() {
+export function useInquiriesController(options?: { deferListLoad?: boolean }) {
   const [filter, setFilter] = React.useState<StatusFilter>("draft_ready");
-  const [loading, setLoading] = React.useState(true);
+  const [loading, setLoading] = React.useState(!options?.deferListLoad);
   const [refreshing, setRefreshing] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [gmailState, setGmailState] =
@@ -94,9 +94,20 @@ export function useInquiriesController() {
     }
   }, []);
 
+  const hydrateInboxList = React.useCallback(
+    (data: Pick<CustomerInquiriesResponse, "inquiries" | "gmail">) => {
+      setInquiries(data.inquiries ?? []);
+      setGmailState(data.gmail);
+      setLoading(false);
+      setError(null);
+    },
+    [],
+  );
+
   React.useEffect(() => {
+    if (options?.deferListLoad) return;
     void loadList(filter);
-  }, [filter, loadList]);
+  }, [filter, loadList, options?.deferListLoad]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -366,6 +377,7 @@ export function useInquiriesController() {
     setBanConfirmOpen,
     banning,
     handleRefresh,
+    hydrateInboxList,
     handleConnectGmail,
     handleIgnore,
     handleUnignore,

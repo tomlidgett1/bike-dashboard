@@ -602,6 +602,12 @@ export interface LightspeedCustomer {
     Phones?: {
       ContactPhone: LightspeedContactPhone | LightspeedContactPhone[]
     }
+    /** Flat phone fields — searchable via Contact.mobile, Contact.phoneHome, etc. */
+    mobile?: string
+    phoneHome?: string
+    phoneWork?: string
+    pager?: string
+    fax?: string
     Emails?: {
       ContactEmail: LightspeedContactEmail | LightspeedContactEmail[]
     }

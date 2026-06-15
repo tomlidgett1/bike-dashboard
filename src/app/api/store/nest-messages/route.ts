@@ -1,19 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  enrichNestChatsWithLightspeed,
-  enrichNestConversationWithLightspeed,
-} from "@/lib/nest/enrich-chats-with-lightspeed";
+import { after } from "next/server";
 import { proxyNestBrandPortalRequest } from "@/lib/nest/brand-portal-client";
 import { isNestMessagingConfigured } from "@/lib/nest/config";
+import {
+  loadNestChatsFromSupabase,
+  loadNestThreadFromSupabase,
+} from "@/lib/nest/inbox-supabase";
 import { resolveStoreNestBrandKey } from "@/lib/nest/resolve-store-brand-key";
 import {
   getServerNestThreadCache,
   invalidateServerNestThreadCache,
   setServerNestThreadCache,
 } from "@/lib/nest/server-thread-cache";
+import {
+  enrichNestChatsWithTwilioMissedCalls,
+  fetchNestTwilioMissedCallChatIds,
+} from "@/lib/nest/twilio-missed-calls";
 import type { NestConversationDetail, NestConversationListItem } from "@/lib/nest/types";
 import { searchLightspeedCustomersForNest } from "@/lib/services/lightspeed/customer-search";
-import { isLightspeedApiAvailable } from "@/lib/services/lightspeed/token-manager";
+import { isLightspeedInBackoff } from "@/lib/services/lightspeed/lightspeed-client";
+import {
+  isLightspeedApiAvailable,
+  isLightspeedConnected,
+} from "@/lib/services/lightspeed/token-manager";
+import {
+  syncNestInboxFromPortal,
+  syncNestThreadFromPortal,
+} from "@/lib/store/unified-inbox-sync";
 import { createClient } from "@/lib/supabase/server";
 
 function json(body: Record<string, unknown>, status = 200) {
@@ -61,6 +74,7 @@ async function requireStoreUser() {
   }
 
   return {
+    supabase,
     userId: user.id,
     brandKey: resolveStoreNestBrandKey(profile),
   } as const;
@@ -78,7 +92,8 @@ export async function GET(request: NextRequest) {
       return json({ customers: [], configured: true, lightspeedConnected: true });
     }
 
-    const lightspeedConnected = await isLightspeedApiAvailable(auth.userId);
+    const lightspeedConnected =
+      !isLightspeedInBackoff(auth.userId) && (await isLightspeedApiAvailable(auth.userId));
     if (!lightspeedConnected) {
       return json({
         customers: [],
@@ -119,6 +134,35 @@ export async function GET(request: NextRequest) {
   if (listOnly) query.set("listOnly", "1");
   if (threadOnly) query.set("threadOnly", "1");
 
+  if (listOnly && !threadOnly) {
+    let cachedChats = await loadNestChatsFromSupabase(auth.supabase, auth.userId);
+    const lightspeedConnected = await isLightspeedConnected(auth.userId);
+
+    if (cachedChats.length === 0) {
+      try {
+        cachedChats = await syncNestInboxFromPortal(auth.supabase, auth.userId, auth.brandKey);
+      } catch (error) {
+        console.error("[store-nest-messages] inline list sync failed:", error);
+      }
+    } else {
+      after(() =>
+        syncNestInboxFromPortal(auth.supabase, auth.userId, auth.brandKey).catch((error) => {
+          console.error("[store-nest-messages] background list sync failed:", error);
+        }),
+      );
+    }
+
+    return json({
+      chats: cachedChats,
+      selectedChatId: null,
+      conversation: null,
+      configured: true,
+      brandKey: auth.brandKey,
+      cached: cachedChats.length > 0,
+      lightspeedConnected,
+    });
+  }
+
   if (threadOnly && chatId) {
     const cachedThread = getServerNestThreadCache(auth.brandKey, chatId);
     if (cachedThread) {
@@ -129,38 +173,50 @@ export async function GET(request: NextRequest) {
         configured: true,
         brandKey: auth.brandKey,
         cached: true,
+        lightspeedConnected: await isLightspeedConnected(auth.userId),
+      });
+    }
+
+    const supabaseThread = await loadNestThreadFromSupabase(auth.supabase, auth.userId, chatId);
+    if (supabaseThread && supabaseThread.messages.length > 0) {
+      setServerNestThreadCache(auth.brandKey, chatId, supabaseThread);
+
+      after(() =>
+        syncNestThreadFromPortal(auth.supabase, auth.userId, auth.brandKey, chatId).catch(
+          (error) => {
+            console.error("[store-nest-messages] background thread sync failed:", error);
+          },
+        ),
+      );
+
+      return json({
+        chats: [],
+        selectedChatId: chatId,
+        conversation: supabaseThread,
+        configured: true,
+        brandKey: auth.brandKey,
+        cached: true,
+        lightspeedConnected: await isLightspeedConnected(auth.userId),
       });
     }
   }
 
   try {
-    const data = await proxyNestBrandPortalRequest(auth.brandKey, {
-      method: "GET",
-      query,
-    });
+    const [data, missedCallChatIds] = await Promise.all([
+      proxyNestBrandPortalRequest(auth.brandKey, {
+        method: "GET",
+        query,
+      }),
+      threadOnly ? Promise.resolve(new Set<string>()) : fetchNestTwilioMissedCallChatIds(auth.brandKey),
+    ]);
 
-    let lightspeedConnected = await isLightspeedApiAvailable(auth.userId);
-    if (lightspeedConnected && !listOnly) {
-      try {
-        if (Array.isArray(data.chats) && !threadOnly) {
-          data.chats = await enrichNestChatsWithLightspeed(
-            auth.userId,
-            data.chats as NestConversationListItem[],
-          );
-        }
-        if (
-          data.conversation &&
-          typeof data.conversation === "object"
-        ) {
-          data.conversation = await enrichNestConversationWithLightspeed(
-            auth.userId,
-            data.conversation as NestConversationDetail,
-          );
-        }
-      } catch (enrichError) {
-        console.error("[store-nest-messages] Lightspeed name enrichment failed:", enrichError);
-        lightspeedConnected = false;
-      }
+    let lightspeedConnected = await isLightspeedConnected(auth.userId);
+
+    if (Array.isArray(data.chats) && !threadOnly) {
+      data.chats = enrichNestChatsWithTwilioMissedCalls(
+        data.chats as NestConversationListItem[],
+        missedCallChatIds,
+      );
     }
 
     if (threadOnly && chatId && data.conversation && typeof data.conversation === "object") {
@@ -169,6 +225,30 @@ export async function GET(request: NextRequest) {
         chatId,
         data.conversation as NestConversationDetail,
       );
+      const { upsertNestThreadToSupabase } = await import("@/lib/nest/inbox-supabase");
+      const listChat = Array.isArray(data.chats)
+        ? (data.chats as NestConversationListItem[]).find((c) => c.chatId === chatId)
+        : undefined;
+      await upsertNestThreadToSupabase(
+        auth.supabase,
+        auth.userId,
+        auth.brandKey,
+        data.conversation as NestConversationDetail,
+        listChat,
+      );
+    }
+
+    if (!threadOnly && Array.isArray(data.chats)) {
+      const { upsertNestChatsToSupabase, touchNestSyncTimestamp } = await import(
+        "@/lib/nest/inbox-supabase"
+      );
+      await upsertNestChatsToSupabase(
+        auth.supabase,
+        auth.userId,
+        auth.brandKey,
+        data.chats as NestConversationListItem[],
+      );
+      await touchNestSyncTimestamp(auth.supabase, auth.userId);
     }
 
     return json({ ...data, configured: true, brandKey: auth.brandKey, lightspeedConnected });

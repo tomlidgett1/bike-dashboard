@@ -237,6 +237,10 @@ class SharedLightspeedRateLimiter {
       this.lastBucketUpdate = now
     }
   }
+
+  isInBackoff(): boolean {
+    return Date.now() < this.backoffUntil
+  }
 }
 
 const sharedRateLimiters = new Map<string, SharedLightspeedRateLimiter>()
@@ -247,6 +251,11 @@ function lightspeedRateLimiterFor(key: string): SharedLightspeedRateLimiter {
   const limiter = new SharedLightspeedRateLimiter()
   sharedRateLimiters.set(key, limiter)
   return limiter
+}
+
+/** True when a recent 429 set shared backoff — callers should skip optional LS enrichment. */
+export function isLightspeedInBackoff(userId: string): boolean {
+  return lightspeedRateLimiterFor(userId).isInBackoff()
 }
 
 // ============================================================

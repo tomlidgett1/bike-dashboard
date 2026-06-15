@@ -1,7 +1,9 @@
 "use client";
 
 import * as React from "react";
+import { usePathname } from "next/navigation";
 import { Palette, RotateCcw } from "lucide-react";
+import { isStoreSettingsPath } from "@/lib/routes/store-dashboard";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,25 +32,41 @@ const PRESET_COLORS = [
 const HEADER_CONTROL_VARS = {
   dark: {
     "--dashboard-header-fg": "rgba(255, 255, 255, 0.92)",
-    "--dashboard-header-control-bg": "rgba(255, 255, 255, 0.1)",
-    "--dashboard-header-control-border": "rgba(255, 255, 255, 0.22)",
-    "--dashboard-header-control-fg": "rgba(255, 255, 255, 0.84)",
-    "--dashboard-header-control-hover-bg": "rgba(255, 255, 255, 0.16)",
-    "--dashboard-header-control-hover-fg": "#ffffff",
-    "--dashboard-header-control-active-bg": "rgba(255, 255, 255, 0.22)",
-    "--dashboard-header-logo-filter": "brightness(0) invert(1)",
+    "--dashboard-header-control-bg": "#ffffff",
+    "--dashboard-header-control-border": "rgba(0, 0, 0, 0.16)",
+    "--dashboard-header-control-fg": "#171717",
+    "--dashboard-header-control-hover-bg": "rgba(0, 0, 0, 0.05)",
+    "--dashboard-header-control-hover-fg": "#000000",
+    "--dashboard-header-control-active-bg": "rgba(0, 0, 0, 0.08)",
+    "--dashboard-header-logo-filter": "none",
   },
   light: {
     "--dashboard-header-fg": "rgba(17, 24, 39, 0.92)",
     "--dashboard-header-control-bg": "#ffffff",
-    "--dashboard-header-control-border": "rgba(0, 0, 0, 0.12)",
-    "--dashboard-header-control-fg": "rgba(55, 65, 81, 0.9)",
-    "--dashboard-header-control-hover-bg": "rgba(0, 0, 0, 0.04)",
-    "--dashboard-header-control-hover-fg": "rgba(17, 24, 39, 0.95)",
+    "--dashboard-header-control-border": "rgba(0, 0, 0, 0.16)",
+    "--dashboard-header-control-fg": "#171717",
+    "--dashboard-header-control-hover-bg": "rgba(0, 0, 0, 0.05)",
+    "--dashboard-header-control-hover-fg": "#000000",
     "--dashboard-header-control-active-bg": "rgba(0, 0, 0, 0.08)",
     "--dashboard-header-logo-filter": "none",
   },
 } as const;
+
+function normalizeHeaderColor(color: string): string {
+  const trimmed = color.trim();
+  if (!/^#[0-9a-fA-F]{6}$/.test(trimmed)) {
+    return DASHBOARD_HEADER_BG_DEFAULT;
+  }
+  return trimmed.toLowerCase();
+}
+
+function getHeaderColorTargets(): HTMLElement[] {
+  const targets = new Set<HTMLElement>([document.documentElement]);
+  document
+    .querySelectorAll<HTMLElement>(".dashboard-shell, .dashboard-header")
+    .forEach((element) => targets.add(element));
+  return [...targets];
+}
 
 function getHeaderTone(color: string): "dark" | "light" {
   const hex = color.replace("#", "");
@@ -59,15 +77,36 @@ function getHeaderTone(color: string): "dark" | "light" {
   return luminance > 0.58 ? "light" : "dark";
 }
 
-function applyDashboardHeaderColor(color: string) {
-  const tone = getHeaderTone(color);
+type ApplyDashboardHeaderColorOptions = {
+  /** Keep icons/buttons white even on light header backgrounds (store settings). */
+  forceWhiteControls?: boolean;
+};
+
+export function applyDashboardHeaderColor(
+  color: string,
+  options?: ApplyDashboardHeaderColorOptions,
+) {
+  const normalized = normalizeHeaderColor(color);
+  const tone = options?.forceWhiteControls ? "dark" : getHeaderTone(normalized);
   const vars = HEADER_CONTROL_VARS[tone];
 
-  document.documentElement.style.setProperty("--dashboard-header-bg", color);
   document.documentElement.setAttribute("data-dashboard-header-tone", tone);
+  if (options?.forceWhiteControls) {
+    document.documentElement.setAttribute(
+      "data-dashboard-header-force-white-controls",
+      "true",
+    );
+  } else {
+    document.documentElement.removeAttribute(
+      "data-dashboard-header-force-white-controls",
+    );
+  }
 
-  for (const [key, value] of Object.entries(vars)) {
-    document.documentElement.style.setProperty(key, value);
+  for (const target of getHeaderColorTargets()) {
+    target.style.setProperty("--dashboard-header-bg", normalized);
+    for (const [key, value] of Object.entries(vars)) {
+      target.style.setProperty(key, value);
+    }
   }
 }
 
@@ -85,23 +124,31 @@ export function DashboardHeaderColorProvider({
 }: {
   children: React.ReactNode;
 }) {
+  const pathname = usePathname() ?? "/";
+  const forceWhiteControls = isStoreSettingsPath(pathname);
   const [color, setColorState] = React.useState(DASHBOARD_HEADER_BG_DEFAULT);
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    const next =
-      stored && /^#[0-9a-fA-F]{6}$/.test(stored)
-        ? stored
-        : DASHBOARD_HEADER_BG_DEFAULT;
+    const next = stored
+      ? normalizeHeaderColor(stored)
+      : DASHBOARD_HEADER_BG_DEFAULT;
     setColorState(next);
-    applyDashboardHeaderColor(next);
   }, []);
 
-  const setColor = React.useCallback((next: string) => {
-    setColorState(next);
-    window.localStorage.setItem(STORAGE_KEY, next);
-    applyDashboardHeaderColor(next);
-  }, []);
+  React.useLayoutEffect(() => {
+    applyDashboardHeaderColor(color, { forceWhiteControls });
+  }, [color, forceWhiteControls]);
+
+  const setColor = React.useCallback(
+    (next: string) => {
+      const normalized = normalizeHeaderColor(next);
+      setColorState(normalized);
+      window.localStorage.setItem(STORAGE_KEY, normalized);
+      applyDashboardHeaderColor(normalized, { forceWhiteControls });
+    },
+    [forceWhiteControls],
+  );
 
   const resetColor = React.useCallback(() => {
     setColor(DASHBOARD_HEADER_BG_DEFAULT);
@@ -174,7 +221,7 @@ export function DashboardHeaderColorPicker() {
             <DropdownMenuItem
               key={preset.value}
               className="gap-2 rounded-md"
-              onClick={() => setColor(preset.value)}
+              onSelect={() => setColor(preset.value)}
             >
               <span
                 className="size-4 shrink-0 rounded-md border border-border/60"
@@ -182,7 +229,7 @@ export function DashboardHeaderColorPicker() {
                 aria-hidden
               />
               <span className="flex-1">{preset.label}</span>
-              {color === preset.value ? (
+              {color.toLowerCase() === preset.value ? (
                 <span className="text-[10px] font-medium text-muted-foreground">
                   Active
                 </span>
@@ -206,7 +253,7 @@ export function DashboardHeaderColorPicker() {
           </DropdownMenuItem>
           <DropdownMenuItem
             className="gap-2 rounded-md"
-            onClick={resetColor}
+            onSelect={() => resetColor()}
           >
             <RotateCcw className="size-3.5 text-muted-foreground" />
             <span>Reset default</span>

@@ -1,8 +1,11 @@
 "use client";
 
 import * as React from "react";
+import Image from "next/image";
 import { Loader2 } from "lucide-react";
-import { SettingsSection } from "@/components/dashboard/settings-primitives";
+import { BentoInboxEmptyState } from "@/components/settings/bento-inbox-item-actions";
+import { NestSettingsBentoShell } from "@/components/settings/nest-settings-bento-shell";
+import type { BentoShellVariant } from "@/components/settings/bento-variant-styles";
 import type { HiddenNestPickupSuggestion, NestPickupSuggestion } from "@/lib/nest/pickup-suggestions";
 import {
   fetchHiddenNestPickupSuggestions,
@@ -14,7 +17,13 @@ import {
   NestPickupConfirmDialog,
 } from "@/components/settings/nest-pickup-suggestion-ui";
 
-export function NestHiddenPickupSuggestionsPanel() {
+export function NestHiddenPickupSuggestionsPanel({
+  variant = "light-beige-floating",
+  className,
+}: {
+  variant?: BentoShellVariant;
+  className?: string;
+}) {
   const [suggestions, setSuggestions] = React.useState<HiddenNestPickupSuggestion[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -62,53 +71,47 @@ export function NestHiddenPickupSuggestionsPanel() {
     }
   }
 
-  if (loading) {
-    return (
-      <SettingsSection
-        title="Hidden pickup suggestions"
-        description="Suggestions you dismissed on HomeV2. Restore them to show again, or send the pickup message from here."
-        className="mb-6"
-      >
-        <div className="flex items-center gap-2 text-sm text-gray-500">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading hidden suggestions…
-        </div>
-      </SettingsSection>
-    );
-  }
-
-  if (suggestions.length === 0 && !error) {
-    return null;
-  }
-
   return (
     <>
-      <SettingsSection
+      <NestSettingsBentoShell
         title="Hidden pickup suggestions"
-        description="Suggestions you dismissed on HomeV2. Restore them to show again, or send the pickup message from here."
-        className="mb-6"
+        description="Suggestions you dismissed on Home. Restore them to show again, or send the pickup message from here."
+        variant={variant}
+        className={className}
+        icon={
+          <span className="mt-0.5 flex h-5 w-5 shrink-0 overflow-hidden rounded-full">
+            <Image src="/ls.png" alt="" width={20} height={20} className="h-full w-full object-cover" />
+          </span>
+        }
       >
-        {error ? (
-          <div className="mb-3 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-red-600">
+        {loading ? (
+          <div className="flex flex-1 items-center justify-center gap-2 py-10 text-sm text-gray-500">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading hidden suggestions…
+          </div>
+        ) : error ? (
+          <div className="rounded-md border border-red-100 bg-white px-3 py-2 text-xs text-red-600">
             {error}
           </div>
-        ) : null}
-
-        <div className="space-y-2">
-          {suggestions.map((suggestion) => (
-            <NestHiddenPickupSuggestionRow
-              key={suggestion.id}
-              suggestion={suggestion}
-              restoring={restoringId === suggestion.id}
-              onOpen={(item) => {
-                setActiveSuggestion(item);
-                setDialogOpen(true);
-              }}
-              onRestore={(item) => void handleRestore(item)}
-            />
-          ))}
-        </div>
-      </SettingsSection>
+        ) : suggestions.length === 0 ? (
+          <BentoInboxEmptyState message="No hidden pickup suggestions" />
+        ) : (
+          <div className="-mx-1 space-y-2">
+            {suggestions.map((suggestion) => (
+              <NestHiddenPickupSuggestionRow
+                key={suggestion.id}
+                suggestion={suggestion}
+                restoring={restoringId === suggestion.id}
+                onOpen={(item) => {
+                  setActiveSuggestion(item);
+                  setDialogOpen(true);
+                }}
+                onRestore={(item) => void handleRestore(item)}
+              />
+            ))}
+          </div>
+        )}
+      </NestSettingsBentoShell>
 
       <NestPickupConfirmDialog
         suggestion={activeSuggestion}

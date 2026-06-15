@@ -78,7 +78,7 @@ export function NestMessagesDropdown() {
           className={topbarIconButtonClass}
           aria-label="Nest messages"
         >
-          <MessageSquare className="size-4 stroke-[1.75]" />
+          <MessageSquare className="size-4" />
           {unreadCount > 0 ? (
             <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-medium text-white">
               {unreadCount > 99 ? "99+" : unreadCount}

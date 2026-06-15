@@ -25,6 +25,17 @@ const GENDER_WORDS = new Set([
   "boys", "girls", "ladies", "mens's", "women's", "men's",
 ]);
 
+// Generic product-category words — noise for grouping (e.g. "Mountain Bike").
+const GENERIC_WORDS = new Set([
+  "bike", "bikes", "bicycle", "bicycles", "ebike", "ebikes", "mtb",
+  "mountain", "road", "gravel", "hybrid", "commuter", "electric", "cycle", "cycles",
+]);
+
+// Finish descriptors that accompany colours (e.g. "Matt", "Gloss").
+const FINISH_WORDS = new Set([
+  "matt", "matte", "gloss", "glossy", "satin", "metallic", "pearl", "fade", "gradient",
+]);
+
 // Multi-word phrases removed before single-token filtering.
 const PHRASES: RegExp[] = [
   /\bextra[\s-]?(small|large)\b/gi,
@@ -40,6 +51,7 @@ const PATTERNS: RegExp[] = [
   /\b\d{2}(?:\.\d)?\s?(?:"|”|″|inch(?:es)?|in)(?=[\s\-/|,]|$)/g, // wheel size e.g. 29", 27.5 inch
   /\b\d{2}er\b/g, // wheel size shorthand e.g. 29er
   /\b(?:700c|650b)\b/g, // road / gravel wheel sizes
+  /\b\d{2,3}\s?[x×]\s?\d{1,2}(?:\.\d+)?[a-z]?\b/g, // tyre size e.g. 26×2.20, 700x25c
   /\b(?:xs|s|m|l|xl|xxl)\s?\/\s?(?:xs|s|m|l|xl|xxl)\b/g, // S/M, M/L
 ];
 
@@ -52,7 +64,7 @@ function preClean(lower: string): string {
 
 function isVariantToken(token: string): boolean {
   const t = token.toLowerCase();
-  return SIZE_WORDS.has(t) || COLOUR_WORDS.has(t) || GENDER_WORDS.has(t);
+  return SIZE_WORDS.has(t) || COLOUR_WORDS.has(t) || GENDER_WORDS.has(t) || GENERIC_WORDS.has(t) || FINISH_WORDS.has(t);
 }
 
 /**
@@ -107,6 +119,29 @@ export function suggestBaseTitle(title: string): string {
 /** Normalize a brand for keying (lowercased, trimmed). */
 export function normalizeBrandKey(brand: string | null | undefined): string {
   return (brand ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * A looser key for complete bikes, whose names are "<model> <number> <colour…>"
+ * with open-ended marketing colour names (e.g. "Alma H30 Espace Green",
+ * "Alma H30 Halo Silver"). Keeps only the model identifier up to and including
+ * the first token containing a digit (the model number), dropping trailing
+ * colour/finish words we can't enumerate. Falls back to the first 3 tokens when
+ * there is no number. The brand is stripped (it's keyed separately).
+ *
+ * NOT used for parts/components — there the distinguishing word (e.g. Cassette
+ * vs Chain) follows the number, so we keep the full comparison key for those.
+ */
+export function coreModelKey(title: string, brand?: string | null): string {
+  if (!title) return "";
+  const brandTokens = new Set(normalizeBrandKey(brand).split(" ").filter(Boolean));
+  const tokens = preClean(title.toLowerCase())
+    .split(/[^a-z0-9.]+/i)
+    .filter((tok) => tok && !isVariantToken(tok) && !brandTokens.has(tok));
+  if (tokens.length === 0) return "";
+  const digitIdx = tokens.findIndex((tok) => /\d/.test(tok));
+  const core = digitIdx >= 0 ? tokens.slice(0, digitIdx + 1) : tokens.slice(0, 3);
+  return core.join(" ");
 }
 
 export type ExtractedVariantTokens = { sizes: string[]; colours: string[]; others: string[] };

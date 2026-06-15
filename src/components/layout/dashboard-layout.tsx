@@ -14,12 +14,19 @@ interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
+const HIDE_TOPBAR_PATHS = [
+  "/settings/store/actions",
+  "/settings/store/nest",
+  "/settings/store/customer-inquiries",
+];
+
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const pathname = usePathname();
 
   // Don't show the dashboard chrome on auth pages
   const isAuthPage =
     pathname?.startsWith("/login") || pathname?.startsWith("/auth");
+  const hideTopbar = HIDE_TOPBAR_PATHS.some((path) => pathname === path);
 
   if (isAuthPage) {
     return <>{children}</>;
@@ -31,10 +38,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     <TooltipProvider delayDuration={0}>
       <SidebarProvider className="dashboard-light-surface dashboard-shell flex h-svh flex-col overflow-hidden text-foreground">
         <DashboardHeader />
-        <div className="dashboard-shell-body relative flex min-h-0 w-full flex-1 overflow-hidden rounded-t-2xl border border-b-0 border-border/60 bg-[#f6f6f7] md:flex-row">
+        <div className="dashboard-shell-body relative flex min-h-0 w-full flex-1 overflow-hidden bg-[#f6f6f7] md:flex-row">
           <AppSidebar />
           <SidebarInset className="min-h-0 min-w-0 flex-1 overflow-hidden bg-white">
-            <Topbar />
+            {hideTopbar ? null : <Topbar />}
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-white">
               {children}
             </div>

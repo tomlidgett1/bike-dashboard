@@ -2,13 +2,17 @@ import {
   getLightspeedPhoneNameIndex,
   lookupLightspeedCustomerNameByPhone,
   resolveLightspeedNamesFromIndex,
+  resolveRecentCustomerPhoneNames,
 } from "@/lib/services/lightspeed/customer-search";
+import { isLightspeedInBackoff } from "@/lib/services/lightspeed/lightspeed-client";
 import type { NestConversationDetail, NestConversationListItem } from "./types";
 
-const LIST_INDEX_TIMEOUT_MS = 2_500;
-const THREAD_LOOKUP_TIMEOUT_MS = 2_000;
-const LIST_INDEX_MAX_PAGES = process.env.NODE_ENV === "development" ? 4 : 12;
-const THREAD_SCAN_MAX_PAGES = process.env.NODE_ENV === "development" ? 4 : 12;
+const LIST_INDEX_TIMEOUT_MS = 4_000;
+const RECENT_LOOKUP_TIMEOUT_MS = 8_000;
+const THREAD_LOOKUP_TIMEOUT_MS = 3_500;
+const LIST_DIRECT_LOOKUP_LIMIT = 12;
+const LIST_INDEX_MAX_PAGES = process.env.NODE_ENV === "development" ? 6 : 12;
+const THREAD_SCAN_MAX_PAGES = process.env.NODE_ENV === "development" ? 40 : 60;
 
 function phoneDigits(value: string): string {
   return value.replace(/\D+/g, "");
@@ -57,26 +61,38 @@ export async function enrichNestChatsWithLightspeed(
   chats: NestConversationListItem[],
   options?: { allowPhoneScan?: boolean },
 ): Promise<NestConversationListItem[]> {
+  if (isLightspeedInBackoff(userId)) return chats;
   if (!chats.some(chatNeedsNameEnrichment)) return chats;
 
   try {
-    const index = await withTimeout(
-      getLightspeedPhoneNameIndex(userId, {
-        maxPages: LIST_INDEX_MAX_PAGES,
-        timeoutMs: LIST_INDEX_TIMEOUT_MS,
-      }),
-      LIST_INDEX_TIMEOUT_MS,
-      new Map<string, string>(),
-    );
-
     const phones = chats
       .filter(chatNeedsNameEnrichment)
       .map((chat) => extractChatPhone(chat))
       .filter((phone): phone is string => Boolean(phone));
 
-    const namesByPhone = await resolveLightspeedNamesFromIndex(userId, phones, index, {
-      allowScan: options?.allowPhoneScan ?? true,
-    });
+    const [index, fromRecent] = await Promise.all([
+      withTimeout(
+        getLightspeedPhoneNameIndex(userId, {
+          maxPages: LIST_INDEX_MAX_PAGES,
+          timeoutMs: LIST_INDEX_TIMEOUT_MS,
+        }),
+        LIST_INDEX_TIMEOUT_MS,
+        new Map<string, string>(),
+      ),
+      withTimeout(resolveRecentCustomerPhoneNames(userId, phones), RECENT_LOOKUP_TIMEOUT_MS, new Map()),
+    ]);
+
+    const namesByPhone = new Map(fromRecent);
+    const unresolvedPhones = phones.filter((phone) => !namesByPhone.has(phone));
+    if (unresolvedPhones.length > 0) {
+      const fromIndex = await resolveLightspeedNamesFromIndex(userId, unresolvedPhones, index, {
+        allowScan: options?.allowPhoneScan ?? true,
+        directLookupLimit: LIST_DIRECT_LOOKUP_LIMIT,
+      });
+      for (const [phone, name] of fromIndex) {
+        namesByPhone.set(phone, name);
+      }
+    }
     return chats.map((chat) => {
       if (!chatNeedsNameEnrichment(chat)) return chat;
       const phone = extractChatPhone(chat);
@@ -94,6 +110,7 @@ export async function enrichNestConversationWithLightspeed(
   userId: string,
   conversation: NestConversationDetail,
 ): Promise<NestConversationDetail> {
+  if (isLightspeedInBackoff(userId)) return conversation;
   if (conversation.displayName?.trim() && !isLikelyPhone(conversation.displayName)) {
     return conversation;
   }

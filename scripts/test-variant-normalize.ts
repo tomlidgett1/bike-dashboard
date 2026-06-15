@@ -5,6 +5,7 @@ import {
   normalizeBrandKey,
   extractVariantTokens,
   variantTokenSignature,
+  coreModelKey,
 } from "../src/lib/variants/normalize";
 
 let failures = 0;
@@ -64,6 +65,21 @@ console.log("extractVariantTokens recovers size/colour from a listing:");
   const cm = extractVariantTokens("Trek Domane 54cm 2024");
   checkTrue("frame size + year captured", cm.others.some((o) => o.includes("54")) && cm.others.includes("2024"));
 }
+
+console.log("strips tyre sizes + generic bike words:");
+check("tyre size 26×2.20", variantComparisonKey("Orbea Alma H30 26×2.20 Blue"), "orbea alma h30");
+check("700x25c tyre", variantComparisonKey("Continental GP5000 700x25c"), "continental gp5000");
+check("Mountain Bike generic", variantComparisonKey("Orbea Alma H30 Mountain Bike"), "orbea alma h30");
+check("Bicycle generic + finish", variantComparisonKey("Orbea Alma H30 Tanzanite Blue Bicycle Gloss"), "orbea alma h30 tanzanite");
+
+console.log("coreModelKey collapses bike colour/marketing names:");
+check("Espace Green Matt", coreModelKey("Orbea Alma H30 Mountain Bike X-Large Espace Green Matt", "Orbea"), "alma h30");
+check("Halo Silver Tanzanite", coreModelKey("Orbea Alma H30 Large Halo Silver Tanzanite Blue", "Orbea"), "alma h30");
+check("26×2.20 Small", coreModelKey("Orbea Alma H30 26×2.20 Small Silver Blue", "Orbea"), "alma h30");
+checkTrue("different model number stays distinct", coreModelKey("Orbea Alma H30", "Orbea") !== coreModelKey("Orbea Alma H50", "Orbea"));
+// coreModelKey is intentionally coarse (drops "Cassette") — which is exactly why
+// the prefilter only applies it to complete bikes, not parts.
+checkTrue("coreModelKey is too coarse for parts → parts use the full key instead", coreModelKey("Shimano 105 R7000 Cassette", "Shimano") === "105");
 
 console.log("variantTokenSignature distinguishes vs collapses:");
 checkTrue(

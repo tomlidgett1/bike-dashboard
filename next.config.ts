@@ -16,6 +16,11 @@ const nextConfig: NextConfig = {
     // OAuth PKCE cookies are host-specific; mixing www and apex breaks sign-in.
     return [
       {
+        source: "/settings/store/overivewo",
+        destination: "/settings/store/actions",
+        permanent: true,
+      },
+      {
         source: "/:path*",
         has: [{ type: "host", value: "www.yellowjersey.store" }],
         destination: "https://yellowjersey.store/:path*",

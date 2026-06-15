@@ -19,7 +19,7 @@ export function TopbarViewStoreButton() {
       className={topbarIconButtonClass}
       aria-label="View store"
     >
-      <Folder className="size-4 stroke-[1.75]" />
+      <Folder className="size-4" />
     </Link>
   );
 }

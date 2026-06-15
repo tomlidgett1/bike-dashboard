@@ -68,7 +68,7 @@ const NAV: NavGroup[] = [
     label: "Store",
     items: [
       { title: "Home", href: "/settings/store/home", icon: Home, exact: true },
-      { title: "Actions", href: "/settings/store/overivewo", icon: LayoutGrid, exact: true },
+      { title: "Actions", href: "/settings/store/actions", icon: LayoutGrid, exact: true },
       { title: "Products", href: "/products", icon: Package },
       {
         title: "Storefront",

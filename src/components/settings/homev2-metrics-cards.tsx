@@ -57,7 +57,7 @@ function MetricCell({
         <Wrapper
           {...wrapperProps}
           className={cn(
-            "flex min-w-0 w-full flex-col items-center justify-center px-3 py-3.5 text-center sm:px-4 sm:py-4",
+            "flex min-w-0 w-full flex-col items-center justify-center px-4 py-3.5 text-center sm:px-5 sm:py-4",
             onClick
               ? "cursor-pointer transition-colors hover:bg-gray-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-200"
               : "cursor-default",
@@ -70,7 +70,7 @@ function MetricCell({
               animate={animate}
             />
           </p>
-          <p className="mt-1 max-w-full text-[11px] font-medium leading-snug text-muted-foreground sm:text-xs">
+          <p className="mt-1 max-w-full whitespace-nowrap text-[11px] font-medium leading-snug text-muted-foreground sm:text-xs">
             {label}
             {periodLabel ? (
               <>
@@ -103,11 +103,17 @@ function MetricsSkeleton() {
   );
 }
 
-export function HomeV2MetricsCards({ className }: { className?: string }) {
+export function HomeV2MetricsCards({
+  className,
+  tone = "default",
+}: {
+  className?: string;
+  tone?: "default" | "subtle";
+}) {
   const [metrics, setMetrics] = React.useState<HomeV2OverviewMetrics | null>(null);
   const [previousMetrics, setPreviousMetrics] = React.useState<HomeV2OverviewMetrics | null>(null);
   const [animateValues, setAnimateValues] = React.useState(false);
-  const [viewsPeriod, setViewsPeriod] = React.useState<"rolling7" | "today">("rolling7");
+  const [viewsPeriod, setViewsPeriod] = React.useState<"rolling7" | "today">("today");
   const [loading, setLoading] = React.useState(true);
   const metricsRef = React.useRef<HomeV2OverviewMetrics | null>(null);
   const cachedEntryRef = React.useRef<ReturnType<typeof readCachedHomeV2MetricsEntry>>(null);
@@ -191,11 +197,18 @@ export function HomeV2MetricsCards({ className }: { className?: string }) {
     : "";
 
   return (
-    <div className={cn("mx-auto w-full max-w-xl", className)}>
+    <div className={cn("mx-auto w-full max-w-2xl", className)}>
       {loading && !metrics ? (
         <MetricsSkeleton />
       ) : metrics ? (
-        <div className="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/90 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_10px_28px_rgba(15,23,42,0.06)] backdrop-blur-sm">
+        <div
+          className={cn(
+            "overflow-hidden backdrop-blur-sm",
+            tone === "subtle"
+              ? "rounded-md border border-gray-200/50 bg-white/70 shadow-none"
+              : "rounded-2xl border border-gray-200/70 bg-white/90 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_10px_28px_rgba(15,23,42,0.06)]",
+          )}
+        >
           <div className="grid grid-cols-3 divide-x divide-gray-200/70">
             <MetricCell
               value={viewsValue}

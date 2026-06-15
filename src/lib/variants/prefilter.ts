@@ -8,7 +8,22 @@
 // here so the reviewer sees them even for high-confidence groups.
 
 import type { VariantBucket, VariantCandidateProduct, VariantWarning } from "./types";
-import { normalizeBrandKey, suggestBaseTitle, variantComparisonKey } from "./normalize";
+import { coreModelKey, normalizeBrandKey, suggestBaseTitle, variantComparisonKey } from "./normalize";
+
+// Complete bikes name colours with open-ended marketing words ("Espace", "Halo"),
+// so we group them by model identifier only. Parts keep precise full-title keys.
+function looksLikeCompleteBike(product: VariantCandidateProduct): boolean {
+  const cat = `${product.marketplace_category ?? ""} ${product.category_name ?? ""}`.toLowerCase();
+  const bikeish = /\b(bike|bikes|bicycle|bicycles|mtb|e-?bike)\b/.test(cat);
+  const partish = /(part|component|accessor|spare|wheel|tyre|tire|tube|chain|cassette|saddle|pedal|helmet|apparel|clothing|glove|shoe)/.test(cat);
+  return bikeish && !partish;
+}
+
+function bucketKeyFor(product: VariantCandidateProduct): string {
+  return looksLikeCompleteBike(product)
+    ? coreModelKey(product.title, product.brand)
+    : variantComparisonKey(product.title);
+}
 
 /** Prices this many times apart within a bucket trigger a price warning. */
 export const PRICE_SPREAD_RATIO = 1.6;
@@ -55,7 +70,7 @@ export function buildVariantBuckets(
   for (const product of products) {
     if (exclude.has(product.product_id)) continue;
 
-    const baseKey = variantComparisonKey(product.title);
+    const baseKey = bucketKeyFor(product);
     if (!baseKey) continue; // nothing left after stripping — too generic to group
 
     const brandKey = normalizeBrandKey(product.brand);

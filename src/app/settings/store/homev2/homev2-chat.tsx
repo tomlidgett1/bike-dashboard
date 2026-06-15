@@ -26,7 +26,7 @@ import {
   GenieThinkingDetailSections,
 } from "@/components/genie/genie-thinking-detail-sections";
 import type { GenieStoreProductPreview } from "@/lib/genie/store-product-previews";
-import { HomeV2MetricsCards } from "@/components/settings/homev2-metrics-cards";
+import { HomePageQuietLayout } from "@/components/settings/home-page-design-explorer";
 import type {
   GenieAnalysisPlanPayload,
   GenieAnalysisQueryPayload,
@@ -1545,15 +1545,10 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
         </div>
       ) : null}
       {!hasStarted ? (
-        <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center gap-7 px-6 py-10">
-          <h1 className="max-w-2xl text-center text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-            Welcome, today is {todayLabel}
-          </h1>
-
-          <HomeV2MetricsCards />
-
-          <div className="w-full max-w-3xl">
-            <div className="mb-2 flex items-center justify-between gap-2">
+        <HomePageQuietLayout
+          todayLabel={todayLabel}
+          toolbar={
+            <div className="flex items-center justify-between gap-2">
               <ConversationHistoryDropdown
                 conversations={conversations}
                 activeConversationId={activeConversationId}
@@ -1566,22 +1561,26 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
                 <GenieIntegrationAvatars />
               </div>
             </div>
-            <PromptQueueList
-              items={queuedPrompts}
-              onUpdate={updateQueuedPrompt}
-              onDelete={deleteQueuedPrompt}
-            />
-            <HomeV2ChatInput
-              value={input}
-              isRunning={isLoading}
-              onChange={setInput}
-              onSubmit={() => submitPrompt()}
-              onStop={stopGeneration}
-              endAccessory={gmailConnectAccessory}
-              onFileSelected={(file) => void uploadInvoicePdf(file)}
-            />
-          </div>
-        </div>
+          }
+          input={
+            <>
+              <PromptQueueList
+                items={queuedPrompts}
+                onUpdate={updateQueuedPrompt}
+                onDelete={deleteQueuedPrompt}
+              />
+              <HomeV2ChatInput
+                value={input}
+                isRunning={isLoading}
+                onChange={setInput}
+                onSubmit={() => submitPrompt()}
+                onStop={stopGeneration}
+                endAccessory={gmailConnectAccessory}
+                onFileSelected={(file) => void uploadInvoicePdf(file)}
+              />
+            </>
+          }
+        />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-6">

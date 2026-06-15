@@ -257,30 +257,59 @@
     color-scheme: light;
   }
 
+  html:has(.dashboard-shell) {
+    --dashboard-header-bg: #5c5c5c;
+    --dashboard-header-fg: rgba(255, 255, 255, 0.92);
+    --dashboard-header-control-bg: #ffffff;
+    --dashboard-header-control-border: rgba(0, 0, 0, 0.16);
+    --dashboard-header-control-fg: #171717;
+    --dashboard-header-control-hover-bg: rgba(0, 0, 0, 0.05);
+    --dashboard-header-control-hover-fg: #000000;
+    --dashboard-header-control-active-bg: rgba(0, 0, 0, 0.08);
+    --dashboard-header-logo-filter: none;
+    color-scheme: light;
+  }
+
   html:has(.dashboard-shell),
   html:has(.dashboard-shell) body,
   html.dark:has(.dashboard-shell),
   html.dark:has(.dashboard-shell) body {
     background-color: var(--dashboard-header-bg, #5c5c5c) !important;
-    color-scheme: light;
   }
 
   .dashboard-shell {
-    --dashboard-header-bg: #5c5c5c;
-    --dashboard-header-fg: rgba(255, 255, 255, 0.92);
-    --dashboard-header-control-bg: rgba(255, 255, 255, 0.1);
-    --dashboard-header-control-border: rgba(255, 255, 255, 0.22);
-    --dashboard-header-control-fg: rgba(255, 255, 255, 0.84);
-    --dashboard-header-control-hover-bg: rgba(255, 255, 255, 0.16);
-    --dashboard-header-control-hover-fg: #ffffff;
-    --dashboard-header-control-active-bg: rgba(255, 255, 255, 0.22);
-    --dashboard-header-logo-filter: brightness(0) invert(1);
     background-color: var(--dashboard-header-bg, #5c5c5c);
   }
 
   .dashboard-header {
     background-color: var(--dashboard-header-bg, #5c5c5c);
     color: var(--dashboard-header-fg);
+  }
+
+  .dashboard-header :is(button, a) svg.lucide {
+    color: var(--dashboard-header-control-fg, #171717);
+    stroke-width: 1.5;
+  }
+
+  .dashboard-header[data-store-settings-header] {
+    --dashboard-header-fg: #ffffff;
+    --dashboard-header-control-bg: #ffffff;
+    --dashboard-header-control-border: rgba(0, 0, 0, 0.16);
+    --dashboard-header-control-fg: #171717;
+    --dashboard-header-control-hover-bg: rgba(0, 0, 0, 0.05);
+    --dashboard-header-control-hover-fg: #000000;
+    --dashboard-header-control-active-bg: rgba(0, 0, 0, 0.08);
+  }
+
+  .dashboard-header[data-store-settings-header] :is(button, a).rounded-md,
+  .dashboard-header[data-store-settings-header] :is(button, a).rounded-full {
+    font-weight: 500;
+  }
+
+  .dashboard-shell-body {
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-bottom: 0;
+    border-radius: 1rem 1rem 0 0;
   }
 
   .dashboard-shell-body [data-slot="sidebar-container"] {

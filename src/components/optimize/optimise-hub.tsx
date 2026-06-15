@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { FileSpreadsheet, Layers, Lock, Package, Sparkles } from "lucide-react";
+import { Camera, FileSpreadsheet, Layers, Lock, Package, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   bentoHubCardShellClassName,
@@ -64,6 +64,14 @@ const HUB_CARDS: HubCard[] = [
       "Spot products that are really the same item in different sizes or colours, and combine them into one listing with selectable options.",
     icon: Layers,
     action: { type: "href", href: "/optimize/variants" },
+  },
+  {
+    id: "smart-photos",
+    title: "Smart product photos",
+    description:
+      "Advanced image finder: harvests from multiple searches incl. official brand sites, measures every image, kills zoomed/cropped duplicates, then AI locks a hero plus a clean gallery.",
+    icon: Camera,
+    action: { type: "href", href: "/optimize/images" },
   },
 ];
 

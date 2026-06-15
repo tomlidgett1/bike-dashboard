@@ -22,6 +22,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const body = await request.json().catch(() => ({}));
   const visibilityMode = body.visibilityMode as VisibilityMode;
   const syncTarget = body.syncTarget as SyncTarget;
+  const masterProductId = (body.masterProductId as string | undefined) ?? null;
 
   if (!VISIBILITY.includes(visibilityMode)) {
     return NextResponse.json({ error: "Invalid visibility mode" }, { status: 400 });
@@ -56,6 +57,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     visibilityMode,
     syncTarget,
     lightspeedCategoryId,
+    masterProductId,
   });
 
   if (!result.ok) {

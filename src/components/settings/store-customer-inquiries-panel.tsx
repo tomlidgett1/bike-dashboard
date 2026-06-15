@@ -1,14 +1,23 @@
 "use client";
 
-import { Loader2, Mail, Send, UserX } from "lucide-react";
+import { Loader2, Mail, RefreshCw, Send, UserX } from "lucide-react";
 import { GmailLogo } from "@/components/genie/gmail-logo";
 import { Button } from "@/components/ui/button";
-import { DesignComposerRail } from "@/components/settings/customer-inquiries/design-composer-rail";
-import { useInquiriesController } from "@/components/settings/customer-inquiries/use-inquiries-controller";
+import {
+  CustomerEnquiriesPageHeader,
+  storeSettingsHeaderActionClass,
+  storeSettingsPageChromeClass,
+  storeSettingsPageHeaderNudgeClass,
+} from "@/components/settings/actions-page-header";
+import { InboxFilterTabs } from "@/components/settings/customer-inquiries/inbox-filter-tabs";
+import { InquirySlidePanel } from "@/components/settings/customer-inquiries/inquiry-slide-panel";
+import { UnifiedInboxTable } from "@/components/settings/customer-inquiries/unified-inbox-table";
+import { useUnifiedInboxController } from "@/components/settings/customer-inquiries/use-unified-inbox-controller";
+import { cn } from "@/lib/utils";
 
 function InquiriesGmailStatusLoading() {
   return (
-    <div className="flex h-full min-h-0 items-center justify-center bg-[#f6f6f4] p-6">
+    <div className="flex h-full min-h-0 items-center justify-center bg-white p-6">
       <div className="flex items-center gap-2 text-sm text-gray-500">
         <Loader2 className="h-4 w-4 animate-spin" />
         Loading enquiries…
@@ -18,7 +27,7 @@ function InquiriesGmailStatusLoading() {
 }
 
 export function StoreCustomerInquiriesPanel() {
-  const c = useInquiriesController();
+  const c = useUnifiedInboxController();
 
   if (!c.gmailStatusReady) {
     if (c.loading) {
@@ -26,8 +35,8 @@ export function StoreCustomerInquiriesPanel() {
     }
     if (c.error) {
       return (
-        <div className="flex h-full min-h-0 items-center justify-center bg-[#f6f6f4] p-6">
-          <div className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-600">
+        <div className="flex h-full min-h-0 items-center justify-center bg-white p-6">
+          <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white p-6 text-center text-sm text-gray-600">
             {c.error}
           </div>
         </div>
@@ -36,11 +45,11 @@ export function StoreCustomerInquiriesPanel() {
     return <InquiriesGmailStatusLoading />;
   }
 
-  if (c.gmailConfigured && !c.gmailConnected) {
+  if (c.gmailConfigured && !c.gmailConnected && !c.nestConfigured) {
     return (
-      <div className="flex h-full min-h-0 items-center justify-center bg-[#f6f6f4] p-6">
-        <div className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-8 text-center">
-          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-gray-50 ring-1 ring-black/[0.06]">
+      <div className="flex h-full min-h-0 items-center justify-center bg-white p-6">
+        <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white p-8 text-center">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-md border border-gray-200 bg-white">
             <GmailLogo />
           </span>
           <p className="mt-4 text-base font-medium text-gray-900">Connect your store inbox</p>
@@ -66,10 +75,10 @@ export function StoreCustomerInquiriesPanel() {
     );
   }
 
-  if (!c.gmailConfigured) {
+  if (!c.gmailConfigured && !c.nestConfigured) {
     return (
-      <div className="flex h-full min-h-0 items-center justify-center bg-[#f6f6f4] p-6">
-        <div className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-600">
+      <div className="flex h-full min-h-0 items-center justify-center bg-white p-6">
+        <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white p-6 text-center text-sm text-gray-600">
           Gmail integration is not configured for this environment.
         </div>
       </div>
@@ -77,11 +86,68 @@ export function StoreCustomerInquiriesPanel() {
   }
 
   return (
-    <>
-      <DesignComposerRail c={c} />
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
+      <div className={cn("shrink-0 bg-white", storeSettingsPageChromeClass)}>
+        <CustomerEnquiriesPageHeader
+          className={storeSettingsPageHeaderNudgeClass}
+          composeDisabled={!c.nestConfigured}
+          onMessageStarted={c.handleNestStarted}
+          trailingActions={
+            <>
+              {c.gmailConfigured && !c.gmailConnected ? (
+                <button
+                  type="button"
+                  onClick={() => void c.handleConnectGmail()}
+                  disabled={c.connecting}
+                  className={storeSettingsHeaderActionClass(false, c.connecting)}
+                >
+                  {c.connecting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Mail className="h-3.5 w-3.5" />
+                  )}
+                  Connect Gmail
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => void c.handleRefreshAll()}
+                disabled={c.refreshing || c.listLoading}
+                className={storeSettingsHeaderActionClass(false, c.refreshing || c.listLoading)}
+              >
+                {c.refreshing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                Refresh
+              </button>
+            </>
+          }
+        />
+
+        <div
+          className={cn(
+            "flex shrink-0 items-center border-b border-gray-200 pb-2",
+            storeSettingsPageHeaderNudgeClass,
+          )}
+        >
+          <InboxFilterTabs
+            value={c.inboxTab}
+            onChange={c.setInboxTab}
+            counts={c.tabCounts}
+          />
+        </div>
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <UnifiedInboxTable c={c} />
+      </div>
+
+      <InquirySlidePanel c={c} />
 
       {c.sendConfirmOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+        <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
           <button
             type="button"
             aria-label="Close dialog"
@@ -91,7 +157,7 @@ export function StoreCustomerInquiriesPanel() {
           <div
             role="dialog"
             aria-modal="true"
-            className="relative z-10 w-full max-w-lg overflow-hidden rounded-xl border border-gray-200 bg-white p-5 animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out sm:mx-4"
+            className="relative z-10 w-full max-w-lg overflow-hidden rounded-md border border-gray-200 bg-white p-5 animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out sm:mx-4"
           >
             <h3 className="text-base font-semibold text-gray-900">Send this reply?</h3>
             <p className="mt-2 text-sm text-gray-600">
@@ -127,7 +193,7 @@ export function StoreCustomerInquiriesPanel() {
       ) : null}
 
       {c.banConfirmOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+        <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
           <button
             type="button"
             aria-label="Close dialog"
@@ -137,7 +203,7 @@ export function StoreCustomerInquiriesPanel() {
           <div
             role="dialog"
             aria-modal="true"
-            className="relative z-10 w-full max-w-lg overflow-hidden rounded-xl border border-gray-200 bg-white p-5 animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out sm:mx-4"
+            className="relative z-10 w-full max-w-lg overflow-hidden rounded-md border border-gray-200 bg-white p-5 animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out sm:mx-4"
           >
             <h3 className="text-base font-semibold text-gray-900">Ban this sender?</h3>
             <p className="mt-2 text-sm text-gray-600">
@@ -171,6 +237,6 @@ export function StoreCustomerInquiriesPanel() {
           </div>
         </div>
       ) : null}
-    </>
+    </div>
   );
 }

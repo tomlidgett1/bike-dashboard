@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
 import { isStoreDashboardPath } from "@/lib/routes/store-dashboard";
-import { topbarOutlinePillClass } from "@/components/layout/topbar-nav-pills";
+import { topbarIconButtonClass } from "@/components/layout/topbar-nav-pills";
 import { cn } from "@/lib/utils";
 
 const MIN_FEEDBACK_LENGTH = 30;
@@ -165,17 +165,17 @@ export function FloatingTomFeedbackButton({
         onClick={() => setOpen(true)}
         className={cn(
           placement === "header"
-            ? topbarOutlinePillClass
+            ? topbarIconButtonClass
             : "pointer-events-auto inline-flex items-center gap-2 rounded-[28px] border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-800 shadow-md transition-colors hover:bg-gray-50",
         )}
         aria-label={placement === "header" ? "Feedback" : "Tom feedback"}
       >
         <MessageSquarePlus
           className={cn(
-            placement === "header" ? "size-3.5 opacity-80" : "size-4 text-gray-600",
+            placement === "header" ? "size-4" : "size-4 text-gray-600",
           )}
         />
-        {placement === "header" ? "Feedback" : "Tom feedback"}
+        {placement === "header" ? null : "Tom feedback"}
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>

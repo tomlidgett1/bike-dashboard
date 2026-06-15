@@ -1,4 +1,5 @@
 import { fetchCustomerSalesSummary } from '@/lib/customer-inquiries/customer-sales-summary'
+import { findLightspeedCustomerForInquiry } from '@/lib/services/lightspeed/customer-search'
 import { createLightspeedClient } from '@/lib/services/lightspeed'
 import type { LightspeedCustomer } from '@/lib/services/lightspeed/types'
 import type { LightspeedInquiryContext } from '@/lib/customer-inquiries/types'
@@ -24,77 +25,18 @@ function customerEmails(customer: LightspeedCustomer): string[] {
 }
 
 function customerPhone(customer: LightspeedCustomer): string | null {
-  const phones = ensureArray(customer.Contact?.Phones?.ContactPhone)
-  const mobile = phones.find((phone) =>
+  const contact = customer.Contact
+  const nested = ensureArray(contact?.Phones?.ContactPhone)
+  const mobile = nested.find((phone) =>
     String(phone.useType ?? '').toLowerCase().includes('mobile'),
   )
   if (mobile?.number?.trim()) return mobile.number.trim()
-  const first = phones.find((phone) => phone.number?.trim())
+  const flat = [contact?.mobile, contact?.phoneHome, contact?.phoneWork]
+    .map((value) => String(value ?? '').trim())
+    .find(Boolean)
+  if (flat) return flat
+  const first = nested.find((phone) => phone.number?.trim())
   return first?.number?.trim() ?? null
-}
-
-async function findCustomerByEmailOrName(
-  userId: string,
-  senderEmail: string,
-  senderName: string,
-): Promise<LightspeedCustomer | null> {
-  const client = createLightspeedClient(userId)
-  const customerById = new Map<string, LightspeedCustomer>()
-  const baseParams = {
-    load_relations: '["Contact"]',
-    archived: 'false' as const,
-  }
-
-  const fetchCustomers = async (
-    params: Record<string, string | number | undefined>,
-    maxPages = 2,
-  ) => {
-    const result = await client.getAllCustomersCursor({ ...baseParams, ...params }, {
-      maxPages,
-      limit: 100,
-    })
-    return result.customers
-  }
-
-  const email = senderEmail.trim().toLowerCase()
-  const name = senderName.trim()
-
-  if (email) {
-    const fallbackCustomers = await fetchCustomers({}, 6)
-    for (const customer of fallbackCustomers) {
-      if (customerEmails(customer).includes(email)) {
-        customerById.set(String(customer.customerID), customer)
-      }
-    }
-  }
-
-  if (customerById.size === 0 && name.length >= 2) {
-    const tokens = name.split(/\s+/).filter((token) => token.length >= 2).slice(0, 3)
-    const focusedResults = await Promise.all(
-      tokens.flatMap((token) => [
-        fetchCustomers({ firstName: `~,%${token}%` }),
-        fetchCustomers({ lastName: `~,%${token}%` }),
-      ]),
-    )
-    for (const customers of focusedResults) {
-      for (const customer of customers) {
-        customerById.set(String(customer.customerID), customer)
-      }
-    }
-  }
-
-  const ranked = Array.from(customerById.values())
-    .map((customer) => {
-      let score = 0
-      if (email && customerEmails(customer).includes(email)) score += 200
-      const fullName = customerName(customer).toLowerCase()
-      if (name && fullName.includes(name.toLowerCase())) score += 80
-      return { customer, score }
-    })
-    .filter((row) => row.score > 0)
-    .sort((a, b) => b.score - a.score)
-
-  return ranked[0]?.customer ?? null
 }
 
 export async function buildLightspeedInquiryContext(args: {
@@ -103,11 +45,10 @@ export async function buildLightspeedInquiryContext(args: {
   senderName: string
 }): Promise<LightspeedInquiryContext> {
   try {
-    const customer = await findCustomerByEmailOrName(
-      args.userId,
-      args.senderEmail,
-      args.senderName,
-    )
+    const customer = await findLightspeedCustomerForInquiry(args.userId, {
+      senderEmail: args.senderEmail,
+      senderName: args.senderName,
+    })
 
     if (!customer) {
       return {

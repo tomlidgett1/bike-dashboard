@@ -15,7 +15,7 @@ export default function StoreNestPage() {
   return (
     <PageContainer
       size="full"
-      className="flex h-[calc(100svh-3rem)] min-h-0 flex-col overflow-hidden !p-0"
+      className="flex h-full min-h-0 flex-col overflow-hidden !p-0 !pt-2.5"
     >
       <StoreNestMessagesPanel />
     </PageContainer>

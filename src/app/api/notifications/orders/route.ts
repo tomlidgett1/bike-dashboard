@@ -13,8 +13,6 @@ type ProductImageRow = {
   cloudinary_public_id: string | null;
   cloudinary_url: string | null;
   external_url: string | null;
-  thumbnail_url: string | null;
-  card_url: string | null;
   is_primary: boolean | null;
   sort_order: number | null;
 };
@@ -84,9 +82,7 @@ function resolveNotificationThumbnail(image: ProductImageRow | null | undefined)
 
   const resolved = resolveProductImage(image);
   return (
-    image.thumbnail_url ||
     resolved?.thumbnail_url ||
-    image.card_url ||
     resolved?.card_url ||
     image.external_url ||
     image.cloudinary_url ||
@@ -289,7 +285,7 @@ export async function GET(request: NextRequest) {
         ? supabase
             .from('product_images')
             .select(
-              'product_id, canonical_product_id, cloudinary_public_id, cloudinary_url, external_url, thumbnail_url, card_url, is_primary, sort_order'
+              'product_id, canonical_product_id, cloudinary_public_id, cloudinary_url, external_url, is_primary, sort_order'
             )
             .in('product_id', productIds)
             .eq('approval_status', 'approved')
@@ -298,7 +294,7 @@ export async function GET(request: NextRequest) {
         ? supabase
             .from('product_images')
             .select(
-              'product_id, canonical_product_id, cloudinary_public_id, cloudinary_url, external_url, thumbnail_url, card_url, is_primary, sort_order'
+              'product_id, canonical_product_id, cloudinary_public_id, cloudinary_url, external_url, is_primary, sort_order'
             )
             .in('canonical_product_id', canonicalProductIds)
             .eq('approval_status', 'approved')

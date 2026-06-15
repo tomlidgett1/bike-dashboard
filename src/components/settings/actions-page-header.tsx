@@ -2,28 +2,148 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, Loader2, Search, Send, X } from "lucide-react";
+import { ChevronDown, Inbox, LayoutGrid, Loader2, MessageSquare, Search, Send, X } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { NestLogo } from "@/components/genie/nest-logo";
-import { queueHomeV2Prompt } from "@/lib/genie/homev2-navigation";
 import { searchNestCustomers, startNestMessage } from "@/lib/nest/messages-client";
-import type { NestLightspeedCustomer } from "@/lib/nest/types";
+import type { NestConversationMessage, NestLightspeedCustomer } from "@/lib/nest/types";
 import {
   bentoOuterWrapClassName,
   getBentoShellStyles,
 } from "@/components/settings/bento-variant-styles";
 import { cn } from "@/lib/utils";
 
+/** Matches Actions page horizontal rhythm (PageContainer + header nudge). */
+export const storeSettingsPageChromeClass = "px-2 sm:px-3 lg:px-4";
+export const storeSettingsPageHeaderNudgeClass = "px-0.5";
+
 const BENTO_RADIUS = "rounded-[32px]";
 const POPUP_SPRING = { type: "spring" as const, stiffness: 420, damping: 30, mass: 0.85 };
 const bentoShell = getBentoShellStyles("light-beige-floating");
 
-function headerActionButtonClassName(active?: boolean) {
+export function storeSettingsHeaderActionClass(active?: boolean, disabled?: boolean) {
   return cn(
-    "inline-flex items-center gap-1.5 border border-gray-200/80 bg-white px-4 py-2.5 text-sm font-medium text-gray-950 shadow-sm transition-colors hover:bg-gray-50",
-    BENTO_RADIUS,
+    "inline-flex h-8 items-center gap-1.5 rounded-md border border-gray-200/80 bg-white px-3 text-sm font-medium text-gray-950 shadow-sm transition-colors hover:bg-gray-50",
     active && "border-gray-300 bg-gray-50",
+    disabled && "cursor-not-allowed opacity-50 hover:bg-white",
+  );
+}
+
+function headerActionButtonClassName(active?: boolean, disabled?: boolean) {
+  return storeSettingsHeaderActionClass(active, disabled);
+}
+
+export function StoreSettingsPageHeader({
+  title,
+  icon: Icon,
+  className,
+  composeDisabled = false,
+  onMessageStarted,
+  trailingActions,
+}: {
+  title: string;
+  icon: LucideIcon;
+  className?: string;
+  composeDisabled?: boolean;
+  onMessageStarted?: (chatId: string, message: NestConversationMessage) => void;
+  trailingActions?: React.ReactNode;
+}) {
+  const [nestOpen, setNestOpen] = React.useState(false);
+  const newMessageRef = React.useRef<HTMLButtonElement>(null);
+
+  return (
+    <div className={cn("sticky top-0 z-30 w-full bg-white pb-2", className)}>
+      <div className="flex min-h-9 items-center justify-between gap-3">
+        <h1 className="flex min-w-0 items-center gap-2 text-lg font-semibold tracking-tight text-foreground">
+          <Icon className="h-[18px] w-[18px] shrink-0 text-foreground" aria-hidden />
+          {title}
+        </h1>
+
+        <div className="flex shrink-0 items-center gap-2">
+          {trailingActions}
+          <div className="relative">
+            <button
+              ref={newMessageRef}
+              type="button"
+              onClick={() => {
+                if (composeDisabled) return;
+                setNestOpen((current) => !current);
+              }}
+              disabled={composeDisabled}
+              className={headerActionButtonClassName(nestOpen, composeDisabled)}
+              aria-expanded={nestOpen}
+            >
+              <NestLogo className="h-3.5 w-3.5" />
+              New message
+              <ChevronDown
+                className={cn(
+                  "h-3.5 w-3.5 text-gray-400 transition-transform duration-200",
+                  nestOpen && "rotate-180",
+                )}
+              />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <NestComposePopup
+        open={nestOpen}
+        onClose={() => setNestOpen(false)}
+        anchorRef={newMessageRef}
+        onStarted={onMessageStarted}
+      />
+    </div>
+  );
+}
+
+export function ActionsPageHeader({ className }: { className?: string }) {
+  return <StoreSettingsPageHeader title="Actions" icon={LayoutGrid} className={className} />;
+}
+
+export function NestPageHeader({
+  className,
+  composeDisabled,
+  onMessageStarted,
+  trailingActions,
+}: {
+  className?: string;
+  composeDisabled?: boolean;
+  onMessageStarted?: (chatId: string, message: NestConversationMessage) => void;
+  trailingActions?: React.ReactNode;
+}) {
+  return (
+    <StoreSettingsPageHeader
+      title="Nest"
+      icon={MessageSquare}
+      className={className}
+      composeDisabled={composeDisabled}
+      onMessageStarted={onMessageStarted}
+      trailingActions={trailingActions}
+    />
+  );
+}
+
+export function CustomerEnquiriesPageHeader({
+  className,
+  composeDisabled,
+  onMessageStarted,
+  trailingActions,
+}: {
+  className?: string;
+  composeDisabled?: boolean;
+  onMessageStarted?: (chatId: string, message: NestConversationMessage) => void;
+  trailingActions?: React.ReactNode;
+}) {
+  return (
+    <StoreSettingsPageHeader
+      title="Customer enquiries"
+      icon={Inbox}
+      className={className}
+      composeDisabled={composeDisabled}
+      onMessageStarted={onMessageStarted}
+      trailingActions={trailingActions}
+    />
   );
 }
 
@@ -61,10 +181,12 @@ function NestComposePopup({
   open,
   onClose,
   anchorRef,
+  onStarted,
 }: {
   open: boolean;
   onClose: () => void;
   anchorRef: React.RefObject<HTMLButtonElement | null>;
+  onStarted?: (chatId: string, message: NestConversationMessage) => void;
 }) {
   const position = useAnchoredPopupPosition(open, anchorRef);
   const [mounted, setMounted] = React.useState(false);
@@ -147,7 +269,12 @@ function NestComposePopup({
     setSending(true);
     setError(null);
     try {
-      await startNestMessage(mobileValue, content, selectedCustomerName || undefined);
+      const result = await startNestMessage(
+        mobileValue,
+        content,
+        selectedCustomerName || undefined,
+      );
+      onStarted?.(result.chatId, result.message);
       setSent(true);
       window.setTimeout(() => onClose(), 900);
     } catch (err) {
@@ -420,73 +547,5 @@ function NestComposePopup({
       ) : null}
     </AnimatePresence>,
     document.body,
-  );
-}
-
-export function ActionsPageHeader({ className }: { className?: string }) {
-  const router = useRouter();
-  const [genieInput, setGenieInput] = React.useState("");
-  const [nestOpen, setNestOpen] = React.useState(false);
-  const newMessageRef = React.useRef<HTMLButtonElement>(null);
-
-  const submitGeniePrompt = React.useCallback(() => {
-    const trimmed = genieInput.trim();
-    if (!trimmed) return;
-    if (!queueHomeV2Prompt(trimmed)) return;
-    setGenieInput("");
-    router.push("/settings/store/home");
-  }, [genieInput, router]);
-
-  return (
-    <div className={cn("sticky top-0 z-30 w-full pb-2", className)}>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative flex items-center">
-          <button
-            ref={newMessageRef}
-            type="button"
-            onClick={() => setNestOpen((current) => !current)}
-            className={headerActionButtonClassName(nestOpen)}
-            aria-expanded={nestOpen}
-          >
-            <NestLogo className="h-4 w-4" />
-            New message
-            <ChevronDown
-              className={cn(
-                "h-4 w-4 text-gray-400 transition-transform duration-200",
-                nestOpen && "rotate-180",
-              )}
-            />
-          </button>
-        </div>
-
-        <div className="w-full sm:max-w-md sm:shrink-0 sm:ml-auto">
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              submitGeniePrompt();
-            }}
-            className={cn(
-              "flex items-center gap-2 border border-gray-200/90 bg-white px-4 py-2.5 shadow-sm ring-1 ring-black/[0.04]",
-              BENTO_RADIUS,
-            )}
-          >
-            <Search className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
-            <input
-              type="text"
-              value={genieInput}
-              onChange={(event) => setGenieInput(event.target.value)}
-              placeholder="Ask Genie anything"
-              className="min-w-0 flex-1 bg-transparent text-sm text-gray-950 outline-none placeholder:text-gray-400"
-            />
-          </form>
-        </div>
-      </div>
-
-      <NestComposePopup
-        open={nestOpen}
-        onClose={() => setNestOpen(false)}
-        anchorRef={newMessageRef}
-      />
-    </div>
   );
 }

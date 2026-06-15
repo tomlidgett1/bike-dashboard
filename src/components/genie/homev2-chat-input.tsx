@@ -9,6 +9,7 @@ export function HomeV2ChatInput({
   isRunning,
   compact,
   floating,
+  header,
   onChange,
   onSubmit,
   onStop,
@@ -21,6 +22,8 @@ export function HomeV2ChatInput({
   isRunning?: boolean;
   compact?: boolean;
   floating?: boolean;
+  /** Compact single-line variant for the store settings dashboard header. */
+  header?: boolean;
   onChange: (value: string) => void;
   onSubmit: () => void;
   onStop?: () => void;
@@ -58,25 +61,28 @@ export function HomeV2ChatInput({
     >
       <div
         className={cn(
-          "flex w-full items-end gap-1 rounded-full px-2 py-2",
-          compact ? "min-h-[56px]" : "min-h-[60px]",
+          "flex w-full gap-1 rounded-full px-2",
+          header ? "min-h-[40px] items-center py-1" : "items-end py-2",
+          !header && (compact ? "min-h-[56px]" : "min-h-[60px]"),
           floating
             ? "border-0 bg-transparent shadow-none"
             : "border border-gray-200 bg-white shadow-sm",
         )}
       >
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className={cn(
-            "mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-700 transition-colors",
-            floating ? "hover:bg-gray-200/80" : "hover:bg-gray-100",
-          )}
-          aria-label={onFileSelected ? "Attach a supplier invoice PDF" : "Add"}
-          title={onFileSelected ? "Attach a supplier invoice PDF" : undefined}
-        >
-          <Plus className="h-5 w-5" />
-        </button>
+        {!header ? (
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className={cn(
+              "mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-700 transition-colors",
+              floating ? "hover:bg-gray-200/80" : "hover:bg-gray-100",
+            )}
+            aria-label={onFileSelected ? "Attach a supplier invoice PDF" : "Add"}
+            title={onFileSelected ? "Attach a supplier invoice PDF" : undefined}
+          >
+            <Plus className="h-5 w-5" />
+          </button>
+        ) : null}
         {onFileSelected ? (
           <input
             ref={fileInputRef}
@@ -107,7 +113,12 @@ export function HomeV2ChatInput({
           }}
           rows={1}
           placeholder={isRunning ? "Queue another prompt..." : placeholder}
-          className="max-h-[132px] min-h-[36px] flex-1 resize-none border-0 bg-transparent px-1 py-2 text-[15px] leading-snug text-foreground outline-none placeholder:text-gray-500"
+          className={cn(
+            "flex-1 resize-none border-0 bg-transparent px-1 text-foreground outline-none placeholder:text-gray-500",
+            header
+              ? "min-h-[28px] max-h-[28px] py-1 text-sm leading-snug"
+              : "max-h-[132px] min-h-[36px] py-2 text-[15px] leading-snug",
+          )}
         />
 
         {endAccessory}
@@ -123,7 +134,8 @@ export function HomeV2ChatInput({
             if (hasText) onSubmit();
           }}
           className={cn(
-            "mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors",
+            "flex shrink-0 items-center justify-center rounded-full transition-colors",
+            header ? "h-8 w-8" : "mb-0.5 h-9 w-9",
             canAct ? "bg-gray-900 text-white hover:bg-gray-800" : "bg-gray-200 text-gray-400",
           )}
           aria-label={queueMode ? "Add to queue" : isRunning ? "Stop response" : "Send message"}
