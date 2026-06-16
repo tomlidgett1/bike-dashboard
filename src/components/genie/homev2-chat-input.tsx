@@ -38,6 +38,7 @@ export function HomeV2ChatInput({
   onFileSelected?: (file: File) => void;
 }) {
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const headerInputRef = React.useRef<HTMLInputElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const hasText = value.trim().length > 0;
   const queueMode = isRunning && hasText;
@@ -47,10 +48,10 @@ export function HomeV2ChatInput({
 
   React.useEffect(() => {
     const textarea = textareaRef.current;
-    if (!textarea) return;
+    if (!textarea || header) return;
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(textarea.scrollHeight, compact ? 132 : 160)}px`;
-  }, [compact, value]);
+  }, [compact, header, value]);
 
   return (
     <form
@@ -67,13 +68,21 @@ export function HomeV2ChatInput({
       <div
         className={cn(
           "flex w-full gap-1 rounded-full px-2",
-          header ? "min-h-[36px] items-center py-0.5" : "items-end py-2",
+          header ? "relative h-9 items-center py-0" : "items-end py-2",
           !header && (compact ? "min-h-[56px]" : "min-h-[60px]"),
           floating
             ? "border-0 bg-transparent shadow-none"
             : "border border-gray-200 bg-white shadow-sm",
         )}
       >
+        {showShimmerPlaceholder ? (
+          <span
+            aria-hidden
+            className="genie-header-search-placeholder pointer-events-none absolute inset-0 flex items-center justify-center truncate px-10 text-center text-sm text-gray-500"
+          >
+            {placeholderLabel}
+          </span>
+        ) : null}
         {!header ? (
           <button
             type="button"
@@ -102,38 +111,54 @@ export function HomeV2ChatInput({
           />
         ) : null}
 
-        <div className={cn("relative min-w-0", header ? "flex-1" : "contents")}>
-          <textarea
-            ref={textareaRef}
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                if (isRunning && !hasText) {
-                  onStop?.();
-                  return;
+        <div
+          className={cn(
+            "relative min-w-0",
+            header ? "flex h-full flex-1 items-center self-stretch" : "contents",
+          )}
+        >
+          {header ? (
+            <input
+              ref={headerInputRef}
+              type="text"
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  if (isRunning && !hasText) {
+                    onStop?.();
+                    return;
+                  }
+                  if (hasText) onSubmit();
                 }
-                if (hasText) onSubmit();
-              }
-            }}
-            rows={1}
-            placeholder={showShimmerPlaceholder ? " " : placeholderLabel}
-            className={cn(
-              "resize-none border-0 bg-transparent px-1 text-foreground outline-none placeholder:text-gray-500",
-              header
-                ? "min-h-[26px] max-h-[26px] w-full flex-1 py-0.5 text-sm leading-snug"
-                : "max-h-[132px] min-h-[36px] flex-1 py-2 text-[15px] leading-snug",
-            )}
-          />
-          {showShimmerPlaceholder ? (
-            <span
-              aria-hidden
-              className="genie-header-search-placeholder pointer-events-none absolute left-1 top-1/2 max-w-[calc(100%-0.5rem)] -translate-y-1/2 truncate text-sm text-gray-500"
-            >
-              {placeholderLabel}
-            </span>
-          ) : null}
+              }}
+              placeholder={showShimmerPlaceholder ? " " : placeholderLabel}
+              className={cn(
+                "h-full w-full min-w-0 appearance-none border-0 bg-transparent p-0 px-1 text-sm text-foreground outline-none placeholder:text-gray-500",
+                hasText ? "text-left" : "text-center",
+              )}
+            />
+          ) : (
+            <textarea
+              ref={textareaRef}
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  if (isRunning && !hasText) {
+                    onStop?.();
+                    return;
+                  }
+                  if (hasText) onSubmit();
+                }
+              }}
+              rows={1}
+              placeholder={placeholderLabel}
+              className="max-h-[132px] min-h-[36px] flex-1 resize-none border-0 bg-transparent px-1 py-2 text-[15px] leading-snug text-foreground outline-none placeholder:text-gray-500"
+            />
+          )}
         </div>
 
         {endAccessory}

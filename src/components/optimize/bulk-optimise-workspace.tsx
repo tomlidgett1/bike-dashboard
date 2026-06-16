@@ -33,7 +33,6 @@ import {
   type OptimizerProduct,
   IMG_BUSY,
   LightboxOverlay,
-  buildSpeedSearchQuery,
   emptyImageRun,
   fetchOptimizerProductsBySearch,
   hasDesc,
@@ -41,7 +40,6 @@ import {
   hasSpecs,
   hasTitle,
   readSSE,
-  toSpeedProduct,
   useLightbox,
 } from "@/components/optimize/optimizer-shared";
 import type { SpeedSearchCandidate } from "@/lib/admin/image-qa-speed";
@@ -187,6 +185,21 @@ async function fetchProductsByIds(ids: string[]): Promise<BulkProduct[]> {
   return out.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
 }
 
+function saveSerperCache(
+  canonicalProductId: string,
+  payload: {
+    searchQuery: string;
+    candidates: ImageRun["candidates"];
+    aiSelection: SerperAiSelectionCache | null;
+  },
+) {
+  void fetch("/api/optimize/serper-cache", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ canonicalProductId, ...payload }),
+  });
+}
+
 async function fetchSerperCaches(
   canonicalIds: string[],
 ): Promise<Record<string, SerperImageCacheEntry>> {
@@ -206,21 +219,6 @@ async function fetchSerperCaches(
   return caches;
 }
 
-function saveSerperCache(
-  canonicalProductId: string,
-  payload: {
-    searchQuery: string;
-    candidates: ImageRun["candidates"];
-    aiSelection: SerperAiSelectionCache | null;
-  },
-) {
-  void fetch("/api/optimize/serper-cache", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ canonicalProductId, ...payload }),
-  });
-}
-
 function imageRunToSerperAiSelection(run: ImageRun): SerperAiSelectionCache | null {
   if (!run.primaryUrl || run.selectedCandidates.length === 0) return null;
 
@@ -229,21 +227,9 @@ function imageRunToSerperAiSelection(run: ImageRun): SerperAiSelectionCache | nu
     selectedUrls: run.selectedUrls,
     primaryUrl: run.primaryUrl,
     photoSystem: run.photoSystem,
+    smartPhotoPayloadKey: run.smartPhotoPayloadKey,
     reasoning: run.reasoning,
   };
-}
-
-function isSmartCachedRun(
-  run: ReturnType<typeof imageRunFromSerperCache>,
-): run is NonNullable<ReturnType<typeof imageRunFromSerperCache>> & {
-  photoSystem: typeof SMART_PHOTO_SYSTEM;
-} {
-  return run?.photoSystem === SMART_PHOTO_SYSTEM;
-}
-
-function hasAdditionalSmartCandidates(run: ReturnType<typeof imageRunFromSerperCache>) {
-  if (!isSmartCachedRun(run)) return false;
-  return run.candidates.some((candidate) => !run.selectedUrls.includes(candidate.url));
 }
 
 function smartPhotoResultToCandidates(result: HeroPipelineResult): SpeedSearchCandidate[] {
@@ -282,6 +268,56 @@ function smartPhotoResultToCandidates(result: HeroPipelineResult): SpeedSearchCa
   candidates.forEach((candidate, index) => addCandidate(candidate, selected.length + index));
 
   return [...byUrl.values()];
+}
+
+function cleanPhotoSearchText(value: string | null | undefined) {
+  return (value ?? "")
+    .replace(/\s*[-–—]\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildSmartPhotoPayload(product: BulkProduct) {
+  const canonical = product.canonical_products;
+  return {
+    name: cleanPhotoSearchText(
+      product.display_name || canonical?.normalized_name || product.description || "Unnamed product",
+    ),
+    brand: cleanPhotoSearchText(canonical?.manufacturer || product.brand) || null,
+    upc: cleanPhotoSearchText(canonical?.upc || product.upc) || null,
+    searchQuery: canonical?.image_review_search_query ?? null,
+    maxImages: 6,
+  };
+}
+
+function buildSmartPhotoPayloadKey(payload: ReturnType<typeof buildSmartPhotoPayload>) {
+  return JSON.stringify({
+    version: 2,
+    name: payload.name,
+    brand: payload.brand,
+    upc: payload.upc,
+    searchQuery: payload.searchQuery,
+    maxImages: payload.maxImages,
+  });
+}
+
+function cachedRunForSmartPayload(
+  entry: SerperImageCacheEntry | null | undefined,
+  payloadKey: string,
+) {
+  if (
+    entry?.aiSelection?.photoSystem !== SMART_PHOTO_SYSTEM ||
+    entry.aiSelection.smartPhotoPayloadKey !== payloadKey
+  ) {
+    return null;
+  }
+
+  const cached = imageRunFromSerperCache(entry);
+  if (!cached || cached.photoSystem !== SMART_PHOTO_SYSTEM) return null;
+  if (!cached.candidates.some((candidate) => !cached.selectedUrls.includes(candidate.url))) {
+    return null;
+  }
+  return cached;
 }
 
 function hasCopyFields(copyFields: CopyBatchFields) {
@@ -480,10 +516,16 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
         nextRun.candidates.length > 0 &&
         (nextRun.phase === "ready" || nextRun.phase === "selecting")
       ) {
+        const payload = buildSmartPhotoPayload(product);
+        const payloadKey = buildSmartPhotoPayloadKey(payload);
         saveSerperCache(product.canonical_product_id, {
-          searchQuery: buildSpeedSearchQuery(toSpeedProduct(product)),
+          searchQuery: payload.searchQuery || payload.name,
           candidates: nextRun.candidates,
-          aiSelection: imageRunToSerperAiSelection(nextRun),
+          aiSelection: imageRunToSerperAiSelection({
+            ...nextRun,
+            photoSystem: SMART_PHOTO_SYSTEM,
+            smartPhotoPayloadKey: payloadKey,
+          }),
         });
       }
     },
@@ -504,21 +546,20 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
         setImageRuns((prev) => {
           const next = { ...prev };
           for (const product of list) {
-            if (!product.canonical_product_id) continue;
-            if (hasSerperImage(product)) {
-              next[product.id] = emptyImageRun();
-              continue;
-            }
+            if (!product.canonical_product_id || hasSerperImage(product)) continue;
             if (next[product.id] && next[product.id].phase !== "idle") continue;
-            const cached = imageRunFromSerperCache(caches[product.canonical_product_id]);
-            if (hasAdditionalSmartCandidates(cached)) {
-              next[product.id] = { ...emptyImageRun(), ...cached };
-            }
+
+            const payload = buildSmartPhotoPayload(product);
+            const cached = cachedRunForSmartPayload(
+              caches[product.canonical_product_id],
+              buildSmartPhotoPayloadKey(payload),
+            );
+            if (cached) next[product.id] = { ...emptyImageRun(), ...cached };
           }
           return next;
         });
       } catch {
-        /* cache hydration is best-effort */
+        /* Exact-match cache hydration is best-effort. */
       }
     },
     [],
@@ -609,7 +650,11 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
   // ── Photo pipeline ────────────────────────────────────────────────────────
 
   const runImageSearch = React.useCallback(
-    async (product: BulkProduct, cacheEntry?: SerperImageCacheEntry | null) => {
+    async (
+      product: BulkProduct,
+      cacheEntry?: SerperImageCacheEntry | null,
+      options?: { forceFresh?: boolean },
+    ) => {
       if (hasSerperImage(product)) {
         patchImageRun(product.id, emptyImageRun());
         return true;
@@ -624,17 +669,19 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
       }
 
       try {
-        const speedProduct = toSpeedProduct(product);
-        const searchQuery = buildSpeedSearchQuery(speedProduct);
-        let entry = cacheEntry ?? null;
+        const smartPhotoPayload = buildSmartPhotoPayload(product);
+        const smartPhotoPayloadKey = buildSmartPhotoPayloadKey(smartPhotoPayload);
+        let entry = options?.forceFresh ? null : cacheEntry ?? null;
 
-        if (!entry) {
+        if (!entry && !options?.forceFresh) {
           const caches = await fetchSerperCaches([product.canonical_product_id]);
           entry = caches[product.canonical_product_id] ?? null;
         }
 
-        const cachedRun = imageRunFromSerperCache(entry ?? undefined);
-        if (cachedRun?.phase === "ready" && hasAdditionalSmartCandidates(cachedRun)) {
+        const cachedRun = options?.forceFresh
+          ? null
+          : cachedRunForSmartPayload(entry, smartPhotoPayloadKey);
+        if (cachedRun) {
           patchImageRun(product.id, { ...emptyImageRun(), ...cachedRun });
           return true;
         }
@@ -643,13 +690,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
         const response = await fetch("/api/optimize/hero-images", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: speedProduct.display_name || speedProduct.normalized_name || speedProduct.store_product_name,
-            brand: speedProduct.manufacturer || null,
-            upc: speedProduct.upc || null,
-            searchQuery,
-            maxImages: 6,
-          }),
+          body: JSON.stringify(smartPhotoPayload),
         });
 
         const json = (await response.json().catch(() => ({}))) as HeroPipelineResult & {
@@ -677,7 +718,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
             photoSystem: SMART_PHOTO_SYSTEM,
           });
           saveSerperCache(product.canonical_product_id, {
-            searchQuery,
+            searchQuery: smartPhotoPayload.searchQuery || smartPhotoPayload.name,
             candidates: [],
             aiSelection: null,
           });
@@ -691,17 +732,19 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
           selectedUrls,
           primaryUrl,
           photoSystem: SMART_PHOTO_SYSTEM,
+          smartPhotoPayloadKey,
           reasoning: json.reasoning,
           error: undefined,
         });
         saveSerperCache(product.canonical_product_id, {
-          searchQuery,
+          searchQuery: smartPhotoPayload.searchQuery || smartPhotoPayload.name,
           candidates,
           aiSelection: {
             selectedCandidates,
             selectedUrls,
             primaryUrl,
             photoSystem: SMART_PHOTO_SYSTEM,
+            smartPhotoPayloadKey,
             reasoning: json.reasoning,
           },
         });
@@ -763,6 +806,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
       patchImageRun(product.id, { phase: "saving", error: undefined });
 
       try {
+        const payload = buildSmartPhotoPayload(product);
         const response = await fetch("/api/admin/images/approve-candidates", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -770,7 +814,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
             canonicalProductId: product.canonical_product_id,
             selectedCandidates: run.selectedCandidates,
             primaryCandidateUrl: run.primaryUrl,
-            searchQuery: buildSpeedSearchQuery(toSpeedProduct(product)),
+            searchQuery: payload.searchQuery || payload.name,
             rejectPending: true,
             quickMode: true,
           }),
@@ -1379,7 +1423,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
             .filter((id): id is string => !!id),
         );
       } catch {
-        // Product-level image search still works without the warm cache lookup.
+        // The smart photo pipeline still runs if cache lookup fails.
       }
     }
 
@@ -1704,6 +1748,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
             onAutoDetectBicycle={() => void autoDetectBicycle(product)}
             onIdentifyBrand={() => void fixBrands([product.id])}
             onFindPhotos={() => void runPhotoPipeline([product])}
+            onRerunPhotos={() => void runImageSearch(product, null, { forceFresh: true })}
             onImageUpdate={(patch) => updateImageRunForProduct(product, patch)}
             onEnhance={(url) => void enhanceImage(product, url)}
             onApproveImages={() => void approveImages(product)}
@@ -1802,6 +1847,7 @@ function ProductRow({
   onAutoDetectBicycle,
   onIdentifyBrand,
   onFindPhotos,
+  onRerunPhotos,
   onImageUpdate,
   onEnhance,
   onApproveImages,
@@ -1830,6 +1876,7 @@ function ProductRow({
   onAutoDetectBicycle: () => void;
   onIdentifyBrand: () => void;
   onFindPhotos: () => void;
+  onRerunPhotos: () => void;
   onImageUpdate: (patch: Partial<ImageRun> | ((prev: ImageRun) => Partial<ImageRun>)) => void;
   onEnhance: (url: string) => void;
   onApproveImages: () => void;
@@ -2038,48 +2085,64 @@ function ProductRow({
               </Button>
             </div>
           ) : (
-            <OptimizerImageReview
-              img={imageRun}
-              hasCanonical={!!product.canonical_product_id}
-              saving={imageRun.phase === "saving"}
-              size="default"
-              onSetPrimary={(url) => onImageUpdate({ primaryUrl: url })}
-              onRemove={(url) =>
-                onImageUpdate((prev) => {
-                  if (prev.selectedUrls.length <= 1) return {};
-                  const selectedUrls = prev.selectedUrls.filter((item) => item !== url);
-                  return {
-                    selectedUrls,
-                    selectedCandidates: prev.selectedCandidates.filter(
-                      (candidate) => candidate.url !== url,
-                    ),
-                    primaryUrl:
-                      prev.primaryUrl === url ? selectedUrls[0] ?? null : prev.primaryUrl,
-                  };
-                })
-              }
-              onAdd={(candidate) =>
-                onImageUpdate((prev) => {
-                  if (
-                    prev.selectedUrls.includes(candidate.url) ||
-                    prev.selectedUrls.length >= 6
-                  ) {
-                    return {};
-                  }
-                  return {
-                    selectedUrls: [...prev.selectedUrls, candidate.url],
-                    selectedCandidates: [...prev.selectedCandidates, candidate],
-                    primaryUrl: prev.primaryUrl ?? candidate.url,
-                  };
-                })
-              }
-              onEnhance={onEnhance}
-              onToggleAdditional={() =>
-                onImageUpdate((prev) => ({ showAdditional: !prev.showAdditional }))
-              }
-              onApprove={onApproveImages}
-              onLightbox={onLightbox}
-            />
+            <div className="space-y-2">
+              {!photoBusyNow ? (
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="outline"
+                    className="rounded-md"
+                    onClick={onRerunPhotos}
+                  >
+                    <Search className="size-3" />
+                    Rerun search
+                  </Button>
+                </div>
+              ) : null}
+              <OptimizerImageReview
+                img={imageRun}
+                hasCanonical={!!product.canonical_product_id}
+                saving={imageRun.phase === "saving"}
+                size="default"
+                onSetPrimary={(url) => onImageUpdate({ primaryUrl: url })}
+                onRemove={(url) =>
+                  onImageUpdate((prev) => {
+                    if (prev.selectedUrls.length <= 1) return {};
+                    const selectedUrls = prev.selectedUrls.filter((item) => item !== url);
+                    return {
+                      selectedUrls,
+                      selectedCandidates: prev.selectedCandidates.filter(
+                        (candidate) => candidate.url !== url,
+                      ),
+                      primaryUrl:
+                        prev.primaryUrl === url ? selectedUrls[0] ?? null : prev.primaryUrl,
+                    };
+                  })
+                }
+                onAdd={(candidate) =>
+                  onImageUpdate((prev) => {
+                    if (
+                      prev.selectedUrls.includes(candidate.url) ||
+                      prev.selectedUrls.length >= 6
+                    ) {
+                      return {};
+                    }
+                    return {
+                      selectedUrls: [...prev.selectedUrls, candidate.url],
+                      selectedCandidates: [...prev.selectedCandidates, candidate],
+                      primaryUrl: prev.primaryUrl ?? candidate.url,
+                    };
+                  })
+                }
+                onEnhance={onEnhance}
+                onToggleAdditional={() =>
+                  onImageUpdate((prev) => ({ showAdditional: !prev.showAdditional }))
+                }
+                onApprove={onApproveImages}
+                onLightbox={onLightbox}
+              />
+            </div>
           )}
         </div>
       ) : null}

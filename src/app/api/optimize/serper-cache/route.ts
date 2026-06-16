@@ -120,6 +120,10 @@ export async function POST(request: NextRequest) {
               rawAi.photoSystem === "smart_product_photos"
                 ? ("smart_product_photos" as const)
                 : undefined,
+            smartPhotoPayloadKey:
+              typeof rawAi.smartPhotoPayloadKey === "string"
+                ? rawAi.smartPhotoPayloadKey
+                : undefined,
             reasoning: rawAi.reasoning,
           }
         : null;

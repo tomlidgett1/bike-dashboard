@@ -99,6 +99,7 @@ export interface ImageRun {
   selectedUrls: string[];
   primaryUrl: string | null;
   photoSystem?: "smart_product_photos";
+  smartPhotoPayloadKey?: string;
   reasoning?: string;
   error?: string;
   enhancedUrls?: Record<string, string>;
