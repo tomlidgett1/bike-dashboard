@@ -67,7 +67,7 @@ export function HomeV2ChatInput({
       <div
         className={cn(
           "flex w-full gap-1 rounded-full px-2",
-          header ? "min-h-[40px] items-center py-1" : "items-end py-2",
+          header ? "min-h-[36px] items-center py-0.5" : "items-end py-2",
           !header && (compact ? "min-h-[56px]" : "min-h-[60px]"),
           floating
             ? "border-0 bg-transparent shadow-none"
@@ -122,7 +122,7 @@ export function HomeV2ChatInput({
             className={cn(
               "resize-none border-0 bg-transparent px-1 text-foreground outline-none placeholder:text-gray-500",
               header
-                ? "min-h-[28px] max-h-[28px] w-full flex-1 py-1 text-sm leading-snug"
+                ? "min-h-[26px] max-h-[26px] w-full flex-1 py-0.5 text-sm leading-snug"
                 : "max-h-[132px] min-h-[36px] flex-1 py-2 text-[15px] leading-snug",
             )}
           />
@@ -150,7 +150,7 @@ export function HomeV2ChatInput({
           }}
           className={cn(
             "flex shrink-0 items-center justify-center rounded-full transition-colors",
-            header ? "h-8 w-8" : "mb-0.5 h-9 w-9",
+            header ? "h-7 w-7" : "mb-0.5 h-9 w-9",
             canAct ? "bg-gray-900 text-white hover:bg-gray-800" : "bg-gray-200 text-gray-400",
           )}
           aria-label={queueMode ? "Add to queue" : isRunning ? "Stop response" : "Send message"}

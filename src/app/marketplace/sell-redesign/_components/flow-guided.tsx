@@ -242,9 +242,9 @@ export function FlowGuided({
   if (published) return <SuccessScreen draft={draft} onListAnother={resetForAnotherListing} />;
 
   return (
-    <div className="flex min-h-[78dvh] flex-col">
+    <div className="flex min-h-full flex-col">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white px-4 pb-3 pt-3">
+      <div className="sticky top-0 z-10 bg-white px-4 pb-3 pt-3 md:px-6">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -282,7 +282,7 @@ export function FlowGuided({
       </div>
 
       {/* Body */}
-      <div className="flex-1 px-4 pb-28">
+      <div className="flex-1 px-4 pb-4 md:px-6">
         {analysing ? (
           <Analysing message={ANALYSE_MSGS[msg]} count={draft.images.length} />
         ) : (
@@ -317,7 +317,7 @@ export function FlowGuided({
 
       {/* Bottom CTA */}
       {!analysing && (
-        <div className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-[460px] border-t border-gray-100 bg-white/95 px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
+        <div className="sticky bottom-0 z-20 mt-auto w-full border-t border-gray-100 bg-white/95 px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-3 backdrop-blur md:px-6">
           {q.kind === "specsOffer" && !specsOpen ? (
             <div className="flex items-center gap-2">
               <Btn variant="secondary" onClick={() => go(qi + 1)}>

@@ -1,3 +1,5 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 export type ProductSourceRow = {
   listing_source?: string | null;
   lightspeed_item_id?: string | null;
@@ -43,4 +45,75 @@ export function formatCanonicalCategory(p: {
     .map((s) => s?.trim())
     .filter(Boolean) as string[];
   return parts.length > 0 ? parts.join(" › ") : null;
+}
+
+const FILTER_OPTIONS_BATCH_SIZE = 1000;
+
+type ProductFilterColumn = "category_name" | "manufacturer_name";
+
+/** Batched distinct values for product filter dropdowns (Supabase caps at 1000 rows per request). */
+export async function fetchDistinctProductFilterValues(
+  supabase: SupabaseClient,
+  userId: string,
+  column: ProductFilterColumn,
+): Promise<string[]> {
+  const values = new Set<string>();
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from("products")
+      .select(column)
+      .eq("user_id", userId)
+      .not(column, "is", null)
+      .order("id")
+      .range(from, from + FILTER_OPTIONS_BATCH_SIZE - 1);
+
+    if (error) throw error;
+
+    const rows = data ?? [];
+    if (rows.length === 0) break;
+
+    for (const row of rows) {
+      const value = String(row[column] ?? "").trim();
+      if (value) values.add(value);
+    }
+
+    if (rows.length < FILTER_OPTIONS_BATCH_SIZE) break;
+    from += FILTER_OPTIONS_BATCH_SIZE;
+  }
+
+  return [...values].sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: "base" }),
+  );
+}
+
+/** All marketplace-live product ids for a store (batched). */
+export async function fetchMarketplaceLiveProductIds(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<string[]> {
+  const ids: string[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from("marketplace_ready_products")
+      .select("id")
+      .eq("user_id", userId)
+      .order("id")
+      .range(from, from + FILTER_OPTIONS_BATCH_SIZE - 1);
+
+    if (error) throw error;
+
+    const rows = data ?? [];
+    if (rows.length === 0) break;
+
+    ids.push(...rows.map((row) => row.id));
+
+    if (rows.length < FILTER_OPTIONS_BATCH_SIZE) break;
+    from += FILTER_OPTIONS_BATCH_SIZE;
+  }
+
+  return ids;
 }

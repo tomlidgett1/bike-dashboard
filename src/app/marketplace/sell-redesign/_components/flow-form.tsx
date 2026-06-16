@@ -206,7 +206,7 @@ export function FlowForm({
 
   if (phase === "published") {
     return (
-      <div className="grid min-h-[78dvh] place-items-center px-6 text-center">
+      <div className="grid min-h-full flex-1 place-items-center px-6 text-center md:px-8">
         <div>
           <PublishedCoverImage imageUrl={draft.images[0]} alt={draft.title} />
           <h2 className="mt-6 text-[24px] font-bold text-gray-900">Published!</h2>
@@ -227,7 +227,7 @@ export function FlowForm({
 
   if (phase === "start" || phase === "analysing") {
     return (
-      <div className="flex min-h-[78dvh] flex-col px-4 pb-10 pt-6">
+      <div className="flex min-h-full flex-col px-4 pb-10 pt-6 md:px-6">
         {phase === "analysing" ? (
           <div className="grid flex-1 place-items-center text-center">
             <div>
@@ -285,8 +285,8 @@ export function FlowForm({
   const conditionOptions = conditionRatingsForItemType(draft.itemType);
 
   return (
-    <div className="flex min-h-[78dvh] flex-col">
-      <div className="flex-1 space-y-3 px-4 pb-32 pt-4">
+    <div className="flex min-h-full flex-col">
+      <div className="flex-1 space-y-3 px-4 pb-4 pt-4 md:px-6">
         {/* AI summary banner */}
         {aiActive && (
           <div className="flex items-center justify-between gap-3 rounded-md border border-gray-200 bg-white px-3.5 py-3">
@@ -537,7 +537,7 @@ export function FlowForm({
       </div>
 
       {/* Sticky publish bar */}
-      <div className="fixed inset-x-0 bottom-0 z-20 mx-auto w-full max-w-[460px] border-t border-gray-100 bg-white/95 px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
+      <div className="sticky bottom-0 z-20 mt-auto w-full border-t border-gray-100 bg-white/95 px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-3 backdrop-blur md:px-6">
         <div className="mb-2 flex items-center gap-2">
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200">
             <div className="h-full rounded-full transition-all" style={{ width: `${quality.score}%`, backgroundColor: BRAND }} />

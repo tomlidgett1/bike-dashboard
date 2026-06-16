@@ -10,6 +10,8 @@ import { DashboardHeaderColorProvider } from "./dashboard-header-color";
 import { ForceLightChrome } from "./force-light-chrome";
 import { GenieTransitionOverlay, GenieTransitionProvider } from "./genie-transition";
 import { Topbar } from "./topbar";
+import { SellModalHost } from "@/components/marketplace/sell/sell-modal-host";
+import { cn } from "@/lib/utils";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -30,6 +32,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const isAuthPage =
     pathname?.startsWith("/login") || pathname?.startsWith("/auth");
   const hideTopbar = HIDE_TOPBAR_PATHS.some((path) => pathname === path);
+  const isFullHeightPage = pathname === "/products";
 
   if (isAuthPage) {
     return <>{children}</>;
@@ -46,12 +49,18 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             <AppSidebar />
             <SidebarInset className="min-h-0 min-w-0 flex-1 overflow-hidden bg-white">
               {hideTopbar ? null : <Topbar />}
-              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-white">
+              <div
+                className={cn(
+                  "flex min-h-0 flex-1 flex-col bg-white",
+                  isFullHeightPage ? "overflow-hidden" : "overflow-y-auto",
+                )}
+              >
                 {children}
               </div>
               <GenieTransitionOverlay />
             </SidebarInset>
           </div>
+          <SellModalHost />
         </SidebarProvider>
       </GenieTransitionProvider>
     </TooltipProvider>

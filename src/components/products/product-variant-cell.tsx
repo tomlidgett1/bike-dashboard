@@ -40,13 +40,13 @@ export function ProductVariantCell({
     >
       <StatusBadge
         label={
-          <span className="inline-flex max-w-[120px] items-center gap-1 truncate">
+          <span className="inline-flex max-w-[72px] items-center gap-0.5 truncate">
             <Layers className="size-3 shrink-0 opacity-60" />
             <span className="truncate">{label}</span>
           </span>
         }
         tone={variantTone(summary)}
-        className="h-5 max-w-[130px] rounded-md text-[10px] hover:bg-muted/40"
+        className={cn("h-5 max-w-[68px] rounded-md px-1 text-[10px] hover:bg-muted/40")}
       />
     </Link>
   );

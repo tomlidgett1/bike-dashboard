@@ -423,6 +423,112 @@ export class LightspeedClient {
   }
 
   /**
+   * Authenticated request that returns raw text (e.g. DisplayTemplate HTML).
+   */
+  private async requestText(
+    endpoint: string,
+    options: RequestInit & { accept?: string } = {},
+  ): Promise<string> {
+    const { accept = 'text/html', ...fetchOptions } = options
+    let accessToken = await this.getCachedAccessToken()
+
+    if (!accessToken) {
+      throw new Error('No valid access token available. Please reconnect your Lightspeed account.')
+    }
+
+    const url = endpoint.startsWith('http')
+      ? endpoint
+      : `${LIGHTSPEED_CONFIG.API_BASE_URL}${endpoint}`
+
+    let lastError: Error | null = null
+    let tokenRefreshed = false
+
+    for (let attempt = 0; attempt < LIGHTSPEED_CONFIG.MAX_RETRIES; attempt++) {
+      await this.rateLimiter.waitForRequest()
+
+      try {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), LIGHTSPEED_CONFIG.REQUEST_TIMEOUT_MS)
+        let response: Response
+        try {
+          response = await fetch(url, {
+            ...fetchOptions,
+            signal: fetchOptions.signal
+              ? AbortSignal.any([fetchOptions.signal, controller.signal])
+              : controller.signal,
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              Accept: accept,
+              ...fetchOptions.headers,
+            },
+          })
+        } finally {
+          clearTimeout(timeout)
+        }
+        this.rateLimiter.updateFromResponse(response)
+
+        if (response.status === 401 && !tokenRefreshed) {
+          tokenRefreshed = true
+          const refreshedAccessToken = await this.refreshCachedAccessToken()
+          if (refreshedAccessToken) {
+            accessToken = refreshedAccessToken
+            attempt--
+            continue
+          }
+          throw new Error('Session expired. Please reconnect your Lightspeed account.')
+        }
+
+        if (response.status === 429) {
+          const waitTime = this.rateLimiter.applyRateLimit(
+            response,
+            LIGHTSPEED_CONFIG.INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt),
+          )
+          await sleep(waitTime)
+          continue
+        }
+
+        if (response.status >= 500) {
+          const waitTime = LIGHTSPEED_CONFIG.INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt)
+          await sleep(waitTime)
+          continue
+        }
+
+        if (!response.ok) {
+          const errorBody = await response.text()
+          throw new LightspeedApiError(`Lightspeed API error: ${response.status}`, {
+            status: response.status,
+            body: errorBody,
+            retryable: false,
+            rateLimitType: response.headers.get('X-LS-API-RateLimit-Type'),
+            cfRay: response.headers.get('Cf-Ray'),
+          })
+        }
+
+        return await response.text()
+      } catch (error) {
+        lastError = isAbortError(error)
+          ? new Error(`Lightspeed API request timed out after ${LIGHTSPEED_CONFIG.REQUEST_TIMEOUT_MS}ms`)
+          : error as Error
+
+        if (
+          lastError instanceof LightspeedApiError ||
+          lastError.message.includes('No valid access token') ||
+          lastError.message.includes('Session expired')
+        ) {
+          throw lastError
+        }
+
+        if (attempt < LIGHTSPEED_CONFIG.MAX_RETRIES - 1) {
+          const waitTime = LIGHTSPEED_CONFIG.INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt)
+          await sleep(waitTime)
+        }
+      }
+    }
+
+    throw lastError || new Error('Request failed after maximum retries')
+  }
+
+  /**
    * Build query string from params
    */
   private buildQueryString(params?: LightspeedQueryParams): string {
@@ -1053,6 +1159,38 @@ export class LightspeedClient {
       `/Account/${accountId}/Sale/${saleId}.json`
     )
     return response.Sale
+  }
+
+  /**
+   * Render a sale receipt as HTML via DisplayTemplate (not structured JSON).
+   */
+  async renderSaleReceiptHtml(
+    saleId: string,
+    options?: {
+      template?: string
+      print?: boolean
+      pageWidth?: string
+      pageHeight?: string
+    },
+  ): Promise<string> {
+    const accountId = await this.getAccountId()
+    const params = new URLSearchParams({
+      template: options?.template?.trim() || 'SaleReceipt',
+    })
+
+    if (options?.print) {
+      params.set('print', '1')
+    }
+    if (options?.pageWidth?.trim()) {
+      params.set('page_width', options.pageWidth.trim())
+    }
+    if (options?.pageHeight?.trim()) {
+      params.set('page_height', options.pageHeight.trim())
+    }
+
+    return this.requestText(
+      `/Account/${accountId}/DisplayTemplate/Sale/${encodeURIComponent(saleId)}.html?${params.toString()}`,
+    )
   }
 
   /**

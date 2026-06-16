@@ -200,7 +200,7 @@ export function ProductBrandCell({
   const hasBrand = !!brandName?.trim();
 
   return (
-    <div className="flex max-w-[160px] items-center gap-1">
+    <div className="flex max-w-full min-w-0 items-center gap-1">
       <button
         type="button"
         onClick={() => {

@@ -12,6 +12,7 @@ import { getMarketplaceReadiness } from '@/lib/marketplace/product-readiness'
 import {
   LIGHTSPEED_SOURCE_OR_FILTER,
   MANUAL_SOURCE_OR_FILTER,
+  fetchDistinctProductFilterValues,
 } from '@/lib/products/catalog-helpers'
 import { enrichProductsWithVariantMetadata } from '@/lib/variants/enrich-product-variants'
 
@@ -23,6 +24,7 @@ const PRODUCT_LIST_SELECT = `
   description,
   category_name,
   full_category_path,
+  lightspeed_category_id,
   marketplace_category,
   marketplace_subcategory,
   marketplace_level_3_category,
@@ -49,6 +51,10 @@ const PRODUCT_LIST_SELECT = `
   variant_group_id,
   variant_master_title,
   variant_hidden_from_grid,
+  discount_percent,
+  discount_active,
+  discount_ends_at,
+  sale_price,
   created_at
 `
 
@@ -82,7 +88,9 @@ export async function GET(request: NextRequest) {
     const stockFilter = searchParams.get('stock') || 'all' // all, in-stock, low-stock
     const statusFilter = searchParams.get('status') || 'all' // all, active, inactive
     const imageFilter = searchParams.get('image') || 'all' // all, approved, needs-images
+    const readinessFilter = searchParams.get('readiness') || 'all' // all, live, needs-optimisation
     const sourceFilter = searchParams.get('source') || 'all' // all, lightspeed, manual
+    const saleFilter = searchParams.get('sale') || 'all' // all, on-sale
     const brandFilter = searchParams.get('brand') || '' // brand name, or __none__ for missing brand
     const listingTypeFilter = searchParams.get('listing_type') || '' // e.g. private_listing
     const includeFilterOptions = searchParams.get('includeFilters') !== 'false'
@@ -139,7 +147,9 @@ export async function GET(request: NextRequest) {
       stockFilter !== 'all' ||
       statusFilter !== 'all' ||
       imageFilter !== 'all' ||
+      readinessFilter !== 'all' ||
       sourceFilter !== 'all' ||
+      saleFilter !== 'all' ||
       listingTypeFilter
     )
     const useRankedSearchPagination = Boolean(
@@ -164,8 +174,15 @@ export async function GET(request: NextRequest) {
 
     // Build query. The list view uses cached image columns so searches do not
     // pay for product_images/canonical_products joins on every keystroke.
+    const productsTable =
+      readinessFilter === 'live'
+        ? 'marketplace_ready_products'
+        : readinessFilter === 'needs-optimisation'
+          ? 'products_needing_marketplace_optimisation'
+          : 'products'
+
     let query = supabase
-      .from('products')
+      .from(productsTable)
       .select(PRODUCT_LIST_SELECT, { count: 'exact' })
       .eq('user_id', user.id)
 
@@ -201,7 +218,8 @@ export async function GET(request: NextRequest) {
     if (stockFilter === 'in-stock') {
       query = query.gt('qoh', 0)
     } else if (stockFilter === 'low-stock') {
-      query = query.gt('qoh', 0).lte('qoh', 'reorder_point')
+      // Column-vs-column compare: qoh <= reorder_point (PostgREST cannot use .lte('qoh', 'reorder_point')).
+      query = query.or('and(qoh.gt.0,reorder_point.gte.qoh)')
     }
 
     // Apply listing type filter
@@ -220,6 +238,14 @@ export async function GET(request: NextRequest) {
       query = query.or(LIGHTSPEED_SOURCE_OR_FILTER)
     } else if (sourceFilter === 'manual') {
       query = query.or(MANUAL_SOURCE_OR_FILTER)
+    }
+
+    if (saleFilter === 'on-sale') {
+      const nowIso = new Date().toISOString()
+      query = query
+        .eq('discount_active', true)
+        .gt('discount_percent', 0)
+        .or(`discount_ends_at.is.null,discount_ends_at.gt.${nowIso}`)
     }
 
     // Apply sorting
@@ -244,27 +270,10 @@ export async function GET(request: NextRequest) {
     let uniqueBrands: string[] | undefined
 
     if (includeFilterOptions) {
-      const [{ data: categories }, { data: brandRows }] = await Promise.all([
-        supabase
-          .from('products')
-          .select('category_name')
-          .eq('user_id', user.id)
-          .not('category_name', 'is', null)
-          .order('category_name'),
-        supabase
-          .from('products')
-          .select('manufacturer_name')
-          .eq('user_id', user.id)
-          .not('manufacturer_name', 'is', null)
-          .order('manufacturer_name'),
+      ;[uniqueCategories, uniqueBrands] = await Promise.all([
+        fetchDistinctProductFilterValues(supabase, user.id, 'category_name'),
+        fetchDistinctProductFilterValues(supabase, user.id, 'manufacturer_name'),
       ])
-
-      uniqueCategories = [...new Set(categories?.map(c => c.category_name).filter(Boolean))]
-      uniqueBrands = [...new Set(
-        (brandRows ?? [])
-          .map(row => (row.manufacturer_name ?? '').trim())
-          .filter(Boolean)
-      )]
     }
 
     let processedProducts = (data || []).map((product) => {

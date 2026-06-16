@@ -1,21 +1,115 @@
 "use client";
 
 import * as React from "react";
-import { Beaker, Loader2, Play, RefreshCw } from "lucide-react";
+import { Beaker, ExternalLink, Loader2, Play, Printer, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
-type LabTab = "customer" | "inquiry" | "nest" | "connection" | "presets";
+type LabTab = "customer" | "inquiry" | "nest" | "connection" | "presets" | "receipt";
 
 const TABS: Array<{ id: LabTab; label: string }> = [
   { id: "customer", label: "Customer scan" },
   { id: "inquiry", label: "Enquiry match" },
   { id: "nest", label: "Nest search" },
+  { id: "receipt", label: "Receipt" },
   { id: "connection", label: "Connection" },
   { id: "presets", label: "Presets" },
 ];
+
+function ReceiptResultPanel({
+  loading,
+  loadingMessage,
+  result,
+  error,
+}: {
+  loading: boolean;
+  loadingMessage?: string | null;
+  result: unknown;
+  error: string | null;
+}) {
+  const html =
+    result && typeof result === "object" && "html" in result && typeof (result as { html: unknown }).html === "string"
+      ? (result as { html: string }).html
+      : null;
+
+  const openReceiptWindow = React.useCallback(() => {
+    if (!html) return;
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const popup = window.open(url, "_blank", "noopener,noreferrer");
+    if (popup) {
+      popup.addEventListener("load", () => URL.revokeObjectURL(url), { once: true });
+    }
+  }, [html]);
+
+  const printReceipt = React.useCallback(() => {
+    if (!html) return;
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    iframe.srcdoc = html;
+    document.body.appendChild(iframe);
+    iframe.onload = () => {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+      window.setTimeout(() => iframe.remove(), 1000);
+    };
+  }, [html]);
+
+  return (
+    <div className="rounded-md border border-gray-200 bg-white p-4">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium text-gray-900">Receipt preview</p>
+        <div className="flex items-center gap-2">
+          {loading ? (
+            <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {loadingMessage ?? "Rendering…"}
+            </span>
+          ) : null}
+          {html ? (
+            <>
+              <Button type="button" variant="outline" size="sm" className="rounded-md" onClick={openReceiptWindow}>
+                <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                Open
+              </Button>
+              <Button type="button" variant="outline" size="sm" className="rounded-md" onClick={printReceipt}>
+                <Printer className="mr-1.5 h-3.5 w-3.5" />
+                Print
+              </Button>
+            </>
+          ) : null}
+        </div>
+      </div>
+      {error ? (
+        <p className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700">{error}</p>
+      ) : null}
+      {html ? (
+        <iframe
+          title="Lightspeed sale receipt"
+          srcDoc={html}
+          sandbox="allow-same-origin"
+          className="h-[min(70vh,720px)] w-full rounded-md border border-gray-100 bg-white"
+        />
+      ) : null}
+      {!loading && !error && !html ? (
+        <p className="text-sm text-gray-500">Enter a sale ID and render to preview the receipt HTML here.</p>
+      ) : null}
+      {result && !html ? (
+        <pre className="mt-3 max-h-[240px] overflow-auto rounded-md border border-gray-100 bg-gray-50 p-3 text-xs text-gray-800">
+          {JSON.stringify(result, null, 2)}
+        </pre>
+      ) : null}
+    </div>
+  );
+}
 
 function ResultPanel({
   loading,
@@ -69,6 +163,11 @@ export function LightspeedTestLab() {
   const [nestLimit, setNestLimit] = React.useState("8");
   const [maxScanPages, setMaxScanPages] = React.useState("5");
   const [presetQuery, setPresetQuery] = React.useState("account-info");
+  const [saleId, setSaleId] = React.useState("61157");
+  const [receiptTemplate, setReceiptTemplate] = React.useState("SaleReceipt");
+  const [receiptPrint, setReceiptPrint] = React.useState(true);
+  const [receiptPageWidth, setReceiptPageWidth] = React.useState("auto");
+  const [receiptPageHeight, setReceiptPageHeight] = React.useState("2000mm");
   const [loadingMessage, setLoadingMessage] = React.useState<string | null>(null);
 
   const runGet = React.useCallback(async (path: string) => {
@@ -176,6 +275,18 @@ export function LightspeedTestLab() {
     void runGet(`/api/lightspeed/lab?${params.toString()}`);
   }, [presetQuery, runGet]);
 
+  const runReceipt = React.useCallback(() => {
+    const params = new URLSearchParams({
+      mode: "sale_receipt",
+      saleId: saleId.trim(),
+      template: receiptTemplate.trim() || "SaleReceipt",
+    });
+    if (receiptPrint) params.set("print", "1");
+    if (receiptPageWidth.trim()) params.set("page_width", receiptPageWidth.trim());
+    if (receiptPageHeight.trim()) params.set("page_height", receiptPageHeight.trim());
+    void runGet(`/api/lightspeed/lab?${params.toString()}`);
+  }, [receiptPageHeight, receiptPageWidth, receiptPrint, receiptTemplate, runGet, saleId]);
+
   React.useEffect(() => {
     if (tab === "connection") void runStatus();
   }, [tab, runStatus]);
@@ -192,7 +303,8 @@ export function LightspeedTestLab() {
             <p className="mt-1 text-sm text-gray-600">
               Test customer lookup via paginated{" "}
               <code className="text-xs">GET Customer.json?load_relations=[&quot;Contact&quot;]</code>, enquiry
-              matching, Nest search, and connection state. Results are live against your connected store.
+              matching, Nest search, sale receipt rendering, and connection state. Results are live against your
+              connected store.
             </p>
           </div>
         </div>
@@ -370,6 +482,75 @@ export function LightspeedTestLab() {
             </Button>
           </div>
           <ResultPanel loading={loading} loadingMessage={loadingMessage} result={result} error={error} />
+        </div>
+      ) : null}
+
+      {tab === "receipt" ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-4 rounded-md border border-gray-200 bg-white p-4">
+            <p className="text-sm font-medium text-gray-900">Sale receipt</p>
+            <p className="text-sm text-gray-600">
+              Renders printable receipt HTML via{" "}
+              <code className="text-xs">DisplayTemplate/Sale/{"{saleID}"}.html?template=SaleReceipt</code>. This
+              returns rendered HTML, not structured sale JSON.
+            </p>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="lab-sale-id">Sale ID</Label>
+                <Input
+                  id="lab-sale-id"
+                  value={saleId}
+                  onChange={(event) => setSaleId(event.target.value)}
+                  placeholder="61157"
+                  className="rounded-md"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="lab-receipt-template">Template</Label>
+                <Input
+                  id="lab-receipt-template"
+                  value={receiptTemplate}
+                  onChange={(event) => setReceiptTemplate(event.target.value)}
+                  placeholder="SaleReceipt"
+                  className="rounded-md"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-md border border-gray-100 bg-gray-50 px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Print layout</p>
+                  <p className="text-xs text-gray-600">Passes print=1 to Lightspeed</p>
+                </div>
+                <Switch checked={receiptPrint} onCheckedChange={setReceiptPrint} />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="lab-receipt-page-width">Page width</Label>
+                  <Input
+                    id="lab-receipt-page-width"
+                    value={receiptPageWidth}
+                    onChange={(event) => setReceiptPageWidth(event.target.value)}
+                    placeholder="auto"
+                    className="rounded-md"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="lab-receipt-page-height">Page height</Label>
+                  <Input
+                    id="lab-receipt-page-height"
+                    value={receiptPageHeight}
+                    onChange={(event) => setReceiptPageHeight(event.target.value)}
+                    placeholder="2000mm"
+                    className="rounded-md"
+                  />
+                </div>
+              </div>
+            </div>
+            <Button type="button" className="rounded-md" onClick={runReceipt} disabled={loading || !saleId.trim()}>
+              {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}
+              Render receipt
+            </Button>
+          </div>
+          <ReceiptResultPanel loading={loading} loadingMessage={loadingMessage} result={result} error={error} />
         </div>
       ) : null}
 

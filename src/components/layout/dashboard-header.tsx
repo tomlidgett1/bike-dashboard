@@ -76,7 +76,7 @@ export function DashboardHeader() {
             alt="Yellow Jersey"
             width={180}
             height={28}
-            className="h-7 w-auto sm:h-8"
+            className="h-7 w-auto translate-y-[0.5mm] sm:h-8"
             priority
           />
         </Link>

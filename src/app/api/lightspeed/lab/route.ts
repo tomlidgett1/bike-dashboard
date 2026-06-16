@@ -249,6 +249,41 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    if (mode === "sale_receipt") {
+      const saleId = String(searchParams.get("saleId") ?? searchParams.get("saleID") ?? "").trim();
+      if (!saleId) return json({ error: "saleId is required." }, 400);
+
+      const blocked = await assertLightspeedReady(auth.user.id);
+      if (blocked) return json({ ok: false, mode, error: blocked }, 503);
+
+      const template = String(searchParams.get("template") ?? "SaleReceipt").trim() || "SaleReceipt";
+      const print = searchParams.get("print") === "1" || searchParams.get("print") === "true";
+      const pageWidth = String(searchParams.get("page_width") ?? searchParams.get("pageWidth") ?? "").trim();
+      const pageHeight = String(searchParams.get("page_height") ?? searchParams.get("pageHeight") ?? "").trim();
+
+      const client = createLightspeedClient(auth.user.id);
+      const html = await client.renderSaleReceiptHtml(saleId, {
+        template,
+        print,
+        pageWidth: pageWidth || undefined,
+        pageHeight: pageHeight || undefined,
+      });
+
+      return json({
+        ok: true,
+        mode,
+        saleId,
+        template,
+        print,
+        pageWidth: pageWidth || null,
+        pageHeight: pageHeight || null,
+        contentType: "text/html",
+        htmlLength: html.length,
+        html,
+        durationMs: Date.now() - started,
+      });
+    }
+
     if (mode === "preset") {
       const query = String(searchParams.get("query") ?? "account-info").trim();
       const client = createLightspeedClient(auth.user.id);

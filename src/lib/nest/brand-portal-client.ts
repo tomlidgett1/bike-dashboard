@@ -6,10 +6,22 @@ import {
   getNestSupabaseUrl,
   isNestMessagingConfigured,
 } from "@/lib/nest/config";
+import brandPortalConfigHandler from "@/lib/nest-portal/api/brand-portal-config";
+import { invokeVercelHandler } from "@/lib/nest-portal/vercel-adapter";
 
 const SESSION_DAYS = 7;
 const MESSAGE_SEND_TIMEOUT_MS = 90_000;
 const DEFAULT_TIMEOUT_MS = 25_000;
+
+/**
+ * Staged cutover switch. While OFF (default) the portal still runs on the external Nest
+ * deployment (nest.expert) so it keeps working as the fallback. Set NEST_PORTAL_INTERNAL=1
+ * once the business schema + data are live in YJ's own Supabase to run the ported handler
+ * in-process against YJ's DB. See docs/NEST_PORTAL_CUTOVER.md.
+ */
+function useInternalPortal(): boolean {
+  return process.env.NEST_PORTAL_INTERNAL === "1" || process.env.NEST_PORTAL_INTERNAL === "true";
+}
 
 type CachedSession = {
   token: string;
@@ -30,9 +42,14 @@ function nestSessionErrorMessage(message: string): string {
   return trimmed.length > 500 ? `${trimmed.slice(0, 500)}...` : trimmed;
 }
 
-function getNestAdminClient(): SupabaseClient | null {
-  const url = getNestSupabaseUrl();
-  const key = getNestSupabaseServiceKey();
+function getSessionAdminClient(): SupabaseClient | null {
+  // Internal: mint sessions in YJ's own project. External (fallback): mint in the Nest project.
+  const url = useInternalPortal()
+    ? process.env.SUPABASE_URL?.trim() || process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+    : getNestSupabaseUrl();
+  const key = useInternalPortal()
+    ? process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || process.env.SUPABASE_SECRET_KEY?.trim()
+    : getNestSupabaseServiceKey();
   if (!url || !key) return null;
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -40,7 +57,7 @@ function getNestAdminClient(): SupabaseClient | null {
 }
 
 async function mintPortalSession(brandKey: string): Promise<string> {
-  const supabase = getNestAdminClient();
+  const supabase = getSessionAdminClient();
   if (!supabase) {
     throw new Error("Nest messaging is not configured yet.");
   }
@@ -56,9 +73,7 @@ async function mintPortalSession(brandKey: string): Promise<string> {
   if (error) {
     const message = nestSessionErrorMessage(error.message);
     console.error("[nest-brand-portal] session insert failed:", message);
-    throw new Error(
-      `Could not start Nest portal session: ${message}`,
-    );
+    throw new Error(`Could not start Nest portal session: ${message}`);
   }
 
   sessionCache.set(brandKey, {
@@ -111,8 +126,26 @@ async function parseJsonResponse(res: Response): Promise<Record<string, unknown>
   );
 }
 
-export async function proxyNestBrandPortalRequest(
-  brandKey: string,
+/** In-process path: run the ported handler against YJ's own DB (no external call). */
+async function proxyInternal(
+  token: string,
+  options: { method: "GET" | "POST"; query?: URLSearchParams; body?: Record<string, unknown> },
+): Promise<Record<string, unknown>> {
+  const { status, data } = await invokeVercelHandler(brandPortalConfigHandler, {
+    method: options.method,
+    query: options.query,
+    body: options.body,
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (status < 200 || status >= 300) {
+    throw new Error(apiErrorMessage(data, "Nest request failed."));
+  }
+  return data;
+}
+
+/** External path (fallback): call the live Nest deployment over HTTP. */
+async function proxyExternal(
+  token: string,
   options: {
     method: "GET" | "POST";
     query?: URLSearchParams;
@@ -123,16 +156,15 @@ export async function proxyNestBrandPortalRequest(
   if (!isNestMessagingConfigured()) {
     throw new Error("Nest messaging is not configured yet.");
   }
-
   const baseUrl = getNestBrandPortalApiUrl();
   if (!baseUrl) {
     throw new Error("Nest messaging is not configured yet.");
   }
 
-  const token = await getPortalToken(brandKey);
   const search = options.query ? `?${options.query.toString()}` : "";
   const url = `${baseUrl}/api/brand-portal-config${search}`;
-  const timeoutMs = options.timeoutMs ?? (options.method === "POST" ? MESSAGE_SEND_TIMEOUT_MS : DEFAULT_TIMEOUT_MS);
+  const timeoutMs =
+    options.timeoutMs ?? (options.method === "POST" ? MESSAGE_SEND_TIMEOUT_MS : DEFAULT_TIMEOUT_MS);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -151,12 +183,8 @@ export async function proxyNestBrandPortalRequest(
 
     const data = await parseJsonResponse(res);
     if (!res.ok) {
-      if (res.status === 401) {
-        sessionCache.delete(brandKey);
-      }
       throw new Error(apiErrorMessage(data, "Nest request failed."));
     }
-
     return data;
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
@@ -165,5 +193,27 @@ export async function proxyNestBrandPortalRequest(
     throw error instanceof Error ? error : new Error("Nest request failed.");
   } finally {
     clearTimeout(timeoutId);
+  }
+}
+
+export async function proxyNestBrandPortalRequest(
+  brandKey: string,
+  options: {
+    method: "GET" | "POST";
+    query?: URLSearchParams;
+    body?: Record<string, unknown>;
+    timeoutMs?: number;
+  },
+): Promise<Record<string, unknown>> {
+  const internal = useInternalPortal();
+  try {
+    const token = await getPortalToken(brandKey);
+    return internal ? await proxyInternal(token, options) : await proxyExternal(token, options);
+  } catch (error) {
+    // a 401 means the cached session was rejected; drop it so the next call re-mints
+    if (error instanceof Error && /unauthor/i.test(error.message)) {
+      sessionCache.delete(brandKey);
+    }
+    throw error;
   }
 }

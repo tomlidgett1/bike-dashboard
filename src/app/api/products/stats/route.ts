@@ -33,7 +33,9 @@ export async function GET() {
 
     const [
       { count: liveCount, error: liveError },
+      { count: needsOptimisationCount, error: needsOptimisationError },
       { count: variantGroupedCount, error: variantGroupedError },
+      { count: onSaleCount, error: onSaleError },
       pendingVariantReview,
     ] = await Promise.all([
       supabase
@@ -41,10 +43,24 @@ export async function GET() {
         .select('id', { count: 'exact', head: true })
         .eq('user_id', user.id),
       supabase
+        .from('products_needing_marketplace_optimisation')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id),
+      supabase
         .from('products')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', user.id)
         .not('variant_group_id', 'is', null),
+      (() => {
+        const nowIso = new Date().toISOString()
+        return supabase
+          .from('products')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .eq('discount_active', true)
+          .gt('discount_percent', 0)
+          .or(`discount_ends_at.is.null,discount_ends_at.gt.${nowIso}`)
+      })(),
       countPendingVariantReviewProducts(supabase, user.id),
     ])
 
@@ -53,15 +69,27 @@ export async function GET() {
       throw liveError
     }
 
+    if (needsOptimisationError) {
+      console.error('[Products Stats API] Needs optimisation count error:', needsOptimisationError)
+      throw needsOptimisationError
+    }
+
     if (variantGroupedError) {
       console.error('[Products Stats API] Variant grouped count error:', variantGroupedError)
       throw variantGroupedError
+    }
+
+    if (onSaleError) {
+      console.error('[Products Stats API] On sale count error:', onSaleError)
+      throw onSaleError
     }
 
     let from = 0
     const stats = {
       total: 0,
       live: liveCount ?? 0,
+      needsOptimisation: needsOptimisationCount ?? 0,
+      onSale: onSaleCount ?? 0,
       lowStock: 0,
       needsImages: 0,
       lightspeed: 0,

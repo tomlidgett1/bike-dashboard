@@ -13,7 +13,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
-  RefreshCw,
   AlertCircle,
   ArrowUpDown,
   ArrowUp,
@@ -32,8 +31,11 @@ import {
   Wand2,
   X,
   Pencil,
+  Plus,
   Tags,
   Layers,
+  SlidersHorizontal,
+  ChevronDown,
 } from "lucide-react";
 import Image from "next/image";
 import NextDynamic from "next/dynamic";
@@ -51,6 +53,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -61,6 +65,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
   AlertDialog,
@@ -73,8 +78,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { useSellModal } from "@/components/providers/sell-modal-provider";
 import {
   formatLightspeedCategory,
+  isLightspeedProduct,
 } from "@/lib/products/catalog-helpers";
 import {
   PageBody,
@@ -84,8 +91,14 @@ import {
 } from "@/components/dashboard";
 import type { MarketplaceReadiness } from "@/lib/marketplace/product-readiness";
 import { BULK_OPTIMISE_STORAGE_KEY } from "@/lib/optimize/bulk-optimise-session";
+import { resolveLivePrice } from "@/lib/marketplace/pricing";
 import { ProductBrandCell } from "@/components/products/product-brand-cell";
+import { ProductCategoryCell } from "@/components/products/product-category-cell";
 import { ProductVariantCell } from "@/components/products/product-variant-cell";
+import {
+  storeSettingsPageChromeClass,
+  storeSettingsPageHeaderNudgeClass,
+} from "@/components/settings/actions-page-header";
 
 // Dialog (lazy — avoids SSR issues)
 const Dialog = NextDynamic(() => import("@/components/ui/dialog").then((m) => m.Dialog), { ssr: false });
@@ -110,6 +123,7 @@ interface Product {
   description: string;
   category_name: string | null;
   full_category_path: string | null;
+  lightspeed_category_id: string | null;
   marketplace_category: string | null;
   marketplace_subcategory: string | null;
   marketplace_level_3_category: string | null;
@@ -139,6 +153,10 @@ interface Product {
   variant_option_label?: string | null;
   variant_sibling_count?: number | null;
   variant_group_title?: string | null;
+  discount_percent?: number | null;
+  discount_active?: boolean | null;
+  discount_ends_at?: string | null;
+  sale_price?: number | null;
 }
 
 interface DiscoveredImage {
@@ -158,6 +176,8 @@ interface PaginationInfo {
 interface ProductStats {
   total: number;
   live: number;
+  needsOptimisation: number;
+  onSale: number;
   lowStock: number;
   needsImages: number;
   lightspeed?: number;
@@ -213,15 +233,15 @@ function ProductThumb({ product }: { product: Product }) {
 
   if (src) {
     return (
-      <div className="size-10 shrink-0 overflow-hidden rounded-lg bg-muted ring-1 ring-border">
+      <div className="size-8 shrink-0 overflow-hidden rounded-md bg-muted ring-1 ring-border">
         <Image
           src={src}
           alt={product.description}
-          width={40}
-          height={40}
+          width={32}
+          height={32}
           className="size-full object-cover"
           loading="lazy"
-          sizes="40px"
+          sizes="32px"
           unoptimized={isCloudinaryUrl(src) || isExternal(src)}
         />
       </div>
@@ -230,10 +250,10 @@ function ProductThumb({ product }: { product: Product }) {
 
   return (
     <div
-      className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-border bg-muted/40 text-muted-foreground"
+      className="flex size-8 shrink-0 items-center justify-center rounded-md border border-dashed border-border bg-muted/40 text-muted-foreground"
       title="No image — use Optimise or Manage images from the row menu"
     >
-      <ImageOff className="size-4" />
+      <ImageOff className="size-3.5" />
     </div>
   );
 }
@@ -259,7 +279,7 @@ function SortButton({
     <button
       onClick={() => onSort(column)}
       className={cn(
-        "-mx-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground",
+        "-mx-0.5 inline-flex items-center gap-0.5 rounded-md px-0.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground",
         align === "right" && "ml-auto flex-row-reverse"
       )}
     >
@@ -280,9 +300,15 @@ function formatProductCurrency(value: number | null | undefined) {
 }
 
 function formatSource(product: Product) {
-  if (product.lightspeed_item_id) return "Lightspeed";
-  if (product.listing_source) return product.listing_source.replace(/_/g, " ");
-  return "Manual";
+  if (isLightspeedProduct(product)) return "Catalogue";
+  if (product.listing_source === "online_catalog") return "Online";
+  if (product.listing_source === "manual") return "Listing";
+  return "Listing";
+}
+
+function marketplaceStatusLabel(label: string) {
+  if (label === "Needs optimisation") return "Optimise";
+  return label;
 }
 
 function marginPercent(product: Product) {
@@ -293,49 +319,52 @@ function marginPercent(product: Product) {
 function productColumnClassName(columnId: string) {
   switch (columnId) {
     case "select":
-      return "w-9 min-w-9";
+      return "w-8";
     case "edit":
-      return "min-w-[78px]";
-    case "product":
-      return "min-w-[310px]";
-    case "brand":
-      return "min-w-[180px]";
-    case "category":
-      return "min-w-[210px]";
-    case "source":
-      return "min-w-[115px]";
-    case "price":
-      return "min-w-[120px] text-right";
-    case "stock":
-      return "min-w-[125px] text-right";
-    case "image":
-      return "min-w-[95px]";
-    case "bike":
-      return "min-w-[80px]";
+      return "w-8";
     case "marketplace":
-      return "min-w-[120px]";
+      return "w-[76px]";
     case "variants":
-      return "min-w-[110px]";
+      return "w-[68px]";
+    case "product":
+      return "w-auto min-w-0";
+    case "brand":
+      return "w-[84px]";
+    case "category":
+      return "w-[96px]";
+    case "source":
+      return "w-[64px]";
+    case "price":
+      return "w-[72px] text-right";
+    case "stock":
+      return "w-[64px] text-right";
+    case "image":
+      return "w-[52px]";
+    case "bike":
+      return "w-9";
     case "visible":
-      return "min-w-[76px] text-center";
+      return "w-11 text-center";
     case "actions":
-      return "min-w-[120px] text-right";
+      return "w-8 text-right";
     default:
-      return "min-w-[120px]";
+      return "w-[72px]";
   }
 }
 
 function MiniLabel({
   children,
   muted = false,
+  title,
 }: {
   children: React.ReactNode;
   muted?: boolean;
+  title?: string;
 }) {
   return (
     <span
+      title={title}
       className={cn(
-        "inline-flex h-5 items-center gap-1 rounded-md border border-border bg-white px-1.5 text-[10px] font-medium",
+        "inline-flex h-5 items-center gap-0.5 rounded-md border border-border bg-white px-1 text-[10px] font-medium",
         muted ? "text-muted-foreground" : "text-foreground"
       )}
     >
@@ -347,10 +376,10 @@ function MiniLabel({
 
 export default function ProductsPage() {
   const router = useRouter();
+  const { openSellModal } = useSellModal();
   const [products, setProducts] = React.useState<Product[]>([]);
   const [stats, setStats] = React.useState<ProductStats | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [refreshing, setRefreshing] = React.useState(false);
   const [pagination, setPagination] = React.useState<PaginationInfo>({
     page: 1,
     pageSize: 100,
@@ -365,6 +394,9 @@ export default function ProductsPage() {
   const [stockFilter, setStockFilter] = React.useState<string>('all');
   const [statusFilter, setStatusFilter] = React.useState<string>('all');
   const [imageFilter, setImageFilter] = React.useState<string>('all');
+  const [sourceFilter, setSourceFilter] = React.useState<string>('all');
+  const [saleFilter, setSaleFilter] = React.useState<string>('all');
+  const [needsOptimisation, setNeedsOptimisation] = React.useState(false);
   const [sortBy, setSortBy] = React.useState<string>('created_at');
   const [sortOrder, setSortOrder] = React.useState<'asc' | 'desc'>('desc');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
@@ -445,15 +477,21 @@ export default function ProductsPage() {
         stock: stockFilter,
         status: statusFilter,
         image: imageFilter,
+        source: sourceFilter,
+        sale: saleFilter,
+        readiness: needsOptimisation ? 'needs-optimisation' : 'all',
         sortBy: sortBy,
         sortOrder: sortOrder,
         includeFilters: includeFilterOptions ? 'true' : 'false',
       });
 
       const response = await fetch(`/api/products?${params}`, { signal: controller.signal });
-      if (!response.ok) throw new Error('Failed to fetch products');
-
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          typeof data?.error === 'string' ? data.error : 'Failed to fetch products',
+        );
+      }
       if (seq !== fetchSeqRef.current) return; // stale response
 
       setProducts(data.products || []);
@@ -471,17 +509,16 @@ export default function ProductsPage() {
     } finally {
       if (seq === fetchSeqRef.current) {
         if (isInitialLoad) setLoading(false);
-        setRefreshing(false);
       }
     }
-  }, [pagination.pageSize, debouncedSearch, categoryFilter, brandFilter, stockFilter, statusFilter, imageFilter, sortBy, sortOrder]);
+  }, [pagination.pageSize, debouncedSearch, categoryFilter, brandFilter, stockFilter, statusFilter, imageFilter, sourceFilter, saleFilter, needsOptimisation, sortBy, sortOrder]);
 
   // Initial + filter-change fetch
   const initialLoadRef = React.useRef(true);
   React.useEffect(() => {
     fetchProducts(1, initialLoadRef.current);
     initialLoadRef.current = false;
-  }, [debouncedSearch, categoryFilter, brandFilter, stockFilter, statusFilter, imageFilter, sortBy, sortOrder, pagination.pageSize, fetchProducts]);
+  }, [debouncedSearch, categoryFilter, brandFilter, stockFilter, statusFilter, imageFilter, sourceFilter, saleFilter, needsOptimisation, sortBy, sortOrder, pagination.pageSize, fetchProducts]);
 
   // Load stats once on mount
   React.useEffect(() => { fetchStats(); }, [fetchStats]);
@@ -512,7 +549,6 @@ export default function ProductsPage() {
   }, []);
 
   const handleRefreshList = React.useCallback(() => {
-    setRefreshing(true);
     fetchProducts(paginationRef.current.page);
     fetchStats();
   }, [fetchProducts, fetchStats]);
@@ -593,6 +629,37 @@ export default function ProductsPage() {
       return [...prev, trimmed].sort((a, b) => a.localeCompare(b));
     });
   }, []);
+
+  const handleCategoryUpdated = React.useCallback(
+    (
+      productId: string,
+      update: {
+        categoryId: string;
+        categoryName: string;
+        fullCategoryPath: string;
+        categoryLabel: string;
+      },
+    ) => {
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.id === productId
+            ? {
+                ...p,
+                lightspeed_category_id: update.categoryId,
+                category_name: update.categoryName,
+                full_category_path: update.fullCategoryPath,
+              }
+            : p,
+        ),
+      );
+      setCategories((prev) => {
+        const name = update.categoryName.trim();
+        if (!name || prev.includes(name)) return prev;
+        return [...prev, name].sort((a, b) => a.localeCompare(b));
+      });
+    },
+    [],
+  );
 
   const handleBulkActive = async (active: boolean) => {
     const ids = [...selected];
@@ -787,20 +854,32 @@ export default function ProductsPage() {
     return next;
   });
 
+  const catalogFilterCount =
+    (stockFilter !== 'all' ? 1 : 0) +
+    (statusFilter !== 'all' ? 1 : 0) +
+    (imageFilter !== 'all' ? 1 : 0) +
+    (sourceFilter !== 'all' ? 1 : 0) +
+    (saleFilter !== 'all' ? 1 : 0);
+
   const hasFilters =
     search !== '' ||
     categoryFilter !== '' ||
     brandFilter !== '' ||
-    stockFilter !== 'all' ||
-    statusFilter !== 'all' ||
-    imageFilter !== 'all';
+    catalogFilterCount > 0 ||
+    needsOptimisation;
+  const clearCatalogFilters = () => {
+    setStockFilter('all');
+    setStatusFilter('all');
+    setImageFilter('all');
+    setSourceFilter('all');
+    setSaleFilter('all');
+  };
   const clearFilters = () => {
     setSearch('');
     setCategoryFilter('');
     setBrandFilter('');
-    setStockFilter('all');
-    setStatusFilter('all');
-    setImageFilter('all');
+    clearCatalogFilters();
+    setNeedsOptimisation(false);
   };
 
   const openBulkOptimise = () => {
@@ -843,35 +922,44 @@ export default function ProductsPage() {
       {
         id: "edit",
         enableSorting: false,
-        header: "Edit",
+        header: () => <span className="sr-only">Edit</span>,
         cell: ({ row }) => (
           <Button
             type="button"
-            variant="outline"
-            size="xs"
+            variant="ghost"
+            size="icon-xs"
             onClick={() => openEditModal(row.original.id)}
-            className="rounded-md"
+            className="rounded-md text-muted-foreground"
+            aria-label="Edit product"
           >
             <Pencil className="size-3" />
-            Edit
           </Button>
         ),
       },
       {
         id: "marketplace",
         accessorFn: (product) => deriveStatus(product).label,
-        header: "Marketplace",
+        header: "Status",
         cell: ({ row }) => {
           const status = deriveStatus(row.original);
-          return <StatusBadge label={status.label} tone={status.tone} className="h-5 rounded-md text-[10px]" />;
+          return (
+            <span className="block max-w-full truncate" title={status.label}>
+              <StatusBadge
+                label={marketplaceStatusLabel(status.label)}
+                tone={status.tone}
+                className="h-5 max-w-full truncate rounded-md px-1 text-[10px]"
+              />
+            </span>
+          );
         },
       },
       {
         id: "variants",
         accessorFn: (product) => product.variant_group_id ?? "",
-        header: "Variants",
+        header: "Var.",
         cell: ({ row }) => (
           <ProductVariantCell
+            className="max-w-[64px]"
             summary={{
               variant_group_id: row.original.variant_group_id ?? null,
               variant_master_title: row.original.variant_master_title ?? null,
@@ -893,24 +981,20 @@ export default function ProductsPage() {
         cell: ({ row }) => {
           const product = row.original;
           return (
-            <div className="flex min-w-0 items-center gap-3">
+            <div className="flex min-w-0 items-center gap-2">
               <ProductThumb product={product} />
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <Link
                   href={`/marketplace/product/${product.id}`}
-                  className="block max-w-[280px] truncate text-left text-[13px] font-medium leading-tight text-foreground transition-colors hover:text-primary hover:underline"
+                  className="block truncate text-left text-[12px] font-medium leading-tight text-foreground transition-colors hover:text-primary hover:underline"
+                  title={product.display_name?.trim() ? `${product.display_name}\n${product.description}` : product.description}
                 >
                   {product.display_name || product.description}
                 </Link>
-                {product.display_name?.trim() && product.description?.trim() ? (
-                  <p
-                    className="mt-0.5 max-w-[280px] truncate text-[11px] leading-tight text-muted-foreground"
-                    title={product.description}
-                  >
-                    Lightspeed: {product.description}
-                  </p>
-                ) : null}
-                <p className="mt-0.5 truncate font-mono text-[11px] leading-tight text-muted-foreground">
+                <p
+                  className="mt-0.5 truncate font-mono text-[10px] leading-tight text-muted-foreground"
+                  title={product.custom_sku || product.system_sku || undefined}
+                >
                   {product.custom_sku || product.system_sku || "No SKU"}
                 </p>
               </div>
@@ -921,36 +1005,34 @@ export default function ProductsPage() {
       {
         id: "visible",
         accessorFn: (product) => Number(product.is_active),
-        header: "Visible",
+        header: () => <span className="sr-only">Visible</span>,
         cell: ({ row }) => (
-          <Switch
-            size="sm"
-            checked={row.original.is_active}
-            onCheckedChange={() => handleToggleActive(row.original.id, row.original.is_active)}
-            aria-label={row.original.is_active ? "Hide product" : "Show product"}
-          />
+          <div className="flex justify-center">
+            <Switch
+              size="sm"
+              checked={row.original.is_active}
+              onCheckedChange={() => handleToggleActive(row.original.id, row.original.is_active)}
+              aria-label={row.original.is_active ? "Hide product" : "Show product"}
+            />
+          </div>
         ),
       },
       {
         id: "bike",
         accessorFn: (product) => Number(!!product.is_bicycle),
-        header: "Bike",
+        header: () => <span className="sr-only">Bicycle</span>,
         cell: ({ row }) => (
           <button
             type="button"
             onClick={() => handleToggleBicycle(row.original.id, !!row.original.is_bicycle)}
             className={cn(
-              "inline-flex h-5 items-center gap-1 rounded-md border border-border bg-white px-1.5 text-[10px] font-medium transition-colors hover:bg-muted",
-              row.original.is_bicycle ? "text-foreground" : "text-muted-foreground"
+              "mx-auto flex size-7 items-center justify-center rounded-md border border-border bg-white transition-colors hover:bg-muted",
+              row.original.is_bicycle ? "text-foreground" : "text-muted-foreground",
             )}
             aria-label={row.original.is_bicycle ? "Mark as not a bike" : "Mark as bike"}
+            title={row.original.is_bicycle ? "Bicycle" : "Not a bicycle"}
           >
-            <BikeIcon
-              iconName={BICYCLE_PRODUCT_ICON}
-              size={12}
-              className="size-3 shrink-0"
-            />
-            {row.original.is_bicycle ? "Bike" : "Other"}
+            <BikeIcon iconName={BICYCLE_PRODUCT_ICON} size={14} className="size-3.5 shrink-0" />
           </button>
         ),
       },
@@ -959,11 +1041,13 @@ export default function ProductsPage() {
         accessorFn: (product) => product.manufacturer_name || "",
         header: "Brand",
         cell: ({ row }) => (
-          <ProductBrandCell
-            productId={row.original.id}
-            brandName={row.original.manufacturer_name}
-            onUpdated={(brand) => handleBrandUpdated(row.original.id, brand)}
-          />
+          <div className="min-w-0">
+            <ProductBrandCell
+              productId={row.original.id}
+              brandName={row.original.manufacturer_name}
+              onUpdated={(brand) => handleBrandUpdated(row.original.id, brand)}
+            />
+          </div>
         ),
       },
       {
@@ -978,16 +1062,15 @@ export default function ProductsPage() {
             product.marketplace_level_3_category,
           ].filter(Boolean).join(" / ");
           const lightspeedCategory = formatLightspeedCategory(product);
+          const displayLabel = marketplaceCategory || lightspeedCategory || "—";
           return (
-            <div className="max-w-[230px]">
-              <p className="truncate text-[11px] leading-tight text-foreground" title={marketplaceCategory || lightspeedCategory || undefined}>
-                {marketplaceCategory || lightspeedCategory || "Uncategorised"}
-              </p>
-              {marketplaceCategory && lightspeedCategory ? (
-                <p className="mt-0.5 truncate text-[10px] leading-tight text-muted-foreground" title={lightspeedCategory}>
-                  {lightspeedCategory}
-                </p>
-              ) : null}
+            <div className="min-w-0">
+              <ProductCategoryCell
+                productId={product.id}
+                displayLabel={displayLabel}
+                lightspeedCategoryId={product.lightspeed_category_id}
+                onUpdated={(update) => handleCategoryUpdated(product.id, update)}
+              />
             </div>
           );
         },
@@ -997,7 +1080,12 @@ export default function ProductsPage() {
         accessorFn: formatSource,
         header: "Source",
         cell: ({ row }) => (
-          <span className="text-[11px] capitalize leading-tight text-muted-foreground">{formatSource(row.original)}</span>
+          <span
+            className="block truncate text-[10px] leading-tight text-muted-foreground"
+            title={formatSource(row.original)}
+          >
+            {formatSource(row.original)}
+          </span>
         ),
       },
       {
@@ -1008,14 +1096,38 @@ export default function ProductsPage() {
         ),
         cell: ({ row }) => {
           const product = row.original;
+          const live = resolveLivePrice(product);
           const margin = marginPercent(product);
+          const costLine = product.default_cost
+            ? `${formatProductCurrency(product.default_cost)} cost${margin != null ? ` · ${margin}% margin` : ""}`
+            : undefined;
           return (
             <div className="text-right">
-              <p className="font-mono text-[11px] font-semibold tabular-nums text-foreground">{formatProductCurrency(product.price)}</p>
-              <p className="mt-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
-                {product.default_cost ? `${formatProductCurrency(product.default_cost)} cost` : "No cost"}
-                {margin != null ? ` · ${margin}%` : ""}
-              </p>
+              {live.onSale ? (
+                <div className="flex flex-col items-end gap-0.5">
+                  <div className="flex items-center justify-end gap-1">
+                    <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-800">
+                      Sale
+                    </span>
+                    <p
+                      className="truncate font-mono text-[11px] font-semibold tabular-nums text-foreground"
+                      title={costLine}
+                    >
+                      {formatProductCurrency(live.price)}
+                    </p>
+                  </div>
+                  <p className="truncate font-mono text-[10px] tabular-nums text-muted-foreground line-through">
+                    {formatProductCurrency(live.originalPrice)}
+                  </p>
+                </div>
+              ) : (
+                <p
+                  className="truncate font-mono text-[11px] font-semibold tabular-nums text-foreground"
+                  title={costLine}
+                >
+                  {formatProductCurrency(product.price)}
+                </p>
+              )}
             </div>
           );
         },
@@ -1029,13 +1141,17 @@ export default function ProductsPage() {
         cell: ({ row }) => {
           const product = row.original;
           const lowStock = product.qoh > 0 && product.reorder_point > 0 && product.qoh <= product.reorder_point;
+          const stockTitle = `${product.sellable.toLocaleString()} sellable · reorder ${product.reorder_point.toLocaleString()}`;
           return (
             <div className="text-right">
-              <p className={cn("font-mono text-[11px] font-semibold tabular-nums text-foreground", lowStock && "text-amber-700")}>
+              <p
+                className={cn(
+                  "truncate font-mono text-[11px] font-semibold tabular-nums text-foreground",
+                  lowStock && "text-amber-700",
+                )}
+                title={stockTitle}
+              >
                 {product.qoh <= 0 ? "Out" : product.qoh.toLocaleString()}
-              </p>
-              <p className="mt-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
-                {product.sellable.toLocaleString()} sell · r{product.reorder_point.toLocaleString()}
               </p>
             </div>
           );
@@ -1044,11 +1160,11 @@ export default function ProductsPage() {
       {
         id: "image",
         accessorFn: (product) => Number(hasImage(product)),
-        header: "Image",
+        header: () => <span className="sr-only">Photo</span>,
         cell: ({ row }) => (
-          <MiniLabel muted={!hasImage(row.original)}>
+          <MiniLabel muted={!hasImage(row.original)} title={hasImage(row.original) ? "Photo ready" : "Missing photo"}>
             <span className={cn("size-1.5 rounded-full", hasImage(row.original) ? "bg-emerald-500" : "bg-muted-foreground/40")} />
-            {hasImage(row.original) ? "Ready" : "Missing"}
+            {hasImage(row.original) ? "OK" : "—"}
           </MiniLabel>
         ),
       },
@@ -1119,7 +1235,7 @@ export default function ProductsPage() {
 
   const tableColSpan = productTable.getAllLeafColumns().length;
   const tableRows = productTable.getRowModel().rows;
-  const rowHeight = 60;
+  const rowHeight = 48;
   const overscan = 10;
   const virtualStart = Math.max(0, Math.floor(tableViewport.scrollTop / rowHeight) - overscan);
   const virtualEnd = Math.min(
@@ -1164,126 +1280,193 @@ export default function ProductsPage() {
     };
   }, [products.length, pagination.pageSize, syncTableViewport]);
 
+  const categoryLabel = categoryFilter || "All categories";
+  const brandLabel =
+    brandFilter === "__none__" ? "No brand" : brandFilter || "All brands";
+
+  const filterTriggerClassName =
+    "h-9 shrink-0 rounded-md border-input bg-white px-2.5 font-normal shadow-none";
+
   return (
-    <PageContainer size="full" className="!px-0 md:!px-0">
-      <div className="sticky top-0 z-30 w-full bg-white px-4 pb-2 pt-1 md:px-5">
-        <div className="flex min-h-9 items-center justify-between gap-3">
-          <h1 className="flex min-w-0 items-center gap-2 text-lg font-semibold tracking-tight text-foreground">
-            <Package className="h-[18px] w-[18px] shrink-0 text-foreground" aria-hidden />
-            Products
-          </h1>
-          <div className="flex shrink-0 items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={handleRefreshList}
-              disabled={refreshing || loading}
-              aria-label="Refresh list"
-            >
-              <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => openEditModal()}>
-              <Pencil className="size-4" />
-              Edit product
-            </Button>
+    <PageContainer size="full" className="flex h-[calc(100svh-3.5rem)] min-h-0 flex-col !p-0 !pt-2.5 !pb-0">
+      <div className={cn("sticky top-0 z-30 w-full bg-white", storeSettingsPageChromeClass)}>
+        <div className={cn(storeSettingsPageHeaderNudgeClass, "!pb-0")}>
+          <div className="flex min-h-9 items-center justify-between gap-3">
+            <h1 className="flex min-w-0 items-center gap-2 text-lg font-semibold tracking-tight text-foreground">
+              <Package className="h-[18px] w-[18px] shrink-0 text-foreground" aria-hidden />
+              Products
+            </h1>
+            <div className="flex shrink-0 items-center gap-2">
+              {stats?.variantPendingReview ? (
+                <Button variant="outline" size="sm" className="rounded-md" asChild>
+                  <Link href="/optimize/variants">
+                    <Layers className="size-4" />
+                    Review variants
+                    <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-800">
+                      {stats.variantPendingReview.toLocaleString()}
+                    </span>
+                  </Link>
+                </Button>
+              ) : null}
+              <Button size="sm" className="rounded-md" onClick={openSellModal}>
+                <Plus className="size-4" />
+                Add product
+              </Button>
+            </div>
           </div>
         </div>
       </div>
 
-      {stats?.variantPendingReview ? (
-        <div className="mx-4 mb-0 mt-3 rounded-xl border border-border/60 bg-white px-4 py-3 md:mx-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">
-                {stats.variantPendingReview.toLocaleString()} product
-                {stats.variantPendingReview === 1 ? "" : "s"} may be variants of each other
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Review suggested merges in Product Optimise to combine sizes and colours into one listing.
-              </p>
-            </div>
-            <Button variant="outline" size="sm" className="shrink-0 rounded-md" asChild>
-              <Link href="/optimize/variants">
-                <Layers className="size-4" />
-                Review variants
-              </Link>
-            </Button>
-          </div>
-        </div>
-      ) : null}
-
-      <PageBody className="mt-4 space-y-0">
-        <section className="mx-4 mb-4 flex min-h-[calc(100vh-150px)] flex-col overflow-hidden rounded-xl border border-border/60 bg-white md:mx-5">
-          <div className="flex flex-col gap-2 border-b border-border/60 px-4 py-3 sm:flex-row sm:items-center md:px-5">
+      <PageBody className="mt-1 flex min-h-0 flex-1 flex-col space-y-0 px-1.5">
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-xl border border-gray-200/80 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
+          <div className="flex flex-col gap-2 rounded-t-xl border-b border-border/60 bg-gray-50 px-4 py-3 sm:flex-row sm:items-center md:px-5">
             <div className="relative min-w-0 flex-1 sm:max-w-[360px] lg:max-w-[420px] xl:max-w-[460px]">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search name, SKU, brand, category, year, source or status..."
-                className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-[3px] focus:ring-ring/30"
+                className="h-9 w-full rounded-md border border-input bg-white pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-[3px] focus:ring-ring/30"
               />
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <Select value={categoryFilter || "all"} onValueChange={(v) => setCategoryFilter(v === "all" ? "" : v)}>
-                <SelectTrigger size="sm" className="w-[190px] shrink-0">
-                  <Tags className="size-3.5 text-muted-foreground" />
-                  <SelectValue placeholder="Category" />
-                </SelectTrigger>
-                <SelectContent position="popper" align="start" className="w-[var(--radix-select-trigger-width)]">
-                  <SelectItem value="all">All categories</SelectItem>
-                  {categories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className={cn(filterTriggerClassName, "w-[190px] justify-between gap-1.5")}>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <Tags className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{categoryLabel}</span>
+                    </span>
+                    <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-72 w-56 overflow-y-auto rounded-md">
+                  <DropdownMenuRadioGroup
+                    value={categoryFilter || "all"}
+                    onValueChange={(v) => setCategoryFilter(v === "all" ? "" : v)}
+                  >
+                    <DropdownMenuRadioItem value="all">All categories</DropdownMenuRadioItem>
+                    {categories.map((c) => (
+                      <DropdownMenuRadioItem key={c} value={c} className="truncate">
+                        {c}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-              <Select value={brandFilter || "all"} onValueChange={(v) => setBrandFilter(v === "all" ? "" : v)}>
-                <SelectTrigger size="sm" className="w-[160px] shrink-0">
-                  <Tag className="size-3.5 text-muted-foreground" />
-                  <SelectValue placeholder="Brand" />
-                </SelectTrigger>
-                <SelectContent position="popper" align="start" className="w-[var(--radix-select-trigger-width)]">
-                  <SelectItem value="all">All brands</SelectItem>
-                  <SelectItem value="__none__">No brand</SelectItem>
-                  {brands.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className={cn(filterTriggerClassName, "w-[160px] justify-between gap-1.5")}>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <Tag className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{brandLabel}</span>
+                    </span>
+                    <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-72 w-56 overflow-y-auto rounded-md">
+                  <DropdownMenuRadioGroup
+                    value={brandFilter || "all"}
+                    onValueChange={(v) => setBrandFilter(v === "all" ? "" : v)}
+                  >
+                    <DropdownMenuRadioItem value="all">All brands</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="__none__">No brand</DropdownMenuRadioItem>
+                    {brands.map((b) => (
+                      <DropdownMenuRadioItem key={b} value={b} className="truncate">
+                        {b}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger size="sm" className="w-[120px] shrink-0">
-                  <Eye className="size-3.5 text-muted-foreground" />
-                  <SelectValue placeholder="Visibility" />
-                </SelectTrigger>
-                <SelectContent position="popper" align="start" className="w-[var(--radix-select-trigger-width)]">
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Hidden</SelectItem>
-                </SelectContent>
-              </Select>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn(filterTriggerClassName, "w-fit gap-1.5")}
+                  >
+                    <SlidersHorizontal className="size-3.5 text-muted-foreground" />
+                    Filters
+                    {catalogFilterCount > 0 ? (
+                      <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-800">
+                        {catalogFilterCount}
+                      </span>
+                    ) : null}
+                    <ChevronDown className="size-3.5 text-muted-foreground" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56 rounded-md">
+                  <DropdownMenuLabel>Visibility</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup value={statusFilter} onValueChange={setStatusFilter}>
+                    <DropdownMenuRadioItem value="all">All</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="active">Active</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="inactive">Hidden</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>Stock</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup value={stockFilter} onValueChange={setStockFilter}>
+                    <DropdownMenuRadioItem value="all">Any stock</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="in-stock">In stock</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="low-stock">Low stock</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>Images</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup value={imageFilter} onValueChange={setImageFilter}>
+                    <DropdownMenuRadioItem value="all">Any images</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="approved">Approved photos</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="needs-images">Needs photos</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>Source</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup value={sourceFilter} onValueChange={setSourceFilter}>
+                    <DropdownMenuRadioItem value="all">All sources</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="lightspeed">Catalogue (Lightspeed)</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="manual">Marketplace listings</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>Pricing</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup value={saleFilter} onValueChange={setSaleFilter}>
+                    <DropdownMenuRadioItem value="all">Any pricing</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="on-sale">
+                      <span className="flex items-center gap-2">
+                        On sale
+                        {stats?.onSale ? (
+                          <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-800">
+                            {stats.onSale.toLocaleString()}
+                          </span>
+                        ) : null}
+                      </span>
+                    </DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                  {catalogFilterCount > 0 ? (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={clearCatalogFilters}>Reset filters</DropdownMenuItem>
+                    </>
+                  ) : null}
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-              <Select value={stockFilter} onValueChange={setStockFilter}>
-                <SelectTrigger size="sm" className="w-[145px] shrink-0">
-                  <Package className="size-3.5 text-muted-foreground" />
-                  <SelectValue placeholder="Stock" />
-                </SelectTrigger>
-                <SelectContent position="popper" align="start" className="w-[var(--radix-select-trigger-width)]">
-                  <SelectItem value="all">Any stock</SelectItem>
-                  <SelectItem value="in-stock">In stock</SelectItem>
-                  <SelectItem value="low-stock">Low stock</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Select value={imageFilter} onValueChange={setImageFilter}>
-                <SelectTrigger size="sm" className="w-[155px] shrink-0">
-                  <ImageIcon className="size-3.5 text-muted-foreground" />
-                  <SelectValue placeholder="Images" />
-                </SelectTrigger>
-                <SelectContent position="popper" align="start" className="w-[var(--radix-select-trigger-width)]">
-                  <SelectItem value="all">Any images</SelectItem>
-                  <SelectItem value="approved">Approved photos</SelectItem>
-                  <SelectItem value="needs-images">Needs photos</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex h-9 shrink-0 items-center gap-2 rounded-md border border-input bg-white px-3">
+                <Switch
+                  id="needs-optimisation-filter"
+                  size="sm"
+                  checked={needsOptimisation}
+                  onCheckedChange={setNeedsOptimisation}
+                />
+                <Label htmlFor="needs-optimisation-filter" className="flex cursor-pointer items-center gap-1.5 text-sm font-normal whitespace-nowrap">
+                  Needs optimisation
+                  {stats != null ? (
+                    <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-xs font-medium tabular-nums text-gray-800">
+                      {stats.needsOptimisation.toLocaleString()}
+                    </span>
+                  ) : null}
+                </Label>
+              </div>
 
               {hasFilters ? (
                 <Button variant="ghost" size="sm" onClick={clearFilters}>
@@ -1337,10 +1520,10 @@ export default function ProductsPage() {
           <div
             ref={tableViewportRef}
             onScroll={handleTableScroll}
-            className="min-h-[420px] flex-1 overflow-auto"
+            className="min-h-0 flex-1 overflow-auto"
           >
-            <table className="w-max min-w-full border-collapse text-[12px]">
-              <thead className="sticky top-0 z-10 bg-muted/20">
+            <table className="w-full table-fixed border-collapse text-[12px]">
+              <thead className="sticky top-0 z-20 bg-gray-50 shadow-[inset_0_-1px_0_0_hsl(var(--border)/0.6)]">
                 {productTable.getHeaderGroups().map((headerGroup) => (
                   <tr key={headerGroup.id} className="border-b border-border/60">
                     {headerGroup.headers.map((header) => (
@@ -1348,7 +1531,7 @@ export default function ProductsPage() {
                         key={header.id}
                         className={cn(
                           productColumnClassName(header.column.id),
-                          "px-3 py-2.5 text-left align-middle text-[12px] font-medium text-muted-foreground first:pl-4 last:pr-4 md:first:pl-5 md:last:pr-5"
+                          "overflow-hidden bg-gray-50 px-2 py-1.5 text-left align-middle text-[11px] font-medium text-muted-foreground"
                         )}
                       >
                         {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
@@ -1386,18 +1569,22 @@ export default function ProductsPage() {
                     ) : null}
                     {virtualRows.map((row) => {
                     const checked = selected.has(row.original.id);
+                    const onSale = resolveLivePrice(row.original).onSale;
                     return (
                       <tr
                         key={row.id}
                         data-state={checked ? "selected" : undefined}
-                        className="group border-b border-border/50 bg-white transition-colors last:border-0 hover:bg-muted/20 data-[state=selected]:bg-muted/40"
+                        className={cn(
+                          "group border-b border-border/50 transition-colors last:border-0 hover:bg-muted/20 data-[state=selected]:bg-muted/40",
+                          onSale ? "bg-amber-50/60 hover:bg-amber-50" : "bg-white",
+                        )}
                       >
                         {row.getVisibleCells().map((cell) => (
                           <td
                             key={cell.id}
                             className={cn(
                               productColumnClassName(cell.column.id),
-                              "px-3 py-2.5 align-middle text-muted-foreground first:pl-4 last:pr-4 md:first:pl-5 md:last:pr-5"
+                              "overflow-hidden px-2 py-1.5 align-middle text-muted-foreground"
                             )}
                           >
                             {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -1417,7 +1604,8 @@ export default function ProductsPage() {
             </table>
           </div>
 
-        <div className="sticky bottom-0 z-20 flex flex-col gap-3 border-t border-border/60 bg-white px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between md:px-5">
+        <div className="shrink-0 border-t border-border/60 bg-white px-4 py-3 text-sm md:px-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-muted-foreground">
               {pagination.total > 0 ? (
                 <>Showing <span className="font-medium text-foreground">{rangeStart}–{rangeEnd}</span> of <span className="font-medium text-foreground">{pagination.total.toLocaleString()}</span> products</>
@@ -1447,6 +1635,7 @@ export default function ProductsPage() {
               </div>
             </div>
           </div>
+        </div>
         </section>
       </PageBody>
 
