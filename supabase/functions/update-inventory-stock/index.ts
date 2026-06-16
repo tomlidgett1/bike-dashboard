@@ -83,7 +83,6 @@ function bytesToHex(bytes: Uint8Array): string {
 // Token refresh function
 async function refreshAccessToken(
   userId: string,
-  refreshToken: string,
   supabaseAdmin: any,
   encryptionKey: string
 ): Promise<string | null> {
@@ -95,6 +94,19 @@ async function refreshAccessToken(
       console.error('Missing Lightspeed credentials')
       return null
     }
+
+    const { data: latestConnection, error: latestError } = await supabaseAdmin
+      .from('lightspeed_connections')
+      .select('refresh_token_encrypted, status')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (latestError || !latestConnection?.refresh_token_encrypted || latestConnection.status !== 'connected') {
+      console.error('❌ No active connection with refresh token available')
+      return null
+    }
+
+    const refreshToken = await decryptToken(latestConnection.refresh_token_encrypted, encryptionKey)
     
     console.log('🔄 Refreshing access token...')
     
@@ -114,8 +126,9 @@ async function refreshAccessToken(
       await supabaseAdmin
         .from('lightspeed_connections')
         .update({ 
-          status: 'error',
-          last_error: 'Token refresh failed'
+          status: response.status === 400 ? 'expired' : 'error',
+          last_error: 'Token refresh failed',
+          last_error_at: new Date().toISOString(),
         })
         .eq('user_id', userId)
       return null
@@ -188,6 +201,21 @@ Deno.serve(async (req) => {
         // Decrypt tokens
         let accessToken = await decryptToken(connection.access_token_encrypted, encryptionKey)
         const accountId = connection.account_id
+        let refreshAttempted = false
+
+        const refreshOnce = async (reason: string): Promise<boolean> => {
+          if (refreshAttempted) {
+            console.warn(`⚠️ Already refreshed token for this run, skipping second refresh after ${reason}`)
+            return false
+          }
+
+          refreshAttempted = true
+          const newAccessToken = await refreshAccessToken(connection.user_id, supabaseAdmin, encryptionKey)
+          if (!newAccessToken) return false
+
+          accessToken = newAccessToken
+          return true
+        }
         
         // Check if token is expired or about to expire (within 5 minutes)
         const tokenExpiresAt = new Date(connection.token_expires_at)
@@ -196,12 +224,7 @@ Deno.serve(async (req) => {
         
         if (tokenExpiresAt <= fiveMinutesFromNow) {
           console.log('⏰ Token expired or expiring soon, refreshing...')
-          const refreshToken = await decryptToken(connection.refresh_token_encrypted, encryptionKey)
-          const newAccessToken = await refreshAccessToken(connection.user_id, refreshToken, supabaseAdmin, encryptionKey)
-          
-          if (newAccessToken) {
-            accessToken = newAccessToken
-          } else {
+          if (!(await refreshOnce('expiry check'))) {
             console.error('❌ Failed to refresh token, skipping user')
             continue
           }
@@ -251,11 +274,7 @@ Deno.serve(async (req) => {
           // If 401, try refreshing token once and retry
           if (response.status === 401) {
             console.log('🔄 Got 401, attempting token refresh...')
-            const refreshToken = await decryptToken(connection.refresh_token_encrypted, encryptionKey)
-            const newAccessToken = await refreshAccessToken(connection.user_id, refreshToken, supabaseAdmin, encryptionKey)
-            
-            if (newAccessToken) {
-              accessToken = newAccessToken
+            if (await refreshOnce('InventoryLog 401')) {
               // Retry the request with new token
               response = await fetch(nextUrl, {
                 headers: {
@@ -325,11 +344,7 @@ Deno.serve(async (req) => {
           // If 401, try refreshing token once and retry
           if (response.status === 401) {
             console.log('🔄 Got 401 on ItemShop fetch, attempting token refresh...')
-            const refreshToken = await decryptToken(connection.refresh_token_encrypted, encryptionKey)
-            const newAccessToken = await refreshAccessToken(connection.user_id, refreshToken, supabaseAdmin, encryptionKey)
-            
-            if (newAccessToken) {
-              accessToken = newAccessToken
+            if (await refreshOnce('ItemShop 401')) {
               // Retry the request
               response = await fetch(
                 `https://api.lightspeedapp.com/API/V3/Account/${accountId}/ItemShop.json?shopID=0&itemID=IN%2C%5B${itemIdsParam}%5D&limit=100`,

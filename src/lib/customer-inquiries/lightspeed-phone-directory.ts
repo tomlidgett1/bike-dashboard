@@ -176,6 +176,10 @@ export async function resolvePhoneContactFromApi(
   };
 }
 
+function isLightspeedSessionExpiredError(error: unknown): boolean {
+  return error instanceof Error && /Session expired|No valid access token|reconnect/i.test(error.message);
+}
+
 export async function resolvePhoneContactsForInbox(
   supabase: SupabaseClient,
   userId: string,
@@ -206,6 +210,7 @@ export async function resolvePhoneContactsForInbox(
       names.set(phone, contact.displayName);
     } catch (error) {
       console.error("[lightspeed-phone-directory] api resolve failed:", phone, error);
+      if (isLightspeedSessionExpiredError(error)) break;
     }
   }
 

@@ -42,7 +42,7 @@ async function handleRefresh(request: NextRequest) {
 
     const { data: connections, error } = await supabase
       .from('lightspeed_connections')
-      .select('user_id, refresh_token_encrypted, account_id, account_name, token_expires_at')
+      .select('user_id, refresh_token_encrypted, account_id, account_name, token_expires_at, last_token_refresh_at')
       .eq('status', 'connected')
       .not('refresh_token_encrypted', 'is', null)
       .lt('token_expires_at', refreshCutoff)
@@ -79,6 +79,31 @@ async function handleRefresh(request: NextRequest) {
         if (!response.ok) {
           const body = await response.json().catch(() => ({}))
           console.error(`[Lightspeed Cron] Refresh failed for ${conn.user_id}:`, response.status, body)
+
+          const { data: latest } = await supabase
+            .from('lightspeed_connections')
+            .select('status, token_expires_at, last_token_refresh_at')
+            .eq('user_id', conn.user_id)
+            .maybeSingle()
+
+          const latestRefreshTime = latest?.last_token_refresh_at
+            ? new Date(latest.last_token_refresh_at).getTime()
+            : 0
+          const originalRefreshTime = conn.last_token_refresh_at
+            ? new Date(conn.last_token_refresh_at).getTime()
+            : 0
+          const latestExpiryTime = latest?.token_expires_at
+            ? new Date(latest.token_expires_at).getTime()
+            : 0
+
+          if (
+            latest?.status === 'connected' &&
+            latestExpiryTime > Date.now() + LIGHTSPEED_CONFIG.TOKEN_EXPIRY_BUFFER_MS &&
+            latestRefreshTime > originalRefreshTime
+          ) {
+            console.log(`[Lightspeed Cron] Refresh race lost for ${conn.user_id}; newer token is already stored`)
+            continue
+          }
 
           const newStatus =
             response.status === 400 || body.error === 'invalid_grant' ? 'expired' : 'error'

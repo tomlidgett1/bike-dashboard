@@ -21,6 +21,10 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: 
   ]);
 }
 
+function isLightspeedSessionExpiredError(error: unknown): boolean {
+  return error instanceof Error && /Session expired|No valid access token|reconnect/i.test(error.message);
+}
+
 export async function enrichNestChatsWithLightspeed(
   supabase: SupabaseClient,
   userId: string,
@@ -53,6 +57,7 @@ export async function enrichNestChatsWithLightspeed(
         namesByPhone.set(phone, contact.displayName);
       } catch (error) {
         console.error("[nest] Lightspeed phone resolve failed:", phone, error);
+        if (isLightspeedSessionExpiredError(error)) break;
       }
     }
 

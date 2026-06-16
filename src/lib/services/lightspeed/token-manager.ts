@@ -205,6 +205,17 @@ export async function refreshAccessToken(userId: string): Promise<{
     return null
   }
 
+  if (
+    tokens.connection.status === 'disconnected' ||
+    tokens.connection.status === 'expired'
+  ) {
+    console.warn('[Lightspeed] Skipping refresh for inactive connection', {
+      userId,
+      status: tokens.connection.status,
+    })
+    return null
+  }
+
   // If a refresh happened in the last 10 seconds, another request beat us to it.
   // Return the token that was just stored rather than consuming the refresh token again.
   const lastRefresh = tokens.connection.last_token_refresh_at
@@ -287,6 +298,13 @@ export async function getValidAccessToken(userId: string): Promise<string | null
   const tokens = await getDecryptedTokens(userId)
   
   if (!tokens) {
+    return null
+  }
+
+  if (
+    tokens.connection.status === 'disconnected' ||
+    tokens.connection.status === 'expired'
+  ) {
     return null
   }
   
