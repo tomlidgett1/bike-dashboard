@@ -18,7 +18,6 @@ interface DashboardLayoutProps {
 }
 
 const HIDE_TOPBAR_PATHS = [
-  "/products",
   "/settings/store/home",
   "/settings/store/actions",
   "/settings/store/nest",
@@ -31,8 +30,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   // Don't show the dashboard chrome on auth pages
   const isAuthPage =
     pathname?.startsWith("/login") || pathname?.startsWith("/auth");
-  const hideTopbar = HIDE_TOPBAR_PATHS.some((path) => pathname === path);
-  const isFullHeightPage = pathname === "/products";
+  const isProductsRoute = pathname?.startsWith("/products") ?? false;
+  const hideTopbar =
+    isProductsRoute || HIDE_TOPBAR_PATHS.some((path) => pathname === path);
+  const isFullHeightPage = isProductsRoute;
 
   if (isAuthPage) {
     return <>{children}</>;

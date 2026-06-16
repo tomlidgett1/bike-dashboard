@@ -2,38 +2,51 @@
 
 export const dynamic = "force-dynamic";
 
-import Link from "next/link";
 import nextDynamic from "next/dynamic";
-import { ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { PageContainer, PageHeader, PageBody } from "@/components/dashboard";
-import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";
+import { Loader2, Sparkles } from "lucide-react";
+import { PageContainer, PageBody } from "@/components/dashboard";
+import {
+  storeSettingsPageChromeClass,
+  storeSettingsPageHeaderNudgeClass,
+} from "@/components/settings/actions-page-header";
+import { cn } from "@/lib/utils";
 
 const BulkOptimiseWorkspace = nextDynamic(
   () =>
     import("@/components/optimize/bulk-optimise-workspace").then(
       (mod) => mod.BulkOptimiseWorkspace,
     ),
-  { ssr: false, loading: () => <SettingsManagerLoading className="min-h-72" /> },
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex min-h-0 flex-1 items-center justify-center">
+        <Loader2 className="size-7 animate-spin text-muted-foreground" />
+      </div>
+    ),
+  },
 );
 
 export default function ProductsBulkOptimisePage() {
   return (
-    <PageContainer size="full">
-      <PageHeader
-        title="Bulk optimise"
-        description="Optimise titles, descriptions, specs, photos and brands for many products at once."
-        actions={
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/products">
-              <ArrowLeft className="size-4" />
-              Back to products
-            </Link>
-          </Button>
-        }
-      />
-      <PageBody>
-        <BulkOptimiseWorkspace />
+    <PageContainer
+      size="full"
+      className="flex h-[calc(100svh-3.5rem)] min-h-0 flex-col !p-0 !pt-2.5 !pb-0"
+    >
+      <div className={cn("sticky top-0 z-30 w-full bg-white", storeSettingsPageChromeClass)}>
+        <div className={cn(storeSettingsPageHeaderNudgeClass, "!pb-0")}>
+          <div className="flex min-h-9 items-center justify-between gap-3">
+            <h1 className="flex min-w-0 items-center gap-2 text-lg font-semibold tracking-tight text-foreground">
+              <Sparkles className="h-[18px] w-[18px] shrink-0 text-foreground" aria-hidden />
+              Optimise products
+            </h1>
+          </div>
+        </div>
+      </div>
+
+      <PageBody className="mt-1 flex min-h-0 flex-1 flex-col space-y-0 px-1.5">
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-xl border border-gray-200/80 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
+          <BulkOptimiseWorkspace variant="products-card" />
+        </section>
       </PageBody>
     </PageContainer>
   );

@@ -6,6 +6,7 @@ export interface CachedImageRunShape {
   selectedCandidates: SpeedSearchCandidate[];
   selectedUrls: string[];
   primaryUrl: string | null;
+  photoSystem?: "smart_product_photos";
   reasoning?: string;
 }
 
@@ -21,6 +22,7 @@ export interface SerperAiSelectionCache {
   selectedCandidates: SpeedSearchCandidate[];
   selectedUrls: string[];
   primaryUrl: string;
+  photoSystem?: "smart_product_photos";
   reasoning?: string;
 }
 
@@ -45,6 +47,7 @@ export function imageRunFromSerperCache(
       selectedCandidates: entry.aiSelection.selectedCandidates,
       selectedUrls: entry.aiSelection.selectedUrls,
       primaryUrl: entry.aiSelection.primaryUrl,
+      photoSystem: entry.aiSelection.photoSystem,
       reasoning: entry.aiSelection.reasoning,
     };
   }
@@ -78,6 +81,10 @@ export function parseSerperCacheRow(row: {
           selectedCandidates: rawAi.selectedCandidates as SpeedSearchCandidate[],
           selectedUrls: Array.isArray(rawAi.selectedUrls) ? rawAi.selectedUrls : [],
           primaryUrl: rawAi.primaryUrl,
+          photoSystem:
+            rawAi.photoSystem === "smart_product_photos"
+              ? ("smart_product_photos" as const)
+              : undefined,
           reasoning: rawAi.reasoning,
         }
       : null;

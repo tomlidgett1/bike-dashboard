@@ -9,6 +9,7 @@ import {
   Loader2,
   Plus,
   RefreshCw,
+  Sparkles,
   Star,
   Wand2,
   X,
@@ -54,11 +55,14 @@ export function OptimizerImageReview({
 }) {
   const editable = img.phase === "ready";
   const done = img.phase === "done";
+  const isSmartPhotoRun = img.photoSystem === "smart_product_photos";
+  const selectedUrlsKey = img.selectedUrls.join("|");
+  const enhancedUrlsKey = JSON.stringify(img.enhancedUrls ?? {});
   const [loadedDisplaySrcs, setLoadedDisplaySrcs] = React.useState<Record<string, boolean>>({});
 
   React.useEffect(() => {
     setLoadedDisplaySrcs({});
-  }, [img.selectedUrls.join("|"), JSON.stringify(img.enhancedUrls ?? {})]);
+  }, [selectedUrlsKey, enhancedUrlsKey]);
 
   React.useEffect(() => {
     if (!onEnhanceDisplayReady) return;
@@ -125,7 +129,7 @@ export function OptimizerImageReview({
     <div className={cn("w-full min-w-0", size === "compact" ? "space-y-1" : "space-y-3")}>
       {size !== "compact" ? (
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-1.5 text-xs font-medium text-muted-foreground">
           {done ? (
             <>
               <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
@@ -138,6 +142,7 @@ export function OptimizerImageReview({
               Pick a primary photo, remove any you don&apos;t want, then approve.
             </>
           )}
+          {isSmartPhotoRun ? <SmartPhotoSystemBadge /> : null}
         </div>
         {editable && (
           <div className="flex items-center gap-1.5">
@@ -168,7 +173,8 @@ export function OptimizerImageReview({
         )}
       </div>
       ) : (
-        <div className="flex items-center justify-end gap-1">
+        <div className="flex items-center justify-between gap-1">
+          {isSmartPhotoRun ? <SmartPhotoSystemBadge compact /> : <span />}
           {editable && (
             <button
               type="button"
@@ -378,5 +384,19 @@ export function OptimizerImageReview({
         </div>
       )}
     </div>
+  );
+}
+
+function SmartPhotoSystemBadge({ compact = false }: { compact?: boolean }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-md border border-border bg-white font-medium text-muted-foreground shadow-sm",
+        compact ? "px-1.5 py-0.5 text-[9px]" : "px-1.5 py-0.5 text-[10px]",
+      )}
+    >
+      <Sparkles className={compact ? "h-2.5 w-2.5" : "h-3 w-3"} />
+      Powered by new photo system
+    </span>
   );
 }

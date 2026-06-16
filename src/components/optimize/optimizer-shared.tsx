@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { FileSpreadsheet, Layers, ListFilter, Loader2, X } from "lucide-react";
+import { FileSpreadsheet, Layers, ListFilter, X } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -96,6 +96,7 @@ export interface ImageRun {
   selectedCandidates: import("@/lib/admin/image-qa-speed").SpeedSearchCandidate[];
   selectedUrls: string[];
   primaryUrl: string | null;
+  photoSystem?: "smart_product_photos";
   reasoning?: string;
   error?: string;
   enhancedUrls?: Record<string, string>;

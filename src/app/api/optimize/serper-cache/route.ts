@@ -116,6 +116,10 @@ export async function POST(request: NextRequest) {
             selectedCandidates: rawAi.selectedCandidates as SpeedSearchCandidate[],
             selectedUrls: Array.isArray(rawAi.selectedUrls) ? rawAi.selectedUrls : [],
             primaryUrl: rawAi.primaryUrl,
+            photoSystem:
+              rawAi.photoSystem === "smart_product_photos"
+                ? ("smart_product_photos" as const)
+                : undefined,
             reasoning: rawAi.reasoning,
           }
         : null;

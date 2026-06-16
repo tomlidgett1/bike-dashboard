@@ -44,7 +44,7 @@ import {
   toSpeedProduct,
   useLightbox,
 } from "@/components/optimize/optimizer-shared";
-import { fetchSerperCandidates } from "@/lib/admin/image-qa-speed";
+import type { SpeedSearchCandidate } from "@/lib/admin/image-qa-speed";
 import {
   type SerperAiSelectionCache,
   type SerperImageCacheEntry,
@@ -52,6 +52,7 @@ import {
 } from "@/lib/optimize/serper-image-cache";
 import { useOptimizeJobs } from "@/components/providers/optimize-jobs-provider";
 import type { CopyBatchFields } from "@/lib/optimize/copy-batch-job-types";
+import type { HeroPipelineResult } from "@/lib/optimize/hero-images/types";
 import {
   readBulkOptimiseIds,
   writeBulkOptimiseIds,
@@ -89,6 +90,7 @@ const DROPDOWN_TRANSITION = { duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] as c
 
 const BRAND_CHUNK = 25;
 const SERPER_CACHE_CHUNK = 50;
+const SMART_PHOTO_SYSTEM = "smart_product_photos" as const;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -225,8 +227,31 @@ function imageRunToSerperAiSelection(run: ImageRun): SerperAiSelectionCache | nu
     selectedCandidates: run.selectedCandidates,
     selectedUrls: run.selectedUrls,
     primaryUrl: run.primaryUrl,
+    photoSystem: run.photoSystem,
     reasoning: run.reasoning,
   };
+}
+
+function isSmartCachedRun(
+  run: ReturnType<typeof imageRunFromSerperCache>,
+): run is NonNullable<ReturnType<typeof imageRunFromSerperCache>> & {
+  photoSystem: typeof SMART_PHOTO_SYSTEM;
+} {
+  return run?.photoSystem === SMART_PHOTO_SYSTEM;
+}
+
+function smartPhotoResultToCandidates(result: HeroPipelineResult): SpeedSearchCandidate[] {
+  const selected = Array.isArray(result.selected) ? result.selected : [];
+  return selected.map((image, index) => ({
+    id: `smart-photo-${index + 1}`,
+    url: image.url,
+    thumbnailUrl: image.thumbnailUrl ?? image.url,
+    title: image.reason || image.domain || `Smart product photo ${index + 1}`,
+    source: image.isOfficial ? "official" : image.domain ?? SMART_PHOTO_SYSTEM,
+    domain: image.domain,
+    width: image.width,
+    height: image.height,
+  }));
 }
 
 function hasCopyFields(copyFields: CopyBatchFields) {
@@ -317,9 +342,17 @@ function FieldChip({
   );
 }
 
-function StatChip({ label, value }: { label: string; value: string | number }) {
+function StatChip({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: string | number;
+  className?: string;
+}) {
   return (
-    <div className="rounded-md border border-border bg-background px-3 py-2">
+    <div className={cn("rounded-md border border-border bg-background px-3 py-2", className)}>
       <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
       <p className="mt-0.5 text-lg font-semibold tracking-tight text-foreground tabular-nums">
         {value}
@@ -330,7 +363,12 @@ function StatChip({ label, value }: { label: string; value: string | number }) {
 
 // ── Main component ──────────────────────────────────────────────────────────
 
-export function BulkOptimiseWorkspace() {
+type BulkOptimiseWorkspaceProps = {
+  variant?: "default" | "products-card";
+};
+
+export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorkspaceProps) {
+  const isProductsCard = variant === "products-card";
   const { jobs, startCopyBatch } = useOptimizeJobs();
   const { lightbox, setLightbox } = useLightbox();
 
@@ -443,7 +481,7 @@ export function BulkOptimiseWorkspace() {
             }
             if (next[product.id] && next[product.id].phase !== "idle") continue;
             const cached = imageRunFromSerperCache(caches[product.canonical_product_id]);
-            if (cached) next[product.id] = { ...emptyImageRun(), ...cached };
+            if (isSmartCachedRun(cached)) next[product.id] = { ...emptyImageRun(), ...cached };
           }
           return next;
         });
@@ -564,57 +602,61 @@ export function BulkOptimiseWorkspace() {
         }
 
         const cachedRun = imageRunFromSerperCache(entry ?? undefined);
-        if (cachedRun?.phase === "ready") {
+        if (cachedRun?.phase === "ready" && isSmartCachedRun(cachedRun)) {
           patchImageRun(product.id, { ...emptyImageRun(), ...cachedRun });
           return true;
         }
 
-        let candidates = entry?.candidates ?? [];
-        if (candidates.length === 0) {
-          patchImageRun(product.id, { ...emptyImageRun(), phase: "searching" });
-          candidates = await fetchSerperCandidates(speedProduct, searchQuery);
+        patchImageRun(product.id, { ...emptyImageRun(), phase: "searching" });
+        const response = await fetch("/api/optimize/hero-images", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: speedProduct.store_product_name || speedProduct.display_name || speedProduct.normalized_name,
+            brand: speedProduct.manufacturer || null,
+            upc: speedProduct.upc || null,
+            searchQuery: entry?.searchQuery || searchQuery,
+            maxImages: 6,
+          }),
+        });
+
+        const json = (await response.json().catch(() => ({}))) as HeroPipelineResult & {
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(json.error || "Smart photo search failed");
         }
 
-        if (candidates.length === 0) {
-          patchImageRun(product.id, { phase: "no_results", error: "No images found" });
+        const selectedImages = Array.isArray(json.selected) ? json.selected : [];
+        const candidates = smartPhotoResultToCandidates(json);
+        const selectedUrls = candidates.map((candidate) => candidate.url);
+        const primaryUrl =
+          json.primaryUrl ||
+          selectedImages.find((image) => image.isPrimary)?.url ||
+          selectedUrls[0] ||
+          null;
+
+        if (!json.ok || candidates.length === 0 || !primaryUrl) {
+          patchImageRun(product.id, {
+            phase: "no_results",
+            error: json.error || json.reasoning || "No images found",
+            photoSystem: SMART_PHOTO_SYSTEM,
+          });
           saveSerperCache(product.canonical_product_id, {
-            searchQuery,
+            searchQuery: entry?.searchQuery || searchQuery,
             candidates: [],
             aiSelection: null,
           });
           return false;
         }
 
-        saveSerperCache(product.canonical_product_id, {
-          searchQuery: entry?.searchQuery || searchQuery,
-          candidates,
-          aiSelection: null,
-        });
-
-        patchImageRun(product.id, { phase: "selecting", candidates });
-        const response = await fetch("/api/admin/images/ai-select-candidates", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            productName: speedProduct.store_product_name || speedProduct.normalized_name,
-            brand: speedProduct.manufacturer || undefined,
-            upc: speedProduct.upc || undefined,
-            candidates,
-            maxImages: 6,
-          }),
-        });
-
-        const json = await response.json();
-        if (!response.ok || !json.success || !json.primaryUrl) {
-          throw new Error(json.error || "Image selection failed");
-        }
-
         patchImageRun(product.id, {
           phase: "ready",
           candidates,
-          selectedCandidates: json.selectedCandidates,
-          selectedUrls: json.selectedUrls,
-          primaryUrl: json.primaryUrl,
+          selectedCandidates: candidates,
+          selectedUrls,
+          primaryUrl,
+          photoSystem: SMART_PHOTO_SYSTEM,
           reasoning: json.reasoning,
           error: undefined,
         });
@@ -622,9 +664,10 @@ export function BulkOptimiseWorkspace() {
           searchQuery: entry?.searchQuery || searchQuery,
           candidates,
           aiSelection: {
-            selectedCandidates: json.selectedCandidates,
-            selectedUrls: json.selectedUrls,
-            primaryUrl: json.primaryUrl,
+            selectedCandidates: candidates,
+            selectedUrls,
+            primaryUrl,
+            photoSystem: SMART_PHOTO_SYSTEM,
             reasoning: json.reasoning,
           },
         });
@@ -1357,7 +1400,12 @@ export function BulkOptimiseWorkspace() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
+      <div
+        className={cn(
+          "flex items-center justify-center",
+          isProductsCard ? "min-h-0 flex-1" : "py-20",
+        )}
+      >
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </div>
     );
@@ -1366,18 +1414,17 @@ export function BulkOptimiseWorkspace() {
   const allSelected = products.length > 0 && rowSelected.size === products.length;
   const someSelected = rowSelected.size > 0;
 
-  return (
-    <div className="space-y-4">
-      {/* Summary stats */}
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <StatChip label="Products in batch" value={products.length.toLocaleString()} />
-        <StatChip label="Selected" value={rowSelected.size.toLocaleString()} />
-        <StatChip label="Missing brand" value={missingBrandIds.length.toLocaleString()} />
-        <StatChip label="Photos ready to approve" value={readyPhotoCount.toLocaleString()} />
-      </div>
+  const statsRow = (
+    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <StatChip label="Products in batch" value={products.length.toLocaleString()} className={isProductsCard ? "bg-white" : undefined} />
+      <StatChip label="Selected" value={rowSelected.size.toLocaleString()} className={isProductsCard ? "bg-white" : undefined} />
+      <StatChip label="Missing brand" value={missingBrandIds.length.toLocaleString()} className={isProductsCard ? "bg-white" : undefined} />
+      <StatChip label="Photos ready to approve" value={readyPhotoCount.toLocaleString()} className={isProductsCard ? "bg-white" : undefined} />
+    </div>
+  );
 
-      {/* Toolbar */}
-      <div className="space-y-3 rounded-md border border-border bg-background p-4">
+  const toolbar = (
+    <div className={cn("space-y-3", isProductsCard ? "" : "rounded-md border border-border bg-background p-4")}>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           {/* Add products */}
           <div className="relative w-full lg:max-w-md">
@@ -1386,7 +1433,10 @@ export function BulkOptimiseWorkspace() {
               placeholder="Search to add products to this batch..."
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              className="h-8 rounded-md pl-8 text-xs"
+              className={cn(
+                "rounded-md pl-8 text-sm",
+                isProductsCard ? "h-9" : "h-8 text-xs",
+              )}
             />
             <AnimatePresence>
               {searchQuery.trim().length >= 2 ? (
@@ -1518,7 +1568,7 @@ export function BulkOptimiseWorkspace() {
 
         {/* Progress */}
         <AnimatePresence>
-          {copyProgress || photoProgress ? (
+          {(copyProgress || photoProgress) ? (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
@@ -1547,81 +1597,108 @@ export function BulkOptimiseWorkspace() {
             </motion.div>
           ) : null}
         </AnimatePresence>
-      </div>
+    </div>
+  );
 
-      {/* Product rows */}
-      {products.length === 0 ? (
-        <div className="rounded-md border border-border bg-background py-16 text-center">
-          <Package className="mx-auto mb-3 h-8 w-8 text-muted-foreground/40" />
-          <p className="text-sm font-medium text-muted-foreground">No products in this batch</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Search above to add products, or go back and select products from the table.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {products.map((product) => (
-            <ProductRow
-              key={product.id}
-              product={product}
-              fieldSelection={fields[product.id] ?? defaultFieldSelection(product)}
-              selected={rowSelected.has(product.id)}
-              expanded={expanded.has(product.id)}
-              imageRun={imageRuns[product.id] ?? emptyImageRun()}
-              draft={drafts[product.id]}
-              saving={savingIds.has(product.id)}
-              copyBusy={copyRunning && copyQueuedIds.has(product.id)}
-              bicycleBusy={bicycleBusy.has(product.id)}
-              brandBusy={brandBusy.has(product.id)}
-              brandError={brandErrors[product.id]}
-              optimiseBusy={optimiseBusy}
-              onToggleSelect={() =>
-                setRowSelected((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(product.id)) next.delete(product.id);
-                  else next.add(product.id);
-                  return next;
-                })
-              }
-              onToggleField={(field) =>
-                setRowFields(product.id, {
-                  [field]: !(fields[product.id] ?? defaultFieldSelection(product))[field],
-                })
-              }
-              onToggleExpand={() => toggleExpand(product.id)}
-              onRemove={() => removeProduct(product.id)}
-              onDraftChange={(patch) =>
-                setDrafts((prev) => ({
-                  ...prev,
-                  [product.id]: { ...(prev[product.id] ?? { title: "", description: "", specs: "" }), ...patch },
-                }))
-              }
-              onSaveDraft={() => void saveDraft(product)}
-              onGenerateCopy={() => {
-                const selection = fields[product.id] ?? defaultFieldSelection(product);
-                void startCopyForProducts([
-                  {
-                    product,
-                    copyFields: {
-                      title: selection.title,
-                      description: selection.description,
-                      specs: selection.specs,
-                    },
+  const productList =
+    products.length === 0 ? (
+      <div
+        className={cn(
+          "py-16 text-center",
+          isProductsCard ? "" : "rounded-md border border-border bg-background",
+        )}
+      >
+        <Package className="mx-auto mb-3 h-8 w-8 text-muted-foreground/40" />
+        <p className="text-sm font-medium text-muted-foreground">No products in this batch</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Search above to add products, or select products from the table first.
+        </p>
+      </div>
+    ) : (
+      <div className="space-y-2">
+        {products.map((product) => (
+          <ProductRow
+            key={product.id}
+            product={product}
+            fieldSelection={fields[product.id] ?? defaultFieldSelection(product)}
+            selected={rowSelected.has(product.id)}
+            expanded={expanded.has(product.id)}
+            imageRun={imageRuns[product.id] ?? emptyImageRun()}
+            draft={drafts[product.id]}
+            saving={savingIds.has(product.id)}
+            copyBusy={copyRunning && copyQueuedIds.has(product.id)}
+            bicycleBusy={bicycleBusy.has(product.id)}
+            brandBusy={brandBusy.has(product.id)}
+            brandError={brandErrors[product.id]}
+            optimiseBusy={optimiseBusy}
+            onToggleSelect={() =>
+              setRowSelected((prev) => {
+                const next = new Set(prev);
+                if (next.has(product.id)) next.delete(product.id);
+                else next.add(product.id);
+                return next;
+              })
+            }
+            onToggleField={(field) =>
+              setRowFields(product.id, {
+                [field]: !(fields[product.id] ?? defaultFieldSelection(product))[field],
+              })
+            }
+            onToggleExpand={() => toggleExpand(product.id)}
+            onRemove={() => removeProduct(product.id)}
+            onDraftChange={(patch) =>
+              setDrafts((prev) => ({
+                ...prev,
+                [product.id]: { ...(prev[product.id] ?? { title: "", description: "", specs: "" }), ...patch },
+              }))
+            }
+            onSaveDraft={() => void saveDraft(product)}
+            onGenerateCopy={() => {
+              const selection = fields[product.id] ?? defaultFieldSelection(product);
+              void startCopyForProducts([
+                {
+                  product,
+                  copyFields: {
+                    title: selection.title,
+                    description: selection.description,
+                    specs: selection.specs,
                   },
-                ]);
-              }}
-              onSetBicycle={(value) => void setBicycle(product, value)}
-              onAutoDetectBicycle={() => void autoDetectBicycle(product)}
-              onIdentifyBrand={() => void fixBrands([product.id])}
-              onFindPhotos={() => void runPhotoPipeline([product])}
-              onImageUpdate={(patch) => updateImageRunForProduct(product, patch)}
-              onEnhance={(url) => void enhanceImage(product, url)}
-              onApproveImages={() => void approveImages(product)}
-              onLightbox={setLightbox}
-            />
-          ))}
+                },
+              ]);
+            }}
+            onSetBicycle={(value) => void setBicycle(product, value)}
+            onAutoDetectBicycle={() => void autoDetectBicycle(product)}
+            onIdentifyBrand={() => void fixBrands([product.id])}
+            onFindPhotos={() => void runPhotoPipeline([product])}
+            onImageUpdate={(patch) => updateImageRunForProduct(product, patch)}
+            onEnhance={(url) => void enhanceImage(product, url)}
+            onApproveImages={() => void approveImages(product)}
+            onLightbox={setLightbox}
+          />
+        ))}
+      </div>
+    );
+
+  if (isProductsCard) {
+    return (
+      <>
+        <div className="shrink-0 border-b border-border/60 bg-gray-50">
+          <div className="flex flex-col gap-3 px-4 py-3 md:px-5">
+            {statsRow}
+            {toolbar}
+          </div>
         </div>
-      )}
+        <div className="min-h-0 flex-1 overflow-auto px-4 py-4 md:px-5">{productList}</div>
+        <LightboxOverlay url={lightbox} onClose={() => setLightbox(null)} />
+      </>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {statsRow}
+      {toolbar}
+      {productList}
 
       <LightboxOverlay url={lightbox} onClose={() => setLightbox(null)} />
     </div>
