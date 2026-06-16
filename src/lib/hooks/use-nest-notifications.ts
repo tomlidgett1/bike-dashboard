@@ -72,7 +72,9 @@ async function fetchNestChatList(): Promise<{
   chats: NestConversationListItem[];
   configured: boolean;
 }> {
-  const res = await fetch("/api/store/nest-messages?listOnly=1", { cache: "no-store" });
+  const res = await fetch("/api/store/nest-messages?listOnly=1&poll=1", {
+    cache: "no-store",
+  });
   const data = (await res.json()) as {
     chats?: NestConversationListItem[];
     configured?: boolean;
@@ -95,7 +97,7 @@ async function fetchNestChatList(): Promise<{
   return { chats: sanitised.chats, configured: true };
 }
 
-export function useNestNotifications(enabled: boolean, pollIntervalMs = 20_000) {
+export function useNestNotifications(enabled: boolean, pollIntervalMs = 45_000) {
   const [configured, setConfigured] = useState(false);
   const [chats, setChats] = useState<NestConversationListItem[]>([]);
   const [notifications, setNotifications] = useState<NestMessageNotification[]>([]);

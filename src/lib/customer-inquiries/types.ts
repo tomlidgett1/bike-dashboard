@@ -118,6 +118,7 @@ export type CustomerInquiryListItem = Pick<
   | 'status'
   | 'draft_body'
   | 'thread_message_count'
+  | 'last_customer_at'
   | 'updated_at'
 >
 

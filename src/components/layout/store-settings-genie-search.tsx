@@ -1,27 +1,25 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import { HomeV2ChatInput } from "@/components/genie/homev2-chat-input";
-import { queueHomeV2Prompt } from "@/lib/genie/homev2-navigation";
+import { useGenieTransition } from "@/components/layout/genie-transition";
 import { cn } from "@/lib/utils";
 
 export function StoreSettingsGenieSearch({ className }: { className?: string }) {
-  const router = useRouter();
+  const { startTransition } = useGenieTransition();
   const [value, setValue] = React.useState("");
 
   const submitPrompt = React.useCallback(() => {
     const trimmed = value.trim();
     if (!trimmed) return;
-    if (!queueHomeV2Prompt(trimmed)) return;
     setValue("");
-    router.push("/settings/store/home");
-  }, [router, value]);
+    startTransition(trimmed);
+  }, [startTransition, value]);
 
   return (
     <div
       className={cn(
-        "w-full overflow-hidden rounded-full bg-white shadow-sm ring-1 ring-black/10",
+        "group w-full overflow-hidden rounded-full bg-white shadow-sm ring-1 ring-black/10 transition-shadow hover:shadow-md",
         className,
       )}
     >
@@ -29,6 +27,7 @@ export function StoreSettingsGenieSearch({ className }: { className?: string }) 
         header
         compact
         floating
+        placeholderShimmerOnHover
         value={value}
         onChange={setValue}
         onSubmit={submitPrompt}

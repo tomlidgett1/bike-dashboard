@@ -320,6 +320,20 @@ export async function markNestReadInSupabase(
   }
 }
 
+export async function getNestLastSyncedAt(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("store_inbox_connection_state")
+    .select("nest_last_synced_at")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error || !data?.nest_last_synced_at) return null;
+  return data.nest_last_synced_at as string;
+}
+
 export async function touchNestSyncTimestamp(
   supabase: SupabaseClient,
   userId: string,

@@ -17,6 +17,7 @@ export function HomeV2ChatInput({
   showDisclaimer = true,
   endAccessory,
   onFileSelected,
+  placeholderShimmerOnHover = false,
 }: {
   value: string;
   isRunning?: boolean;
@@ -24,6 +25,8 @@ export function HomeV2ChatInput({
   floating?: boolean;
   /** Compact single-line variant for the store settings dashboard header. */
   header?: boolean;
+  /** Shimmer the placeholder label when the parent `.group` is hovered (header search). */
+  placeholderShimmerOnHover?: boolean;
   onChange: (value: string) => void;
   onSubmit: () => void;
   onStop?: () => void;
@@ -39,6 +42,8 @@ export function HomeV2ChatInput({
   const hasText = value.trim().length > 0;
   const queueMode = isRunning && hasText;
   const canAct = isRunning || hasText;
+  const placeholderLabel = isRunning ? "Queue another prompt..." : placeholder;
+  const showShimmerPlaceholder = Boolean(header && placeholderShimmerOnHover && !hasText);
 
   React.useEffect(() => {
     const textarea = textareaRef.current;
@@ -97,29 +102,39 @@ export function HomeV2ChatInput({
           />
         ) : null}
 
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              if (isRunning && !hasText) {
-                onStop?.();
-                return;
+        <div className={cn("relative min-w-0", header ? "flex-1" : "contents")}>
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                if (isRunning && !hasText) {
+                  onStop?.();
+                  return;
+                }
+                if (hasText) onSubmit();
               }
-              if (hasText) onSubmit();
-            }
-          }}
-          rows={1}
-          placeholder={isRunning ? "Queue another prompt..." : placeholder}
-          className={cn(
-            "flex-1 resize-none border-0 bg-transparent px-1 text-foreground outline-none placeholder:text-gray-500",
-            header
-              ? "min-h-[28px] max-h-[28px] py-1 text-sm leading-snug"
-              : "max-h-[132px] min-h-[36px] py-2 text-[15px] leading-snug",
-          )}
-        />
+            }}
+            rows={1}
+            placeholder={showShimmerPlaceholder ? " " : placeholderLabel}
+            className={cn(
+              "resize-none border-0 bg-transparent px-1 text-foreground outline-none placeholder:text-gray-500",
+              header
+                ? "min-h-[28px] max-h-[28px] w-full flex-1 py-1 text-sm leading-snug"
+                : "max-h-[132px] min-h-[36px] flex-1 py-2 text-[15px] leading-snug",
+            )}
+          />
+          {showShimmerPlaceholder ? (
+            <span
+              aria-hidden
+              className="genie-header-search-placeholder pointer-events-none absolute left-1 top-1/2 max-w-[calc(100%-0.5rem)] -translate-y-1/2 truncate text-sm text-gray-500"
+            >
+              {placeholderLabel}
+            </span>
+          ) : null}
+        </div>
 
         {endAccessory}
 

@@ -85,9 +85,13 @@ export function UnifiedInboxTable({ c }: { c: UnifiedInboxController }) {
           <span className="flex h-12 w-12 items-center justify-center rounded-md border border-gray-200 bg-white">
             <Inbox className="h-5 w-5 text-gray-400" />
           </span>
-          <p className="mt-4 text-sm font-medium text-gray-900">No enquiries match this filter</p>
+          <p className="mt-4 text-sm font-medium text-gray-900">
+            {c.inboxTab === "unread" ? "No unread enquiries" : "No enquiries match this filter"}
+          </p>
           <p className="mt-1 max-w-sm text-sm text-gray-500">
-            Try another tab, or refresh to pull the latest Gmail and Nest messages.
+            {c.inboxTab === "unread"
+              ? "You are up to date. New Gmail and Nest messages will appear here until you open them."
+              : "Try another tab, or refresh to pull the latest Gmail and Nest messages."}
           </p>
         </div>
       ) : (

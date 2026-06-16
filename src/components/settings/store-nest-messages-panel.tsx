@@ -7,17 +7,14 @@ import {
   Inbox,
   Loader2,
   PhoneMissed,
-  Plus,
   RefreshCw,
   Search,
-  Send,
   Settings,
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { NestPageHeader, storeSettingsHeaderActionClass, storeSettingsPageChromeClass, storeSettingsPageHeaderNudgeClass } from "@/components/settings/actions-page-header";
 import {
   filterNestInboxChats,
@@ -47,6 +44,8 @@ import {
   isNestConversationUnread,
   markNestConversationRead,
 } from "@/lib/nest/conversation-read-state";
+import { NestThreadMessage, sameMessageGroup } from "@/components/settings/nest-chat-messages";
+import { NestComposePill } from "@/components/settings/nest-compose-pill";
 
 type NestPanelTab = "inbox" | "missed_calls" | "auto" | "settings";
 type NestConversationTab = "inbox" | "missed_calls" | "auto";
@@ -109,78 +108,6 @@ function NestSectionTabs({
   );
 }
 
-const IMESSAGE_OUTGOING = "#007AFF";
-const IMESSAGE_INCOMING = "#E9E9EB";
-const IMESSAGE_AI = "#F2F2F7";
-
-const IMAGE_URL_PATTERN =
-  /^https?:\/\/[^\s]+\.(?:png|jpe?g|gif|webp|avif)(?:\?[^\s]*)?$/i;
-
-function isImageUrl(text: string): boolean {
-  return IMAGE_URL_PATTERN.test(text.trim());
-}
-
-function NestChatBubble({
-  children,
-  variant,
-  showTail = true,
-  dense = false,
-}: {
-  children: React.ReactNode;
-  variant: "incoming" | "outgoing" | "ai" | "system";
-  showTail?: boolean;
-  dense?: boolean;
-}) {
-  if (variant === "system") {
-    return (
-      <div className="rounded-full bg-muted px-4 py-1.5 text-center text-xs text-muted-foreground">
-        {children}
-      </div>
-    );
-  }
-
-  const isOutgoing = variant === "outgoing";
-  const color = isOutgoing ? IMESSAGE_OUTGOING : variant === "ai" ? IMESSAGE_AI : IMESSAGE_INCOMING;
-
-  return (
-    <div className="relative max-w-full">
-      <div
-        className={cn(
-          "relative overflow-visible text-[15px] leading-snug",
-          dense ? "p-0.5" : "px-3 py-2",
-          isOutgoing
-            ? cn("rounded-[18px] text-white", showTail ? "rounded-br-[4px]" : "rounded-br-[18px]")
-            : cn("rounded-[18px] text-foreground", showTail ? "rounded-bl-[4px]" : "rounded-bl-[18px]"),
-        )}
-        style={{ backgroundColor: color }}
-      >
-        {children}
-        {showTail ? (
-          <>
-            <span
-              aria-hidden
-              className={cn(
-                "pointer-events-none absolute bottom-0 h-5 w-5",
-                isOutgoing
-                  ? "right-[-7px] rounded-bl-[16px_14px]"
-                  : "left-[-7px] rounded-br-[16px_14px]",
-              )}
-              style={{ backgroundColor: color }}
-            />
-            <span
-              aria-hidden
-              className={cn(
-                "pointer-events-none absolute bottom-0 h-5 w-[26px] bg-white",
-                isOutgoing ? "right-[-26px] rounded-bl-[10px]" : "left-[-26px] rounded-br-[10px]",
-              )}
-            />
-          </>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 function formatListTime(iso: string): string {
   const when = new Date(iso);
   const now = new Date();
@@ -192,49 +119,6 @@ function formatListTime(iso: string): string {
     return when.toLocaleDateString("en-AU", { weekday: "short" });
   }
   return when.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
-}
-
-function formatMessageTime(iso: string): string {
-  return new Date(iso).toLocaleString("en-AU", {
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function isManualMessage(message: NestConversationMessage): boolean {
-  const source = typeof message.metadata?.source === "string" ? message.metadata.source : "";
-  const service = typeof message.metadata?.service === "string" ? message.metadata.service : "";
-  const senderKind =
-    typeof message.metadata?.sender_kind === "string" ? message.metadata.sender_kind : "";
-  return (
-    message.handle?.startsWith("staff@") === true ||
-    senderKind === "staff" ||
-    source.startsWith("brand_portal_") ||
-    service.startsWith("brand_portal_")
-  );
-}
-
-function splitAssistantBubbles(text: string): string[] {
-  const parts = text
-    .split(/\n\s*---\s*\n/g)
-    .map((part) => part.trim())
-    .filter(Boolean);
-  return parts.length > 0 ? parts : [text.trim()];
-}
-
-function messageSide(message: NestConversationMessage): "outgoing" | "incoming" | "system" {
-  const isStaff =
-    (typeof message.handle === "string" && message.handle.startsWith("staff@")) ||
-    isManualMessage(message);
-  if (message.role === "system") return "system";
-  if (isStaff) return "outgoing";
-  return "incoming";
-}
-
-function sameMessageGroup(a: NestConversationMessage, b: NestConversationMessage): boolean {
-  return messageSide(a) === messageSide(b) && messageSide(a) !== "system";
 }
 
 function sortChats(chats: NestConversationListItem[]): NestConversationListItem[] {
@@ -301,37 +185,6 @@ async function fetchNestThread(chatId: string): Promise<NestConversationDetail |
   return data.conversation;
 }
 
-async function sendNestMessage(chatId: string, content: string): Promise<NestConversationMessage> {
-  const res = await fetch("/api/store/nest-messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "send_message", chatId, content }),
-  });
-  const data = (await res.json()) as { message?: NestConversationMessage; error?: string };
-  if (!res.ok || !data.message) {
-    throw new Error(data.error || "Could not send message.");
-  }
-  return data.message;
-}
-
-function RichText({ text }: { text: string }) {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
-  return (
-    <span className="whitespace-pre-wrap break-words">
-      {parts.map((part, index) => {
-        if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
-          return (
-            <strong key={`${part}-${index}`} className="font-semibold">
-              {part.slice(2, -2)}
-            </strong>
-          );
-        }
-        return <span key={`${part}-${index}`}>{part}</span>;
-      })}
-    </span>
-  );
-}
-
 function ConversationRow({
   chat,
   active,
@@ -396,179 +249,6 @@ function ConversationRow({
         </div>
       </div>
     </button>
-  );
-}
-
-function ThreadMessage({
-  message,
-  showTail = true,
-}: {
-  message: NestConversationMessage;
-  showTail?: boolean;
-}) {
-  const isStaff =
-    (typeof message.handle === "string" && message.handle.startsWith("staff@")) ||
-    isManualMessage(message);
-  const isCustomer = message.role === "user";
-  const isSystem = message.role === "system";
-  const isAi = message.role === "assistant" && !isStaff;
-  const isOutgoing = isStaff;
-  const bubbles =
-    message.role === "assistant" ? splitAssistantBubbles(message.content) : [message.content];
-
-  const bubbleVariant = isOutgoing ? "outgoing" : isAi ? "ai" : isCustomer ? "incoming" : "system";
-
-  return (
-    <div
-      className={cn(
-        "flex px-1",
-        isSystem ? "justify-center" : isOutgoing ? "justify-end" : "justify-start",
-      )}
-    >
-      <div className={cn("max-w-[min(78%,28rem)] space-y-1", isOutgoing && "items-end")}>
-        {isAi ? (
-          <p className="px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Nest
-          </p>
-        ) : null}
-        {bubbles.map((bubble, index) => {
-          const trimmed = bubble.trim();
-          const imageOnly = isImageUrl(trimmed);
-
-          return (
-            <NestChatBubble
-              key={`${message.id}-${index}`}
-              variant={bubbleVariant}
-              showTail={showTail && index === bubbles.length - 1}
-              dense={imageOnly}
-            >
-              {imageOnly ? (
-                <div className="overflow-hidden rounded-[14px]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={trimmed}
-                    alt="Shared image"
-                    className="block max-h-72 max-w-full object-cover"
-                  />
-                </div>
-              ) : (
-                <RichText text={bubble} />
-              )}
-            </NestChatBubble>
-          );
-        })}
-        {!isSystem ? (
-          <p
-            className={cn(
-              "px-1 text-[11px] text-muted-foreground",
-              isOutgoing ? "text-right" : "text-left",
-            )}
-          >
-            {formatMessageTime(message.createdAt)}
-            {isStaff ? " · You" : null}
-          </p>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function ComposeBox({
-  chatId,
-  onSent,
-}: {
-  chatId: string;
-  onSent: (message: NestConversationMessage) => void;
-}) {
-  const [text, setText] = React.useState("");
-  const [sending, setSending] = React.useState(false);
-  const [sendErr, setSendErr] = React.useState<string | null>(null);
-  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
-
-  function onInput(event: React.ChangeEvent<HTMLTextAreaElement>) {
-    setText(event.target.value);
-    const el = event.target;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
-  }
-
-  async function send() {
-    const content = text.trim();
-    if (!content || sending) return;
-    setSending(true);
-    setSendErr(null);
-    try {
-      const message = await sendNestMessage(chatId, content);
-      setText("");
-      if (textareaRef.current) textareaRef.current.style.height = "auto";
-      onSent(message);
-    } catch (error) {
-      setSendErr(error instanceof Error ? error.message : "Could not send");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  return (
-    <div className="shrink-0 border-t border-gray-200/80 bg-white/90 px-4 py-3 backdrop-blur-sm md:px-5">
-      {sendErr ? (
-        <div className="mb-3 rounded-md border border-destructive/20 bg-white px-3 py-2 text-sm text-destructive">
-          {sendErr}
-        </div>
-      ) : null}
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void send();
-        }}
-        className="w-full"
-      >
-        <div className="flex w-full items-end gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 shadow-sm">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="mb-0.5 h-8 w-8 shrink-0 rounded-full text-gray-500 hover:text-gray-700"
-            disabled={sending}
-            aria-label="Add attachment"
-          >
-            <Plus className="h-5 w-5" />
-          </Button>
-          <Textarea
-            ref={textareaRef}
-            rows={1}
-            value={text}
-            onChange={onInput}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                event.preventDefault();
-                void send();
-              }
-            }}
-            placeholder="iMessage"
-            className="max-h-[132px] min-h-[28px] flex-1 resize-none border-0 bg-transparent px-1 py-1.5 text-[15px] leading-snug shadow-none focus-visible:ring-0"
-            style={{ height: "auto" }}
-            disabled={sending}
-          />
-          <Button
-            type="submit"
-            size="icon"
-            disabled={!text.trim() || sending}
-            className={cn(
-              "mb-0.5 h-8 w-8 shrink-0 rounded-full",
-              text.trim() ? "bg-[#007AFF] text-white hover:bg-[#007AFF]/90" : "bg-transparent text-gray-400",
-            )}
-            aria-label="Send message"
-          >
-            {sending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-      </form>
-    </div>
   );
 }
 
@@ -777,14 +457,15 @@ export function StoreNestMessagesPanel() {
     prefetchNestThread(chatId, fetchNestThread);
   }, []);
 
-  function handleSent(message: NestConversationMessage) {
+  function handleSent(tempId: number, message: NestConversationMessage) {
     if (!selectedChatId) return;
     setConversation((prev) => {
       if (!prev) return prev;
-      const next = {
-        ...prev,
-        messages: [...prev.messages, message],
-      };
+      const hasTemp = prev.messages.some((item) => item.id === tempId);
+      const messages = hasTemp
+        ? prev.messages.map((item) => (item.id === tempId ? message : item))
+        : [...prev.messages, message];
+      const next = { ...prev, messages };
       setCachedNestThread(next);
       return next;
     });
@@ -804,6 +485,38 @@ export function StoreNestMessagesPanel() {
         ),
       ),
     );
+  }
+
+  function handleOptimisticSent(message: NestConversationMessage) {
+    if (!selectedChatId) return;
+    setConversation((prev) => {
+      if (!prev) return prev;
+      return { ...prev, messages: [...prev.messages, message] };
+    });
+    setChats((prev) =>
+      sortChats(
+        prev.map((chat) =>
+          chat.chatId === selectedChatId
+            ? {
+                ...chat,
+                preview: message.content.replace(/\s+/g, " ").trim().slice(0, 180),
+                previewRole: message.role,
+                lastMessageAt: message.createdAt,
+                hasManualMessages: true,
+                latestManualMessageAt: message.createdAt,
+              }
+            : chat,
+        ),
+      ),
+    );
+  }
+
+  function handleSendFailed(tempId: number) {
+    if (!selectedChatId) return;
+    setConversation((prev) => {
+      if (!prev) return prev;
+      return { ...prev, messages: prev.messages.filter((item) => item.id !== tempId) };
+    });
   }
 
   function handleStarted(chatId: string, message: NestConversationMessage) {
@@ -1085,7 +798,7 @@ export function StoreNestMessagesPanel() {
                           const nextMessage = conversation.messages[index + 1];
                           const showTail = !nextMessage || !sameMessageGroup(message, nextMessage);
                           return (
-                            <ThreadMessage
+                            <NestThreadMessage
                               key={message.id}
                               message={message}
                               showTail={showTail}
@@ -1095,7 +808,16 @@ export function StoreNestMessagesPanel() {
                       )}
                     </div>
 
-                    <ComposeBox chatId={selectedChatId} onSent={handleSent} />
+                    <div className="shrink-0 border-t border-gray-200/80 bg-white/90 px-4 py-3 backdrop-blur-sm md:px-5">
+                      <NestComposePill
+                        chatId={selectedChatId}
+                        sendHandlers={{
+                          onOptimistic: handleOptimisticSent,
+                          onConfirmed: handleSent,
+                          onFailed: handleSendFailed,
+                        }}
+                      />
+                    </div>
                   </>
                 )}
               </section>

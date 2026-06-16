@@ -241,6 +241,130 @@ export function sanitizeStoredMessages(messages: HomeV2StoredMessage[]): HomeV2S
   }));
 }
 
+export function messagesToApiPayload(messages: HomeV2StoredMessage[]) {
+  return sanitizeStoredMessages(messages).map((message) => ({
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    charts: message.charts,
+    tables: message.tables,
+    pivotTables: message.pivotTables,
+    proposals: message.proposals,
+    products: message.products,
+    webImages: message.webImages,
+    workorders: message.workorders,
+    customerProfile: message.customerProfile,
+    gmailEmails: message.gmailEmails,
+    analysisPlan: message.analysisPlan,
+    analysisQueries: message.analysisQueries,
+  }));
+}
+
+export async function saveConversationToApi(
+  conversation: HomeV2SavedConversation,
+): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  if (!conversation.messages.some((message) => message.role === "user")) return null;
+
+  try {
+    const response = await fetch("/api/genie/conversations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: conversation.id,
+        messages: messagesToApiPayload(conversation.messages),
+      }),
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { id?: string };
+    return data.id ?? conversation.id;
+  } catch {
+    return null;
+  }
+}
+
+export function mapApiConversationListItem(data: {
+  id: string;
+  title?: string;
+  created_at?: string;
+  updated_at?: string;
+}): HomeV2SavedConversation {
+  return {
+    id: data.id,
+    title: data.title?.trim() || "New conversation",
+    updatedAt: data.updated_at ?? data.created_at ?? new Date().toISOString(),
+    messages: [],
+  };
+}
+
+export async function fetchConversationListFromApi(): Promise<HomeV2SavedConversation[]> {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const response = await fetch("/api/genie/conversations");
+    if (!response.ok) return [];
+    const data = (await response.json()) as {
+      conversations?: Array<{
+        id: string;
+        title?: string;
+        created_at?: string;
+        updated_at?: string;
+      }>;
+    };
+    return (data.conversations ?? []).map(mapApiConversationListItem);
+  } catch {
+    return [];
+  }
+}
+
+export function mergeConversationLists(
+  server: HomeV2SavedConversation[],
+  local: HomeV2SavedConversation[],
+): HomeV2SavedConversation[] {
+  const byId = new Map<string, HomeV2SavedConversation>();
+
+  for (const entry of server) {
+    byId.set(entry.id, entry);
+  }
+
+  for (const entry of local) {
+    const existing = byId.get(entry.id);
+    if (!existing) {
+      byId.set(entry.id, entry);
+      continue;
+    }
+
+    const existingTime = new Date(existing.updatedAt).getTime();
+    const localTime = new Date(entry.updatedAt).getTime();
+    const localHasBody = entry.messages.length > 0;
+    const existingHasBody = existing.messages.length > 0;
+
+    if (localHasBody && (!existingHasBody || localTime >= existingTime)) {
+      byId.set(entry.id, {
+        ...entry,
+        title: entry.title || existing.title,
+      });
+      continue;
+    }
+
+    if (!existing.title && entry.title) {
+      byId.set(entry.id, { ...existing, title: entry.title });
+    }
+  }
+
+  return Array.from(byId.values())
+    .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())
+    .slice(0, 20);
+}
+
+export async function syncLocalConversationsToApi(local: HomeV2SavedConversation[]) {
+  await Promise.all(
+    local
+      .filter((conversation) => conversationHasAssistantBody(conversation))
+      .map((conversation) => saveConversationToApi(conversation)),
+  );
+}
+
 export function persistCompletedHomeV2Job(job: GenieJob) {
   if (
     job.metadata.source !== "homev2" ||
@@ -257,6 +381,7 @@ export function persistCompletedHomeV2Job(job: GenieJob) {
     job,
   );
   upsertConversationHistory(hydrated);
+  void saveConversationToApi(hydrated);
 }
 
 export function mapApiConversationToSaved(
@@ -265,6 +390,7 @@ export function mapApiConversationToSaved(
     title?: string;
     messages?: unknown[];
     created_at?: string;
+    updated_at?: string;
   },
   composioSessionIds?: Record<string, string>,
 ): HomeV2SavedConversation {
@@ -294,7 +420,7 @@ export function mapApiConversationToSaved(
   return {
     id: data.id,
     title: data.title?.trim() || homeConversationTitle(messages),
-    updatedAt: data.created_at ?? new Date().toISOString(),
+    updatedAt: data.updated_at ?? data.created_at ?? new Date().toISOString(),
     messages,
     composioSessionIds,
   };

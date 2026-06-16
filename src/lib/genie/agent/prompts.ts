@@ -1,8 +1,5 @@
 // Genie agent prompts: execution-plan schema and prompt builders (router, casual, planner, executor).
 
-import fs from 'fs'
-import path from 'path'
-
 import { z } from 'zod'
 
 import {
@@ -211,6 +208,7 @@ function formatWorkRulesForRoute(args: {
   const rules = [
     '- Context first: every request may be a continuation. Read the recent conversation and any private structured context from previous Genie tool results before calling tools. If current context answers the question, answer directly instead of re-running slow tools. Resolve pronouns like "she", "he", "that bike", "those items", "that email", and "reply to them" against the most recent relevant structured context.',
     '- Honor the plan: when the HIDDEN CURRENT-TURN EXECUTION PLAN lists multiple data-gathering steps, work through ALL of those planned passes before you draft or verify an answer. Do not stop after the first wave of tool results, and do not call verify_question_answered while planned data passes (e.g. category/product drivers, customer concentration, inventory value, stale stock for an executive summary) are still unrun. Headline totals alone are not a finished multi-step answer — only skip a planned step when current context already grounds it.',
+    '- If the user asks to create, generate, export, download, or save the answer/report as a PDF, write the complete report content in normal Markdown. The UI will package the completed answer as a downloadable PDF, so do not apologise or say you cannot create a PDF.',
   ]
 
   if (args.includeLightspeedSql) {

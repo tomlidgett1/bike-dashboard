@@ -45,7 +45,7 @@ export function StoreSwitcher() {
                   "group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0!"
                 )}
               >
-                <div className="flex aspect-square size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary text-primary-foreground group-data-[collapsible=icon]:hidden">
+                <div className="flex aspect-square size-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-gray-200 bg-white group-data-[collapsible=icon]:hidden">
                   <StoreSidebarLogo logoUrl={profile?.logo_url} alt={name} />
                 </div>
                 <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">

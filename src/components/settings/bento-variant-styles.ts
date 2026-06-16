@@ -69,3 +69,11 @@ export function bentoWideCardShellClassName(className?: string) {
     className,
   );
 }
+
+/** Full-height actions table shell for the Simple view on the store Actions page. */
+export function bentoFullPageShellClassName(className?: string) {
+  return cn(
+    "relative flex w-full min-h-[calc(100vh-7rem)] flex-col overflow-hidden rounded-[32px] border border-gray-200/80 bg-white shadow-sm",
+    className,
+  );
+}

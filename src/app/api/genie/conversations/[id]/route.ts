@@ -13,7 +13,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
 
     const { data, error } = await supabase
       .from('genie_conversations')
-      .select('id, title, messages, created_at')
+      .select('id, title, messages, created_at, updated_at')
       .eq('id', id)
       .eq('user_id', user.id)
       .single()

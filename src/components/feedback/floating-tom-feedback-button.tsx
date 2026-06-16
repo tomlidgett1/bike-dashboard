@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { usePathname } from "next/navigation";
-import { Check, Loader2, MessageSquarePlus } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,7 +17,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
 import { isStoreDashboardPath } from "@/lib/routes/store-dashboard";
-import { topbarIconButtonClass } from "@/components/layout/topbar-nav-pills";
 import { cn } from "@/lib/utils";
 
 const MIN_FEEDBACK_LENGTH = 30;
@@ -165,17 +164,12 @@ export function FloatingTomFeedbackButton({
         onClick={() => setOpen(true)}
         className={cn(
           placement === "header"
-            ? topbarIconButtonClass
+            ? "inline-flex h-8 items-center justify-center rounded-[28px] border px-3.5 text-xs font-medium transition-colors !bg-[var(--dashboard-header-control-bg)] !border-[color:var(--dashboard-header-control-border)] !text-[color:var(--dashboard-header-control-fg)] hover:!bg-[var(--dashboard-header-control-hover-bg)] hover:!text-[color:var(--dashboard-header-control-hover-fg)]"
             : "pointer-events-auto inline-flex items-center gap-2 rounded-[28px] border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-800 shadow-md transition-colors hover:bg-gray-50",
         )}
-        aria-label={placement === "header" ? "Feedback" : "Tom feedback"}
+        aria-label="Feedback"
       >
-        <MessageSquarePlus
-          className={cn(
-            placement === "header" ? "size-4" : "size-4 text-gray-600",
-          )}
-        />
-        {placement === "header" ? null : "Tom feedback"}
+        {placement === "header" ? "Feedback" : "Tom feedback"}
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>

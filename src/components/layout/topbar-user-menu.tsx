@@ -46,7 +46,7 @@ export function TopbarUserMenu() {
           className={cn(topbarIconButtonClass, "overflow-hidden !p-0")}
           aria-label="Account menu"
         >
-          <span className="flex size-full items-center justify-center overflow-hidden rounded-full bg-primary text-primary-foreground">
+          <span className="flex size-full items-center justify-center overflow-hidden rounded-full border border-gray-200 bg-white">
             <StoreSidebarLogo
               logoUrl={profile?.logo_url}
               alt={name}

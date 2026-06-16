@@ -166,6 +166,11 @@ function resolveObviousLightspeedDirectPath(
 // result carries a wrap-up directive so long analyses land before the platform
 // kills the function instead of relying on turn count alone.
 const RUN_TIME_BUDGET_MS = 600_000
+// If the executor's model stream produces NO real event (token, tool call, or
+// status) for this long, treat it as a dead/stalled stream and abort so the run
+// can finalize. The 15s heartbeat keeps the job row's updated_at fresh, so the
+// 3-min stale-job sweeper never reclaims a hung stream — this is the real guard.
+const STREAM_IDLE_TIMEOUT_MS = Number(process.env.GENIE_STREAM_IDLE_TIMEOUT_MS) || 120_000
 const RUN_TIME_BUDGET_WARN_RATIO = 0.6
 
 function applyTimeBudgetToTools(
@@ -321,8 +326,16 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
   // sets an honest status. Stops a complete, efficient run from flashing
   // "Answer incomplete — continuing lookup" right before it answers.
   const verifyGate = { awaitingContinuation: false }
+  // Set by the executor stream loop to reset its stall watchdog on every real
+  // event. No-op outside that loop; heartbeats bypass `emit` so they never
+  // count as activity (a hung stream must not keep its own watchdog alive).
+  let bumpIdle: () => void = () => {}
 
   const emit = (data: object) => {
+    // Any real event (token, tool call/result, status, chart…) is proof of life
+    // for the executor stream — reset the stall watchdog. Heartbeats go through
+    // options.emit directly, bypassing this wrapper, so they never reset it.
+    bumpIdle()
     if ('event' in data && (data as { event?: unknown }).event === 'status') {
       const status = data as { phase?: unknown; text?: unknown }
       const phase = String(status.phase ?? '')
@@ -719,10 +732,30 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
       workflowName: 'Yellow Jersey Genie Executor',
     })
     const runExecutorStream = async () => {
+      // Stall watchdog (see STREAM_IDLE_TIMEOUT_MS). resetIdle() runs on every
+      // real emit; if the timer ever fires, the stream has gone silent and we
+      // abort it so the run can finalize/retry instead of hanging forever.
+      const idleController = new AbortController()
+      let stalled = false
+      let idleTimer: ReturnType<typeof setTimeout> | null = null
+      const resetIdle = () => {
+        if (idleTimer) clearTimeout(idleTimer)
+        idleTimer = setTimeout(() => {
+          stalled = true
+          idleController.abort()
+        }, STREAM_IDLE_TIMEOUT_MS)
+      }
+      const onParentAbort = () => idleController.abort()
+      if (signal.aborted) idleController.abort()
+      else signal.addEventListener('abort', onParentAbort, { once: true })
+      bumpIdle = resetIdle
+      resetIdle()
+
+      try {
       const agentStream = await executorRunner.run(agent, inputMessages, {
         stream: true,
         maxTurns: runtime.maxTurnsForRoute(orchestration.route, planned),
-        signal,
+        signal: idleController.signal,
         toolExecution: { maxFunctionToolConcurrency: maxToolConcurrencyForRoute(orchestration.route, modelProfile) },
         toolNotFoundBehavior: 'return_error_to_model',
         reasoningItemIdPolicy: 'omit',
@@ -858,6 +891,18 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
       }
 
       await agentStream.completed
+      } catch (streamError) {
+        // A watchdog abort surfaces as a generic AbortError. Relabel it so the
+        // retry harness below treats it like any transient "no final response"
+        // failure (retry if no text yet, else surface a clean error) instead of
+        // leaving the job hung on a dead stream with a ticking heartbeat.
+        if (stalled) throw new Error('model stream stalled — did not produce a final response')
+        throw streamError
+      } finally {
+        if (idleTimer) clearTimeout(idleTimer)
+        bumpIdle = () => {}
+        signal.removeEventListener('abort', onParentAbort)
+      }
     }
 
     // The model stream can occasionally end a turn without producing a final

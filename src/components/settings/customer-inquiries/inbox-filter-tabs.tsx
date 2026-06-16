@@ -6,6 +6,7 @@ import {
   Inbox,
   MailQuestionMark,
   Sparkles,
+  CircleDot,
   type LucideIcon,
 } from "lucide-react";
 import { GmailLogo } from "@/components/genie/gmail-logo";
@@ -17,6 +18,7 @@ const TAB_ICONS: Record<
   InboxTab,
   LucideIcon | "gmail" | "nest"
 > = {
+  unread: CircleDot,
   all: Inbox,
   needs_reply: MailQuestionMark,
   ready: Sparkles,

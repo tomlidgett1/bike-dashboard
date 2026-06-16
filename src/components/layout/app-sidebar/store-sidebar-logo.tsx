@@ -53,7 +53,7 @@ export function StoreSidebarLogo({
   }, [logoUrl]);
 
   if (!src) {
-    return <Bike className={cn("size-4", iconClassName)} />;
+    return <Bike className={cn("size-4 text-gray-400", iconClassName)} />;
   }
 
   return (
@@ -65,7 +65,7 @@ export function StoreSidebarLogo({
       height={32}
       sizes="32px"
       priority={priority}
-      className={cn("size-8 object-cover", className)}
+      className={cn("size-full object-contain p-0.5", className)}
     />
   );
 }

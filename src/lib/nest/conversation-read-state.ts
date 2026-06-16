@@ -6,13 +6,21 @@ export const NEST_READ_STATE_EVENT = "nest-read-state-changed";
 let serverReadMap: Record<string, string> = {};
 
 export function setNestReadMapFromServer(map: Record<string, string>) {
-  const next = { ...map };
+  const local = readNestLastReadMap();
+  const merged: Record<string, string> = { ...map };
+  for (const [chatId, localTs] of Object.entries(local)) {
+    const serverTs = merged[chatId];
+    if (!serverTs || new Date(localTs).getTime() > new Date(serverTs).getTime()) {
+      merged[chatId] = localTs;
+    }
+  }
+
   const unchanged =
-    Object.keys(next).length === Object.keys(serverReadMap).length &&
-    Object.entries(next).every(([chatId, iso]) => serverReadMap[chatId] === iso);
+    Object.keys(merged).length === Object.keys(serverReadMap).length &&
+    Object.entries(merged).every(([chatId, iso]) => serverReadMap[chatId] === iso);
   if (unchanged) return;
 
-  serverReadMap = next;
+  serverReadMap = merged;
   if (typeof window !== "undefined") {
     try {
       localStorage.setItem(NEST_LAST_READ_KEY, JSON.stringify(serverReadMap));
@@ -39,9 +47,14 @@ export function readNestLastReadMap(): Record<string, string> {
 }
 
 export function writeNestLastRead(chatId: string, iso: string) {
+  const map = readNestLastReadMap();
+  const existing = map[chatId];
+  if (existing && new Date(existing).getTime() >= new Date(iso).getTime()) {
+    return;
+  }
+
   serverReadMap[chatId] = iso;
   if (typeof window === "undefined") return;
-  const map = readNestLastReadMap();
   map[chatId] = iso;
   localStorage.setItem(NEST_LAST_READ_KEY, JSON.stringify(map));
   window.dispatchEvent(new CustomEvent(NEST_READ_STATE_EVENT));
@@ -60,6 +73,12 @@ export function markNestConversationRead(
 ) {
   const anchor = chat.lastCustomerMessageAt || chat.lastMessageAt;
   if (!anchor) return;
+
+  const existing = readNestLastReadMap()[chat.chatId];
+  if (existing && new Date(existing).getTime() >= new Date(anchor).getTime()) {
+    return;
+  }
+
   writeNestLastRead(chat.chatId, anchor);
   void import("@/lib/customer-inquiries/unified-inbox-client")
     .then(({ markNestReadOnServer }) => markNestReadOnServer(chat.chatId, anchor))
@@ -76,4 +95,13 @@ export function markAllNestConversationsRead(chats: NestConversationListItem[]) 
   serverReadMap = { ...map };
   localStorage.setItem(NEST_LAST_READ_KEY, JSON.stringify(map));
   window.dispatchEvent(new CustomEvent(NEST_READ_STATE_EVENT));
+}
+
+export function buildNestReadPayload(
+  chats: NestConversationListItem[],
+): Array<{ chatId: string; lastReadAt: string }> {
+  return chats.flatMap((chat) => {
+    const anchor = chat.lastCustomerMessageAt || chat.lastMessageAt;
+    return anchor ? [{ chatId: chat.chatId, lastReadAt: anchor }] : [];
+  });
 }

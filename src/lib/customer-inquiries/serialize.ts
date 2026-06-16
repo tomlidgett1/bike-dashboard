@@ -18,6 +18,7 @@ export function serializeInquiryListItem(row: CustomerInquiryRow): CustomerInqui
     status: row.status,
     draft_body: row.draft_body,
     thread_message_count: row.thread_message_count,
+    last_customer_at: row.last_customer_at,
     updated_at: row.updated_at,
   }
 }

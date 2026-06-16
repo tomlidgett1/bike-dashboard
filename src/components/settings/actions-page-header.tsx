@@ -97,12 +97,19 @@ export function StoreSettingsPageHeader({
   );
 }
 
-export function ActionsPageHeader({ className }: { className?: string }) {
+export function ActionsPageHeader({
+  className,
+  trailingActions,
+}: {
+  className?: string;
+  trailingActions?: React.ReactNode;
+}) {
   return (
     <StoreSettingsPageHeader
       title="Actions"
       icon={LayoutGrid}
       className={cn(storeSettingsPageHeaderNudgeClass, "!pb-0", className)}
+      trailingActions={trailingActions}
     />
   );
 }

@@ -79,7 +79,6 @@ import {
 import {
   PageBody,
   PageContainer,
-  PageHeader,
   StatusBadge,
   type StatusTone,
 } from "@/components/dashboard";
@@ -214,15 +213,15 @@ function ProductThumb({ product }: { product: Product }) {
 
   if (src) {
     return (
-      <div className="size-8 shrink-0 overflow-hidden rounded-md bg-muted ring-1 ring-border">
+      <div className="size-10 shrink-0 overflow-hidden rounded-lg bg-muted ring-1 ring-border">
         <Image
           src={src}
           alt={product.description}
-          width={32}
-          height={32}
+          width={40}
+          height={40}
           className="size-full object-cover"
           loading="lazy"
-          sizes="32px"
+          sizes="40px"
           unoptimized={isCloudinaryUrl(src) || isExternal(src)}
         />
       </div>
@@ -231,10 +230,10 @@ function ProductThumb({ product }: { product: Product }) {
 
   return (
     <div
-      className="flex size-8 shrink-0 items-center justify-center rounded-md border border-dashed border-border bg-muted/40 text-muted-foreground"
+      className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-dashed border-border bg-muted/40 text-muted-foreground"
       title="No image — use Optimise or Manage images from the row menu"
     >
-      <ImageOff className="size-3.5" />
+      <ImageOff className="size-4" />
     </div>
   );
 }
@@ -260,7 +259,7 @@ function SortButton({
     <button
       onClick={() => onSort(column)}
       className={cn(
-        "-mx-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground",
+        "-mx-1 inline-flex items-center gap-1 rounded-md px-1 py-0.5 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground",
         align === "right" && "ml-auto flex-row-reverse"
       )}
     >
@@ -818,21 +817,6 @@ export default function ProductsPage() {
   const rangeStart = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1;
   const rangeEnd = Math.min(pagination.page * pagination.pageSize, pagination.total);
 
-  const statsLine = stats
-    ? [
-        `${totalCount.toLocaleString()} products`,
-        `${stats.live.toLocaleString()} live on marketplace`,
-        `${stats.needsImages.toLocaleString()} need photos`,
-        stats.variantGrouped
-          ? `${stats.variantGrouped.toLocaleString()} in variant groups`
-          : null,
-        stats.variantPendingReview
-          ? `${stats.variantPendingReview.toLocaleString()} suggested merges`
-          : null,
-      ]
-        .filter(Boolean)
-        .join(" · ")
-    : `${totalCount.toLocaleString()} products`;
 
   const productColumns: ColumnDef<Product>[] = [
       {
@@ -909,24 +893,24 @@ export default function ProductsPage() {
         cell: ({ row }) => {
           const product = row.original;
           return (
-            <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex min-w-0 items-center gap-3">
               <ProductThumb product={product} />
               <div className="min-w-0">
                 <Link
                   href={`/marketplace/product/${product.id}`}
-                  className="block max-w-[280px] truncate text-left text-[11px] font-semibold leading-tight text-foreground transition-colors hover:text-primary hover:underline"
+                  className="block max-w-[280px] truncate text-left text-[13px] font-medium leading-tight text-foreground transition-colors hover:text-primary hover:underline"
                 >
                   {product.display_name || product.description}
                 </Link>
                 {product.display_name?.trim() && product.description?.trim() ? (
                   <p
-                    className="mt-0.5 max-w-[280px] truncate text-[10px] leading-tight text-muted-foreground"
+                    className="mt-0.5 max-w-[280px] truncate text-[11px] leading-tight text-muted-foreground"
                     title={product.description}
                   >
                     Lightspeed: {product.description}
                   </p>
                 ) : null}
-                <p className="mt-0.5 truncate font-mono text-[10px] leading-tight text-muted-foreground">
+                <p className="mt-0.5 truncate font-mono text-[11px] leading-tight text-muted-foreground">
                   {product.custom_sku || product.system_sku || "No SKU"}
                 </p>
               </div>
@@ -1135,7 +1119,7 @@ export default function ProductsPage() {
 
   const tableColSpan = productTable.getAllLeafColumns().length;
   const tableRows = productTable.getRowModel().rows;
-  const rowHeight = 43;
+  const rowHeight = 60;
   const overscan = 10;
   const virtualStart = Math.max(0, Math.floor(tableViewport.scrollTop / rowHeight) - overscan);
   const virtualEnd = Math.min(
@@ -1182,12 +1166,13 @@ export default function ProductsPage() {
 
   return (
     <PageContainer size="full" className="!px-0 md:!px-0">
-      <PageHeader
-        className="px-4 md:px-5"
-        title="Products"
-        description={statsLine}
-        actions={
-          <>
+      <div className="sticky top-0 z-30 w-full bg-white px-4 pb-2 pt-1 md:px-5">
+        <div className="flex min-h-9 items-center justify-between gap-3">
+          <h1 className="flex min-w-0 items-center gap-2 text-lg font-semibold tracking-tight text-foreground">
+            <Package className="h-[18px] w-[18px] shrink-0 text-foreground" aria-hidden />
+            Products
+          </h1>
+          <div className="flex shrink-0 items-center gap-2">
             <Button
               variant="ghost"
               size="icon-sm"
@@ -1201,9 +1186,9 @@ export default function ProductsPage() {
               <Pencil className="size-4" />
               Edit product
             </Button>
-          </>
-        }
-      />
+          </div>
+        </div>
+      </div>
 
       {stats?.variantPendingReview ? (
         <div className="mx-4 mb-0 mt-3 rounded-xl border border-border/60 bg-white px-4 py-3 md:mx-5">
@@ -1228,8 +1213,8 @@ export default function ProductsPage() {
       ) : null}
 
       <PageBody className="mt-4 space-y-0">
-        <section className="flex min-h-[calc(100vh-170px)] flex-col bg-white">
-          <div className="flex flex-col gap-2 border-y border-border/60 px-4 py-3 sm:flex-row sm:items-center md:px-5">
+        <section className="mx-4 mb-4 flex min-h-[calc(100vh-150px)] flex-col overflow-hidden rounded-xl border border-border/60 bg-white md:mx-5">
+          <div className="flex flex-col gap-2 border-b border-border/60 px-4 py-3 sm:flex-row sm:items-center md:px-5">
             <div className="relative min-w-0 flex-1 sm:max-w-[360px] lg:max-w-[420px] xl:max-w-[460px]">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <input
@@ -1354,16 +1339,16 @@ export default function ProductsPage() {
             onScroll={handleTableScroll}
             className="min-h-[420px] flex-1 overflow-auto"
           >
-            <table className="w-max min-w-full border-collapse text-[11px]">
-              <thead className="sticky top-0 z-10 bg-muted/35">
+            <table className="w-max min-w-full border-collapse text-[12px]">
+              <thead className="sticky top-0 z-10 bg-muted/20">
                 {productTable.getHeaderGroups().map((headerGroup) => (
-                  <tr key={headerGroup.id} className="border-b border-border/70">
+                  <tr key={headerGroup.id} className="border-b border-border/60">
                     {headerGroup.headers.map((header) => (
                       <th
                         key={header.id}
                         className={cn(
                           productColumnClassName(header.column.id),
-                          "px-2 py-1.5 text-left align-middle font-semibold text-muted-foreground first:pl-4 last:pr-0 md:first:pl-5"
+                          "px-3 py-2.5 text-left align-middle text-[12px] font-medium text-muted-foreground first:pl-4 last:pr-4 md:first:pl-5 md:last:pr-5"
                         )}
                       >
                         {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
@@ -1405,14 +1390,14 @@ export default function ProductsPage() {
                       <tr
                         key={row.id}
                         data-state={checked ? "selected" : undefined}
-                        className="group border-b border-border/50 bg-white transition-colors hover:bg-muted/30 data-[state=selected]:bg-muted/45"
+                        className="group border-b border-border/50 bg-white transition-colors last:border-0 hover:bg-muted/20 data-[state=selected]:bg-muted/40"
                       >
                         {row.getVisibleCells().map((cell) => (
                           <td
                             key={cell.id}
                             className={cn(
                               productColumnClassName(cell.column.id),
-                              "px-2 py-1.5 align-middle text-muted-foreground first:pl-4 last:pr-0 md:first:pl-5"
+                              "px-3 py-2.5 align-middle text-muted-foreground first:pl-4 last:pr-4 md:first:pl-5 md:last:pr-5"
                             )}
                           >
                             {flexRender(cell.column.columnDef.cell, cell.getContext())}

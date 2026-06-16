@@ -42,7 +42,7 @@ export function GenieLessonsButton() {
   );
 }
 
-function GenieLessonsModal({ onClose }: { onClose: () => void }) {
+export function GenieLessonsModal({ onClose }: { onClose: () => void }) {
   const [lessons, setLessons] = React.useState<Lesson[] | null>(null);
 
   React.useEffect(() => {

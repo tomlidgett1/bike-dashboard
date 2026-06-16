@@ -258,8 +258,8 @@
   }
 
   html:has(.dashboard-shell) {
-    --dashboard-header-bg: #5c5c5c;
-    --dashboard-header-fg: rgba(255, 255, 255, 0.92);
+    --dashboard-header-bg: #f3f0eb;
+    --dashboard-header-fg: rgba(17, 24, 39, 0.92);
     --dashboard-header-control-bg: #ffffff;
     --dashboard-header-control-border: rgba(0, 0, 0, 0.16);
     --dashboard-header-control-fg: #171717;
@@ -274,15 +274,15 @@
   html:has(.dashboard-shell) body,
   html.dark:has(.dashboard-shell),
   html.dark:has(.dashboard-shell) body {
-    background-color: var(--dashboard-header-bg, #5c5c5c) !important;
+    background-color: var(--dashboard-header-bg, #f3f0eb) !important;
   }
 
   .dashboard-shell {
-    background-color: var(--dashboard-header-bg, #5c5c5c);
+    background-color: var(--dashboard-header-bg, #f3f0eb);
   }
 
   .dashboard-header {
-    background-color: var(--dashboard-header-bg, #5c5c5c);
+    background-color: var(--dashboard-header-bg, #f3f0eb);
     color: var(--dashboard-header-fg);
   }
 
@@ -292,7 +292,7 @@
   }
 
   .dashboard-header[data-store-settings-header] {
-    --dashboard-header-fg: #ffffff;
+    --dashboard-header-fg: rgba(17, 24, 39, 0.92);
     --dashboard-header-control-bg: #ffffff;
     --dashboard-header-control-border: rgba(0, 0, 0, 0.16);
     --dashboard-header-control-fg: #171717;
@@ -426,6 +426,23 @@
 @keyframes agent-text-shimmer {
   0% { background-position: 200% center; }
   100% { background-position: -200% center; }
+}
+
+.group:hover .genie-header-search-placeholder {
+  background-image: linear-gradient(
+    90deg,
+    #9ca3af 0%,
+    #9ca3af 35%,
+    #111827 50%,
+    #9ca3af 65%,
+    #9ca3af 100%
+  );
+  background-size: 220% 100%;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: agent-text-shimmer 2.2s linear infinite;
 }
 
 @keyframes thinking-bar-sweep {

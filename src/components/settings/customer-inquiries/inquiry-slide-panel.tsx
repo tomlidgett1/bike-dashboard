@@ -2,11 +2,10 @@
 
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Loader2, Send, X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { GmailLogo } from "@/components/genie/gmail-logo";
 import { NestLogo } from "@/components/genie/nest-logo";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { NestConversationMessage } from "@/lib/nest/types";
 import {
@@ -19,106 +18,53 @@ import {
   ThreadTimeline,
 } from "./parts";
 import type { UnifiedInboxController } from "./use-unified-inbox-controller";
+import { NestThreadMessage, sameMessageGroup } from "@/components/settings/nest-chat-messages";
+import { NestFloatingCompose } from "@/components/settings/nest-compose-pill";
 
-async function sendNestMessage(chatId: string, content: string): Promise<NestConversationMessage> {
-  const res = await fetch("/api/store/nest-messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "send_message", chatId, content }),
-  });
-  const data = (await res.json()) as { message?: NestConversationMessage; error?: string };
-  if (!res.ok || !data.message) {
-    throw new Error(data.error || "Could not send message.");
-  }
-  return data.message;
-}
-
-function NestThreadBubble({ message }: { message: NestConversationMessage }) {
-  const isStaff =
-    (typeof message.handle === "string" && message.handle.startsWith("staff@")) ||
-    message.metadata?.sender_kind === "staff";
-  const isOutgoing = isStaff || message.role === "assistant";
-
-  return (
-    <div className={cn("flex", isOutgoing ? "justify-end" : "justify-start")}>
-      <div
-        className={cn(
-          "max-w-[85%] rounded-md px-3 py-2 text-[13px] leading-relaxed",
-          isOutgoing ? "bg-gray-900 text-white" : "border border-gray-200 bg-white text-gray-800",
-        )}
-      >
-        <p className="whitespace-pre-wrap break-words">{message.content}</p>
-        <p className={cn("mt-1 text-[10px]", isOutgoing ? "text-gray-300" : "text-gray-400")}>
-          {new Date(message.createdAt).toLocaleString("en-AU", {
-            day: "numeric",
-            month: "short",
-            hour: "numeric",
-            minute: "2-digit",
-          })}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function NestCompose({
-  chatId,
-  onSent,
+function NestThread({
+  messages,
+  loading,
+  scrollRef,
 }: {
-  chatId: string;
-  onSent: (message: NestConversationMessage, chatId: string) => void;
+  messages: NestConversationMessage[];
+  loading: boolean;
+  scrollRef: React.RefObject<HTMLDivElement | null>;
 }) {
-  const [text, setText] = React.useState("");
-  const [sending, setSending] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+  if (loading && messages.length === 0) {
+    return (
+      <div className="flex items-center justify-center py-16 text-sm text-gray-500">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        Loading conversation…
+      </div>
+    );
+  }
 
-  async function send() {
-    const content = text.trim();
-    if (!content || sending) return;
-    setSending(true);
-    setError(null);
-    try {
-      const message = await sendNestMessage(chatId, content);
-      setText("");
-      onSent(message, chatId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not send");
-    } finally {
-      setSending(false);
-    }
+  if (messages.length === 0) {
+    return (
+      <p className="rounded-md border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
+        No messages in this thread yet.
+      </p>
+    );
   }
 
   return (
-    <div className="shrink-0 border-t border-gray-200 bg-white p-4">
-      {error ? (
-        <p className="mb-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700">
-          {error}
-        </p>
-      ) : null}
-      <div className="flex items-end gap-2">
-        <Textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          rows={3}
-          placeholder="Write a reply…"
-          className="min-h-[72px] resize-none rounded-md border-gray-200 text-sm"
-          disabled={sending}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault();
-              void send();
-            }
-          }}
-        />
-        <Button
-          type="button"
-          className="h-9 shrink-0 rounded-md"
-          disabled={!text.trim() || sending}
-          onClick={() => void send()}
-        >
-          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-        </Button>
-      </div>
+    <div
+      ref={scrollRef}
+      className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-white px-5 py-5 pb-28"
+      style={{ WebkitOverflowScrolling: "touch" }}
+    >
+      {messages.map((message, index) => {
+        const nextMessage = messages[index + 1];
+        const showTail = !nextMessage || !sameMessageGroup(message, nextMessage, "inbox");
+        return (
+          <NestThreadMessage
+            key={message.id}
+            message={message}
+            showTail={showTail}
+            layout="inbox"
+          />
+        );
+      })}
     </div>
   );
 }
@@ -128,6 +74,20 @@ export function InquirySlidePanel({ c }: { c: UnifiedInboxController }) {
   const row = c.selectedRow;
   const isGmail = row?.source === "gmail";
   const isNest = row?.source === "nest";
+  const nestThreadScrollRef = React.useRef<HTMLDivElement>(null);
+  const nestMessages = c.nestDetail?.messages ?? [];
+
+  React.useEffect(() => {
+    if (!open || !isNest) return;
+    const el = nestThreadScrollRef.current;
+    if (!el) return;
+    const scrollToBottom = () => {
+      el.scrollTop = el.scrollHeight;
+    };
+    requestAnimationFrame(scrollToBottom);
+    const timeout = window.setTimeout(scrollToBottom, 50);
+    return () => window.clearTimeout(timeout);
+  }, [open, isNest, c.selectedKey, nestMessages.length, c.nestDetailLoading]);
 
   return (
     <AnimatePresence>
@@ -175,7 +135,12 @@ export function InquirySlidePanel({ c }: { c: UnifiedInboxController }) {
               </Button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto bg-[#f6f6f4] p-5">
+            <div
+              className={cn(
+                "min-h-0 flex-1 overflow-y-auto bg-[#f6f6f4] p-5",
+                isNest && "relative flex flex-col overflow-hidden bg-white p-0",
+              )}
+            >
               {isGmail ? (
                 c.detailLoading || !c.detail ? (
                   <div className="flex items-center justify-center py-16 text-sm text-gray-500">
@@ -229,29 +194,28 @@ export function InquirySlidePanel({ c }: { c: UnifiedInboxController }) {
               ) : null}
 
               {isNest ? (
-                c.nestDetailLoading && !c.nestDetail?.messages.length ? (
-                  <div className="flex items-center justify-center py-16 text-sm text-gray-500">
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Loading conversation…
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {c.nestDetail?.messages.map((message) => (
-                      <NestThreadBubble key={message.id} message={message} />
-                    ))}
-                    {!c.nestDetail?.messages.length ? (
-                      <p className="rounded-md border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
-                        No messages in this thread yet.
-                      </p>
-                    ) : null}
-                  </div>
-                )
+                <>
+                  <NestThread
+                    messages={nestMessages}
+                    loading={c.nestDetailLoading}
+                    scrollRef={nestThreadScrollRef}
+                  />
+                  {row.nestChatId ? (
+                    <NestFloatingCompose
+                      chatId={row.nestChatId}
+                      placeholder="Write a reply…"
+                      sendHandlers={{
+                        onOptimistic: (message) =>
+                          c.handleNestMessageOptimistic(message, row.nestChatId!),
+                        onConfirmed: (tempId, message) =>
+                          c.handleNestMessageConfirmed(tempId, message, row.nestChatId!),
+                        onFailed: (tempId) => c.handleNestMessageFailed(tempId, row.nestChatId!),
+                      }}
+                    />
+                  ) : null}
+                </>
               ) : null}
             </div>
-
-            {isNest && row.nestChatId ? (
-              <NestCompose chatId={row.nestChatId} onSent={c.handleNestMessageSent} />
-            ) : null}
           </motion.aside>
         </>
       ) : null}

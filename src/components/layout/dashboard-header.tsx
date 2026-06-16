@@ -9,7 +9,6 @@ import { StoreSettingsGenieSearch } from "@/components/layout/store-settings-gen
 import { TopbarUserMenu } from "@/components/layout/topbar-user-menu";
 import { TopbarViewStoreButton } from "@/components/layout/topbar-view-store-button";
 import { HeaderSidebarTrigger } from "@/components/layout/app-sidebar/sidebar-collapse-trigger";
-import { DashboardHeaderColorPicker } from "@/components/layout/dashboard-header-color";
 import { NotificationsDropdown } from "./notifications-dropdown";
 import { MessagesDropdown } from "./messages-dropdown";
 import { NestMessagesDropdown } from "./nest-messages-dropdown";
@@ -83,14 +82,18 @@ export function DashboardHeader() {
         </Link>
       </div>
 
-      {isStoreSettings ? (
+      {showStoreActions ? (
         <div className="flex min-w-0 flex-1 justify-center px-1.5 sm:px-2">
           <StoreSettingsGenieSearch className="max-w-[min(100%,52rem)]" />
         </div>
       ) : null}
 
-      <div className={cn("flex items-center gap-1.5 sm:gap-2", isStoreSettings ? "shrink-0" : "ml-auto")}>
-        <DashboardHeaderColorPicker />
+      <div
+        className={cn(
+          "flex items-center gap-1.5 sm:gap-2",
+          showStoreActions ? "shrink-0" : "ml-auto",
+        )}
+      >
         {showStoreActions ? <FloatingTomFeedbackButton placement="header" /> : null}
 
         {showDeferredActions ? (

@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Mail, RefreshCw, Send, UserX } from "lucide-react";
+import { Loader2, Mail, RefreshCw, Send, UserX, CheckCheck } from "lucide-react";
 import { GmailLogo } from "@/components/genie/gmail-logo";
 import { Button } from "@/components/ui/button";
 import {
@@ -128,7 +128,7 @@ export function StoreCustomerInquiriesPanel() {
 
         <div
           className={cn(
-            "flex shrink-0 items-center border-b border-gray-200 pb-2",
+            "flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 pb-2",
             storeSettingsPageHeaderNudgeClass,
           )}
         >
@@ -137,6 +137,21 @@ export function StoreCustomerInquiriesPanel() {
             onChange={c.setInboxTab}
             counts={c.tabCounts}
           />
+          {c.unreadCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => void c.handleMarkAllAsRead()}
+              disabled={c.markingAllRead}
+              className={storeSettingsHeaderActionClass(false, c.markingAllRead)}
+            >
+              {c.markingAllRead ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <CheckCheck className="h-3.5 w-3.5" />
+              )}
+              Mark all as read
+            </button>
+          ) : null}
         </div>
       </div>
 
