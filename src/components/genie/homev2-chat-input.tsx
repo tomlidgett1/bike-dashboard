@@ -78,7 +78,7 @@ export function HomeV2ChatInput({
         {showShimmerPlaceholder ? (
           <span
             aria-hidden
-            className="genie-header-search-placeholder pointer-events-none absolute inset-0 flex items-center justify-center truncate px-10 text-center text-sm text-gray-500"
+            className="genie-header-search-placeholder pointer-events-none absolute inset-y-0 left-2 right-10 flex items-center truncate text-left text-sm text-gray-500"
           >
             {placeholderLabel}
           </span>
@@ -134,10 +134,7 @@ export function HomeV2ChatInput({
                 }
               }}
               placeholder={showShimmerPlaceholder ? " " : placeholderLabel}
-              className={cn(
-                "h-full w-full min-w-0 appearance-none border-0 bg-transparent p-0 px-1 text-sm text-foreground outline-none placeholder:text-gray-500",
-                hasText ? "text-left" : "text-center",
-              )}
+              className="h-full w-full min-w-0 appearance-none border-0 bg-transparent p-0 pl-2 pr-1 text-left text-sm text-foreground outline-none placeholder:text-gray-500"
             />
           ) : (
             <textarea
