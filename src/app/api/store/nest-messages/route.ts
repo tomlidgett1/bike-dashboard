@@ -21,7 +21,7 @@ import type { NestConversationDetail, NestConversationListItem } from "@/lib/nes
 import { searchLightspeedCustomersForNest } from "@/lib/services/lightspeed/customer-search";
 import { isLightspeedInBackoff } from "@/lib/services/lightspeed/lightspeed-client";
 import {
-  isLightspeedApiAvailable,
+  getConnection,
   isLightspeedConnected,
 } from "@/lib/services/lightspeed/token-manager";
 import {
@@ -121,9 +121,12 @@ export async function GET(request: NextRequest) {
       return json({ customers: [], configured: true, lightspeedConnected: true });
     }
 
-    const lightspeedConnected =
-      !isLightspeedInBackoff(auth.userId) && (await isLightspeedApiAvailable(auth.userId));
-    if (!lightspeedConnected) {
+    const connection = await getConnection(auth.userId);
+    if (
+      !connection ||
+      connection.status === "disconnected" ||
+      connection.status === "expired"
+    ) {
       return json({
         customers: [],
         configured: true,
@@ -141,14 +144,21 @@ export async function GET(request: NextRequest) {
       });
     } catch (error) {
       console.error("[store-nest-messages] customer search failed:", error);
+      const message =
+        error instanceof Error ? error.message : "Could not search Lightspeed customers.";
+      const needsReconnect = /reconnect|session expired|no valid access token/i.test(
+        message,
+      );
       return json(
         {
           customers: [],
           configured: true,
-          lightspeedConnected: true,
-          error: error instanceof Error ? error.message : "Could not search Lightspeed customers.",
+          lightspeedConnected: !needsReconnect,
+          error: needsReconnect
+            ? "Connect Lightspeed to search customers."
+            : message,
         },
-        502,
+        needsReconnect ? 200 : 502,
       );
     }
   }

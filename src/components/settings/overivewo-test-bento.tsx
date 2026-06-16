@@ -53,6 +53,7 @@ const MARKETING_PREVIEW_ENQUIRIES: CustomerInquiryListItem[] = [
     draft_body:
       "Hi Emma — yes, your Orbea is ready. We're here until 5:30pm today if that suits.",
     thread_message_count: 1,
+    last_customer_at: null,
     updated_at: new Date().toISOString(),
   },
   {
@@ -70,6 +71,7 @@ const MARKETING_PREVIEW_ENQUIRIES: CustomerInquiryListItem[] = [
     draft_body:
       "Hi Marcus — we have one Giro matte black in M on the shelf. I can hold it under your name until close.",
     thread_message_count: 1,
+    last_customer_at: null,
     updated_at: new Date().toISOString(),
   },
   {
@@ -87,6 +89,7 @@ const MARKETING_PREVIEW_ENQUIRIES: CustomerInquiryListItem[] = [
     draft_body:
       "Hi Hannah — Saturday works. We'll have it on the stand from 9am. See you then!",
     thread_message_count: 1,
+    last_customer_at: null,
     updated_at: new Date().toISOString(),
   },
 ];
