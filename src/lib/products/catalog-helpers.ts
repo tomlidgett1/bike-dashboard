@@ -50,6 +50,7 @@ export function formatCanonicalCategory(p: {
 const FILTER_OPTIONS_BATCH_SIZE = 1000;
 
 type ProductFilterColumn = "category_name" | "manufacturer_name";
+type ProductFilterRow = Record<ProductFilterColumn, string | null>;
 
 /** Batched distinct values for product filter dropdowns (Supabase caps at 1000 rows per request). */
 export async function fetchDistinctProductFilterValues(
@@ -75,7 +76,7 @@ export async function fetchDistinctProductFilterValues(
     if (rows.length === 0) break;
 
     for (const row of rows) {
-      const value = String(row[column] ?? "").trim();
+      const value = String((row as ProductFilterRow)[column] ?? "").trim();
       if (value) values.add(value);
     }
 
