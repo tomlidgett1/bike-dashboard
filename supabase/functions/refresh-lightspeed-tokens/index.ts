@@ -91,6 +91,25 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  // DEPRECATED / DISABLED. The Vercel cron (/api/cron/refresh-lightspeed-tokens) is now
+  // the single proactive refresher. Lightspeed refresh tokens are single-use and
+  // rotating, so running this in parallel with the Vercel cron revoked the token family
+  // and forced stores to reconnect. The pg_cron job that called this was unscheduled in
+  // migration 20260617120000. This guard prevents accidental re-activation; flip
+  // ALLOW_EDGE_TOKEN_REFRESH=true only if you intend this to be the *only* refresher.
+  if (Deno.env.get('ALLOW_EDGE_TOKEN_REFRESH') !== 'true') {
+    console.warn('[refresh-lightspeed-tokens] Disabled — Vercel cron is the single refresher. Skipping.')
+    return new Response(
+      JSON.stringify({
+        success: true,
+        disabled: true,
+        refreshed: 0,
+        message: 'Edge token refresh is disabled; the Vercel cron is the single refresher.',
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    )
+  }
+
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!

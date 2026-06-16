@@ -1,12 +1,23 @@
 // Vercel Cron: proactively refresh Lightspeed OAuth tokens before they expire.
-// Runs every 20 minutes — tokens last 1800 s (30 min), so this keeps them fresh.
-// Only refreshes tokens that are within the expiry buffer window to avoid excessive
-// refresh calls (Lightspeed will rate-limit/block clients that over-refresh).
+// Runs every 20 minutes (see vercel.json). This is the SINGLE proactive refresher —
+// the duplicate Supabase pg_cron job was removed (migration
+// 20260617120000_fix_lightspeed_token_refresh_single_refresher.sql) because Lightspeed
+// refresh tokens are single-use and rotating: two refreshers redeeming the same token
+// made Lightspeed revoke the family and forced stores to reconnect.
+//
+// We refresh any connection whose token expires within REFRESH_WINDOW_MS. That window
+// is wider than the cron interval so every token is refreshed at least one tick before
+// it expires (a 10-min window with a 20-min interval could miss a 30-min token).
+//
+// The actual refresh + storage + race handling lives in refreshAccessToken(), which
+// serialises refreshes per connection so this cron can never collide with an on-demand
+// refresh (401 handler / pre-expiry check) triggered by a live request.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { decryptToken, encryptToken } from '@/lib/services/lightspeed/token-manager'
-import { getLightspeedCredentials, LIGHTSPEED_CONFIG } from '@/lib/services/lightspeed/config'
+import { refreshAccessToken } from '@/lib/services/lightspeed/token-manager'
+
+const REFRESH_WINDOW_MS = 25 * 60 * 1000 // cron interval (20m) + 5m safety buffer
 
 function getServiceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -14,6 +25,8 @@ function getServiceClient() {
   if (!url || !key) throw new Error('Missing Supabase env vars')
   return createClient(url, key)
 }
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 export async function GET(request: NextRequest) {
   return handleRefresh(request)
@@ -33,16 +46,13 @@ async function handleRefresh(request: NextRequest) {
 
   try {
     const supabase = getServiceClient()
-    const { clientId, clientSecret } = getLightspeedCredentials()
 
-    // Find all connected accounts whose tokens expire within the next 10 minutes
-    const refreshCutoff = new Date(
-      Date.now() + LIGHTSPEED_CONFIG.TOKEN_EXPIRY_BUFFER_MS + 5 * 60 * 1000
-    ).toISOString()
+    // Find connected accounts whose tokens expire within the refresh window.
+    const refreshCutoff = new Date(Date.now() + REFRESH_WINDOW_MS).toISOString()
 
     const { data: connections, error } = await supabase
       .from('lightspeed_connections')
-      .select('user_id, refresh_token_encrypted, account_id, account_name, token_expires_at, last_token_refresh_at')
+      .select('user_id, token_expires_at')
       .eq('status', 'connected')
       .not('refresh_token_encrypted', 'is', null)
       .lt('token_expires_at', refreshCutoff)
@@ -63,97 +73,21 @@ async function handleRefresh(request: NextRequest) {
 
     for (const conn of connections) {
       try {
-        const refreshToken = decryptToken(conn.refresh_token_encrypted)
-
-        const response = await fetch(LIGHTSPEED_CONFIG.TOKEN_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            client_id: clientId,
-            client_secret: clientSecret,
-            grant_type: 'refresh_token',
-            refresh_token: refreshToken,
-          }),
-        })
-
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({}))
-          console.error(`[Lightspeed Cron] Refresh failed for ${conn.user_id}:`, response.status, body)
-
-          const { data: latest } = await supabase
-            .from('lightspeed_connections')
-            .select('status, token_expires_at, last_token_refresh_at')
-            .eq('user_id', conn.user_id)
-            .maybeSingle()
-
-          const latestRefreshTime = latest?.last_token_refresh_at
-            ? new Date(latest.last_token_refresh_at).getTime()
-            : 0
-          const originalRefreshTime = conn.last_token_refresh_at
-            ? new Date(conn.last_token_refresh_at).getTime()
-            : 0
-          const latestExpiryTime = latest?.token_expires_at
-            ? new Date(latest.token_expires_at).getTime()
-            : 0
-
-          if (
-            latest?.status === 'connected' &&
-            latestExpiryTime > Date.now() + LIGHTSPEED_CONFIG.TOKEN_EXPIRY_BUFFER_MS &&
-            latestRefreshTime > originalRefreshTime
-          ) {
-            console.log(`[Lightspeed Cron] Refresh race lost for ${conn.user_id}; newer token is already stored`)
-            continue
-          }
-
-          const newStatus =
-            response.status === 400 || body.error === 'invalid_grant' ? 'expired' : 'error'
-
-          await supabase
-            .from('lightspeed_connections')
-            .update({
-              status: newStatus,
-              last_error: `Token refresh failed: ${body.error || response.status}`,
-              last_error_at: new Date().toISOString(),
-            })
-            .eq('user_id', conn.user_id)
-
+        // Single serialised refresh path (handles rotation, locking and race recovery).
+        const result = await refreshAccessToken(conn.user_id)
+        if (result) {
+          successCount++
+        } else {
+          // null = transient failure or connection marked expired/error inside the call.
           failCount++
-          continue
         }
-
-        const tokenData = await response.json()
-        const encryptedAccessToken = encryptToken(tokenData.access_token)
-        const encryptedRefreshToken = encryptToken(tokenData.refresh_token)
-        const tokenExpiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
-
-        const { error: updateError } = await supabase
-          .from('lightspeed_connections')
-          .update({
-            access_token_encrypted: encryptedAccessToken,
-            refresh_token_encrypted: encryptedRefreshToken,
-            token_expires_at: tokenExpiresAt,
-            last_token_refresh_at: new Date().toISOString(),
-            status: 'connected',
-            last_error: null,
-            last_error_at: null,
-          })
-          .eq('user_id', conn.user_id)
-
-        if (updateError) {
-          console.error(`[Lightspeed Cron] Store failed for ${conn.user_id}:`, updateError)
-          failCount++
-          continue
-        }
-
-        console.log(`[Lightspeed Cron] Refreshed token for ${conn.user_id}, expires ${tokenExpiresAt}`)
-        successCount++
-
-        // Brief pause to avoid hammering Lightspeed
-        await new Promise(resolve => setTimeout(resolve, 200))
       } catch (err) {
         console.error(`[Lightspeed Cron] Error for ${conn.user_id}:`, err)
         failCount++
       }
+
+      // Brief pause to avoid hammering Lightspeed across many connections.
+      await sleep(200)
     }
 
     return NextResponse.json({

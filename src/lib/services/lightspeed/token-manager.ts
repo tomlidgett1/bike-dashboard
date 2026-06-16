@@ -187,12 +187,109 @@ export function tokenNeedsRefresh(expiresAt: Date): boolean {
 }
 
 /**
- * Refresh the access token using the refresh token.
+ * How long a refresh lock is honoured before it is considered stale and may be
+ * stolen by another refresher. Bounds the worst case if a refresher crashes mid-flight.
+ */
+const REFRESH_LOCK_TTL_MS = 60_000
+
+type DecryptedTokens = NonNullable<Awaited<ReturnType<typeof getDecryptedTokens>>>
+
+/**
+ * Atomically claim the exclusive right to refresh this connection's tokens.
  *
- * Guard: if another process refreshed in the last 10 seconds, skip and return the
- * current (already-fresh) token instead.  This prevents two concurrent requests
- * from both consuming the same refresh token, which would cause Lightspeed to
- * revoke one of the resulting tokens.
+ * Lightspeed uses SINGLE-USE rotating refresh tokens: if two processes redeem the same
+ * refresh token, Lightspeed revokes the whole token family and the user is forced to
+ * reconnect. This lock guarantees only one refresher per connection talks to Lightspeed
+ * at a time; the others reuse the freshly-stored token.
+ *
+ * The conditional UPDATE is atomic at the database (Postgres row lock), so exactly one
+ * concurrent caller wins. Returns the claim timestamp when acquired, `'locked'` when
+ * another refresh is in flight, or `'unsupported'` when the lock column is missing
+ * (migration not applied yet) — in which case callers proceed without the lock.
+ */
+async function claimRefreshLock(
+  userId: string,
+): Promise<{ claimedAt: string } | 'locked' | 'unsupported'> {
+  const supabase = createServiceRoleClient()
+  const claimedAt = new Date().toISOString()
+  const staleCutoff = new Date(Date.now() - REFRESH_LOCK_TTL_MS).toISOString()
+
+  const { data, error } = await supabase
+    .from('lightspeed_connections')
+    .update({ token_refresh_locked_at: claimedAt })
+    .eq('user_id', userId)
+    // Acquire only if nobody holds the lock, or the existing lock has gone stale.
+    .or(`token_refresh_locked_at.is.null,token_refresh_locked_at.lt."${staleCutoff}"`)
+    .select('id')
+
+  if (error) {
+    // 42703 = undefined_column → the migration adding token_refresh_locked_at has not
+    // been applied yet. Degrade gracefully to the unlocked path rather than failing.
+    if (error.code === '42703') return 'unsupported'
+    console.error('[Lightspeed] Failed to claim refresh lock, proceeding without it:', error)
+    return 'unsupported'
+  }
+
+  return data && data.length > 0 ? { claimedAt } : 'locked'
+}
+
+/**
+ * Release a refresh lock, but only if we still hold it (the stored claim timestamp
+ * is unchanged). This prevents a slow/stale refresher from clearing a lock that has
+ * since been re-acquired by someone else.
+ */
+async function releaseRefreshLock(userId: string, claimedAt: string): Promise<void> {
+  const supabase = createServiceRoleClient()
+  const { error } = await supabase
+    .from('lightspeed_connections')
+    .update({ token_refresh_locked_at: null })
+    .eq('user_id', userId)
+    .eq('token_refresh_locked_at', claimedAt)
+  if (error && error.code !== '42703') {
+    console.error('[Lightspeed] Failed to release refresh lock:', error)
+  }
+}
+
+/**
+ * Invoked when another refresher holds the lock. Keep using the current access token
+ * while it is still valid; only if it has already expired do we wait briefly for the
+ * in-flight refresh to store a new one.
+ */
+async function waitForConcurrentRefresh(
+  userId: string,
+  current: DecryptedTokens,
+): Promise<{ accessToken: string; expiresAt: Date } | null> {
+  // Still valid — let the in-flight refresh store the next token; we use this one now.
+  if (current.expiresAt.getTime() > Date.now()) {
+    return { accessToken: current.accessToken, expiresAt: current.expiresAt }
+  }
+
+  // Already expired — wait up to ~5s for the concurrent refresh to land.
+  for (let i = 0; i < 10; i++) {
+    await new Promise(resolve => setTimeout(resolve, 500))
+    const latest = await getDecryptedTokens(userId)
+    if (!latest) return null
+    if (
+      latest.connection.status === 'expired' ||
+      latest.connection.status === 'disconnected'
+    ) {
+      return null
+    }
+    if (latest.expiresAt.getTime() > Date.now() && !tokenNeedsRefresh(latest.expiresAt)) {
+      return { accessToken: latest.accessToken, expiresAt: latest.expiresAt }
+    }
+  }
+  return null
+}
+
+/**
+ * Refresh the access token using the (single-use, rotating) refresh token.
+ *
+ * Lightspeed revokes the entire token family if a refresh token is redeemed twice, so
+ * all refreshes are serialised per connection via claimRefreshLock(): exactly one caller
+ * talks to Lightspeed; concurrent callers reuse the freshly-stored token. This is the
+ * single refresh code path — the Vercel cron, the pre-expiry check in
+ * getValidAccessToken, and the 401 handler in the API client all funnel through here.
  */
 export async function refreshAccessToken(userId: string): Promise<{
   accessToken: string
@@ -216,8 +313,8 @@ export async function refreshAccessToken(userId: string): Promise<{
     return null
   }
 
-  // If a refresh happened in the last 10 seconds, another request beat us to it.
-  // Return the token that was just stored rather than consuming the refresh token again.
+  // Fast path: a refresh happened in the last 10 seconds and the token is still fresh.
+  // Return it rather than redeeming the (now-rotated) refresh token again.
   const lastRefresh = tokens.connection.last_token_refresh_at
   if (lastRefresh) {
     const secondsSinceRefresh = (Date.now() - new Date(lastRefresh).getTime()) / 1000
@@ -227,9 +324,27 @@ export async function refreshAccessToken(userId: string): Promise<{
     }
   }
 
-  const { clientId, clientSecret } = getLightspeedCredentials()
-  
+  // Serialise: only the lock holder may redeem the rotating refresh token.
+  const lock = await claimRefreshLock(userId)
+  if (lock === 'locked') {
+    return waitForConcurrentRefresh(userId, tokens)
+  }
+  const claimedAt = lock === 'unsupported' ? null : lock.claimedAt
+
   try {
+    // Re-read after acquiring the lock: another process may have refreshed between our
+    // first read and the claim, leaving a fresh token already stored.
+    const latest = (await getDecryptedTokens(userId)) ?? tokens
+    if (
+      latest.connection.last_token_refresh_at !== tokens.connection.last_token_refresh_at &&
+      !tokenNeedsRefresh(latest.expiresAt)
+    ) {
+      console.log('[Lightspeed] Token already refreshed by another process, reusing it')
+      return { accessToken: latest.accessToken, expiresAt: latest.expiresAt }
+    }
+
+    const { clientId, clientSecret } = getLightspeedCredentials()
+
     const response = await fetch(LIGHTSPEED_CONFIG.TOKEN_URL, {
       method: 'POST',
       headers: {
@@ -239,10 +354,10 @@ export async function refreshAccessToken(userId: string): Promise<{
         client_id: clientId,
         client_secret: clientSecret,
         grant_type: 'refresh_token',
-        refresh_token: tokens.refreshToken,
+        refresh_token: latest.refreshToken,
       }),
     })
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
       console.error('Token refresh failed:', errorData)
@@ -251,10 +366,10 @@ export async function refreshAccessToken(userId: string): Promise<{
       // Never reuse a stale access token when Lightspeed says invalid_grant — the stored
       // access token is revoked even if token_expires_at has not elapsed yet.
       if (errorData.error !== 'invalid_grant') {
-        const latest = await getDecryptedTokens(userId)
-        if (latest && !tokenNeedsRefresh(latest.expiresAt)) {
+        const afterFail = await getDecryptedTokens(userId)
+        if (afterFail && !tokenNeedsRefresh(afterFail.expiresAt)) {
           console.log('[Lightspeed] Refresh lost race but concurrent refresh succeeded — using fresh token')
-          return { accessToken: latest.accessToken, expiresAt: latest.expiresAt }
+          return { accessToken: afterFail.accessToken, expiresAt: afterFail.expiresAt }
         }
       }
 
@@ -267,19 +382,19 @@ export async function refreshAccessToken(userId: string): Promise<{
       }
       return null
     }
-    
+
     const tokenData: LightspeedTokenResponse = await response.json()
-    
-    // Store the new tokens
+
+    // Store the new tokens (also records last_token_refresh_at).
     await storeTokens(
       userId,
       tokenData.access_token,
       tokenData.refresh_token,
       tokenData.expires_in,
-      tokens.connection.account_id || undefined,
-      tokens.connection.account_name || undefined
+      latest.connection.account_id || undefined,
+      latest.connection.account_name || undefined
     )
-    
+
     return {
       accessToken: tokenData.access_token,
       expiresAt: new Date(Date.now() + tokenData.expires_in * 1000),
@@ -288,6 +403,13 @@ export async function refreshAccessToken(userId: string): Promise<{
     console.error('Error refreshing token:', error)
     await updateConnectionStatus(userId, 'error', 'Token refresh error')
     return null
+  } finally {
+    // Release exactly once, at the very end, and only if we still hold the lock.
+    // The lock is held for the whole operation above, so no other refresher can have
+    // redeemed the token in the meantime.
+    if (claimedAt) {
+      await releaseRefreshLock(userId, claimedAt)
+    }
   }
 }
 

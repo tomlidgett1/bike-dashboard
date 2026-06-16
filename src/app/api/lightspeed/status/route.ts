@@ -26,7 +26,7 @@ import type { LightspeedConnection, LightspeedSyncSettings } from '@/lib/service
 
 export interface LightspeedStatusResponse {
   isConnected: boolean
-  connection: Omit<LightspeedConnection, 'access_token_encrypted' | 'refresh_token_encrypted' | 'oauth_state'> | null
+  connection: Omit<LightspeedConnection, 'access_token_encrypted' | 'refresh_token_encrypted' | 'oauth_state' | 'token_refresh_locked_at'> | null
   syncSettings: LightspeedSyncSettings | null
   accountInfo: {
     id: string

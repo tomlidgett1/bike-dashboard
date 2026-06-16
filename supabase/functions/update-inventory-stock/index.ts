@@ -80,81 +80,52 @@ function bytesToHex(bytes: Uint8Array): string {
     .join('')
 }
 
-// Token refresh function
+// Token "refresh" for this function = reload the latest access token that the SINGLE
+// refresher (Vercel cron /api/cron/refresh-lightspeed-tokens) has already stored.
+//
+// This function must NOT redeem the refresh token itself. Lightspeed refresh tokens are
+// single-use and rotating: a second redeemer (this edge function running alongside the
+// token cron) revokes the token family and forces the store to reconnect — exactly the
+// bug this is part of fixing. So here we only re-read the freshly-stored access token.
+// If it isn't fresh yet, return null and the caller skips this user for the run; it
+// self-heals on the next run once the token cron has refreshed (every 20 min, well
+// before the token's 30-min expiry).
 async function refreshAccessToken(
   userId: string,
   supabaseAdmin: any,
   encryptionKey: string
 ): Promise<string | null> {
   try {
-    const clientId = Deno.env.get('LIGHTSPEED_CLIENT_ID')?.trim()
-    const clientSecret = Deno.env.get('LIGHTSPEED_CLIENT_SECRET')?.trim()
-    
-    if (!clientId || !clientSecret) {
-      console.error('Missing Lightspeed credentials')
-      return null
-    }
-
     const { data: latestConnection, error: latestError } = await supabaseAdmin
       .from('lightspeed_connections')
-      .select('refresh_token_encrypted, status')
+      .select('access_token_encrypted, token_expires_at, status')
       .eq('user_id', userId)
       .maybeSingle()
 
-    if (latestError || !latestConnection?.refresh_token_encrypted || latestConnection.status !== 'connected') {
-      console.error('❌ No active connection with refresh token available')
+    if (
+      latestError ||
+      !latestConnection?.access_token_encrypted ||
+      latestConnection.status !== 'connected'
+    ) {
+      console.error('❌ No active connection with a usable access token available')
       return null
     }
 
-    const refreshToken = await decryptToken(latestConnection.refresh_token_encrypted, encryptionKey)
-    
-    console.log('🔄 Refreshing access token...')
-    
-    const response = await fetch('https://cloud.lightspeedapp.com/auth/oauth/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_id: clientId,
-        client_secret: clientSecret,
-        grant_type: 'refresh_token',
-        refresh_token: refreshToken,
-      }),
-    })
-    
-    if (!response.ok) {
-      console.error(`❌ Token refresh failed: ${response.status}`)
-      await supabaseAdmin
-        .from('lightspeed_connections')
-        .update({ 
-          status: response.status === 400 ? 'expired' : 'error',
-          last_error: 'Token refresh failed',
-          last_error_at: new Date().toISOString(),
-        })
-        .eq('user_id', userId)
+    // Only use a token with real remaining life (30s skew guard). If it's already
+    // expired, the token cron hasn't refreshed yet — skip rather than redeem the
+    // (single-use, rotating) refresh token from here.
+    const expiresAtMs = latestConnection.token_expires_at
+      ? new Date(latestConnection.token_expires_at).getTime()
+      : 0
+    if (expiresAtMs <= Date.now() + 30_000) {
+      console.warn('⏳ Stored access token not refreshed by the token cron yet; skipping this run')
       return null
     }
-    
-    const tokenData = await response.json()
-    
-    // Encrypt and store new tokens
-    const encryptedAccessToken = await encryptToken(tokenData.access_token, encryptionKey)
-    const encryptedRefreshToken = await encryptToken(tokenData.refresh_token, encryptionKey)
-    const tokenExpiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
-    
-    await supabaseAdmin
-      .from('lightspeed_connections')
-      .update({
-        access_token_encrypted: encryptedAccessToken,
-        refresh_token_encrypted: encryptedRefreshToken,
-        token_expires_at: tokenExpiresAt,
-        last_token_refresh_at: new Date().toISOString(),
-      })
-      .eq('user_id', userId)
-    
-    console.log('✅ Token refreshed successfully')
-    return tokenData.access_token
+
+    console.log('♻️ Reloaded fresh access token stored by the token cron')
+    return await decryptToken(latestConnection.access_token_encrypted, encryptionKey)
   } catch (error) {
-    console.error('❌ Error refreshing token:', error)
+    console.error('❌ Error reloading access token:', error)
     return null
   }
 }
