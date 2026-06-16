@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, ChevronDown } from "lucide-react";
+import { ArrowLeft, ChevronDown } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 import { EnquiryList, DetailEmpty, DetailLoading } from "./enquiry-list";
 import {

@@ -3,7 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import * as React from "react";
-import { CheckCircle2, Database, Loader2, Play, RefreshCw, RotateCcw, SlidersHorizontal } from "lucide-react";
+import { CheckCircle2, Database, Loader2, Play, RefreshCw, RotateCcw, SlidersHorizontal } from "@/components/layout/app-sidebar/dashboard-icons";
 import { ConnectLightspeedBento } from "@/components/lightspeed/connect-lightspeed-bento";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

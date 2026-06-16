@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { MessageCircle, Mail } from 'lucide-react';
+import { ChatRound, Letter } from '@/components/layout/app-sidebar/sidebar-icons';
 import { useCombinedUnreadCount } from '@/lib/hooks/use-combined-unread-count';
 import { useNotifications } from '@/lib/hooks/use-notifications';
 import { useMessages } from '@/components/providers/messages-provider';
@@ -58,7 +58,7 @@ export function MessagesDropdown() {
           className={topbarIconButtonClass}
           aria-label="Messages"
         >
-          <MessageCircle className="size-4" />
+          <ChatRound className="size-4" />
           {count > 0 && (
             <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
               {count > 99 ? '99+' : count}
@@ -101,7 +101,7 @@ export function MessagesDropdown() {
         {useStoreStyle ? (
           <StoreHeaderDropdownBody>
             {notifications.length === 0 ? (
-              <StoreHeaderDropdownEmpty icon={Mail} message="No new messages" />
+              <StoreHeaderDropdownEmpty icon={Letter} message="No new messages" />
             ) : (
               notifications.map((notification) => (
                 <StoreHeaderDropdownItem
@@ -144,7 +144,7 @@ export function MessagesDropdown() {
           <div className="max-h-[50vh] overflow-y-auto sm:max-h-[400px]">
             {notifications.length === 0 ? (
               <div className="p-3 text-center text-xs text-gray-500 sm:p-4 sm:text-sm">
-                <Mail className="mx-auto mb-2 h-7 w-7 text-gray-400 sm:h-8 sm:w-8" />
+                <Letter className="mx-auto mb-2 h-7 w-7 text-gray-400 sm:h-8 sm:w-8" />
                 <p>No new messages</p>
               </div>
             ) : (

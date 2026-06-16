@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Check, ChevronUp, Loader2, X } from "lucide-react";
+import { Check, ChevronUp, Loader2, X } from "@/components/layout/app-sidebar/dashboard-icons";
 import { motion, AnimatePresence } from "framer-motion";
 import { useGenieJobs, type GenieJob } from "@/components/providers/genie-jobs-provider";
 import { homeConversationUrl } from "@/lib/genie/homev2-navigation";
@@ -80,7 +80,7 @@ function StepIcon({ state }: { state: StepState }) {
   if (state === "done") {
     return (
       <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-400 text-white">
-        <Check className="h-3 w-3" strokeWidth={3} />
+        <Check className="h-3 w-3" />
       </span>
     );
   }
@@ -225,7 +225,7 @@ export function FloatingGenieJobsPill() {
         ) : hasComplete ? (
           <>
             <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-800 text-white">
-              <Check className="h-3 w-3" strokeWidth={3} />
+              <Check className="h-3 w-3" />
             </span>
             <span className="text-gray-800">{pillLabel}</span>
           </>
@@ -253,7 +253,7 @@ export function FloatingGenieJobsPill() {
             <div className="flex items-center gap-2">
               {hasComplete && !hasRunning ? (
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-800 text-white">
-                  <Check className="h-3 w-3" strokeWidth={3} />
+                  <Check className="h-3 w-3" />
                 </span>
               ) : null}
               <p className="text-sm font-medium text-gray-500">

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, RotateCcw, Sparkles } from "lucide-react";
+import { Loader2, RotateCcw, Sparkles } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { VariantScopePicker } from "./variant-scope-picker";

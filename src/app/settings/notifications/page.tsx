@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useUserProfile } from '@/lib/hooks/use-user-profile';
-import { Save, Check, Loader2, Bell, Mail, Clock, Moon, ShoppingBag, Store, Tag, MessageSquare } from 'lucide-react';
+import { Save, Check, Loader2, Bell, Mail, Clock, Moon, ShoppingBag, Store, Tag, MessageSquare } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from '@/lib/utils';
 import {
   PageContainer,

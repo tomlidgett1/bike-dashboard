@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  BadgeCheck,
-  ChevronsUpDown,
-  ExternalLink,
-  LifeBuoy,
-  LogOut,
+  DiplomaVerified,
+  Help,
+  Logout,
   Settings,
-  Store,
-} from "lucide-react";
+  Shop,
+  SortVertical,
+  SquareArrowRightUp,
+} from "./sidebar-icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -67,7 +67,7 @@ export function NavUser() {
                   Bike store
                 </span>
               </div>
-              <ChevronsUpDown className="ml-auto size-4 text-muted-foreground group-data-[collapsible=icon]:hidden" />
+              <SortVertical className="ml-auto size-4 text-muted-foreground group-data-[collapsible=icon]:hidden" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -87,9 +87,9 @@ export function NavUser() {
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    <Store className="size-4" />
+                    <Shop className="size-4" />
                     View my store
-                    <ExternalLink className="ml-auto size-3.5 text-muted-foreground" />
+                    <SquareArrowRightUp className="ml-auto size-3.5 text-muted-foreground" />
                   </Link>
                 </DropdownMenuItem>
               ) : null}
@@ -101,20 +101,20 @@ export function NavUser() {
               </DropdownMenuItem>
               <DropdownMenuItem asChild className="gap-2">
                 <Link href="/settings">
-                  <BadgeCheck className="size-4" />
+                  <DiplomaVerified className="size-4" />
                   Account settings
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild className="gap-2">
                 <Link href="/marketplace/help">
-                  <LifeBuoy className="size-4" />
+                  <Help className="size-4" />
                   Help &amp; support
                 </Link>
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleSignOut} className="gap-2">
-              <LogOut className="size-4" />
+              <Logout className="size-4" />
               Log out
             </DropdownMenuItem>
           </DropdownMenuContent>

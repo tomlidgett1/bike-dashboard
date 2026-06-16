@@ -6,3 +6,10 @@ export { DashboardLayout } from "./dashboard-layout";
 export { ConditionalLayout } from "./conditional-layout";
 export { MarketplaceSidebar } from "./marketplace-sidebar";
 export { MarketplaceLayout } from "./marketplace-layout";
+export {
+  FloatingCard,
+  FloatingCardPage,
+  FloatingCardPageBody,
+  FloatingCardPageHeader,
+  FloatingCardPageTitleRow,
+} from "./floating-card-page";

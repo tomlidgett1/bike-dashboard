@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Loader2, Package, PackageOpen, RefreshCw, Store, Users } from "lucide-react";
+import { Loader2, Package, PackageOpen, RefreshCw, Store, Users } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/dashboard";
 import { HomeGenieFloatingPrompt } from "@/components/settings/home-genie-floating-prompt";

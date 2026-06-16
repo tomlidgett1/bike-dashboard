@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ThumbsUp, ThumbsDown, MessageCircle } from "lucide-react";
+import { ArrowLeft, ThumbsUp, ThumbsDown, MessageCircle } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { HelpArticle, HelpCategory } from "@/lib/constants/help-content";

@@ -286,9 +286,13 @@
     color: var(--dashboard-header-fg);
   }
 
+  .dashboard-shell svg [stroke] {
+    stroke-width: 2 !important;
+  }
+
   .dashboard-header :is(button, a) svg.lucide {
     color: var(--dashboard-header-control-fg, #171717);
-    stroke-width: 1.5;
+    stroke-width: 2;
   }
 
   .dashboard-header[data-store-settings-header] {

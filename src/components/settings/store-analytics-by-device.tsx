@@ -1,6 +1,6 @@
 "use client";
 
-import { Monitor, Smartphone } from "lucide-react";
+import { Monitor, Smartphone } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 import type { StoreAnalyticsByDevice } from "@/lib/types/store-analytics";
 

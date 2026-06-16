@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { CheckCircle2, AlertCircle } from 'lucide-react';
+import { CheckCircle2, AlertCircle } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Badge } from '@/components/ui/badge';
 import {
   Tooltip,

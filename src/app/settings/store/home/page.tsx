@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { DashboardHomeRouteSkeleton } from "@/components/settings/dashboard-route-skeletons";
 import { HomeV2Chat } from "../homev2/homev2-chat";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +16,7 @@ function getTodayLabel() {
 
 export default function StoreHomePage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<DashboardHomeRouteSkeleton />}>
       <HomeV2Chat todayLabel={getTodayLabel()} />
     </Suspense>
   );

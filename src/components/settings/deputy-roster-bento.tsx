@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Loader2, Minus, Plus, RefreshCw } from "lucide-react";
+import { ArrowLeft, Loader2, Minus, Plus, RefreshCw } from "@/components/layout/app-sidebar/dashboard-icons";
 import { DeputyLogo } from "@/components/genie/deputy-logo";
 import { getBentoShellStyles, bentoCardShellClassName, bentoOuterWrapClassName, type BentoShellVariant } from "@/components/settings/bento-variant-styles";
 import { cn } from "@/lib/utils";

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, ExternalLink } from "lucide-react";
+import { ChevronLeft, ExternalLink } from "@/components/layout/app-sidebar/dashboard-icons";
 import Link from "next/link";
 import { HelpSearch } from "./help-search";
 import { HelpQuickActions } from "./help-quick-actions";

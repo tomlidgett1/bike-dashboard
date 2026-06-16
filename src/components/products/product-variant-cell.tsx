@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Layers } from "lucide-react";
+import { Layers } from "@/components/layout/app-sidebar/dashboard-icons";
 import { StatusBadge, type StatusTone } from "@/components/dashboard";
 import {
   buildVariantBadgeLabel,

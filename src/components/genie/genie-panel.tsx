@@ -7,7 +7,7 @@ import {
   X, Send, Bike, Loader2, AlertCircle, Globe, Maximize2, Minimize2,
   Clock, Trash2, ArrowLeft, MessageSquarePlus,
   Store, Sparkles, CheckCircle2, ChevronDown,
-} from 'lucide-react';
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import { useGenie } from '@/components/providers/genie-provider';
 import { useAuth } from '@/components/providers/auth-provider';
 import { useUserProfile } from '@/components/providers/profile-provider';

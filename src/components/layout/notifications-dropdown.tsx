@@ -23,22 +23,22 @@ import {
 } from '@/components/ui/sheet';
 import { 
   Bell, 
-  Package, 
-  Truck, 
-  CheckCircle2, 
-  DollarSign, 
-  AlertTriangle,
-  MapPin,
-  ShoppingBag,
-  CreditCard,
-  X,
+  Box, 
+  Delivery, 
+  CheckCircle, 
+  Dollar, 
+  DangerTriangle,
+  MapPoint,
+  Bag,
+  Card,
+  CloseCircle,
   Gift,
-  LifeBuoy,
-  MessageCircle,
-  Handshake,
-  RefreshCw,
+  Help,
+  ChatRound,
+  HandShake,
+  Refresh,
   Scale,
-} from 'lucide-react';
+} from '@/components/layout/app-sidebar/sidebar-icons';
 import { useOrderNotificationsContext } from '@/components/providers/order-notifications-provider';
 import { useMessages } from '@/components/providers/messages-provider';
 import type { OrderNotification } from '@/lib/hooks/use-order-notifications';
@@ -77,42 +77,42 @@ function getNotificationDisplay(type: string): {
 } {
   const displays: Record<string, { icon: React.ComponentType<{ className?: string }>; title: string; color: string }> = {
     order_placed: { 
-      icon: ShoppingBag, 
+      icon: Bag, 
       title: 'New Order Received', 
       color: 'bg-green-500' 
     },
     order_confirmed: { 
-      icon: CreditCard, 
+      icon: Card, 
       title: 'Payment Confirmed', 
       color: 'bg-green-500' 
     },
     tracking_added: { 
-      icon: MapPin, 
+      icon: MapPoint, 
       title: 'Tracking Number Added', 
       color: 'bg-blue-500' 
     },
     order_shipped: { 
-      icon: Truck, 
+      icon: Delivery, 
       title: 'Order Shipped', 
       color: 'bg-blue-500' 
     },
     order_delivered: { 
-      icon: Package, 
+      icon: Box, 
       title: 'Order Delivered', 
       color: 'bg-green-600' 
     },
     receipt_confirmed: { 
-      icon: CheckCircle2, 
+      icon: CheckCircle, 
       title: 'Receipt Confirmed', 
       color: 'bg-green-600' 
     },
     funds_released: { 
-      icon: DollarSign, 
+      icon: Dollar, 
       title: 'Funds Released', 
       color: 'bg-green-600' 
     },
     issue_reported: { 
-      icon: AlertTriangle, 
+      icon: DangerTriangle, 
       title: 'Issue Reported', 
       color: 'bg-red-500' 
     },
@@ -122,42 +122,42 @@ function getNotificationDisplay(type: string): {
       color: 'bg-green-500'
     },
     ticket_created: {
-      icon: LifeBuoy,
+      icon: Help,
       title: 'New Claim Opened',
       color: 'bg-amber-500'
     },
     ticket_message: {
-      icon: MessageCircle,
+      icon: ChatRound,
       title: 'New Claim Message',
       color: 'bg-blue-500'
     },
     ticket_status_changed: {
-      icon: LifeBuoy,
+      icon: Help,
       title: 'Claim Updated',
       color: 'bg-blue-500'
     },
     ticket_resolution_offered: {
-      icon: Handshake,
+      icon: HandShake,
       title: 'Resolution Offered',
       color: 'bg-green-600'
     },
     ticket_resolution_accepted: {
-      icon: CheckCircle2,
+      icon: CheckCircle,
       title: 'Resolution Accepted',
       color: 'bg-green-600'
     },
     ticket_refunded: {
-      icon: RefreshCw,
+      icon: Refresh,
       title: 'Refund Processed',
       color: 'bg-green-600'
     },
     ticket_released_to_seller: {
-      icon: DollarSign,
+      icon: Dollar,
       title: 'Payment Released',
       color: 'bg-green-600'
     },
     ticket_resolved: {
-      icon: CheckCircle2,
+      icon: CheckCircle,
       title: 'Claim Resolved',
       color: 'bg-green-600'
     },
@@ -479,7 +479,7 @@ export function NotificationsDropdown() {
                     onClick={() => setMobileSheetOpen(false)}
                     className="h-8 w-8 rounded-full hover:bg-muted flex items-center justify-center"
                   >
-                    <X className="h-5 w-5 text-muted-foreground" />
+                    <CloseCircle className="h-5 w-5 text-muted-foreground" />
                   </button>
                 </div>
               </div>

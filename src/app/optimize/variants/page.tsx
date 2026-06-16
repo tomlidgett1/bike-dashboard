@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { PageContainer, PageHeader } from "@/components/dashboard";
 import { VariantFinderWorkspace } from "@/components/optimize/variants/variant-finder-workspace";
 import { useAuth } from "@/components/providers/auth-provider";

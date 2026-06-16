@@ -15,7 +15,7 @@ import {
   Search,
   Sparkles,
   X,
-} from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import { Header } from "@/components/layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

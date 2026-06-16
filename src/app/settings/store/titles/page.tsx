@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import nextDynamic from "next/dynamic";
-import { Type } from "lucide-react";
+import { Type } from "@/components/layout/app-sidebar/dashboard-icons";
 import { PageContainer, PageHeader, PageBody, SettingsSection } from "@/components/dashboard";
 import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";
 

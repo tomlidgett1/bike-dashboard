@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import * as React from "react";
 import nextDynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { Loader2, Package, Settings2 } from "lucide-react";
+import { Loader2, Package, Settings2 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { PageContainer, PageHeader, PageBody } from "@/components/dashboard";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { BikeIcon, AI_DISCOVER_ICON, getBikeSpecSectionIconName } from "@/components/ui/bike-icon";
 import { Input } from "@/components/ui/input";

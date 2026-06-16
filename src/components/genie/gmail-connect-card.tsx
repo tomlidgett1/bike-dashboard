@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { AlertCircle, ExternalLink, Loader2, Mail } from "lucide-react";
+import { AlertCircle, ExternalLink, Loader2, Mail } from "@/components/layout/app-sidebar/dashboard-icons";
 import { GmailLogo } from "@/components/genie/gmail-logo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";

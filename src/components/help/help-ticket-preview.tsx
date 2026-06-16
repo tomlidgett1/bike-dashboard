@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Ticket, ChevronRight, Loader2, AlertCircle } from "lucide-react";
+import { Ticket, ChevronRight, Loader2, AlertCircle } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";

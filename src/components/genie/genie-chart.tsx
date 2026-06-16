@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { BarChart3, Download, LineChart as LineChartIcon } from "lucide-react";
+import { BarChart3, Download, LineChart as LineChartIcon } from "@/components/layout/app-sidebar/dashboard-icons";
 import * as echarts from "echarts/core";
 import {
   BarChart as EChartsBarChart,

@@ -8,7 +8,7 @@ import {
   ArrowRight,
   Package,
   CheckCircle2,
-} from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";

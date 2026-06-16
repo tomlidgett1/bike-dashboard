@@ -26,7 +26,7 @@ import {
   Upload,
   Wand2,
   X,
-} from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import {
   StoreHeaderDropdownEmpty,
   StoreHeaderDropdownHeader,

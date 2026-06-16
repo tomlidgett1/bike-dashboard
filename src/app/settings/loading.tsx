@@ -1,5 +1,5 @@
-import { StoreSettingsRouteSkeleton } from "@/components/settings/store-settings-route-skeleton";
+import { StoreSettingsRouteSkeleton } from "@/components/settings/dashboard-route-skeletons";
 
-export default function SettingsLoading() {
+export default function SettingsRootLoading() {
   return <StoreSettingsRouteSkeleton />;
 }

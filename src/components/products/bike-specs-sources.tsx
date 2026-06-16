@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 import type { BikeSpecsMetadata } from "@/lib/types/bike-specs";
 

@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import nextDynamic from "next/dynamic";
-import { FileText, Pencil, Sparkles } from "lucide-react";
+import { FileText, Pencil, Sparkles } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { PageContainer, PageHeader, PageBody, SettingsSection } from "@/components/dashboard";
 import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";

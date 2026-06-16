@@ -4,24 +4,24 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  ChevronRight,
+  AltArrowRight,
+  Bag,
+  Bolt,
+  Box,
+  ChatRound,
   Database,
-  Home,
-  LayoutGrid,
-  LifeBuoy,
-  Mail,
-  MessageSquare,
-  Package,
+  Delivery,
+  Help,
+  HomeSmile,
+  Letter,
+  MagicStick3,
   Settings,
-  ShoppingBag,
-  Sparkles,
-  Store,
+  Shop,
   Tag,
-  Truck,
-  Zap,
-  Beaker,
-  type LucideIcon,
-} from "lucide-react";
+  TestTube,
+  Widget,
+  type SidebarIcon,
+} from "./sidebar-icons";
 import {
   Collapsible,
   CollapsibleContent,
@@ -55,7 +55,7 @@ const COMPRESSED_NAV_BUTTON =
 type SubItem = { title: string; href: string; exact?: boolean };
 type NavItem = {
   title: string;
-  icon: LucideIcon;
+  icon: SidebarIcon;
   href?: string;
   badge?: string;
   exact?: boolean;
@@ -68,12 +68,12 @@ const NAV: NavGroup[] = [
   {
     label: "Store",
     items: [
-      { title: "Home", href: "/settings/store/home", icon: Home, exact: true },
-      { title: "Actions", href: "/settings/store/actions", icon: LayoutGrid, exact: true },
-      { title: "Products", href: "/products", icon: Package },
+      { title: "Home", href: "/settings/store/home", icon: HomeSmile, exact: true },
+      { title: "Actions", href: "/settings/store/actions", icon: Widget, exact: true },
+      { title: "Products", href: "/products", icon: Box },
       {
         title: "Storefront",
-        icon: Store,
+        icon: Shop,
         items: [
           { title: "Landing page", href: "/settings/store/landing" },
           { title: "Carousels", href: "/settings/store/carousels" },
@@ -85,20 +85,20 @@ const NAV: NavGroup[] = [
           { title: "Titles", href: "/settings/store/titles" },
         ],
       },
-      { title: "Product Optimise", href: "/optimize", icon: Sparkles },
+      { title: "Product Optimise", href: "/optimize", icon: MagicStick3 },
     ],
   },
   {
     label: "Customer service",
     items: [
-      { title: "Nest", href: "/settings/store/nest", icon: MessageSquare, exact: true },
-      { title: "Customer inquiries", href: "/settings/store/customer-inquiries", icon: Mail, exact: true },
+      { title: "Nest", href: "/settings/store/nest", icon: ChatRound, exact: true },
+      { title: "Customer inquiries", href: "/settings/store/customer-inquiries", icon: Letter, exact: true },
     ],
   },
   {
     label: "Marketplace",
     items: [
-      { title: "Orders", href: "/settings/purchases", icon: ShoppingBag },
+      { title: "Orders", href: "/settings/purchases", icon: Bag },
       {
         title: "Listings",
         icon: Tag,
@@ -111,17 +111,17 @@ const NAV: NavGroup[] = [
   {
     label: "Operations",
     items: [
-      { title: "Uber Direct", href: "/settings/uber", icon: Truck },
+      { title: "Uber Direct", href: "/settings/uber", icon: Delivery },
       { title: "Data", href: "/settings/data", icon: Database },
-      { title: "Test", href: "/settings/test", icon: Beaker, exact: true },
-      { title: "Lightspeed", href: "/connect-lightspeed", icon: Zap },
+      { title: "Test", href: "/settings/test", icon: TestTube, exact: true },
+      { title: "Lightspeed", href: "/connect-lightspeed", icon: Bolt },
     ],
   },
 ];
 
 const FOOTER_ITEMS: NavItem[] = [
   { title: "Settings", href: "/settings", icon: Settings, exact: true },
-  { title: "Help & support", href: "/marketplace/help", icon: LifeBuoy },
+  { title: "Help & support", href: "/marketplace/help", icon: Help },
 ];
 
 function flatActive(pathname: string, item: NavItem) {
@@ -155,7 +155,7 @@ function CollapsibleNavItem({
           >
             <item.icon />
             <span>{item.title}</span>
-            <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+            <AltArrowRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
           </SidebarMenuButton>
         </CollapsibleTrigger>
         <CollapsibleContent>

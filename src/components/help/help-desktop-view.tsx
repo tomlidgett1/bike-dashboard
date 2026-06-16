@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Sparkles } from "lucide-react";
+import { Sparkles } from "@/components/layout/app-sidebar/dashboard-icons";
 import { HelpSearch } from "./help-search";
 import { HelpCategoryList } from "./help-category-list";
 import { HelpArticleList } from "./help-article-list";

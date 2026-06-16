@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Edit2, Check, X } from "lucide-react";
+import { Loader2, Edit2, Check, X } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";

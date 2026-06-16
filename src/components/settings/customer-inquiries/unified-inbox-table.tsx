@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Inbox, Loader2 } from "lucide-react";
+import { AlertCircle, Inbox, Loader2 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { GmailLogo } from "@/components/genie/gmail-logo";
 import { NestLogo } from "@/components/genie/nest-logo";
 import {

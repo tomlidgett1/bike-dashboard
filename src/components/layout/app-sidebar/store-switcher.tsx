@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronsUpDown, ExternalLink, Settings, Store } from "lucide-react";
+import { ChevronsUpDown, ExternalLink, Settings, Store } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,

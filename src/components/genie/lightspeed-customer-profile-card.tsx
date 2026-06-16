@@ -14,7 +14,7 @@ import {
   ShoppingBag,
   User,
   Wrench,
-} from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type {

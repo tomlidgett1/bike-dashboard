@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 
 const BENTO_SLOT_WIDTH = 340;

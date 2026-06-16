@@ -20,7 +20,7 @@ import {
   Target,
   Timer,
   Users,
-} from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

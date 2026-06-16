@@ -20,7 +20,7 @@ import {
   StopCircle,
   Type,
   X,
-} from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import {
   AlertDialog,
   AlertDialogAction,

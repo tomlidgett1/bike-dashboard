@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Search, X, Loader2, FileText } from "lucide-react";
+import { Search, X, Loader2, FileText } from "@/components/layout/app-sidebar/dashboard-icons";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 

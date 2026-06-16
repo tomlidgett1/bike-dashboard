@@ -21,7 +21,7 @@ import {
   Sparkles,
   Type,
   X,
-} from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { OptimizerImageReview } from "@/components/optimize/optimizer-image-review";

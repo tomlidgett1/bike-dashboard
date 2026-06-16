@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Settings2 } from "lucide-react";
+import { Settings2 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

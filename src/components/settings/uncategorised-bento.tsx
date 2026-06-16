@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Check, ChevronDown, Loader2, Sparkles } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Loader2, Sparkles } from "@/components/layout/app-sidebar/dashboard-icons";
 import { LightspeedLogo } from "@/components/genie/lightspeed-logo";
 import {
   getBentoShellStyles,

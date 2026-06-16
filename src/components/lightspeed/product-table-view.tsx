@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Search, X, Trash2, Package, SlidersHorizontal } from "lucide-react";
+import { Search, X, Trash2, Package, SlidersHorizontal } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";

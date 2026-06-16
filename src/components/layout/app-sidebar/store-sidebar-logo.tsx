@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { Bike } from "lucide-react";
+import { Bike } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 import { getOptimizedImageUrl } from "@/lib/utils/image-cdn";
 

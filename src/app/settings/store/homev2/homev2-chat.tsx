@@ -3,7 +3,7 @@
 import * as React from "react";
 import { createPortal, flushSync } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowUpRight, ChevronDown, History, Pencil, Plus, ScanSearch, Sparkles, ThumbsDown, ThumbsUp, Trash2, X } from "lucide-react";
+import { ArrowUpRight, ChevronDown, History, Pencil, Plus, ScanSearch, Sparkles, ThumbsDown, ThumbsUp, Trash2, X } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 import { GenieChart } from "@/components/genie/genie-chart";
 import { GenieDataTable } from "@/components/genie/genie-data-table";

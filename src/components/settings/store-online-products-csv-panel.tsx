@@ -10,7 +10,7 @@ import {
   Sparkles,
   Trash2,
   Upload,
-} from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";

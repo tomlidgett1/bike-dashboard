@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot } from "lucide-react";
+import { Bot } from "@/components/layout/app-sidebar/dashboard-icons";
 import { useGenie } from "@/components/providers/genie-provider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";

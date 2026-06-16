@@ -36,7 +36,7 @@ import {
   X,
   Search,
   Truck,
-} from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

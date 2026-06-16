@@ -3,7 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
-import { AlertCircle, ArrowRight, CheckCircle2, Loader2, Package, Undo2 } from "lucide-react";
+import { AlertCircle, ArrowRight, CheckCircle2, Loader2, Package, Undo2 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type {

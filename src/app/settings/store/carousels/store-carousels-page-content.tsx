@@ -3,7 +3,7 @@
 import * as React from "react";
 import nextDynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Plus, Package, Bike, Layers } from "lucide-react";
+import { Plus, Package, Bike, Layers } from "@/components/layout/app-sidebar/dashboard-icons";
 import { PageContainer, PageHeader, PageBody } from "@/components/dashboard";
 import { Button } from "@/components/ui/button";
 import { StoreCategoriesManager } from "@/components/settings/store-categories-manager";

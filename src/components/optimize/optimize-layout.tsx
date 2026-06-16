@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Search } from "lucide-react";
+import { Loader2, Search } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 

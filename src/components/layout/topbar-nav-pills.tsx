@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ExternalLink } from "lucide-react";
+import { SquareArrowRightUp } from "@/components/layout/app-sidebar/dashboard-icons";
 import { useUserProfile } from "@/lib/hooks/use-user-profile";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +19,7 @@ export const dashboardHeaderBoxClass = cn(
   "!text-[color:var(--dashboard-header-control-fg)]",
   "hover:!bg-[var(--dashboard-header-control-hover-bg)]",
   "hover:!text-[color:var(--dashboard-header-control-hover-fg)]",
-  "[&_svg]:!stroke-[1.5]",
+  "[&_svg]:!stroke-[2]",
 );
 
 /** Active/pressed state for dashboard header controls. */
@@ -55,7 +55,7 @@ export function TopbarNavPills() {
         rel="noopener noreferrer"
         className={topbarActionClass}
       >
-        <ExternalLink className="size-3.5 shrink-0" />
+        <SquareArrowRightUp className="size-3.5 shrink-0" />
         <span className="hidden lg:inline">View store</span>
       </Link>
     </div>

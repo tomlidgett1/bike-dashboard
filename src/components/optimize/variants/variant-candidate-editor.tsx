@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Plus, Trash2, X } from "lucide-react";
+import { Loader2, Plus, Trash2, X } from "@/components/layout/app-sidebar/dashboard-icons";
 import {
   Dialog,
   DialogContent,

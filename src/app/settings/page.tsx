@@ -29,7 +29,7 @@ import {
   Moon,
   Sun,
   Trash2,
-} from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import Link from "next/link";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";

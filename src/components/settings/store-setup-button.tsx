@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Sparkles } from "lucide-react";
+import { MagicStick3 } from "@/components/layout/app-sidebar/sidebar-icons";
 import { Button } from "@/components/ui/button";
 import { topbarIconButtonClass } from "@/components/layout/topbar-nav-pills";
 import { useUserProfile } from "@/lib/hooks/use-user-profile";
@@ -42,7 +42,7 @@ export function StoreSetupButton({
           }
           className={cn(topbarIconButtonClass, className)}
         >
-          <Sparkles className="size-4" />
+          <MagicStick3 className="size-4" />
           {!complete ? (
             <span className="absolute right-1 top-1 size-1.5 rounded-full bg-[#FFC72C]" />
           ) : null}
@@ -69,7 +69,7 @@ export function StoreSetupButton({
           className
         )}
       >
-        <Sparkles className="size-4" />
+        <MagicStick3 className="size-4" />
         Onboarding or setup
         {!complete && progress > 0 && (
           <span className="ml-1 rounded-md bg-white/80 px-1.5 py-0.5 text-xs font-medium text-gray-800">
@@ -108,7 +108,7 @@ export function StoreSetupBanner() {
           onClick={() => setOpen(true)}
           className="shrink-0 bg-[#FFC72C] text-gray-900 hover:bg-[#E6B328]"
         >
-          <Sparkles className="size-4" />
+          <MagicStick3 className="size-4" />
           Continue setup
         </Button>
       </div>

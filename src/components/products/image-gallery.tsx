@@ -5,7 +5,7 @@
 // ============================================================
 
 import React, { useState, useEffect } from 'react';
-import { Image as ImageIcon, Upload, Trash2, Star, Images, Sparkles, Loader2 } from 'lucide-react';
+import { Image as ImageIcon, Upload, Trash2, Star, Images, Sparkles, Loader2 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ImageUploader } from '@/components/marketplace/image-uploader';

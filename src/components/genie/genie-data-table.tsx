@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { ArrowDown, ArrowUp, ArrowUpDown, Download } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Download } from "@/components/layout/app-sidebar/dashboard-icons";
 import {
   flexRender,
   getCoreRowModel,

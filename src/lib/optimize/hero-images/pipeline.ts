@@ -14,7 +14,13 @@ import { harvestSerperImages, type SerperSearch } from "./harvest";
 import { analyzeCandidates } from "./analyze";
 import { dedupeCandidates } from "./dedupe";
 import { aiSelect } from "./ai-select";
-import type { HeroPipelineResult, ProductInput, RejectedCandidate } from "./types";
+import type {
+  AnalyzedCandidate,
+  HeroImageCandidate,
+  HeroPipelineResult,
+  ProductInput,
+  RejectedCandidate,
+} from "./types";
 
 export interface RunPipelineDeps {
   serperSearch: SerperSearch;
@@ -83,6 +89,7 @@ export async function runHeroImagePipeline(
     error: ai.selected.length > 0 ? undefined : ai.reasoning,
     primaryUrl: ai.primaryUrl,
     selected: ai.selected,
+    candidates: kept.map(toHeroImageCandidate),
     reasoning: ai.reasoning,
     queriesUsed,
     stats: {
@@ -119,6 +126,7 @@ function emptyResult(
     error,
     primaryUrl: null,
     selected: [],
+    candidates: [],
     reasoning: "",
     queriesUsed,
     stats,
@@ -126,5 +134,20 @@ function emptyResult(
     rejected,
     modelsUsed: [],
     costUsd: 0,
+  };
+}
+
+function toHeroImageCandidate(candidate: AnalyzedCandidate): HeroImageCandidate {
+  return {
+    url: candidate.url,
+    thumbnailUrl: candidate.thumbnailUrl,
+    title: candidate.title,
+    domain: candidate.domain,
+    source: candidate.source,
+    query: candidate.query,
+    width: candidate.width,
+    height: candidate.height,
+    isOfficial: candidate.isOfficial,
+    heroScore: candidate.heroScore,
   };
 }

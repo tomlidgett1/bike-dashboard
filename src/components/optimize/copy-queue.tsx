@@ -12,7 +12,7 @@ import {
   Sparkles,
   StopCircle,
   Type,
-} from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {

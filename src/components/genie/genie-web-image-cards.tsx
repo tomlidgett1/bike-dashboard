@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowUpRight, ImageIcon } from "lucide-react";
+import { ArrowUpRight, ImageIcon } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 import type { GenieWebImagePreview } from "@/lib/genie/web-image-search";
 

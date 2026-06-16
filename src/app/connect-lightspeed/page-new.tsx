@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Zap, AlertCircle } from "lucide-react";
+import { Loader2, Zap, AlertCircle } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";

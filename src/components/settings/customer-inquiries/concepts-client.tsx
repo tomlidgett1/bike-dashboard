@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Mail, Send } from "lucide-react";
+import { Loader2, Mail, Send } from "@/components/layout/app-sidebar/dashboard-icons";
 import { GmailLogo } from "@/components/genie/gmail-logo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";

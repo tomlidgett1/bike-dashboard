@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Mail, Clock, ExternalLink } from "lucide-react";
+import { Mail, Clock, ExternalLink } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 

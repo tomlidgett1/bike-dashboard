@@ -36,7 +36,7 @@ import {
   Layers,
   SlidersHorizontal,
   ChevronDown,
-} from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import Image from "next/image";
 import NextDynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
@@ -84,8 +84,6 @@ import {
   isLightspeedProduct,
 } from "@/lib/products/catalog-helpers";
 import {
-  PageBody,
-  PageContainer,
   StatusBadge,
   type StatusTone,
 } from "@/components/dashboard";
@@ -96,9 +94,12 @@ import { ProductBrandCell } from "@/components/products/product-brand-cell";
 import { ProductCategoryCell } from "@/components/products/product-category-cell";
 import { ProductVariantCell } from "@/components/products/product-variant-cell";
 import {
-  storeSettingsPageChromeClass,
-  storeSettingsPageHeaderNudgeClass,
-} from "@/components/settings/actions-page-header";
+  FloatingCard,
+  FloatingCardPage,
+  FloatingCardPageBody,
+  FloatingCardPageHeader,
+  FloatingCardPageTitleRow,
+} from "@/components/layout/floating-card-page";
 
 // Dialog (lazy — avoids SSR issues)
 const Dialog = NextDynamic(() => import("@/components/ui/dialog").then((m) => m.Dialog), { ssr: false });
@@ -1288,15 +1289,13 @@ export default function ProductsPage() {
     "h-9 shrink-0 rounded-md border-input bg-white px-2.5 font-normal shadow-none";
 
   return (
-    <PageContainer size="full" className="flex h-[calc(100svh-3.5rem)] min-h-0 flex-col !p-0 !pt-2.5 !pb-0">
-      <div className={cn("sticky top-0 z-30 w-full bg-white", storeSettingsPageChromeClass)}>
-        <div className={cn(storeSettingsPageHeaderNudgeClass, "!pb-0")}>
-          <div className="flex min-h-9 items-center justify-between gap-3">
-            <h1 className="flex min-w-0 items-center gap-2 text-lg font-semibold tracking-tight text-foreground">
-              <Package className="h-[18px] w-[18px] shrink-0 text-foreground" aria-hidden />
-              Products
-            </h1>
-            <div className="flex shrink-0 items-center gap-2">
+    <FloatingCardPage>
+      <FloatingCardPageHeader>
+        <FloatingCardPageTitleRow
+          title="Products"
+          icon={Package}
+          actions={
+            <>
               {stats?.variantPendingReview ? (
                 <Button variant="outline" size="sm" className="rounded-md" asChild>
                   <Link href="/optimize/variants">
@@ -1312,13 +1311,13 @@ export default function ProductsPage() {
                 <Plus className="size-4" />
                 Add product
               </Button>
-            </div>
-          </div>
-        </div>
-      </div>
+            </>
+          }
+        />
+      </FloatingCardPageHeader>
 
-      <PageBody className="mt-1 flex min-h-0 flex-1 flex-col space-y-0 px-1.5">
-        <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-xl border border-gray-200/80 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
+      <FloatingCardPageBody>
+        <FloatingCard>
           <div className="flex flex-col gap-2 rounded-t-xl border-b border-border/60 bg-gray-50 px-4 py-3 sm:flex-row sm:items-center md:px-5">
             <div className="relative min-w-0 flex-1 sm:max-w-[360px] lg:max-w-[420px] xl:max-w-[460px]">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -1636,8 +1635,8 @@ export default function ProductsPage() {
             </div>
           </div>
         </div>
-        </section>
-      </PageBody>
+        </FloatingCard>
+      </FloatingCardPageBody>
 
       {/* Manage images dialog (controlled) */}
       <Dialog open={!!imageManageProduct} onOpenChange={(open: boolean) => !open && setImageManageProduct(null)}>
@@ -1819,6 +1818,6 @@ export default function ProductsPage() {
         }}
         onSaved={handleRefreshList}
       />
-    </PageContainer>
+    </FloatingCardPage>
   );
 }

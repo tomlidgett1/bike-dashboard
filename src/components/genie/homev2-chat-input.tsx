@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AudioLines, Plus, Square } from "lucide-react";
+import { AudioLines, Plus, Square } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 
 export function HomeV2ChatInput({

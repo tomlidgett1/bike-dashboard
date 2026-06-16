@@ -18,7 +18,7 @@ import {
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, Trash2, Edit2, GripVertical, Loader2, Star, Clock, X, Check, ListChecks, Wrench } from "lucide-react";
+import { Plus, Trash2, Edit2, GripVertical, Loader2, Star, Clock, X, Check, ListChecks, Wrench } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -431,7 +431,7 @@ export function StoreServicesManager({ addRequest = 0 }: { addRequest?: number }
                 {formData.includes.map((item, i) => (
                   <div key={i} className="flex items-center gap-2">
                     <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-gray-900">
-                      <Check className="h-3 w-3 text-white" strokeWidth={3} />
+                      <Check className="h-3 w-3 text-white" />
                     </span>
                     <Input
                       value={item}

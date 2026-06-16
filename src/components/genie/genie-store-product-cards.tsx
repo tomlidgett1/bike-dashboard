@@ -4,7 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowUpRight, Bike, Package } from "lucide-react";
+import { ArrowUpRight, Bike, Package } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { GenieStoreProductPreview } from "@/lib/genie/store-product-previews";

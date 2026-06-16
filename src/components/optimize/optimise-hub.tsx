@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { Camera, FileSpreadsheet, Layers, Lock, Package, Sparkles } from "lucide-react";
+import { Camera, FileSpreadsheet, Layers, Lock, Package, Sparkles } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 import {
   bentoHubCardShellClassName,

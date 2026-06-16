@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, ArrowRight, Check, Loader2, Package, Pencil, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, Loader2, Package, Pencil, X } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge, type StatusTone } from "@/components/dashboard";

@@ -3,7 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import { motion } from "framer-motion";
-import { AlertCircle, Check, CheckCircle2, FolderPlus, Loader2 } from "lucide-react";
+import { AlertCircle, Check, CheckCircle2, FolderPlus, Loader2 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ApplyResult, LightspeedCategoryCreateProposal } from "@/lib/types/genie-agent";

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/components/layout/app-sidebar/dashboard-icons";
 import type { NestPickupSuggestion } from "@/lib/nest/pickup-suggestions";
 import { hideNestPickupSuggestion } from "@/lib/nest/pickup-suggestions-client";
 import {

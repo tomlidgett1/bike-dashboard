@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 
 interface SettingsManagerLoadingProps {

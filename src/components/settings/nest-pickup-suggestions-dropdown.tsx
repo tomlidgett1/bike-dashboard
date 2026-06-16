@@ -3,7 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, EyeOff, Loader2 } from "lucide-react";
+import { ChevronDown, EyeOff, Loader2 } from "@/components/layout/app-sidebar/dashboard-icons";
 import {
   DropdownMenu,
   DropdownMenuContent,

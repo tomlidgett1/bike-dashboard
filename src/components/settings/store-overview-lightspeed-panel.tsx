@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Loader2, Package, RefreshCw, Zap } from "lucide-react";
+import { Loader2, Package, RefreshCw, Zap } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SyncProgressModal } from "@/components/lightspeed/sync-progress-modal";

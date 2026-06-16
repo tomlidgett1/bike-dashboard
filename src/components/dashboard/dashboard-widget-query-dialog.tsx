@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Pencil, Sparkles } from "lucide-react";
+import { Loader2, Pencil, Sparkles } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

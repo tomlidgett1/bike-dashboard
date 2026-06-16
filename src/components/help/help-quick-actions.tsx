@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Package, Truck, MessageCircle, ChevronRight, type LucideIcon } from "lucide-react";
+import { Package, Truck, MessageCircle, ChevronRight, type LucideIcon } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 

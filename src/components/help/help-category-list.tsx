@@ -11,7 +11,7 @@ import {
   User,
   ChevronRight,
   type LucideIcon,
-} from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 import type { HelpCategory } from "@/lib/constants/help-content";
 

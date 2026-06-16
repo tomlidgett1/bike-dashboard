@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
-import { MessageSquare } from "lucide-react";
+import { ChatRound } from "@/components/layout/app-sidebar/sidebar-icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -78,7 +78,7 @@ export function NestMessagesDropdown() {
           className={topbarIconButtonClass}
           aria-label="Nest messages"
         >
-          <MessageSquare className="size-4" />
+          <ChatRound className="size-4" />
           {unreadCount > 0 ? (
             <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-medium text-white">
               {unreadCount > 99 ? "99+" : unreadCount}
@@ -117,7 +117,7 @@ export function NestMessagesDropdown() {
 
         <StoreHeaderDropdownBody>
           {dropdownItems.length === 0 ? (
-            <StoreHeaderDropdownEmpty icon={MessageSquare} message="No new Nest messages" />
+            <StoreHeaderDropdownEmpty icon={ChatRound} message="No new Nest messages" />
           ) : (
             dropdownItems.map((notification) => (
               <StoreHeaderDropdownItem

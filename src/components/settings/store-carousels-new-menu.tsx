@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Plus, Scan, Tag, Truck, ChevronDown, Package, Bike } from "lucide-react";
+import { Plus, Scan, Tag, Truck, ChevronDown, Package, Bike } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,

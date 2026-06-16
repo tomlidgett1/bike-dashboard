@@ -4,7 +4,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import { motion } from "framer-motion";
-import { Loader2, Maximize2, Minimize2, Send, X } from "lucide-react";
+import { Loader2, Maximize2, Minimize2, Send, X } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useGenie } from "@/components/providers/genie-provider";

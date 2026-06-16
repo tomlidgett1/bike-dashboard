@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Loader2, RefreshCw } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 import { SettingsSection } from "@/components/dashboard/settings-primitives";
 import type { NestPickupSuggestion } from "@/lib/nest/pickup-suggestions";

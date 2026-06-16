@@ -13,7 +13,7 @@ import {
   Plus,
   MoreHorizontal,
   X,
-} from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { HelpCircle } from "lucide-react";
+import { HelpCircle } from "@/components/layout/app-sidebar/dashboard-icons";
 import {
   Tooltip,
   TooltipContent,

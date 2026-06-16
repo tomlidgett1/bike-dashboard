@@ -19,7 +19,7 @@ import {
   Tag,
   Wand2,
   X,
-} from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -175,6 +175,7 @@ async function fetchProductsByIds(ids: string[]): Promise<BulkProduct[]> {
       page: "1",
       pageSize: String(chunk.length),
       ids: chunk.join(","),
+      includeOptimizeCanonical: "true",
     });
     const res = await fetch(`/api/products?${params}`);
     if (!res.ok) continue;
@@ -240,18 +241,47 @@ function isSmartCachedRun(
   return run?.photoSystem === SMART_PHOTO_SYSTEM;
 }
 
+function hasAdditionalSmartCandidates(run: ReturnType<typeof imageRunFromSerperCache>) {
+  if (!isSmartCachedRun(run)) return false;
+  return run.candidates.some((candidate) => !run.selectedUrls.includes(candidate.url));
+}
+
 function smartPhotoResultToCandidates(result: HeroPipelineResult): SpeedSearchCandidate[] {
   const selected = Array.isArray(result.selected) ? result.selected : [];
-  return selected.map((image, index) => ({
-    id: `smart-photo-${index + 1}`,
-    url: image.url,
-    thumbnailUrl: image.thumbnailUrl ?? image.url,
-    title: image.reason || image.domain || `Smart product photo ${index + 1}`,
-    source: image.isOfficial ? "official" : image.domain ?? SMART_PHOTO_SYSTEM,
-    domain: image.domain,
-    width: image.width,
-    height: image.height,
-  }));
+  const candidates = Array.isArray(result.candidates) ? result.candidates : [];
+  const byUrl = new Map<string, SpeedSearchCandidate>();
+
+  const addCandidate = (
+    image: {
+      url: string;
+      thumbnailUrl?: string;
+      title?: string;
+      reason?: string;
+      domain?: string;
+      source?: string;
+      width?: number;
+      height?: number;
+      isOfficial?: boolean;
+    },
+    index: number,
+  ) => {
+    if (!image.url || byUrl.has(image.url)) return;
+    byUrl.set(image.url, {
+      id: `smart-photo-${index + 1}`,
+      url: image.url,
+      thumbnailUrl: image.thumbnailUrl ?? image.url,
+      title: image.reason || image.title || image.domain || `Smart product photo ${index + 1}`,
+      source: image.source || (image.isOfficial ? "official" : image.domain ?? SMART_PHOTO_SYSTEM),
+      domain: image.domain,
+      width: image.width,
+      height: image.height,
+    });
+  };
+
+  selected.forEach(addCandidate);
+  candidates.forEach((candidate, index) => addCandidate(candidate, selected.length + index));
+
+  return [...byUrl.values()];
 }
 
 function hasCopyFields(copyFields: CopyBatchFields) {
@@ -481,7 +511,9 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
             }
             if (next[product.id] && next[product.id].phase !== "idle") continue;
             const cached = imageRunFromSerperCache(caches[product.canonical_product_id]);
-            if (isSmartCachedRun(cached)) next[product.id] = { ...emptyImageRun(), ...cached };
+            if (hasAdditionalSmartCandidates(cached)) {
+              next[product.id] = { ...emptyImageRun(), ...cached };
+            }
           }
           return next;
         });
@@ -602,7 +634,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
         }
 
         const cachedRun = imageRunFromSerperCache(entry ?? undefined);
-        if (cachedRun?.phase === "ready" && isSmartCachedRun(cachedRun)) {
+        if (cachedRun?.phase === "ready" && hasAdditionalSmartCandidates(cachedRun)) {
           patchImageRun(product.id, { ...emptyImageRun(), ...cachedRun });
           return true;
         }
@@ -612,10 +644,10 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            name: speedProduct.store_product_name || speedProduct.display_name || speedProduct.normalized_name,
+            name: speedProduct.display_name || speedProduct.normalized_name || speedProduct.store_product_name,
             brand: speedProduct.manufacturer || null,
             upc: speedProduct.upc || null,
-            searchQuery: entry?.searchQuery || searchQuery,
+            searchQuery,
             maxImages: 6,
           }),
         });
@@ -629,7 +661,9 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
 
         const selectedImages = Array.isArray(json.selected) ? json.selected : [];
         const candidates = smartPhotoResultToCandidates(json);
-        const selectedUrls = candidates.map((candidate) => candidate.url);
+        const selectedUrlSet = new Set(selectedImages.map((image) => image.url));
+        const selectedCandidates = candidates.filter((candidate) => selectedUrlSet.has(candidate.url));
+        const selectedUrls = selectedCandidates.map((candidate) => candidate.url);
         const primaryUrl =
           json.primaryUrl ||
           selectedImages.find((image) => image.isPrimary)?.url ||
@@ -643,7 +677,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
             photoSystem: SMART_PHOTO_SYSTEM,
           });
           saveSerperCache(product.canonical_product_id, {
-            searchQuery: entry?.searchQuery || searchQuery,
+            searchQuery,
             candidates: [],
             aiSelection: null,
           });
@@ -653,7 +687,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
         patchImageRun(product.id, {
           phase: "ready",
           candidates,
-          selectedCandidates: candidates,
+          selectedCandidates,
           selectedUrls,
           primaryUrl,
           photoSystem: SMART_PHOTO_SYSTEM,
@@ -661,10 +695,10 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
           error: undefined,
         });
         saveSerperCache(product.canonical_product_id, {
-          searchQuery: entry?.searchQuery || searchQuery,
+          searchQuery,
           candidates,
           aiSelection: {
-            selectedCandidates: candidates,
+            selectedCandidates,
             selectedUrls,
             primaryUrl,
             photoSystem: SMART_PHOTO_SYSTEM,
@@ -1681,8 +1715,8 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
 
   if (isProductsCard) {
     return (
-      <>
-        <div className="shrink-0 border-b border-border/60 bg-gray-50">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="shrink-0 rounded-t-xl border-b border-border/60 bg-gray-50">
           <div className="flex flex-col gap-3 px-4 py-3 md:px-5">
             {statsRow}
             {toolbar}
@@ -1690,7 +1724,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
         </div>
         <div className="min-h-0 flex-1 overflow-auto px-4 py-4 md:px-5">{productList}</div>
         <LightboxOverlay url={lightbox} onClose={() => setLightbox(null)} />
-      </>
+      </div>
     );
   }
 

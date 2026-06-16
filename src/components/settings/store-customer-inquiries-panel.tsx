@@ -1,28 +1,136 @@
 "use client";
 
-import { Loader2, Mail, RefreshCw, Send, UserX, CheckCheck } from "lucide-react";
+import type { ReactNode } from "react";
+import { Inbox, Loader2, Mail, RefreshCw, Send, UserX, CheckCheck } from "@/components/layout/app-sidebar/dashboard-icons";
 import { GmailLogo } from "@/components/genie/gmail-logo";
 import { Button } from "@/components/ui/button";
 import {
   CustomerEnquiriesPageHeader,
   storeSettingsHeaderActionClass,
-  storeSettingsPageChromeClass,
-  storeSettingsPageHeaderNudgeClass,
 } from "@/components/settings/actions-page-header";
 import { InboxFilterTabs } from "@/components/settings/customer-inquiries/inbox-filter-tabs";
 import { InquirySlidePanel } from "@/components/settings/customer-inquiries/inquiry-slide-panel";
 import { UnifiedInboxTable } from "@/components/settings/customer-inquiries/unified-inbox-table";
-import { useUnifiedInboxController } from "@/components/settings/customer-inquiries/use-unified-inbox-controller";
+import {
+  useUnifiedInboxController,
+  type UnifiedInboxController,
+} from "@/components/settings/customer-inquiries/use-unified-inbox-controller";
+import {
+  FloatingCard,
+  FloatingCardPageBody,
+  FloatingCardPageHeader,
+  FloatingCardPageTitleRow,
+} from "@/components/layout/floating-card-page";
+import { floatingCardPageHeaderNudgeClass } from "@/lib/layout/floating-card-page";
 import { cn } from "@/lib/utils";
 
 function InquiriesGmailStatusLoading() {
   return (
-    <div className="flex h-full min-h-0 items-center justify-center bg-white p-6">
-      <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading enquiries…
+    <InquiriesFloatingCardShell>
+      <div className="flex flex-1 items-center justify-center p-6">
+        <div className="flex items-center gap-2 text-sm text-gray-500">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading enquiries…
+        </div>
       </div>
+    </InquiriesFloatingCardShell>
+  );
+}
+
+function InquiriesFloatingCardShell({
+  headerActions,
+  children,
+}: {
+  headerActions?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <>
+      <FloatingCardPageHeader>
+        {headerActions ?? (
+          <FloatingCardPageTitleRow title="Customer enquiries" icon={Inbox} />
+        )}
+      </FloatingCardPageHeader>
+
+      <FloatingCardPageBody>
+        <FloatingCard>{children}</FloatingCard>
+      </FloatingCardPageBody>
+    </>
+  );
+}
+
+function CustomerEnquiriesHeader({
+  c,
+  trailingActions,
+}: {
+  c: UnifiedInboxController;
+  trailingActions?: ReactNode;
+}) {
+  return (
+    <CustomerEnquiriesPageHeader
+      className={cn(floatingCardPageHeaderNudgeClass, "!static !pb-0")}
+      composeDisabled={!c.nestConfigured}
+      onMessageStarted={c.handleNestStarted}
+      trailingActions={trailingActions}
+    />
+  );
+}
+
+function CustomerEnquiriesFilterBar({ c }: { c: UnifiedInboxController }) {
+  return (
+    <div className="flex shrink-0 flex-col gap-2 rounded-t-xl border-b border-border/60 bg-gray-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between md:px-5">
+      <InboxFilterTabs value={c.inboxTab} onChange={c.setInboxTab} counts={c.tabCounts} />
+      {c.unreadCount > 0 ? (
+        <button
+          type="button"
+          onClick={() => void c.handleMarkAllAsRead()}
+          disabled={c.markingAllRead}
+          className={storeSettingsHeaderActionClass(false, c.markingAllRead)}
+        >
+          {c.markingAllRead ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <CheckCheck className="h-3.5 w-3.5" />
+          )}
+          Mark all as read
+        </button>
+      ) : null}
     </div>
+  );
+}
+
+function CustomerEnquiriesHeaderActions({ c }: { c: UnifiedInboxController }) {
+  return (
+    <>
+      {c.gmailConfigured && !c.gmailConnected ? (
+        <button
+          type="button"
+          onClick={() => void c.handleConnectGmail()}
+          disabled={c.connecting}
+          className={storeSettingsHeaderActionClass(false, c.connecting)}
+        >
+          {c.connecting ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Mail className="h-3.5 w-3.5" />
+          )}
+          Connect Gmail
+        </button>
+      ) : null}
+      <button
+        type="button"
+        onClick={() => void c.handleRefreshAll()}
+        disabled={c.refreshing || c.listLoading}
+        className={storeSettingsHeaderActionClass(false, c.refreshing || c.listLoading)}
+      >
+        {c.refreshing ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <RefreshCw className="h-3.5 w-3.5" />
+        )}
+        Refresh
+      </button>
+    </>
   );
 }
 
@@ -35,11 +143,13 @@ export function StoreCustomerInquiriesPanel() {
     }
     if (c.error) {
       return (
-        <div className="flex h-full min-h-0 items-center justify-center bg-white p-6">
-          <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white p-6 text-center text-sm text-gray-600">
-            {c.error}
+        <InquiriesFloatingCardShell>
+          <div className="flex flex-1 items-center justify-center p-6">
+            <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white p-6 text-center text-sm text-gray-600">
+              {c.error}
+            </div>
           </div>
-        </div>
+        </InquiriesFloatingCardShell>
       );
     }
     return <InquiriesGmailStatusLoading />;
@@ -47,117 +157,70 @@ export function StoreCustomerInquiriesPanel() {
 
   if (c.gmailConfigured && !c.gmailConnected && !c.nestConfigured) {
     return (
-      <div className="flex h-full min-h-0 items-center justify-center bg-white p-6">
-        <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white p-8 text-center">
-          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-md border border-gray-200 bg-white">
-            <GmailLogo />
-          </span>
-          <p className="mt-4 text-base font-medium text-gray-900">Connect your store inbox</p>
-          <p className="mx-auto mt-1 text-sm text-gray-500">
-            Sync customer enquiries and draft replies in your shop voice.
-          </p>
-          {c.error ? <p className="mt-3 text-xs text-gray-500">{c.error}</p> : null}
-          <Button
-            type="button"
-            className="mt-5 rounded-md"
-            onClick={() => void c.handleConnectGmail()}
-            disabled={c.connecting}
-          >
-            {c.connecting ? (
-              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-            ) : (
-              <Mail className="mr-1.5 h-4 w-4" />
-            )}
-            Connect Gmail
-          </Button>
+      <InquiriesFloatingCardShell
+        headerActions={
+          <CustomerEnquiriesHeader
+            c={c}
+            trailingActions={<CustomerEnquiriesHeaderActions c={c} />}
+          />
+        }
+      >
+        <div className="flex flex-1 items-center justify-center p-6">
+          <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white p-8 text-center">
+            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-md border border-gray-200 bg-white">
+              <GmailLogo />
+            </span>
+            <p className="mt-4 text-base font-medium text-gray-900">Connect your store inbox</p>
+            <p className="mx-auto mt-1 text-sm text-gray-500">
+              Sync customer enquiries and draft replies in your shop voice.
+            </p>
+            {c.error ? <p className="mt-3 text-xs text-gray-500">{c.error}</p> : null}
+            <Button
+              type="button"
+              className="mt-5 rounded-md"
+              onClick={() => void c.handleConnectGmail()}
+              disabled={c.connecting}
+            >
+              {c.connecting ? (
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+              ) : (
+                <Mail className="mr-1.5 h-4 w-4" />
+              )}
+              Connect Gmail
+            </Button>
+          </div>
         </div>
-      </div>
+      </InquiriesFloatingCardShell>
     );
   }
 
   if (!c.gmailConfigured && !c.nestConfigured) {
     return (
-      <div className="flex h-full min-h-0 items-center justify-center bg-white p-6">
-        <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white p-6 text-center text-sm text-gray-600">
-          Gmail integration is not configured for this environment.
+      <InquiriesFloatingCardShell>
+        <div className="flex flex-1 items-center justify-center p-6">
+          <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white p-6 text-center text-sm text-gray-600">
+            Gmail integration is not configured for this environment.
+          </div>
         </div>
-      </div>
+      </InquiriesFloatingCardShell>
     );
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
-      <div className={cn("shrink-0 bg-white", storeSettingsPageChromeClass)}>
-        <CustomerEnquiriesPageHeader
-          className={storeSettingsPageHeaderNudgeClass}
-          composeDisabled={!c.nestConfigured}
-          onMessageStarted={c.handleNestStarted}
-          trailingActions={
-            <>
-              {c.gmailConfigured && !c.gmailConnected ? (
-                <button
-                  type="button"
-                  onClick={() => void c.handleConnectGmail()}
-                  disabled={c.connecting}
-                  className={storeSettingsHeaderActionClass(false, c.connecting)}
-                >
-                  {c.connecting ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Mail className="h-3.5 w-3.5" />
-                  )}
-                  Connect Gmail
-                </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => void c.handleRefreshAll()}
-                disabled={c.refreshing || c.listLoading}
-                className={storeSettingsHeaderActionClass(false, c.refreshing || c.listLoading)}
-              >
-                {c.refreshing ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-3.5 w-3.5" />
-                )}
-                Refresh
-              </button>
-            </>
-          }
+    <>
+      <FloatingCardPageHeader>
+        <CustomerEnquiriesHeader
+          c={c}
+          trailingActions={<CustomerEnquiriesHeaderActions c={c} />}
         />
+      </FloatingCardPageHeader>
 
-        <div
-          className={cn(
-            "flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 pb-2",
-            storeSettingsPageHeaderNudgeClass,
-          )}
-        >
-          <InboxFilterTabs
-            value={c.inboxTab}
-            onChange={c.setInboxTab}
-            counts={c.tabCounts}
-          />
-          {c.unreadCount > 0 ? (
-            <button
-              type="button"
-              onClick={() => void c.handleMarkAllAsRead()}
-              disabled={c.markingAllRead}
-              className={storeSettingsHeaderActionClass(false, c.markingAllRead)}
-            >
-              {c.markingAllRead ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <CheckCheck className="h-3.5 w-3.5" />
-              )}
-              Mark all as read
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <UnifiedInboxTable c={c} />
-      </div>
+      <FloatingCardPageBody>
+        <FloatingCard>
+          <CustomerEnquiriesFilterBar c={c} />
+          <UnifiedInboxTable c={c} />
+        </FloatingCard>
+      </FloatingCardPageBody>
 
       <InquirySlidePanel c={c} />
 
@@ -252,6 +315,6 @@ export function StoreCustomerInquiriesPanel() {
           </div>
         </div>
       ) : null}
-    </div>
+    </>
   );
 }

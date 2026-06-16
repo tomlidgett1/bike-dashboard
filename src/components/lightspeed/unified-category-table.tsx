@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, CheckCircle2, Clock, Zap } from "lucide-react";
+import { ChevronDown, CheckCircle2, Clock, Zap } from "@/components/layout/app-sidebar/dashboard-icons";
 import Image from "next/image";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";

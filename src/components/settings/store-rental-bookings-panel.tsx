@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { format, parseISO } from "date-fns";
-import { Bike, Check, Loader2, Plus, Trash2, X } from "lucide-react";
+import { Bike, Check, Loader2, Plus, Trash2, X } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

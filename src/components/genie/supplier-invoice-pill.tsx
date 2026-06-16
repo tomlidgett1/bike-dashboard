@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronDown, FileText, Loader2, X } from "lucide-react";
+import { ChevronDown, FileText, Loader2, X } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 
 const POLL_INTERVAL_MS = 2 * 60 * 1000; // monitor the inbox every 2 minutes

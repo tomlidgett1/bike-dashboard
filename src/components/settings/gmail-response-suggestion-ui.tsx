@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ExternalLink, EyeOff, Loader2, MailPlus, X } from "lucide-react";
+import { ExternalLink, EyeOff, Loader2, MailPlus, X } from "@/components/layout/app-sidebar/dashboard-icons";
 import { GmailLogo } from "@/components/genie/gmail-logo";
 import {
   NEST_OVERLAY_INNER_RADIUS_CLASS,

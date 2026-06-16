@@ -11,7 +11,7 @@ import {
   Search,
   Settings,
   Sparkles,
-} from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -700,12 +700,10 @@ export function StoreNestMessagesPanel() {
                         {activeTab === "missed_calls" ? (
                           <PhoneMissed
                             className="mb-3 h-8 w-8 text-muted-foreground/40"
-                            strokeWidth={1.5}
                           />
                         ) : (
                           <Inbox
                             className="mb-3 h-8 w-8 text-muted-foreground/40"
-                            strokeWidth={1.5}
                           />
                         )}
                         <p className="text-sm font-medium text-foreground">
@@ -746,7 +744,7 @@ export function StoreNestMessagesPanel() {
               >
                 {!selectedChatId || !conversation ? (
                   <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-8 text-center">
-                    <Inbox className="mb-3 h-10 w-10 text-muted-foreground/40" strokeWidth={1.5} />
+                    <Inbox className="mb-3 h-10 w-10 text-muted-foreground/40" />
                     <p className="text-base font-semibold tracking-tight text-foreground">
                       Select a message
                     </p>

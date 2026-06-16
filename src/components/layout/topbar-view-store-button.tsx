@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Folder } from "lucide-react";
+import { Shop } from "@/components/layout/app-sidebar/sidebar-icons";
 import { topbarIconButtonClass } from "@/components/layout/topbar-nav-pills";
 import { useUserProfile } from "@/lib/hooks/use-user-profile";
 
@@ -19,7 +19,7 @@ export function TopbarViewStoreButton() {
       className={topbarIconButtonClass}
       aria-label="View store"
     >
-      <Folder className="size-4" />
+      <Shop className="size-4" />
     </Link>
   );
 }

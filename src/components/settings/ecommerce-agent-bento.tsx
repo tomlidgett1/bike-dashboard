@@ -3,7 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Check, ChevronDown, Loader2, Package, Sparkles, TrendingDown } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Loader2, Package, Sparkles, TrendingDown } from "@/components/layout/app-sidebar/dashboard-icons";
 import {
   getBentoShellStyles,
   bentoOuterWrapClassName,

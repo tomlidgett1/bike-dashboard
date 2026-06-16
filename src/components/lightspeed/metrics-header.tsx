@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Package, Clock, RefreshCw } from "lucide-react";
+import { Package, Clock, RefreshCw } from "@/components/layout/app-sidebar/dashboard-icons";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

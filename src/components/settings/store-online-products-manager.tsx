@@ -22,7 +22,7 @@ import {
   Package,
   ChevronDown,
   ChevronRight,
-} from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

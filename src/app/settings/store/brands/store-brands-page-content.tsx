@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Plus } from "lucide-react";
+import { Plus } from "@/components/layout/app-sidebar/dashboard-icons";
 import { PageContainer, PageHeader, PageBody } from "@/components/dashboard";
 import { Button } from "@/components/ui/button";
 import { StoreBrandsManager } from "@/components/settings/store-brands-manager";

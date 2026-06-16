@@ -3,7 +3,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
-import { Download, FileText, Loader2 } from "lucide-react";
+import { Download, FileText, Loader2 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { GenieChart } from "@/components/genie/genie-chart";
 import { GenieDataTable } from "@/components/genie/genie-data-table";
 import { GeniePivotTable } from "@/components/genie/genie-pivot-table";

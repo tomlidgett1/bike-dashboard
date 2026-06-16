@@ -8,7 +8,7 @@ import {
   Sparkles,
   CircleDot,
   type LucideIcon,
-} from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import { GmailLogo } from "@/components/genie/gmail-logo";
 import { NestLogo } from "@/components/genie/nest-logo";
 import { cn } from "@/lib/utils";

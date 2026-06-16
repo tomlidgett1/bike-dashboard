@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight, Folder, Search, X } from "lucide-react";
+import { ChevronRight, Folder, Search, X } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { EyeOff, Loader2, RotateCcw, X } from "lucide-react";
+import { EyeOff, Loader2, RotateCcw, X } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 import type { NestPickupSuggestion } from "@/lib/nest/pickup-suggestions";
 

@@ -1,0 +1,49 @@
+---
+description: Full-height floating card page layout (Products blueprint)
+globs: src/app/**/*.tsx,src/components/layout/**/*.tsx,src/components/settings/**/*.tsx
+alwaysApply: false
+---
+
+# Floating card page layout
+
+Use the **Products page** pattern for new full-height dashboard pages with a sticky header and edge-to-edge floating card.
+
+## Source of truth
+
+- **Components**: `@/components/layout/floating-card-page`
+- **Class tokens**: `@/lib/layout/floating-card-page`
+
+## Compose like this
+
+```tsx
+<FloatingCardPage>
+  <FloatingCardPageHeader>
+    <FloatingCardPageTitleRow title="…" icon={Icon} actions={…} />
+  </FloatingCardPageHeader>
+  <FloatingCardPageBody>
+    <FloatingCard>{/* filters + scrollable content */}</FloatingCard>
+  </FloatingCardPageBody>
+</FloatingCardPage>
+```
+
+## Spacing rules
+
+- Top inset: `!pt-2.5` on the page shell (`FloatingCardPage`)
+- Header → card gap: `!mt-2.5` on body (`FloatingCardPageBody`) — **must match top inset**
+- Reset padding with `!px-0 !pb-0` only — **never `!p-0`** (it removes top padding)
+- No extra `pb-*` on the sticky header; gap lives on `PageBody` margin
+
+## Card chrome
+
+- `border border-gray-200`, `rounded-t-xl`, light shadow
+- `-ml-px relative z-[1]` so the top-left border sits over the sidebar seam
+- No horizontal padding on the page body — card is full bleed
+
+## Dashboard shell
+
+- Hide topbar + `overflow-hidden` on the main column for full-height pages (see `dashboard-layout.tsx` for `/products`)
+- Viewport height: `h-[calc(100svh-3.5rem)]`
+
+## Reference implementation
+
+`src/app/products/page.tsx`

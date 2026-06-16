@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import nextDynamic from "next/dynamic";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { PageContainer, PageHeader, PageBody } from "@/components/dashboard";
 import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";

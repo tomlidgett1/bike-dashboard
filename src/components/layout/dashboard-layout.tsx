@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppSidebar } from "./app-sidebar";
+import { DashboardSolarProvider } from "./app-sidebar/sidebar-icons";
 import { DashboardHeader } from "./dashboard-header";
 import { DashboardHeaderColorProvider } from "./dashboard-header-color";
 import { ForceLightChrome } from "./force-light-chrome";
@@ -31,9 +32,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const isAuthPage =
     pathname?.startsWith("/login") || pathname?.startsWith("/auth");
   const isProductsRoute = pathname?.startsWith("/products") ?? false;
+  const isCustomerEnquiriesRoute = pathname?.startsWith("/settings/store/customer-inquiries") ?? false;
   const hideTopbar =
-    isProductsRoute || HIDE_TOPBAR_PATHS.some((path) => pathname === path);
-  const isFullHeightPage = isProductsRoute;
+    isProductsRoute || isCustomerEnquiriesRoute || HIDE_TOPBAR_PATHS.some((path) => pathname === path);
+  const isFullHeightPage = isProductsRoute || isCustomerEnquiriesRoute;
 
   if (isAuthPage) {
     return <>{children}</>;
@@ -42,6 +44,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   return (
     <ForceLightChrome>
     <DashboardHeaderColorProvider>
+    <DashboardSolarProvider>
     <TooltipProvider delayDuration={0}>
       <GenieTransitionProvider>
         <SidebarProvider className="dashboard-light-surface dashboard-shell flex h-svh flex-col overflow-hidden text-foreground">
@@ -65,6 +68,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         </SidebarProvider>
       </GenieTransitionProvider>
     </TooltipProvider>
+    </DashboardSolarProvider>
     </DashboardHeaderColorProvider>
     </ForceLightChrome>
   );

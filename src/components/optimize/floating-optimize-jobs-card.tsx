@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronDown, ChevronUp, Loader2, StopCircle, X } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Loader2, StopCircle, X } from "@/components/layout/app-sidebar/dashboard-icons";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import {
@@ -151,7 +151,7 @@ function StepIcon({ state }: { state: StepState }) {
   if (state === "done") {
     return (
       <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-400 text-white">
-        <Check className="h-3 w-3" strokeWidth={3} />
+        <Check className="h-3 w-3" />
       </span>
     );
   }
@@ -179,7 +179,7 @@ function JobStatusIcon({ job }: { job: OptimizeJob }) {
   if (job.status === "completed") {
     return (
       <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-800 text-white">
-        <Check className="h-3 w-3" strokeWidth={3} />
+        <Check className="h-3 w-3" />
       </span>
     );
   }
@@ -479,7 +479,7 @@ export function FloatingOptimizeJobsCard() {
         ) : hasComplete ? (
           <>
             <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-800 text-white">
-              <Check className="h-3 w-3" strokeWidth={3} />
+              <Check className="h-3 w-3" />
             </span>
             <span className="text-gray-800">{pillLabel}</span>
           </>
@@ -508,7 +508,7 @@ export function FloatingOptimizeJobsCard() {
               <div className="flex items-center gap-2">
                 {hasComplete && !hasRunning ? (
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-800 text-white">
-                    <Check className="h-3 w-3" strokeWidth={3} />
+                    <Check className="h-3 w-3" />
                   </span>
                 ) : null}
                 <p className="text-sm font-medium text-gray-800">

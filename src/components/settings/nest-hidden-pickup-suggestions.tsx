@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { BentoInboxEmptyState } from "@/components/settings/bento-inbox-item-actions";
 import { NestSettingsBentoShell } from "@/components/settings/nest-settings-bento-shell";
 import type { BentoShellVariant } from "@/components/settings/bento-variant-styles";

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { FileSpreadsheet, Layers, ListFilter, X } from "lucide-react";
+import { FileSpreadsheet, Layers, ListFilter, X } from "@/components/layout/app-sidebar/dashboard-icons";
 import {
   Select,
   SelectContent,
@@ -57,8 +57,10 @@ export interface OptimizerProduct {
   }>;
   canonical_products?: {
     id: string;
+    manufacturer?: string | null;
     upc: string | null;
     normalized_name: string | null;
+    image_review_search_query?: string | null;
     product_images?: CanonicalImage[] | null;
   } | null;
 }
@@ -214,10 +216,10 @@ export function toSpeedProduct(p: OptimizerProduct): SpeedWorkbenchProduct {
     display_name: p.display_name,
     upc: p.upc || p.canonical_products?.upc || null,
     category: p.category_name || p.marketplace_category || null,
-    manufacturer: p.brand,
+    manufacturer: p.brand || p.canonical_products?.manufacturer || null,
     marketplace_category: p.marketplace_category ?? null,
     marketplace_subcategory: p.marketplace_subcategory ?? null,
-    image_review_search_query: null,
+    image_review_search_query: p.canonical_products?.image_review_search_query ?? null,
     store_product_name: p.display_name || p.description,
   };
 }
@@ -297,6 +299,7 @@ export async function fetchOptimizerProductsBySearch(
     pageSize: String(options?.pageSize ?? 15),
     status: "active",
     search,
+    includeOptimizeCanonical: "true",
   });
   try {
     const res = await fetch(`/api/products?${params}`, { signal: options?.signal });

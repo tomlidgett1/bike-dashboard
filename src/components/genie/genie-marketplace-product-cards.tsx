@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Bike } from "lucide-react";
+import { Bike } from "@/components/layout/app-sidebar/dashboard-icons";
 import { motion } from "framer-motion";
 import type { GenieMarketplaceProduct } from "@/lib/genie/marketplace-search";
 import { cn } from "@/lib/utils";

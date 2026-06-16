@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutGrid, Table2 } from "lucide-react";
+import { LayoutGrid, Table2 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 
 export type ActionsViewMode = "bento" | "simple";

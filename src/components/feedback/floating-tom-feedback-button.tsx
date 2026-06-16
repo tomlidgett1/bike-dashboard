@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { usePathname } from "next/navigation";
-import { Check, Loader2 } from "lucide-react";
+import { CheckCircle, Refresh } from "@/components/layout/app-sidebar/sidebar-icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -226,7 +226,7 @@ export function FloatingTomFeedbackButton({
 
             {submitted ? (
               <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800">
-                <Check className="h-4 w-4 text-gray-700" />
+                <CheckCircle className="h-4 w-4 text-gray-700" />
                 Thanks — your feedback was logged for review.
               </div>
             ) : null}
@@ -250,12 +250,12 @@ export function FloatingTomFeedbackButton({
             >
               {submitting ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Refresh className="h-4 w-4 animate-spin" />
                   Sending…
                 </>
               ) : submitted ? (
                 <>
-                  <Check className="h-4 w-4" />
+                  <CheckCircle className="h-4 w-4" />
                   Sent
                 </>
               ) : (

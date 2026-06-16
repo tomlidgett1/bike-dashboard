@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Inbox, Loader2, RefreshCw } from "lucide-react";
+import { AlertCircle, Inbox, Loader2, RefreshCw } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {

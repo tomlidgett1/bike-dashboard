@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, Loader2, Pencil, RefreshCw, Send, Sparkles } from "lucide-react";
+import { ArrowLeft, Loader2, Pencil, RefreshCw, Send, Sparkles } from "@/components/layout/app-sidebar/dashboard-icons";
 import { GmailLogo } from "@/components/genie/gmail-logo";
 import {
   enquirySummary,

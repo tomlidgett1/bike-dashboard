@@ -58,9 +58,47 @@ const PRODUCT_LIST_SELECT = `
   created_at
 `
 
+const PRODUCT_OPTIMIZE_SELECT = `
+  ${PRODUCT_LIST_SELECT},
+  canonical_products!canonical_product_id (
+    id,
+    manufacturer,
+    upc,
+    normalized_name,
+    image_review_search_query,
+    product_images!canonical_product_id (
+      id,
+      cloudinary_public_id,
+      cloudinary_url,
+      external_url,
+      is_primary,
+      approval_status,
+      sort_order,
+      source
+    )
+  )
+`
+
 type ProductSearchRow = {
   product_id: string
   relevance: number
+}
+
+type ProductListRow = Record<string, unknown> & {
+  id: string
+  cached_thumbnail_url?: string | null
+  cached_image_url?: string | null
+  primary_image_url?: string | null
+  is_active?: boolean | null
+  listing_status?: string | null
+  listing_type?: string | null
+  qoh?: number | null
+  selected_product_image_id?: string | null
+  manufacturer_name?: string | null
+  created_at?: string | null
+  variant_group_id?: string | null
+  variant_master_title?: string | null
+  variant_hidden_from_grid?: boolean | null
 }
 
 export async function GET(request: NextRequest) {
@@ -94,6 +132,7 @@ export async function GET(request: NextRequest) {
     const brandFilter = searchParams.get('brand') || '' // brand name, or __none__ for missing brand
     const listingTypeFilter = searchParams.get('listing_type') || '' // e.g. private_listing
     const includeFilterOptions = searchParams.get('includeFilters') !== 'false'
+    const includeOptimizeCanonical = searchParams.get('includeOptimizeCanonical') === 'true'
     const trimmedSearch = search.trim()
     const productIds = (searchParams.get('ids') || '')
       .split(',')
@@ -183,7 +222,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from(productsTable)
-      .select(PRODUCT_LIST_SELECT, { count: 'exact' })
+      .select((includeOptimizeCanonical ? PRODUCT_OPTIMIZE_SELECT : PRODUCT_LIST_SELECT) as string, { count: 'exact' })
       .eq('user_id', user.id)
 
     if (productIds.length > 0) {
@@ -276,7 +315,7 @@ export async function GET(request: NextRequest) {
       ])
     }
 
-    let processedProducts = (data || []).map((product) => {
+    let processedProducts = ((data || []) as unknown as ProductListRow[]).map((product) => {
       const resolvedImageUrl = product.cached_thumbnail_url || product.cached_image_url || product.primary_image_url || null;
       const hasApprovedImage = Boolean(product.cached_thumbnail_url || product.cached_image_url);
 
@@ -301,7 +340,7 @@ export async function GET(request: NextRequest) {
       processedProducts = processedProducts.sort((a, b) => {
         const rankDelta = (searchRank.get(b.id) ?? 0) - (searchRank.get(a.id) ?? 0)
         if (rankDelta !== 0) return rankDelta
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        return new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
       })
     }
 

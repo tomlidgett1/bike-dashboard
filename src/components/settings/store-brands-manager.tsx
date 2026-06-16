@@ -3,7 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import { Reorder } from "framer-motion";
-import { Trash2, Edit2, GripVertical, Loader2, Upload, X, Tag, Search } from "lucide-react";
+import { Trash2, Edit2, GripVertical, Loader2, Upload, X, Tag, Search } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

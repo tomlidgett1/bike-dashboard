@@ -3,7 +3,7 @@
 // Icon tiles are intentionally neutral/gray (no decorative colour).
 // ─────────────────────────────────────────────────────────────────────────────
 import * as React from "react";
-import { ArrowDownRight, ArrowUpRight } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 

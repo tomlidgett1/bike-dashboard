@@ -3,8 +3,8 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, Inbox, LayoutGrid, Loader2, MessageSquare, Search, Send, X } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { ChevronDown, Inbox, LayoutGrid, Loader2, MessageSquare, Search, Send, X } from "@/components/layout/app-sidebar/dashboard-icons";
+import type { LucideIcon } from "@/components/layout/app-sidebar/dashboard-icons";
 import { NestLogo } from "@/components/genie/nest-logo";
 import { searchNestCustomers, startNestMessage } from "@/lib/nest/messages-client";
 import type { NestConversationMessage, NestLightspeedCustomer } from "@/lib/nest/types";
@@ -13,10 +13,25 @@ import {
   getBentoShellStyles,
 } from "@/components/settings/bento-variant-styles";
 import { cn } from "@/lib/utils";
+import {
+  floatingCardPageChromeClass,
+  floatingCardPageHeaderNudgeClass,
+  productsFloatingCardClass,
+  productsPageContainerResetClass,
+  productsPageHeaderToCardGapClass,
+  productsPageTopInsetClass,
+} from "@/lib/layout/floating-card-page";
 
 /** Matches Actions page horizontal rhythm (PageContainer + header nudge). */
-export const storeSettingsPageChromeClass = "px-2 sm:px-3 lg:px-4";
-export const storeSettingsPageHeaderNudgeClass = "px-0.5";
+export const storeSettingsPageChromeClass = floatingCardPageChromeClass;
+export const storeSettingsPageHeaderNudgeClass = floatingCardPageHeaderNudgeClass;
+
+export {
+  productsFloatingCardClass,
+  productsPageContainerResetClass,
+  productsPageHeaderToCardGapClass,
+  productsPageTopInsetClass,
+};
 
 const BENTO_RADIUS = "rounded-[32px]";
 const POPUP_SPRING = { type: "spring" as const, stiffness: 420, damping: 30, mass: 0.85 };

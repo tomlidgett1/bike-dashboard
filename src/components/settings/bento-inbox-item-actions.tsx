@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { X } from "lucide-react";
+import { X } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 
 export function BentoInboxDismissButton({
@@ -25,7 +25,7 @@ export function BentoInboxDismissButton({
         ignoring && "!opacity-0",
       )}
     >
-      <X className="h-3 w-3" strokeWidth={2} />
+      <X className="h-3 w-3" />
     </button>
   );
 }

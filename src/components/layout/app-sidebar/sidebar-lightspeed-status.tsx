@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Loader2, RefreshCw, Zap } from "lucide-react";
+import { Bolt, Refresh } from "./sidebar-icons";
 import { useLightspeedConnection } from "@/lib/hooks/use-lightspeed-connection";
 import { useSyncStatus } from "@/lib/hooks/use-sync-status";
 import { cn } from "@/lib/utils";
@@ -32,7 +32,7 @@ export function SidebarLightspeedStatus() {
             disabled
             className="h-8 text-xs text-muted-foreground"
           >
-            <Loader2 className="size-3.5 animate-spin" />
+            <Refresh className="size-3.5 animate-spin" />
             <span className="group-data-[collapsible=icon]:hidden">Lightspeed</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
@@ -51,7 +51,7 @@ export function SidebarLightspeedStatus() {
             className="h-8 text-xs text-muted-foreground hover:text-foreground"
           >
             <Link href="/connect-lightspeed">
-              <Zap className="size-3.5" />
+              <Bolt className="size-3.5" />
               <span className="group-data-[collapsible=icon]:hidden">Connect POS</span>
             </Link>
           </SidebarMenuButton>
@@ -104,7 +104,7 @@ export function SidebarLightspeedStatus() {
               "group-data-[collapsible=icon]:hidden"
             )}
           >
-            <RefreshCw className={cn("size-3.5", isSyncing && "animate-spin")} />
+            <Refresh className={cn("size-3.5", isSyncing && "animate-spin")} />
           </button>
         </div>
       </SidebarMenuItem>

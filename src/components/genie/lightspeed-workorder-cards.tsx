@@ -11,7 +11,7 @@ import {
   Package,
   Phone,
   Wrench,
-} from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { GenieWorkorderCard, GenieWorkorderCardsPayload } from "@/lib/types/genie-agent";

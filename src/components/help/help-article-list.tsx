@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ChevronRight, FileText } from "lucide-react";
+import { ChevronRight, FileText } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 import type { HelpArticle } from "@/lib/constants/help-content";
 

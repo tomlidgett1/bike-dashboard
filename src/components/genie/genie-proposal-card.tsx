@@ -15,7 +15,7 @@ import {
   Loader2,
   Pencil,
   Tag,
-} from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

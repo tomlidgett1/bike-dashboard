@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { Loader2, Sparkles, Trash2, X } from "lucide-react";
+import { Loader2, Sparkles, Trash2, X } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 
 interface Lesson {

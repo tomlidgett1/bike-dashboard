@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import * as React from "react";
 import { Suspense } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { PageContainer, PageHeader } from "@/components/dashboard";
 import { OptimiseTabPanel } from "@/components/optimize/optimise-tab-panel";
 import { useAuth } from "@/components/providers/auth-provider";

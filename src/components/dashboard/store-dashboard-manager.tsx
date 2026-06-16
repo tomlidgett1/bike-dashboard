@@ -20,8 +20,8 @@ import {
   Table2,
   Trash2,
   Wand2,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+} from "@/components/layout/app-sidebar/dashboard-icons";
+import type { LucideIcon } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/components/ui/sidebar";

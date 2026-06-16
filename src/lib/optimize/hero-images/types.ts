@@ -97,6 +97,19 @@ export interface SelectedImage {
   heroScore: number;
 }
 
+export interface HeroImageCandidate {
+  url: string;
+  thumbnailUrl?: string;
+  title?: string;
+  domain?: string;
+  source?: string;
+  query?: string;
+  width: number;
+  height: number;
+  isOfficial: boolean;
+  heroScore: number;
+}
+
 export interface PipelineStageStats {
   harvested: number;
   afterPrefilter: number;
@@ -120,6 +133,7 @@ export interface HeroPipelineResult {
 
   primaryUrl: string | null;
   selected: SelectedImage[];
+  candidates: HeroImageCandidate[];
 
   reasoning: string;
   queriesUsed: string[];

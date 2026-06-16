@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Search, Package, Sparkles, ExternalLink, AlertCircle } from "lucide-react";
+import { Loader2, Search, Package, Sparkles, ExternalLink, AlertCircle } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";

@@ -3,8 +3,8 @@
 export const dynamic = "force-dynamic";
 
 import nextDynamic from "next/dynamic";
-import { PageContainer } from "@/components/dashboard";
 import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";
+import { FloatingCardPage } from "@/components/layout/floating-card-page";
 
 const StoreCustomerInquiriesPanel = nextDynamic(
   () =>
@@ -16,11 +16,8 @@ const StoreCustomerInquiriesPanel = nextDynamic(
 
 export default function StoreCustomerInquiriesPage() {
   return (
-    <PageContainer
-      size="full"
-      className="flex h-full min-h-0 flex-col overflow-hidden !p-0 !pt-2.5"
-    >
+    <FloatingCardPage>
       <StoreCustomerInquiriesPanel />
-    </PageContainer>
+    </FloatingCardPage>
   );
 }
