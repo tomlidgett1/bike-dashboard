@@ -6,7 +6,13 @@ export const NEST_READ_STATE_EVENT = "nest-read-state-changed";
 let serverReadMap: Record<string, string> = {};
 
 export function setNestReadMapFromServer(map: Record<string, string>) {
-  serverReadMap = { ...map };
+  const next = { ...map };
+  const unchanged =
+    Object.keys(next).length === Object.keys(serverReadMap).length &&
+    Object.entries(next).every(([chatId, iso]) => serverReadMap[chatId] === iso);
+  if (unchanged) return;
+
+  serverReadMap = next;
   if (typeof window !== "undefined") {
     try {
       localStorage.setItem(NEST_LAST_READ_KEY, JSON.stringify(serverReadMap));

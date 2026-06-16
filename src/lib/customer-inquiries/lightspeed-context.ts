@@ -1,5 +1,12 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchCustomerSalesSummary } from '@/lib/customer-inquiries/customer-sales-summary'
-import { findLightspeedCustomerForInquiry } from '@/lib/services/lightspeed/customer-search'
+import {
+  extractPhoneFromInquirySender,
+  loadPhoneContactsFromDb,
+  normalizePhoneForDirectory,
+  upsertPhoneContactToDb,
+} from '@/lib/customer-inquiries/lightspeed-phone-directory'
+import { findCustomerByPhone, findLightspeedCustomerForInquiry } from '@/lib/services/lightspeed/customer-search'
 import { createLightspeedClient } from '@/lib/services/lightspeed'
 import type { LightspeedCustomer } from '@/lib/services/lightspeed/types'
 import type { LightspeedInquiryContext } from '@/lib/customer-inquiries/types'
@@ -43,18 +50,57 @@ export async function buildLightspeedInquiryContext(args: {
   userId: string
   senderEmail: string
   senderName: string
+  supabase?: SupabaseClient
 }): Promise<LightspeedInquiryContext> {
   try {
-    const customer = await findLightspeedCustomerForInquiry(args.userId, {
-      senderEmail: args.senderEmail,
-      senderName: args.senderName,
-    })
+    const phone = extractPhoneFromInquirySender(args.senderEmail, args.senderName)
+    let customer: LightspeedCustomer | null = null
+
+    if (phone && args.supabase) {
+      const cached = await loadPhoneContactsFromDb(args.supabase, args.userId, [phone])
+      const contact = cached.get(phone)
+      if (contact?.lightspeedCustomerId) {
+        try {
+          const client = createLightspeedClient(args.userId)
+          customer = await client.getCustomer(contact.lightspeedCustomerId, {
+            load_relations: '["Contact"]',
+          })
+        } catch {
+          customer = null
+        }
+      }
+    }
+
+    if (!customer && phone) {
+      customer = await findCustomerByPhone(args.userId, phone, {
+        allowScan: true,
+        maxScanPages: 5,
+      })
+    }
+
+    if (!customer) {
+      customer = await findLightspeedCustomerForInquiry(args.userId, {
+        senderEmail: args.senderEmail,
+        senderName: args.senderName,
+      }, { maxScanPages: 5 })
+    }
 
     if (!customer) {
       return {
         matched: false,
         summary: 'No matching Lightspeed customer found for this sender.',
       }
+    }
+
+    if (phone && args.supabase) {
+      const phoneNormalized = normalizePhoneForDirectory(phone) ?? phone;
+      await upsertPhoneContactToDb(args.supabase, args.userId, phone, {
+        phoneNormalized,
+        firstName: customer.firstName ?? null,
+        lastName: customer.lastName ?? null,
+        displayName: customerName(customer),
+        lightspeedCustomerId: String(customer.customerID),
+      });
     }
 
     const client = createLightspeedClient(args.userId)

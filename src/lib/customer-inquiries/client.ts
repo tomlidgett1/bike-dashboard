@@ -7,6 +7,7 @@ export type CustomerInquiryDetail = {
   id: string
   sender_name: string
   sender_email: string
+  lightspeed_customer_name: string | null
   subject: string
   snippet: string
   body_preview: string

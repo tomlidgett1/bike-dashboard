@@ -140,13 +140,19 @@ export async function GET(request: NextRequest) {
 
     if (cachedChats.length === 0) {
       try {
-        cachedChats = await syncNestInboxFromPortal(auth.supabase, auth.userId, auth.brandKey);
+        cachedChats = await syncNestInboxFromPortal(auth.supabase, auth.userId, auth.brandKey, {
+          enrichLightspeed: true,
+          syncThreads: false,
+        });
       } catch (error) {
         console.error("[store-nest-messages] inline list sync failed:", error);
       }
     } else {
       after(() =>
-        syncNestInboxFromPortal(auth.supabase, auth.userId, auth.brandKey).catch((error) => {
+        syncNestInboxFromPortal(auth.supabase, auth.userId, auth.brandKey, {
+          enrichLightspeed: true,
+          syncThreads: true,
+        }).catch((error) => {
           console.error("[store-nest-messages] background list sync failed:", error);
         }),
       );
@@ -201,6 +207,40 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  if (threadOnly && chatId) {
+    try {
+      const conversation = await syncNestThreadFromPortal(
+        auth.supabase,
+        auth.userId,
+        auth.brandKey,
+        chatId,
+        { enrichLightspeed: true, syncThreads: false },
+      );
+      if (conversation) {
+        setServerNestThreadCache(auth.brandKey, chatId, conversation);
+      }
+
+      return json({
+        chats: [],
+        selectedChatId: chatId,
+        conversation,
+        configured: true,
+        brandKey: auth.brandKey,
+        cached: false,
+        lightspeedConnected: await isLightspeedConnected(auth.userId),
+      });
+    } catch (error) {
+      console.error("[store-nest-messages] thread sync failed:", error);
+      return json(
+        {
+          error: error instanceof Error ? error.message : "Could not load conversation.",
+          configured: true,
+        },
+        502,
+      );
+    }
+  }
+
   try {
     const [data, missedCallChatIds] = await Promise.all([
       proxyNestBrandPortalRequest(auth.brandKey, {
@@ -210,7 +250,7 @@ export async function GET(request: NextRequest) {
       threadOnly ? Promise.resolve(new Set<string>()) : fetchNestTwilioMissedCallChatIds(auth.brandKey),
     ]);
 
-    let lightspeedConnected = await isLightspeedConnected(auth.userId);
+    const lightspeedConnected = await isLightspeedConnected(auth.userId);
 
     if (Array.isArray(data.chats) && !threadOnly) {
       data.chats = enrichNestChatsWithTwilioMissedCalls(
@@ -294,6 +334,14 @@ export async function POST(request: NextRequest) {
           : "";
     if (chatId) {
       invalidateServerNestThreadCache(auth.brandKey, chatId);
+      after(() =>
+        syncNestThreadFromPortal(auth.supabase, auth.userId, auth.brandKey, chatId, {
+          enrichLightspeed: true,
+          syncThreads: false,
+        }).catch((error) => {
+          console.error("[store-nest-messages] post-send thread sync failed:", error);
+        }),
+      );
     }
 
     return json({ ...data, configured: true, brandKey: auth.brandKey });

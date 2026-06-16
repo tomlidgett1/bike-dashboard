@@ -82,15 +82,6 @@ function customerPhones(customer: LightspeedCustomer): string[] {
   return Array.from(new Set([...fromNested, ...fromFlat]));
 }
 
-/** Lightspeed Customer search params documented for telephone lookup. */
-const LIGHTSPEED_CONTACT_PHONE_QUERY_FIELDS = [
-  "Contact.mobile",
-  "Contact.phoneHome",
-  "Contact.phoneWork",
-  "Contact.pager",
-  "Contact.fax",
-] as const;
-
 function pickCustomerMobile(customer: LightspeedCustomer): string | null {
   const phones = ensureArray(customer.Contact?.Phones?.ContactPhone);
   const mobile = phones.find((phone) =>
@@ -163,29 +154,25 @@ export function formatAustralianSpacedMobile(digits: string): string | null {
   return `${local.slice(0, 4)} ${local.slice(4, 7)} ${local.slice(7)}`;
 }
 
-function phoneSearchVariants(phone: string): string[] {
+/** Canonical 10-digit AU local mobile (e.g. 0428808811) for Lightspeed exact filters. */
+export function normalizeAustralianMobileLocal(phone: string): string | null {
   const digits = phoneDigits(phone);
-  if (!digits) return [];
+  if (!digits) return null;
 
-  const variants = new Set<string>([phone.trim(), digits]);
   if (digits.startsWith("61") && digits.length >= 11) {
-    variants.add(`0${digits.slice(2)}`);
-    variants.add(digits.slice(2));
-    variants.add(`+${digits}`);
-  }
-  if (digits.startsWith("0") && digits.length >= 9) {
-    variants.add(`61${digits.slice(1)}`);
-    variants.add(`+61${digits.slice(1)}`);
-  }
-  if (digits.length >= 9) {
-    variants.add(digits.slice(-9));
-    variants.add(digits.slice(-7));
+    const local = `0${digits.slice(2)}`;
+    if (local.length === 10) return local;
   }
 
-  const spaced = formatAustralianSpacedMobile(digits);
-  if (spaced) variants.add(spaced);
+  if (digits.startsWith("0") && digits.length === 10) {
+    return digits;
+  }
 
-  return Array.from(variants).filter(Boolean);
+  if (digits.length === 9 && digits.startsWith("4")) {
+    return `0${digits}`;
+  }
+
+  return null;
 }
 
 function pickResultPhone(customer: LightspeedCustomer, query: string): string | null {
@@ -300,70 +287,6 @@ function rememberCustomerInPhoneIndex(
     }
   }
   return name;
-}
-
-async function fetchCustomersByPhoneFilters(
-  userId: string,
-  phone: string,
-): Promise<LightspeedCustomer[]> {
-  const client = createLightspeedClient(userId);
-  const customerById = new Map<string, LightspeedCustomer>();
-  const baseParams = {
-    load_relations: '["Contact"]',
-    archived: "false" as const,
-    limit: 25,
-  };
-
-  let phoneFilterBroken = false;
-
-  const tryFilter = async (field: string, filter: string): Promise<boolean> => {
-    try {
-      const customers = await client.getCustomers({
-        ...baseParams,
-        [field]: filter,
-      });
-      let matchedAny = false;
-      for (const customer of customers) {
-        if (customerPhones(customer).some((entry) => phonesMatch(phone, entry))) {
-          customerById.set(String(customer.customerID), customer);
-          matchedAny = true;
-        }
-      }
-      if (customers.length > 0 && !matchedAny) {
-        phoneFilterBroken = true;
-      }
-      return matchedAny;
-    } catch {
-      return false;
-    }
-  };
-
-  for (const variant of phoneSearchVariants(phone)) {
-    if (phoneFilterBroken) break;
-    const digitVariant = phoneDigits(variant);
-    const filters = [
-      variant,
-      digitVariant !== variant ? digitVariant : null,
-      digitVariant.length >= 7 ? lightspeedContainsFilter(digitVariant.slice(-7)) : null,
-    ].filter(Boolean) as string[];
-
-    for (const filter of filters) {
-      if (phoneFilterBroken) break;
-
-      for (const field of LIGHTSPEED_CONTACT_PHONE_QUERY_FIELDS) {
-        if (await tryFilter(field, filter)) {
-          return Array.from(customerById.values());
-        }
-      }
-
-      if (phoneFilterBroken) break;
-      if (await tryFilter("Contact.Phones.ContactPhone.number", filter)) {
-        return Array.from(customerById.values());
-      }
-    }
-  }
-
-  return Array.from(customerById.values());
 }
 
 async function hydrateCustomersMissingPhones(
@@ -558,6 +481,7 @@ export async function searchLightspeedCustomersForNest(
 const phoneIndexCache = new Map<string, { expiresAt: number; index: Map<string, string> }>();
 const phoneIndexInflight = new Map<string, Promise<Map<string, string>>>();
 const phoneNameCache = new Map<string, { expiresAt: number; name: string | null }>();
+const phoneCustomerCache = new Map<string, { expiresAt: number; customer: LightspeedCustomer }>();
 const PHONE_INDEX_TTL_MS = 5 * 60 * 1000;
 const PHONE_NAME_TTL_MS = 15 * 60 * 1000;
 const DEFAULT_PHONE_INDEX_MAX_PAGES =
@@ -566,6 +490,71 @@ const DEFAULT_PHONE_INDEX_MAX_PAGES =
 function phoneNameCacheKey(userId: string, phone: string): string {
   const keys = phoneLookupKeys(phone);
   return `${userId}:${keys[0] ?? phoneDigits(phone)}`;
+}
+
+function getCachedPhoneCustomer(userId: string, phone: string): LightspeedCustomer | null {
+  const cached = phoneCustomerCache.get(phoneNameCacheKey(userId, phone));
+  if (cached && cached.expiresAt > Date.now()) return cached.customer;
+  return null;
+}
+
+function rememberPhoneCustomer(userId: string, phone: string, customer: LightspeedCustomer): void {
+  phoneCustomerCache.set(phoneNameCacheKey(userId, phone), {
+    expiresAt: Date.now() + PHONE_NAME_TTL_MS,
+    customer,
+  });
+}
+
+/** One or two Lightspeed calls: Contact.mobile with local then spaced AU format. */
+async function fetchCustomerByPhoneFilterFast(
+  userId: string,
+  phone: string,
+): Promise<LightspeedCustomer | null> {
+  const local = normalizeAustralianMobileLocal(phone);
+  if (!local) return null;
+
+  const client = createLightspeedClient(userId);
+  const baseParams = {
+    load_relations: '["Contact"]',
+    archived: "false" as const,
+    limit: 5,
+  };
+  const trustedFilters = new Set(
+    [local, formatAustralianSpacedMobile(local) ?? ""].filter(Boolean),
+  );
+
+  const queryMobile = async (mobileFilter: string): Promise<LightspeedCustomer | null> => {
+    try {
+      const customers = await client.getCustomers({
+        ...baseParams,
+        "Contact.mobile": mobileFilter,
+      });
+      if (customers.length === 0) return null;
+
+      for (const customer of customers) {
+        if (customerPhones(customer).some((entry) => phonesMatch(phone, entry))) {
+          return customer;
+        }
+      }
+
+      if (trustedFilters.has(mobileFilter)) {
+        return customers[0] ?? null;
+      }
+    } catch {
+      // Unsupported on this account — fall through to scan.
+    }
+    return null;
+  };
+
+  const fromLocal = await queryMobile(local);
+  if (fromLocal) return fromLocal;
+
+  const spaced = formatAustralianSpacedMobile(local);
+  if (spaced && spaced !== local) {
+    return queryMobile(spaced);
+  }
+
+  return null;
 }
 
 export function lookupLightspeedNameInIndex(
@@ -600,37 +589,48 @@ type PhoneLookupOptions = {
   maxScanPages?: number;
 };
 
-async function findCustomerByPhone(
+export async function findCustomerByPhone(
   userId: string,
   phone: string,
   options: PhoneLookupOptions = {},
 ): Promise<LightspeedCustomer | null> {
   const allowScan = options.allowScan ?? true;
-  const maxScanPages = options.maxScanPages ?? 80;
+  const maxScanPages = options.maxScanPages ?? 5;
+  const queryPhone = phone.trim();
+  if (!queryPhone) return null;
 
-  // Primary path: paginate GET Customer.json?load_relations=["Contact"] and match locally.
-  // This is the reliable Lightspeed approach — nested phone filters are inconsistent across accounts.
+  const cached = getCachedPhoneCustomer(userId, queryPhone);
+  if (cached) return cached;
+
+  const fromFilter = await fetchCustomerByPhoneFilterFast(userId, queryPhone);
+  if (fromFilter) {
+    rememberPhoneCustomer(userId, queryPhone, fromFilter);
+    return fromFilter;
+  }
+
   if (allowScan) {
-    const fromScan = await scanCustomersForPhone(userId, phone, maxScanPages);
-    if (fromScan) return fromScan;
+    const fromScan = await scanCustomersForPhone(userId, queryPhone, maxScanPages);
+    if (fromScan) {
+      rememberPhoneCustomer(userId, queryPhone, fromScan);
+      return fromScan;
+    }
 
     const recentCustomers = await fetchRecentCustomers(userId);
-    const fromRecent = findCustomerInListByPhone(recentCustomers, phone);
-    if (fromRecent) return fromRecent;
+    const fromRecent = findCustomerInListByPhone(recentCustomers, queryPhone);
+    if (fromRecent) {
+      rememberPhoneCustomer(userId, queryPhone, fromRecent);
+      return fromRecent;
+    }
 
     const hydratedRecent = await hydrateCustomersMissingPhones(
       userId,
       recentCustomers,
-      (customer) => customerPhones(customer).some((entry) => phonesMatch(phone, entry)),
+      (customer) => customerPhones(customer).some((entry) => phonesMatch(queryPhone, entry)),
       40,
     );
-    if (hydratedRecent) return hydratedRecent;
-  }
-
-  const filtered = await fetchCustomersByPhoneFilters(userId, phone);
-  for (const customer of filtered) {
-    if (customerPhones(customer).some((entry) => phonesMatch(phone, entry))) {
-      return customer;
+    if (hydratedRecent) {
+      rememberPhoneCustomer(userId, queryPhone, hydratedRecent);
+      return hydratedRecent;
     }
   }
 
@@ -653,14 +653,29 @@ export async function findLightspeedCustomerForInquiry(
   const email = args.senderEmail.trim().toLowerCase();
   const name = args.senderName.trim();
 
-  for (const candidate of [args.senderEmail, args.senderName]) {
-    if (isLikelyPhone(candidate)) {
-      const byPhone = await findCustomerByPhone(userId, candidate, {
-        allowScan: true,
-        maxScanPages,
-      });
-      if (byPhone) return byPhone;
-    }
+  const phoneCandidates = Array.from(
+    new Set(
+      [args.senderEmail, args.senderName]
+        .map((value) => value.trim())
+        .filter((value) => isLikelyPhone(value)),
+    ),
+  );
+
+  for (const candidate of phoneCandidates) {
+    const byPhone = await findCustomerByPhone(userId, candidate, {
+      allowScan: true,
+      maxScanPages,
+    });
+    if (byPhone) return byPhone;
+  }
+
+  const phoneOnlyQuery =
+    phoneCandidates.length > 0 &&
+    (!email || phoneCandidates.some((candidate) => phonesMatch(candidate, email))) &&
+    (!name || phoneCandidates.some((candidate) => phonesMatch(candidate, name)));
+
+  if (phoneOnlyQuery) {
+    return null;
   }
 
   const client = createLightspeedClient(userId);
@@ -695,6 +710,149 @@ export async function findLightspeedCustomerForInquiry(
   }
 
   return best?.customer ?? null;
+}
+
+export type LightspeedLabLookupStep = {
+  phase: string;
+  matched: boolean;
+  durationMs: number;
+  pagesFetched?: number;
+  hitPageLimit?: boolean;
+  candidates?: number;
+  note?: string;
+  error?: string;
+};
+
+export async function lookupLightspeedCustomerForLab(
+  userId: string,
+  args: { phone?: string; email?: string; name?: string; maxScanPages?: number },
+): Promise<{
+  matched: boolean;
+  customer: LightspeedCustomer | null;
+  steps: LightspeedLabLookupStep[];
+  lookupKeys: string[];
+  normalizedPhone: string | null;
+}> {
+  const steps: LightspeedLabLookupStep[] = [];
+  const maxScanPages = Math.min(Math.max(args.maxScanPages ?? 5, 1), 20);
+  const phone = args.phone?.trim() ?? "";
+  const email = args.email?.trim().toLowerCase() ?? "";
+  const name = args.name?.trim() ?? "";
+  const normalizedPhone = phone ? normalizeAustralianMobileLocal(phone) : null;
+  let customer: LightspeedCustomer | null = null;
+
+  if (phone && isLikelyPhone(phone)) {
+    const cached = getCachedPhoneCustomer(userId, phone);
+    if (cached) {
+      customer = cached;
+      steps.push({
+        phase: "phone_cache",
+        matched: true,
+        durationMs: 0,
+        note: "Returned from in-memory phone cache",
+      });
+    } else {
+      const filterStarted = Date.now();
+      try {
+        customer = await fetchCustomerByPhoneFilterFast(userId, phone);
+        steps.push({
+          phase: "phone_filter",
+          matched: Boolean(customer),
+          durationMs: Date.now() - filterStarted,
+          note: 'GET Customer.json?Contact.mobile=<local AU mobile> (1–2 requests max)',
+        });
+        if (customer) rememberPhoneCustomer(userId, phone, customer);
+      } catch (error) {
+        steps.push({
+          phase: "phone_filter",
+          matched: false,
+          durationMs: Date.now() - filterStarted,
+          error: error instanceof Error ? error.message : "Phone filter lookup failed.",
+        });
+      }
+
+      if (!customer) {
+        const scanStarted = Date.now();
+        try {
+          customer = await scanCustomersForPhone(userId, phone, maxScanPages);
+          steps.push({
+            phase: "phone_scan",
+            matched: Boolean(customer),
+            durationMs: Date.now() - scanStarted,
+            note: "Paginated scan fallback only when Contact.mobile filter misses",
+          });
+          if (customer) rememberPhoneCustomer(userId, phone, customer);
+        } catch (error) {
+          steps.push({
+            phase: "phone_scan",
+            matched: false,
+            durationMs: Date.now() - scanStarted,
+            error: error instanceof Error ? error.message : "Phone scan failed.",
+          });
+        }
+      }
+    }
+  }
+
+  if (!customer && (email || name)) {
+    const inquiryStarted = Date.now();
+    try {
+      customer = await findLightspeedCustomerForInquiry(
+        userId,
+        {
+          senderEmail: email || phone || name,
+          senderName: name || phone || email,
+        },
+        { maxScanPages },
+      );
+      steps.push({
+        phase: "email_name_match",
+        matched: Boolean(customer),
+        durationMs: Date.now() - inquiryStarted,
+        note: "Email/name scoring on paginated Customer.json scan",
+      });
+    } catch (error) {
+      steps.push({
+        phase: "email_name_match",
+        matched: false,
+        durationMs: Date.now() - inquiryStarted,
+        error: error instanceof Error ? error.message : "Email/name lookup failed.",
+      });
+    }
+  }
+
+  return {
+    matched: Boolean(customer),
+    customer,
+    steps,
+    lookupKeys: phone ? phoneLookupKeys(phone) : [],
+    normalizedPhone,
+  };
+}
+
+export async function lookupCustomerFirstLastNameByPhone(
+  userId: string,
+  phone: string,
+): Promise<{
+  firstName: string | null;
+  lastName: string | null;
+  displayName: string;
+  customerId: string | null;
+} | null> {
+  const customer = await findCustomerByPhone(userId, phone, {
+    allowScan: true,
+    maxScanPages: 5,
+  });
+  if (!customer) return null;
+  const firstName = customer.firstName ?? null;
+  const lastName = customer.lastName ?? null;
+  const displayName = customerName(customer);
+  return {
+    firstName,
+    lastName,
+    displayName,
+    customerId: customer.customerID != null ? String(customer.customerID) : null,
+  };
 }
 
 export function isLightspeedPhoneNameIndexWarm(userId: string): boolean {
@@ -737,7 +895,7 @@ export async function lookupLightspeedCustomerNameByPhone(
   return rememberCustomerInPhoneIndex(userId, trimmed, customer, index);
 }
 
-function isLikelyPhone(value: string): boolean {
+export function isLikelyPhone(value: string): boolean {
   return phoneDigits(value).length >= 8;
 }
 

@@ -133,6 +133,9 @@ export function maxToolConcurrencyForProfile(
   const runtime = getGenieRuntimePolicy(profile)
   if (runtime.parallelToolCalls) return runtime.maxToolConcurrency
   if (route === 'business_analysis') return 6
-  if (route === 'lightspeed_sql' || route === 'web_research') return 4
+  // Read-only reporting: let the model fan out more independent SQL/Xero/Deputy
+  // reads at once so multi-query answers don't serialise their round-trips.
+  if (route === 'lightspeed_sql') return 6
+  if (route === 'web_research') return 4
   return 1
 }

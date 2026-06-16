@@ -32,6 +32,8 @@ import {
   type GenieExecutionPlan,
 } from './prompts'
 import { createGenieOrchestrationDecision, createGenieExecutionPlan } from './orchestrator'
+import { getActiveLessonsForUser, formatLessonsForPrompt } from '@/lib/genie/learned-lessons'
+import { runDeepResearchInvestigation } from '@/lib/genie/deep-research/run-deep-research'
 import type { ComposioSessionIds, Message, RawModelDeltaEvent, StreamToolItem } from './context'
 import { compactCustomerProfileForContext, toAgentInputMessages } from './context'
 import {
@@ -281,6 +283,8 @@ export interface ExecuteGenieAgentArgs {
   conversationId: string | null
   composioSessionIds: ComposioSessionIds
   modelProfile?: GenieModelProfile
+  /** When true, runs the multi-phase Deep Business Review instead of a normal chat turn. */
+  deepResearch?: boolean
   /** Receives every SSE-shaped event ({event: 'status'|'text_delta'|...}). */
   emit: (data: object) => void
   /** Aborts the run (job cancellation or client disconnect when the caller ties it to the request). */
@@ -310,6 +314,13 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
   let toolCallCount = 0
   const toolCallNames: Record<string, number> = {}
   let activeToolName: string | null = null
+  // Shared with verify_question_answered: when a within-budget verification pass
+  // returns not-ready, the model is free to EITHER gather more or answer anyway.
+  // We no longer guess — the verify tool flips this flag and the next real action
+  // (a tool call → "continuing lookup", or answer text → "Writing the answer")
+  // sets an honest status. Stops a complete, efficient run from flashing
+  // "Answer incomplete — continuing lookup" right before it answers.
+  const verifyGate = { awaitingContinuation: false }
 
   const emit = (data: object) => {
     if ('event' in data && (data as { event?: unknown }).event === 'status') {
@@ -348,6 +359,26 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
   }, STREAM_HEARTBEAT_MS)
 
   try {
+    // Deep Business Review: a separate long-running, multi-phase forensic
+    // investigation. Reuses this function's emit/heartbeat/telemetry shell and
+    // the full tool pipeline, but bypasses the router/planner/executor entirely.
+    if (options.deepResearch) {
+      finalRoute = 'business_analysis'
+      await runDeepResearchInvestigation({
+        supabase,
+        userId,
+        storeName,
+        messages,
+        composioSessionIds,
+        models,
+        emit,
+        signal,
+        requestId,
+      })
+      emit({ event: 'done' })
+      return
+    }
+
     emit({ event: 'status', phase: 'context', text: 'Reading conversation context' })
 
     const latestUserMessage = latestUserText(messages)
@@ -409,7 +440,9 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
         modelSettings: {
           parallelToolCalls: false,
           store: false,
-          reasoning: { effort: 'low', summary: 'auto' },
+          // Casual chat has no tools and a single turn — skip the reasoning pass
+          // so greetings and quick conversational replies start streaming faster.
+          reasoning: { effort: 'none', summary: 'auto' },
           text: { verbosity: 'low' },
         },
       })
@@ -632,6 +665,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
       composioSessionIds,
       models,
       modelProfile,
+      verifyGate,
     )
     applyTimeBudgetToTools(agentTools, requestStartedAt, RUN_TIME_BUDGET_MS, runtime.fastAnswerPrompt)
     const agentToolNames = agentTools.map(candidate =>
@@ -655,10 +689,14 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
     })
 
     const reasoningEffort = runtime.executorReasoningEffort(orchestration.route, planned)
+    // Inject the store's learned playbook (self-improvement) into the dynamic
+    // tail of the prompt. Defensive: returns '' if the table/migration is absent.
+    const learnedLessons = await getActiveLessonsForUser(supabase, userId, { route: orchestration.route })
+    const learnedPlaybook = formatLessonsForPrompt(learnedLessons)
     const agent = new Agent({
       name: 'Yellow Jersey Store Agent',
       model: executorModel,
-      instructions: buildSystemPrompt(storeName, executionPlan, orchestration.route, runtime.fastAnswerPrompt),
+      instructions: buildSystemPrompt(storeName, executionPlan, orchestration.route, runtime.fastAnswerPrompt, learnedPlaybook),
       tools: agentTools,
       modelSettings: {
         parallelToolCalls: canRunParallelTools(orchestration.route, modelProfile),
@@ -715,6 +753,13 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
             emit({ event: 'status', phase: 'thinking', text: compactGenieProgressText('Thinking', 'thinking') })
           }
           if (event.name === 'tool_called' && toolName) {
+            // The model really did go back for more after a not-ready verdict —
+            // NOW "continuing lookup" is true. (The tool's own status follows and
+            // usually supersedes this, but it makes the intent explicit.)
+            if (verifyGate.awaitingContinuation) {
+              verifyGate.awaitingContinuation = false
+              emit({ event: 'status', phase: 'rechecking', text: 'Answer incomplete — continuing lookup' })
+            }
             toolCallCount += 1
             toolCallNames[toolName] = (toolCallNames[toolName] ?? 0) + 1
             activeToolName = toolName
@@ -795,6 +840,12 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
           if (rawType === 'output_text_delta' || rawType === 'response.output_text.delta') {
             if (firstTextAt == null && delta) {
               firstTextAt = Date.now()
+              // The model judged it had enough after a not-ready verdict and is
+              // answering now — so show that, not a stale "continuing lookup".
+              if (verifyGate.awaitingContinuation) {
+                verifyGate.awaitingContinuation = false
+                emit({ event: 'status', phase: 'responding', text: 'Writing the answer' })
+              }
               console.info('[Genie Agent] first_text', {
                 requestId,
                 route: finalRoute,

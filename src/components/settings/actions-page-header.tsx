@@ -98,7 +98,13 @@ export function StoreSettingsPageHeader({
 }
 
 export function ActionsPageHeader({ className }: { className?: string }) {
-  return <StoreSettingsPageHeader title="Actions" icon={LayoutGrid} className={className} />;
+  return (
+    <StoreSettingsPageHeader
+      title="Actions"
+      icon={LayoutGrid}
+      className={cn(storeSettingsPageHeaderNudgeClass, "!pb-0", className)}
+    />
+  );
 }
 
 export function NestPageHeader({

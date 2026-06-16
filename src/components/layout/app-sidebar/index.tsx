@@ -19,6 +19,7 @@ import {
   Tag,
   Truck,
   Zap,
+  Beaker,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -112,6 +113,7 @@ const NAV: NavGroup[] = [
     items: [
       { title: "Uber Direct", href: "/settings/uber", icon: Truck },
       { title: "Data", href: "/settings/data", icon: Database },
+      { title: "Test", href: "/settings/test", icon: Beaker, exact: true },
       { title: "Lightspeed", href: "/connect-lightspeed", icon: Zap },
     ],
   },

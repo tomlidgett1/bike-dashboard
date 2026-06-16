@@ -9,6 +9,10 @@ import {
 } from "@/lib/customer-inquiries/sync";
 import { inquiryNeedsReplyFromRow } from "@/lib/customer-inquiries/thread";
 import { serializeInquiryListItem } from "@/lib/customer-inquiries/serialize";
+import {
+  backgroundResolveInboxPhoneContacts,
+  hydrateInboxCustomerNamesFromDb,
+} from "@/lib/customer-inquiries/lightspeed-phone-directory";
 import { isNestMessagingConfigured } from "@/lib/nest/config";
 import { resolveStoreNestBrandKey } from "@/lib/nest/resolve-store-brand-key";
 import { loadNestReadMapFromSupabase } from "@/lib/nest/inbox-supabase";
@@ -56,6 +60,17 @@ async function loadInquiriesFromSupabase(supabase: SupabaseClient, userId: strin
   return filterInquiriesForDisplay(mapped).map(serializeInquiryListItem);
 }
 
+async function hydrateUnifiedInboxNames(
+  supabase: SupabaseClient,
+  userId: string,
+  args: {
+    inquiries: Awaited<ReturnType<typeof loadInquiriesFromSupabase>>;
+    nestChats: Awaited<ReturnType<typeof loadCachedNestList>>;
+  },
+) {
+  return hydrateInboxCustomerNamesFromDb(supabase, userId, args);
+}
+
 export async function GET() {
   try {
     const auth = await requireStoreUser();
@@ -79,27 +94,39 @@ export async function GET() {
     if (shouldSyncNestInline) {
       try {
         nestChats = filterNestCustomerChats(
-          await syncNestInboxFromPortal(auth.supabase, auth.user.id, brandKey),
+          await syncNestInboxFromPortal(auth.supabase, auth.user.id, brandKey, {
+            enrichLightspeed: true,
+            syncThreads: false,
+          }),
         );
       } catch (error) {
         console.error("[unified-inbox] inline nest sync failed:", error);
       }
     }
 
+    const hydrated = await hydrateUnifiedInboxNames(auth.supabase, auth.user.id, {
+      inquiries,
+      nestChats,
+    });
+
     after(async () => {
       try {
         await backgroundReconcileGmailThreads(auth.supabase, auth.user.id);
-        if (nestConfigured && brandKey && !shouldSyncNestInline) {
-          await syncNestInboxFromPortal(auth.supabase, auth.user.id, brandKey);
+        if (nestConfigured && brandKey) {
+          await syncNestInboxFromPortal(auth.supabase, auth.user.id, brandKey, {
+            enrichLightspeed: true,
+            syncThreads: true,
+          });
         }
+        await backgroundResolveInboxPhoneContacts(auth.supabase, auth.user.id, hydrated);
       } catch (error) {
         console.error("[unified-inbox] background sync failed:", error);
       }
     });
 
     return json({
-      inquiries,
-      nestChats,
+      inquiries: hydrated.inquiries,
+      nestChats: hydrated.nestChats,
       nestReadMap,
       gmail,
       nestConfigured,
@@ -176,9 +203,14 @@ export async function POST(request: NextRequest) {
         loadNestReadMapFromSupabase(auth.supabase, auth.user.id),
       ]);
 
-      return json({
+      const hydrated = await hydrateUnifiedInboxNames(auth.supabase, auth.user.id, {
         inquiries,
         nestChats,
+      });
+
+      return json({
+        inquiries: hydrated.inquiries,
+        nestChats: hydrated.nestChats,
         nestReadMap,
         gmail,
         nestConfigured,

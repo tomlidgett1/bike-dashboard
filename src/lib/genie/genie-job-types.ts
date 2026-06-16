@@ -4,11 +4,17 @@ export type GenieJobSource = "homev2" | "panel";
 
 export type GenieModelProfile = "default" | "nano";
 
+/** Special long-running run modes. "deep_research" = the multi-phase forensic
+ * Deep Business Review (autonomous ~20-25 min investigation → board-memo report). */
+export type GenieRunMode = "deep_research";
+
 export type GenieJobMetadata = {
   composio_session_ids?: Record<string, string>;
   client_assistant_id?: string;
   source?: GenieJobSource;
   model_profile?: GenieModelProfile;
+  /** Set for special long-running modes; absent for normal chat turns. */
+  mode?: GenieRunMode;
   step_index?: number;
   raw_debug_logs?: GenieRawDebugLogEntry[];
 };

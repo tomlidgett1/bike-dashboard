@@ -115,12 +115,14 @@ export async function POST(request: NextRequest) {
         ? (body.source as GenieJobSource)
         : "panel";
     const modelProfile: GenieModelProfile = normalizeGenieModelProfile(body.model_profile);
+    const mode = body.mode === "deep_research" ? ("deep_research" as const) : undefined;
 
     const metadata: GenieJobMetadata = {
       composio_session_ids: composioSessionIds,
       client_assistant_id: clientAssistantId ?? undefined,
       source,
       model_profile: modelProfile,
+      mode,
       step_index: 0,
     };
 

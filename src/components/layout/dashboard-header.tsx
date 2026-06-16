@@ -85,7 +85,7 @@ export function DashboardHeader() {
 
       {isStoreSettings ? (
         <div className="flex min-w-0 flex-1 justify-center px-1.5 sm:px-2">
-          <StoreSettingsGenieSearch className="max-w-[min(100%,36rem)]" />
+          <StoreSettingsGenieSearch className="max-w-[min(100%,52rem)]" />
         </div>
       ) : null}
 

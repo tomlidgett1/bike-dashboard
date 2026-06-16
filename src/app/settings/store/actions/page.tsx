@@ -7,7 +7,10 @@ import type { ReactNode } from "react";
 import { PageContainer } from "@/components/dashboard";
 import { DeputyRosterBento } from "@/components/settings/deputy-roster-bento";
 import { EcommerceAgentBento } from "@/components/settings/ecommerce-agent-bento";
-import { ActionsPageHeader } from "@/components/settings/actions-page-header";
+import {
+  ActionsPageHeader,
+  storeSettingsPageChromeClass,
+} from "@/components/settings/actions-page-header";
 import { MissingBrandsBento } from "@/components/settings/missing-brands-bento";
 import { NestMessagesBento } from "@/components/settings/nest-messages-bento";
 import { OverivewoTestBento } from "@/components/settings/overivewo-test-bento";
@@ -39,16 +42,19 @@ function ActionsSection({
 
 export default function StoreActionsPage() {
   return (
-    <PageContainer
-      size="full"
-      className="flex min-h-full items-start justify-center !pb-6 !pt-2.5 px-2 sm:px-3 lg:px-4"
-    >
-      <div className="flex w-full max-w-[1400px] flex-col gap-8">
-        <ActionsPageHeader className="px-0.5" />
+    <PageContainer size="full" className="!p-0 !pt-2.5 !pb-6">
+      <div
+        className={cn(
+          "mx-auto flex w-full max-w-[1400px] flex-col",
+          storeSettingsPageChromeClass,
+        )}
+      >
+        <ActionsPageHeader />
 
-        <section className="w-full space-y-4">
+        <div className="mt-4 flex flex-col gap-8">
+        <section className="w-full space-y-3">
           <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between lg:gap-6">
-            <div className="min-w-0 flex-1 space-y-4">
+            <div className="min-w-0 flex-1 space-y-3">
               <div className="px-0.5">
                 <h2 className="text-lg font-semibold tracking-tight text-gray-950">Customer enquiries</h2>
                 <p className="mt-1 text-sm text-gray-600">
@@ -61,7 +67,7 @@ export default function StoreActionsPage() {
               </OverivewoBentoCarouselRow>
             </div>
 
-            <div className="w-full shrink-0 space-y-4 lg:w-[min(340px,calc(100vw-2rem))] lg:ml-auto">
+            <div className="w-full shrink-0 space-y-3 lg:w-[min(340px,calc(100vw-2rem))] lg:ml-auto">
               <div className="px-0.5">
                 <h2 className="text-lg font-semibold tracking-tight text-gray-950">Roster</h2>
                 <p className="mt-1 text-sm text-gray-600">Today’s shift coverage from Deputy.</p>
@@ -90,6 +96,7 @@ export default function StoreActionsPage() {
             <EcommerceAgentBento variant="light-beige-floating" className="w-full max-w-[860px]" />
           </div>
         </ActionsSection>
+        </div>
       </div>
     </PageContainer>
   );

@@ -21,7 +21,7 @@ export function StoreSettingsGenieSearch({ className }: { className?: string }) 
   return (
     <div
       className={cn(
-        "w-full overflow-hidden rounded-full bg-gray-100 shadow-sm ring-1 ring-black/5",
+        "w-full overflow-hidden rounded-full bg-white shadow-sm ring-1 ring-black/10",
         className,
       )}
     >

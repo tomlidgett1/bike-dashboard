@@ -13,6 +13,11 @@ import {
 } from '@/lib/customer-inquiries/sync'
 import { inquiryNeedsReplyFromRow } from '@/lib/customer-inquiries/thread'
 import { serializeInquiryListItem } from '@/lib/customer-inquiries/serialize'
+import {
+  applyResolvedInquiryCustomerNames,
+  resolvePhoneContactsForInbox,
+  extractPhoneFromInquirySender,
+} from '@/lib/customer-inquiries/lightspeed-phone-directory'
 import { backgroundReconcileGmailThreads } from '@/lib/store/unified-inbox-sync'
 import type { CustomerInquiryStatus } from '@/lib/customer-inquiries/types'
 
@@ -71,10 +76,28 @@ export async function GET(request: NextRequest) {
 
     const gmail = await resolveGmailState(auth.supabase, auth.user.id)
 
+    const serialized = filterInquiriesForDisplay(mapped, statusParam).map(serializeInquiryListItem)
+    const phones = serialized
+      .filter((item) => !item.lightspeed_customer_name?.trim())
+      .map((item) => extractPhoneFromInquirySender(item.sender_email, item.sender_name))
+      .filter((phone): phone is string => Boolean(phone))
+    const namesByPhone = await resolvePhoneContactsForInbox(
+      auth.supabase,
+      auth.user.id,
+      phones,
+      { allowApi: false },
+    )
+    const inquiries = await applyResolvedInquiryCustomerNames(
+      auth.supabase,
+      auth.user.id,
+      serialized,
+      namesByPhone,
+    )
+
     after(() => backgroundReconcileGmailThreads(auth.supabase, auth.user.id))
 
     return NextResponse.json({
-      inquiries: filterInquiriesForDisplay(mapped, statusParam).map(serializeInquiryListItem),
+      inquiries,
       gmail,
       cached: true,
     })

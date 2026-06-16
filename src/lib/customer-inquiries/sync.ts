@@ -18,6 +18,10 @@ import { createServiceRoleClient } from '@/lib/supabase/server'
 import { recordInquiryEvent } from '@/lib/customer-inquiries/events'
 import { generateInquiryDraft, reviseInquiryDraftWithInstruction } from '@/lib/customer-inquiries/draft-response'
 import { buildLightspeedInquiryContext } from '@/lib/customer-inquiries/lightspeed-context'
+import {
+  extractPhoneFromInquirySender,
+  resolvePhoneContactsForInbox,
+} from '@/lib/customer-inquiries/lightspeed-phone-directory'
 import { getOrRefreshEmailStyleProfile } from '@/lib/customer-inquiries/style-profile'
 import type {
   CustomerInquiryRow,
@@ -56,6 +60,22 @@ function passesInitialInboxGate(email: GmailEmailPreview): boolean {
   return true
 }
 
+async function resolveInquiryCustomerName(
+  supabase: SupabaseClient,
+  userId: string,
+  senderEmail: string,
+  senderName: string,
+): Promise<string | null> {
+  const phone = extractPhoneFromInquirySender(senderEmail, senderName)
+  if (!phone) return null
+
+  const names = await resolvePhoneContactsForInbox(supabase, userId, [phone], {
+    allowApi: true,
+    apiLimit: 1,
+  })
+  return names.get(phone) ?? null
+}
+
 function mapRow(raw: Record<string, unknown>): CustomerInquiryRow {
   return {
     id: String(raw.id),
@@ -71,6 +91,9 @@ function mapRow(raw: Record<string, unknown>): CustomerInquiryRow {
     connected_account_id: raw.connected_account_id ? String(raw.connected_account_id) : null,
     sender_name: String(raw.sender_name ?? ''),
     sender_email: String(raw.sender_email ?? ''),
+    lightspeed_customer_name: raw.lightspeed_customer_name
+      ? String(raw.lightspeed_customer_name)
+      : null,
     subject: String(raw.subject ?? ''),
     snippet: String(raw.snippet ?? ''),
     body_preview: String(raw.body_preview ?? ''),
@@ -367,12 +390,22 @@ async function syncInboxForStore(
         existingThread.status === 'ignored' ||
         existingThread.gmail_message_id !== email.message_id
 
+      const lightspeedCustomerName = await resolveInquiryCustomerName(
+        supabase,
+        userId,
+        sender.email,
+        sender.name,
+      )
+
       const { error } = await supabase
         .from('store_customer_inquiries')
         .update({
           gmail_message_id: email.message_id,
           sender_name: sender.name,
           sender_email: sender.email,
+          ...(lightspeedCustomerName
+            ? { lightspeed_customer_name: lightspeedCustomerName }
+            : {}),
           subject: email.subject,
           snippet: email.snippet || bodyText.slice(0, 280),
           body_preview: bodyText.slice(0, 1200) || email.snippet,
@@ -425,6 +458,13 @@ async function syncInboxForStore(
       continue
     }
 
+    const lightspeedCustomerName = await resolveInquiryCustomerName(
+      supabase,
+      userId,
+      sender.email,
+      sender.name,
+    )
+
     const { data, error } = await supabase
       .from('store_customer_inquiries')
       .insert({
@@ -434,6 +474,9 @@ async function syncInboxForStore(
         connected_account_id: email.connected_account_id ?? null,
         sender_name: sender.name,
         sender_email: sender.email,
+        ...(lightspeedCustomerName
+          ? { lightspeed_customer_name: lightspeedCustomerName }
+          : {}),
         subject: email.subject,
         snippet: email.snippet || bodyText.slice(0, 280),
         body_preview: bodyText.slice(0, 1200) || email.snippet,
@@ -554,6 +597,7 @@ async function processPendingForStore(
         userId,
         senderEmail: inquiry.sender_email,
         senderName: inquiry.sender_name,
+        supabase,
       })
 
       const draft = await generateInquiryDraft({
@@ -575,6 +619,9 @@ async function processPendingForStore(
           reasoning: draft.reasoning,
           citations: draft.citations,
           lightspeed_context: lightspeedContext,
+          ...(lightspeedContext.matched && lightspeedContext.customer_name
+            ? { lightspeed_customer_name: lightspeedContext.customer_name }
+            : {}),
           style_profile_version: version,
           body_preview: message.body_text.slice(0, 1200) || inquiry.body_preview,
           thread_messages: threadMessages,
@@ -759,6 +806,7 @@ export async function regenerateInquiryDraft(
     userId: inquiry.user_id,
     senderEmail: inquiry.sender_email,
     senderName: inquiry.sender_name,
+    supabase,
   })
 
   const draft = await generateInquiryDraft({
@@ -781,6 +829,9 @@ export async function regenerateInquiryDraft(
       reasoning: draft.reasoning,
       citations: draft.citations,
       lightspeed_context: lightspeedContext,
+      ...(lightspeedContext.matched && lightspeedContext.customer_name
+        ? { lightspeed_customer_name: lightspeedContext.customer_name }
+        : {}),
       style_profile_version: version,
       body_preview: message.body_text.slice(0, 1200) || inquiry.body_preview,
       thread_messages: threadMessages,

@@ -29,6 +29,11 @@ type MessageRow = {
   created_at: string;
 };
 
+export type NestThreadSyncState = {
+  lastMessageAt: string | null;
+  hasMessages: boolean;
+};
+
 function rowToListItem(row: ConversationRow): NestConversationListItem {
   return {
     chatId: row.chat_id,
@@ -76,6 +81,61 @@ export async function loadNestChatsFromSupabase(
   }
 
   return (data ?? []).map((row) => rowToListItem(row as ConversationRow));
+}
+
+export async function loadNestThreadSyncState(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<Map<string, NestThreadSyncState>> {
+  const [conversationResult, messageResult] = await Promise.all([
+    supabase
+      .from("store_nest_conversations")
+      .select("chat_id, last_message_at")
+      .eq("user_id", userId),
+    supabase
+      .from("store_nest_messages")
+      .select("chat_id")
+      .eq("user_id", userId)
+      .limit(10000),
+  ]);
+
+  const state = new Map<string, NestThreadSyncState>();
+
+  if (conversationResult.error) {
+    console.error(
+      "[nest-inbox-supabase] thread sync state conversations failed:",
+      conversationResult.error.message,
+    );
+  } else {
+    for (const row of conversationResult.data ?? []) {
+      const chatId = String(row.chat_id ?? "").trim();
+      if (!chatId) continue;
+      state.set(chatId, {
+        lastMessageAt: row.last_message_at ? String(row.last_message_at) : null,
+        hasMessages: false,
+      });
+    }
+  }
+
+  if (messageResult.error) {
+    console.error(
+      "[nest-inbox-supabase] thread sync state messages failed:",
+      messageResult.error.message,
+    );
+    return state;
+  }
+
+  for (const row of messageResult.data ?? []) {
+    const chatId = String(row.chat_id ?? "").trim();
+    if (!chatId) continue;
+    const existing = state.get(chatId);
+    state.set(chatId, {
+      lastMessageAt: existing?.lastMessageAt ?? null,
+      hasMessages: true,
+    });
+  }
+
+  return state;
 }
 
 export async function loadNestThreadFromSupabase(

@@ -9397,6 +9397,10 @@ function buildAgentTools(
   composioSessionIds: ComposioSessionIds = {},
   models: GenieModelConfig = DEFAULT_GENIE_MODELS,
   modelProfile: GenieModelProfile = 'default',
+  // Shared with the executor stream loop. verify_question_answered flips
+  // awaitingContinuation on a within-budget not-ready verdict instead of
+  // predicting "continuing lookup"; the loop labels the model's real next move.
+  verifyGate: { awaitingContinuation: boolean } = { awaitingContinuation: false },
 ) {
   const allowedToolNames = toolNameSetForRoute(route, executionPlan?.primary_tools ?? [])
   const runtime = getGenieRuntimePolicy(modelProfile)
@@ -9404,7 +9408,17 @@ function buildAgentTools(
   // verify_question_answered as a "keep working" checkpoint and loops it
   // 5-11x per run (each pass on high-stakes routes also fires the LLM judge),
   // which is the single biggest latency sink on business_analysis runs.
-  const MAX_VERIFY_CALLS = runtime.maxVerifyCalls
+  // Planned analysis runs (business_analysis, or any route with a multi-step
+  // execution plan) get ONE genuine "go back and finish the planned passes"
+  // cycle before verification is allowed to force an answer — otherwise the very
+  // first gap on a deep plan bails out after a single tool call. Narrow lookups
+  // keep the tight single-pass budget to avoid verify+judge churn.
+  const isPlannedAnalysis =
+    route === 'business_analysis' ||
+    (executionPlan != null && executionPlan.execution_steps.length >= 3)
+  const MAX_VERIFY_CALLS = isPlannedAnalysis
+    ? Math.max(runtime.maxVerifyCalls, 2)
+    : runtime.maxVerifyCalls
   let verifyCallCount = 0
   let gmailComposioSessionId = composioSessionIds.gmail?.trim() || undefined
   const onGmailComposioSession = (notice: ComposioSessionNotice) => {
@@ -9573,7 +9587,12 @@ function buildAgentTools(
           }
         }
         if (!result.ready) {
-          emitStatus(emit, 'rechecking', 'Answer incomplete — continuing lookup')
+          // Within budget and not ready: the model may now EITHER go gather more
+          // or decide it has enough and answer. Do not emit "continuing lookup"
+          // here — that lied whenever the model answered straight after, making a
+          // complete, efficient run look like a bail-out. Defer the label to the
+          // model's actual next action (handled in the executor stream loop).
+          verifyGate.awaitingContinuation = true
         } else {
           emitStatus(emit, 'responding', 'Verified — writing the final answer')
         }

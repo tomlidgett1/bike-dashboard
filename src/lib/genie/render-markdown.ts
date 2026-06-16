@@ -89,6 +89,42 @@ function isTableSeparator(line: string): boolean {
   return isTableRow(line) && splitTableRow(line).every(cell => /^:?-{3,}:?$/.test(cell))
 }
 
+/**
+ * Tiered headings so the agent can build real visual hierarchy (a large answer
+ * title, section headers, and small section labels) instead of one flat size.
+ * Compact mode (timeline rows) keeps everything small.
+ */
+function renderHeading(
+  level: number,
+  text: string,
+  options: Required<RenderGenieMarkdownOptions>,
+): string {
+  const inner = renderInlineMarkdown(text, options.linkMode)
+  if (options.compact) {
+    return `<h4 class="mt-1.5 first:mt-0 text-sm font-semibold leading-snug text-foreground">${inner}</h4>`
+  }
+  const byLevel: Record<number, string> = {
+    1: 'mt-5 first:mt-0 mb-1.5 text-[1.35em] font-semibold leading-tight tracking-[-0.01em] text-foreground',
+    2: 'mt-4 first:mt-0 mb-1 text-[1.15em] font-semibold leading-snug tracking-[-0.005em] text-foreground',
+    3: 'mt-3.5 first:mt-0 mb-1 text-[1em] font-semibold leading-snug text-foreground',
+    4: 'mt-3 first:mt-0 mb-0.5 text-[0.8em] font-semibold uppercase tracking-wider text-muted-foreground',
+  }
+  const tag = level <= 1 ? 'h1' : level === 2 ? 'h2' : level === 3 ? 'h3' : 'h4'
+  const cls = byLevel[Math.min(Math.max(level, 1), 4)]
+  return `<${tag} class="${cls}">${inner}</${tag}>`
+}
+
+function renderBlockquote(
+  lines: string[],
+  options: Required<RenderGenieMarkdownOptions>,
+): string {
+  const inner = lines.map(line => renderInlineMarkdown(line, options.linkMode)).join('<br/>')
+  if (options.compact) {
+    return `<blockquote class="my-1.5 border-l-2 border-border pl-2 text-xs leading-snug text-muted-foreground">${inner}</blockquote>`
+  }
+  return `<blockquote class="my-3 rounded-r-md border-l-2 border-primary/40 bg-muted/40 px-3 py-2 leading-relaxed text-foreground/90">${inner}</blockquote>`
+}
+
 function renderTable(rows: string[][], options: Required<RenderGenieMarkdownOptions>): string {
   const [head, ...body] = rows
   if (!head || body.length === 0) return ''
@@ -157,6 +193,19 @@ export function renderGenieMarkdown(text: string, options: RenderGenieMarkdownOp
       }
     }
 
+    if (/^>\s?/.test(trimmed)) {
+      const quoteLines: string[] = []
+      let nextIndex = index
+      while (nextIndex < lines.length && /^>\s?/.test(lines[nextIndex].trimStart())) {
+        quoteLines.push(lines[nextIndex].trimStart().replace(/^>\s?/, ''))
+        nextIndex += 1
+      }
+      closeList()
+      index = nextIndex - 1
+      html.push(renderBlockquote(quoteLines, resolved))
+      continue
+    }
+
     const unordered = /^[•\-*]\s+/.test(trimmed)
     const ordered = /^\d+\.\s+/.test(trimmed)
 
@@ -178,9 +227,10 @@ export function renderGenieMarkdown(text: string, options: RenderGenieMarkdownOp
       if (index < lines.length - 1 && lines[index + 1]?.trim() !== '') {
         html.push(`<div class="${resolved.compact ? 'h-1' : 'h-2'}"></div>`)
       }
-    } else if (/^#{1,4}\s/.test(trimmed)) {
-      const headingText = trimmed.replace(/^#{1,4}\s+/, '')
-      html.push(`<h3 class="${resolved.compact ? 'mt-1.5' : 'mt-3'} first:mt-0 text-sm font-semibold leading-snug text-foreground">${renderInlineMarkdown(headingText, resolved.linkMode)}</h3>`)
+    } else if (/^#{1,6}\s/.test(trimmed)) {
+      const level = trimmed.match(/^#+/)?.[0].length ?? 3
+      const headingText = trimmed.replace(/^#{1,6}\s+/, '')
+      html.push(renderHeading(level, headingText, resolved))
     } else if (/^---+$/.test(trimmed)) {
       html.push(`<hr class="${resolved.compact ? 'my-2' : 'my-3'} border-border/70" />`)
     } else {

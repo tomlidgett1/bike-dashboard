@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   getNestBrandPortalApiUrl,
@@ -16,6 +17,18 @@ type CachedSession = {
 };
 
 const sessionCache = new Map<string, CachedSession>();
+const sessionRequests = new Map<string, Promise<string>>();
+
+function nestSessionErrorMessage(message: string): string {
+  const trimmed = message.trim();
+  if (trimmed.includes("522: Connection timed out") || trimmed.includes("Error code 522")) {
+    return "Nest Supabase project timed out (Cloudflare 522).";
+  }
+  if (trimmed.startsWith("<!DOCTYPE html") || trimmed.startsWith("<html")) {
+    return "Nest Supabase returned an HTML error page.";
+  }
+  return trimmed.length > 500 ? `${trimmed.slice(0, 500)}...` : trimmed;
+}
 
 function getNestAdminClient(): SupabaseClient | null {
   const url = getNestSupabaseUrl();
@@ -34,28 +47,26 @@ async function mintPortalSession(brandKey: string): Promise<string> {
 
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + SESSION_DAYS);
+  const token = randomUUID();
 
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from("nest_brand_portal_sessions")
-    .insert({ brand_key: brandKey, expires_at: expiresAt.toISOString() })
-    .select("id")
-    .single();
+    .insert({ id: token, brand_key: brandKey, expires_at: expiresAt.toISOString() });
 
-  if (error || !data?.id) {
-    console.error("[nest-brand-portal] session insert failed:", error?.message ?? "no session id");
+  if (error) {
+    const message = nestSessionErrorMessage(error.message);
+    console.error("[nest-brand-portal] session insert failed:", message);
     throw new Error(
-      error?.message
-        ? `Could not start Nest portal session: ${error.message}`
-        : "Could not start Nest portal session.",
+      `Could not start Nest portal session: ${message}`,
     );
   }
 
   sessionCache.set(brandKey, {
-    token: data.id,
+    token,
     expiresAtMs: expiresAt.getTime() - 60_000,
   });
 
-  return data.id;
+  return token;
 }
 
 async function getPortalToken(brandKey: string): Promise<string> {
@@ -63,7 +74,15 @@ async function getPortalToken(brandKey: string): Promise<string> {
   if (cached && cached.expiresAtMs > Date.now()) {
     return cached.token;
   }
-  return mintPortalSession(brandKey);
+
+  const pending = sessionRequests.get(brandKey);
+  if (pending) return pending;
+
+  const request = mintPortalSession(brandKey).finally(() => {
+    sessionRequests.delete(brandKey);
+  });
+  sessionRequests.set(brandKey, request);
+  return request;
 }
 
 function apiErrorMessage(data: Record<string, unknown>, fallback: string): string {

@@ -310,8 +310,8 @@ assert.match(
 )
 assert.match(
   agentRouteSource,
-  /buildSystemPrompt\(storeName, executionPlan, orchestration\.route, runtime\.fastAnswerPrompt\)/,
-  'executor prompt must receive the route, LLM plan, and fast-mode flag for route-specific prompt pruning',
+  /buildSystemPrompt\(storeName, executionPlan, orchestration\.route, runtime\.fastAnswerPrompt, learnedPlaybook\)/,
+  'executor prompt must receive the route, LLM plan, fast-mode flag, and learned playbook for route-specific prompt pruning',
 )
 assert.match(
   agentRouteSource,
@@ -440,8 +440,13 @@ assert.match(
 )
 assert.match(
   homeV2ChatSource,
-  /renderGenieMarkdown\(source\)/,
-  'Home v2 Genie must use the shared Markdown renderer for assistant answers',
+  /useTypewriter\(normalized/,
+  'Home v2 Genie must stream assistant answers through the typewriter over normalized content',
+)
+assert.match(
+  homeV2ChatSource,
+  /renderGenieMarkdown\(/,
+  'Home v2 Genie must render assistant answers through the shared Markdown renderer',
 )
 assert.match(
   agentRouteSource,
@@ -1204,7 +1209,7 @@ const toolPolicyFixtures: Array<Parameters<typeof assertToolPolicy>[0]> = [
     excludes: ['get_store_carousels', 'search_gmail', 'search_web_images'],
     hostedWeb: false,
     parallel: true,
-    concurrency: 4,
+    concurrency: 6,
   },
   {
     name: 'web research',

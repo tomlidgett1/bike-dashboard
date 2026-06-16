@@ -11,6 +11,7 @@ import type { GenieAssistantJobResult, GenieJobMetadata, GenieModelProfile } fro
 import { normalizeGenieModelProfile } from "@/lib/genie/agent/model-profiles";
 import { appendRawDebugLog } from "@/lib/genie/analysis-events";
 import type { GenieRawDebugLogEntry } from "@/lib/genie/genie-job-types";
+import { reflectAndStoreLessons } from "@/lib/genie/lesson-reflection";
 
 export type RunGenieAgentJobParams = {
   jobId: string;
@@ -142,6 +143,9 @@ export async function runGenieAgentJob(params: RunGenieAgentJobParams) {
   }, CANCEL_CHECK_INTERVAL_MS);
 
   let metadata: GenieJobMetadata = {};
+  // Self-learning signals collected from the live event stream for post-run reflection.
+  const sqlErrors: Array<{ purpose: string; error: string }> = [];
+  const recheckNotes: string[] = [];
   try {
     const supabaseService = createServiceRoleClient();
     const { data: existing } = await supabaseService
@@ -156,6 +160,18 @@ export async function runGenieAgentJob(params: RunGenieAgentJobParams) {
 
   const handleEvent = (event: Record<string, unknown>) => {
     params.onEvent?.(event);
+
+    // Collect learning signals: SQL queries that errored, and the agent's own
+    // recheck self-diagnosis. Distilled into lessons after the run completes.
+    if (event.event === "analysis_query") {
+      const query = event.query as { status?: string; error?: string; purpose?: string } | undefined;
+      if (query?.status === "error" && query.error) {
+        sqlErrors.push({ purpose: query.purpose ?? "", error: query.error });
+      }
+    } else if (event.event === "reasoning_done") {
+      const text = String(event.text ?? "").trim();
+      if (/^recheck:/i.test(text)) recheckNotes.push(text);
+    }
 
     if (event.event !== "heartbeat") {
       const existing = metadata.raw_debug_logs ?? [];
@@ -215,6 +231,7 @@ export async function runGenieAgentJob(params: RunGenieAgentJobParams) {
       conversationId: params.conversationId ?? null,
       composioSessionIds: (params.composioSessionIds ?? {}) as ComposioSessionIds,
       modelProfile: normalizeGenieModelProfile(metadata.model_profile),
+      deepResearch: metadata.mode === "deep_research",
       emit: (data: object) => handleEvent(data as Record<string, unknown>),
       signal: abortController.signal,
     });
@@ -259,6 +276,25 @@ export async function runGenieAgentJob(params: RunGenieAgentJobParams) {
       progress_phase: "done",
       metadata,
     });
+
+    // Self-learning: reflect on any mistakes this run recovered from and store
+    // durable lessons. Best-effort, awaited (the caller keeps us alive via
+    // after()), and gated to real runs with actual signals.
+    if (metadata.model_profile !== "nano" && (sqlErrors.length > 0 || recheckNotes.length > 0)) {
+      const question =
+        [...params.messages].reverse().find((message) => message.role === "user")?.content ?? "";
+      try {
+        await reflectAndStoreLessons({
+          userId: params.userId,
+          storeName: params.storeName,
+          question,
+          answer: assistant.content,
+          signals: { sqlErrors, recheckNotes },
+        });
+      } catch (error) {
+        console.error("[runGenieAgentJob] reflection failed", params.jobId, error);
+      }
+    }
   } catch (error) {
     clearInterval(cancelWatcher);
     await flushJobUpdates();

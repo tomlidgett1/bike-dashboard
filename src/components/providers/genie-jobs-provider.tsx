@@ -29,6 +29,8 @@ type StartBackgroundJobOptions = {
   clientAssistantId?: string;
   source?: "homev2" | "panel";
   modelProfile?: GenieModelProfile;
+  /** Special long-running run mode (e.g. the Deep Business Review). */
+  mode?: "deep_research";
 };
 
 type GenieJobsContextValue = {
@@ -81,6 +83,7 @@ function buildOptimisticJob(jobId: string, options: StartBackgroundJobOptions): 
       composio_session_ids: options.composioSessionIds,
       client_assistant_id: options.clientAssistantId,
       source: options.source,
+      mode: options.mode,
       step_index: 0,
     },
     result: null,
@@ -346,6 +349,7 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
           client_assistant_id: options.clientAssistantId,
           source: options.source ?? "panel",
           model_profile: options.modelProfile ?? "default",
+          mode: options.mode,
         }),
       });
 

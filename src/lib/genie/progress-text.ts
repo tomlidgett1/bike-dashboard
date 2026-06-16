@@ -103,7 +103,7 @@ function applyPatternRules(text: string): string {
     [/using fast lookup path|using fast lightspeed path/i, 'Fast lookup path'],
     [/planning the smart workflow/i, 'Planning'],
     [/planning complete|planning fallback ready/i, 'Plan ready'],
-    [/planned (\d+) step/i, 'Planned $1 steps'],
+    [/planned (\d+) steps?/i, 'Planned $1 steps'],
     [/reasoning about the requested workflow/i, 'Thinking'],
     [/opening web search|searching the web|browsing cycling resources/i, 'Searching web'],
     [/web research done/i, 'Web search done'],

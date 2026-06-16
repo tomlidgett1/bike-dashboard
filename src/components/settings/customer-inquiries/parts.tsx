@@ -51,8 +51,13 @@ export function intentLabel(intent: string | null | undefined): string | null {
 }
 
 export function senderName(
-  item: Pick<CustomerInquiryListItem, "sender_name" | "sender_email">,
+  item: Pick<
+    CustomerInquiryListItem,
+    "sender_name" | "sender_email" | "lightspeed_customer_name"
+  >,
 ): string {
+  const cached = item.lightspeed_customer_name?.trim();
+  if (cached) return cached;
   return item.sender_name?.trim() || item.sender_email || "Customer";
 }
 

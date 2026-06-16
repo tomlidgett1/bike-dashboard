@@ -13,6 +13,7 @@ import {
   DataZoomComponent,
   GridComponent,
   LegendComponent,
+  MarkLineComponent,
   TooltipComponent,
   type DataZoomComponentOption,
   type GridComponentOption,
@@ -38,8 +39,28 @@ echarts.use([
   DataZoomComponent,
   GridComponent,
   LegendComponent,
+  MarkLineComponent,
   TooltipComponent,
 ]);
+
+/** Series colour at a given alpha, for gradient area fills. Falls back to null for non-hex/rgb colours so callers can use a flat fill. */
+function colorWithAlpha(color: string, alpha: number): string | null {
+  const hex = /^#([\da-f]{3}|[\da-f]{6})$/i.exec(color.trim());
+  if (hex) {
+    let h = hex[1];
+    if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+    const r = parseInt(h.slice(0, 2), 16);
+    const g = parseInt(h.slice(2, 4), 16);
+    const b = parseInt(h.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  const rgb = /^rgb\(([^)]+)\)$/i.exec(color.trim());
+  if (rgb) {
+    const parts = rgb[1].split(",").slice(0, 3).map((s) => s.trim());
+    if (parts.length === 3) return `rgba(${parts.join(", ")}, ${alpha})`;
+  }
+  return null;
+}
 
 export type { GenieChartPayload, GenieChartPoint, GenieChartSeries };
 
@@ -203,10 +224,17 @@ function buildChartOption(chart: GenieChartPayload, theme: GenieChartTheme): Gen
   const showLegend = chart.series.length > 1;
   const showDataZoom = chart.data.length > 14;
   const labels = chart.data.map((point) => point.label);
+  const isSingleSeries = chart.series.length === 1;
+  const showEndLabel = chart.kind === "line" && isSingleSeries && chart.data.length > 1;
+  const labelFormatter: NonNullable<BarSeriesOption["label"]>["formatter"] = (params) =>
+    formatVisualValue((params as { value?: number | string | null }).value ?? null, chart.valueFormatter);
   const series = chart.series.map<BarSeriesOption | LineSeriesOption>((item, index) => {
     const data = chart.data.map((point) => coerceChartNumber(point[item.key]));
+    const color = theme.seriesColors[index];
 
     if (chart.kind === "line") {
+      const gradientTop = colorWithAlpha(color, 0.22);
+      const gradientBottom = colorWithAlpha(color, 0.01);
       return {
         type: "line",
         name: item.label,
@@ -219,11 +247,49 @@ function buildChartOption(chart: GenieChartPayload, theme: GenieChartTheme): Gen
           width: 3,
         },
         itemStyle: {
-          color: theme.seriesColors[index],
+          color,
         },
-        areaStyle: chart.series.length === 1
+        areaStyle: isSingleSeries
+          ? gradientTop && gradientBottom
+            ? {
+                color: {
+                  type: "linear",
+                  x: 0,
+                  y: 0,
+                  x2: 0,
+                  y2: 1,
+                  colorStops: [
+                    { offset: 0, color: gradientTop },
+                    { offset: 1, color: gradientBottom },
+                  ],
+                },
+              }
+            : { opacity: 0.1 }
+          : undefined,
+        // Pin the latest value at the end of the line so the current figure reads at a glance.
+        endLabel: isSingleSeries && chart.data.length > 1
           ? {
-              opacity: 0.08,
+              show: true,
+              color: theme.foreground,
+              fontSize: 11,
+              fontWeight: 600,
+              formatter: labelFormatter,
+            }
+          : undefined,
+        // A faint average reference line gives instant "above/below normal" context.
+        markLine: isSingleSeries && chart.data.length >= 4
+          ? {
+              silent: true,
+              symbol: "none",
+              lineStyle: { type: "dashed", color: theme.mutedForeground, opacity: 0.45, width: 1 },
+              label: {
+                show: true,
+                position: "insideEndTop",
+                formatter: "avg",
+                color: theme.mutedForeground,
+                fontSize: 10,
+              },
+              data: [{ type: "average", name: "Average" }],
             }
           : undefined,
         emphasis: {
@@ -239,9 +305,19 @@ function buildChartOption(chart: GenieChartPayload, theme: GenieChartTheme): Gen
       barMaxWidth: 38,
       barMinHeight: 2,
       itemStyle: {
-        color: theme.seriesColors[index],
+        color,
         borderRadius: [6, 6, 0, 0],
       },
+      // Print the value above each bar when there's room (few, single-series bars).
+      label: isSingleSeries && chart.data.length <= 8
+        ? {
+            show: true,
+            position: "top",
+            color: theme.mutedForeground,
+            fontSize: 10,
+            formatter: labelFormatter,
+          }
+        : undefined,
       emphasis: {
         focus: "series",
       },
@@ -295,7 +371,7 @@ function buildChartOption(chart: GenieChartPayload, theme: GenieChartTheme): Gen
       : undefined,
     grid: {
       top: showLegend ? 34 : 12,
-      right: 14,
+      right: showEndLabel ? 52 : 14,
       bottom: showDataZoom ? 42 : 12,
       left: 10,
       containLabel: true,

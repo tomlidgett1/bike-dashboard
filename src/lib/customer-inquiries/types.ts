@@ -79,6 +79,7 @@ export type CustomerInquiryRow = {
   connected_account_id: string | null
   sender_name: string
   sender_email: string
+  lightspeed_customer_name: string | null
   subject: string
   snippet: string
   body_preview: string
@@ -107,6 +108,7 @@ export type CustomerInquiryListItem = Pick<
   | 'id'
   | 'sender_name'
   | 'sender_email'
+  | 'lightspeed_customer_name'
   | 'subject'
   | 'snippet'
   | 'body_preview'

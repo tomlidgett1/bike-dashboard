@@ -257,9 +257,11 @@ export function useUnifiedInboxController() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time local cache hydrate
   }, []);
 
+  const hydrateInboxList = c.hydrateInboxList;
+
   const applyUnifiedPayload = React.useCallback(
     (data: Awaited<ReturnType<typeof fetchUnifiedInbox>>) => {
-      c.hydrateInboxList({ inquiries: data.inquiries ?? [], gmail: data.gmail });
+      hydrateInboxList({ inquiries: data.inquiries ?? [], gmail: data.gmail });
       setNestChats(data.nestChats ?? []);
       setNestConfigured(data.nestConfigured ?? true);
       if (data.nestReadMap) setNestReadMapFromServer(data.nestReadMap);
@@ -272,11 +274,12 @@ export function useUnifiedInboxController() {
         fetchedAt: new Date().toISOString(),
       });
     },
-    [c],
+    [hydrateInboxList],
   );
 
   const loadUnifiedInbox = React.useCallback(async () => {
-    if (!inboxBootstrapped) setNestLoading(true);
+    const hadCache = Boolean(loadUnifiedInboxFromStorage());
+    if (!hadCache) setNestLoading(true);
     setNestError(null);
     try {
       const data = await fetchUnifiedInbox();
@@ -293,9 +296,12 @@ export function useUnifiedInboxController() {
       setNestLoading(false);
       setInboxBootstrapped(true);
     }
-  }, [applyUnifiedPayload, inboxBootstrapped]);
+  }, [applyUnifiedPayload]);
 
+  const inboxFetchedRef = React.useRef(false);
   React.useEffect(() => {
+    if (inboxFetchedRef.current) return;
+    inboxFetchedRef.current = true;
     void loadUnifiedInbox();
   }, [loadUnifiedInbox]);
 
