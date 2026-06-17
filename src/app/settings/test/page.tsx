@@ -4,8 +4,8 @@ export const dynamic = "force-dynamic";
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "@/components/layout/app-sidebar/dashboard-icons";
-import { PageBody, PageContainer, PageHeader } from "@/components/dashboard";
+import { Loader2, TestTube } from "@/components/layout/app-sidebar/dashboard-icons";
+import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-page";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
 import { LightspeedTestLab } from "@/components/settings/lightspeed-test-lab";
@@ -39,14 +39,15 @@ export default function LightspeedTestPage() {
   }
 
   return (
-    <PageContainer size="wide">
-      <PageHeader
-        title="Test"
-        description="Debug Lightspeed API calls, customer lookup scans, and connection state."
-      />
-      <PageBody>
+    <DashboardFloatingPage
+      title="Test"
+      icon={TestTube}
+      description="Debug Lightspeed API calls, customer lookup scans, and connection state."
+      flush
+    >
+      <div className="p-4 md:p-5">
         <LightspeedTestLab />
-      </PageBody>
-    </PageContainer>
+      </div>
+    </DashboardFloatingPage>
   );
 }

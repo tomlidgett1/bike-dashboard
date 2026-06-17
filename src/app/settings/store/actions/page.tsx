@@ -5,15 +5,13 @@ export const dynamic = "force-dynamic";
 import type { ReactNode } from "react";
 import * as React from "react";
 
-import { PageContainer } from "@/components/dashboard";
+import { Widget } from "@/components/layout/app-sidebar/dashboard-icons";
+import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-page";
 import { ActionsSimpleBentoTable } from "@/components/settings/actions-simple-bento-table";
 import { ActionsViewToggle, type ActionsViewMode } from "@/components/settings/actions-view-toggle";
 import { DeputyRosterBento } from "@/components/settings/deputy-roster-bento";
 import { EcommerceAgentBento } from "@/components/settings/ecommerce-agent-bento";
-import {
-  ActionsPageHeader,
-  storeSettingsPageChromeClass,
-} from "@/components/settings/actions-page-header";
+import { storeSettingsPageChromeClass } from "@/components/settings/actions-page-header";
 import { MissingBrandsBento } from "@/components/settings/missing-brands-bento";
 import { NestMessagesBento } from "@/components/settings/nest-messages-bento";
 import { OverivewoTestBento } from "@/components/settings/overivewo-test-bento";
@@ -119,19 +117,21 @@ export default function StoreActionsPage() {
   const [view, setView] = React.useState<ActionsViewMode>("bento");
 
   return (
-    <PageContainer size="full" className="!p-0 !pt-2.5 !pb-6">
+    <DashboardFloatingPage
+      title="Actions"
+      icon={Widget}
+      flush
+      actions={<ActionsViewToggle view={view} onViewChange={setView} />}
+      cardClassName="border-0 bg-transparent shadow-none"
+    >
       <div
         className={cn(
-          "mx-auto flex w-full max-w-[1400px] flex-col",
+          "mx-auto flex w-full max-w-[1400px] flex-col px-2 sm:px-3 lg:px-4",
           storeSettingsPageChromeClass,
         )}
       >
-        <ActionsPageHeader
-          trailingActions={<ActionsViewToggle view={view} onViewChange={setView} />}
-        />
-
         {view === "bento" ? <BentoActionsView /> : <SimpleActionsView />}
       </div>
-    </PageContainer>
+    </DashboardFloatingPage>
   );
 }

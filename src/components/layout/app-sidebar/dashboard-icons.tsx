@@ -181,6 +181,27 @@ export function Loader2({ className, ...props }: IconProps) {
   return <Refresh className={cn("animate-spin", className)} {...props} />;
 }
 
+/** Simple tick for menus, selects, and radio items (Lucide CheckIcon equivalent). */
+export function CheckIcon({ className, ...props }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={cn("size-4", className)}
+      aria-hidden
+      {...props}
+    >
+      <path
+        d="M4 12.9L7.14286 16.5L15 7.5"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 // Solar primitives (sidebar + shared)
 export {
   AltArrowDown,

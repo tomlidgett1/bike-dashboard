@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   isLikelyPhone as isLikelyPhoneValue,
-  lookupCustomerFirstLastNameByPhone,
+  lookupLightspeedCustomerForLab,
   normalizeAustralianMobileLocal,
 } from "@/lib/services/lightspeed/customer-search";
 import { isLightspeedInBackoff } from "@/lib/services/lightspeed/lightspeed-client";
@@ -18,6 +18,26 @@ export type PhoneContactRecord = {
 
 function phoneDigits(value: string): string {
   return value.replace(/\D+/g, "");
+}
+
+const CHANNEL_PREFIX = /^(whatsapp|sms|tel|phone|voice|viber|line|messenger):/i;
+
+/** Strip channel prefixes and fix common encoding quirks before Lightspeed lookup. */
+export function sanitizePhoneForLookup(value: string | null | undefined): string | null {
+  if (!value?.trim()) return null;
+
+  let phone = value.trim().replace(CHANNEL_PREFIX, "").trim();
+  // Query strings sometimes turn leading "+" into a space.
+  if (/^\s+\d/.test(phone)) {
+    phone = `+${phone.trim()}`;
+  }
+  const digits = phoneDigits(phone);
+  if (digits.startsWith("61") && digits.length >= 11 && !phone.startsWith("+")) {
+    phone = `+${digits}`;
+  }
+
+  if (!isLikelyPhoneValue(phone)) return null;
+  return phone;
 }
 
 export function isLikelyPhone(value: string | null | undefined): boolean {
@@ -45,8 +65,37 @@ export function extractPhoneFromInquirySender(
   senderName: string,
 ): string | null {
   for (const candidate of [senderEmail, senderName]) {
-    const trimmed = candidate.trim();
-    if (trimmed && isLikelyPhone(trimmed)) return trimmed;
+    const sanitized = sanitizePhoneForLookup(candidate);
+    if (sanitized) return sanitized;
+  }
+  return null;
+}
+
+function firstSanitizedPhone(candidates: Array<string | null | undefined>): string | null {
+  for (const candidate of candidates) {
+    const sanitized = sanitizePhoneForLookup(candidate);
+    if (sanitized) return sanitized;
+  }
+  return null;
+}
+
+export function extractPhoneFromNestMessages(
+  messages: Array<{
+    role: string;
+    handle?: string | null;
+    metadata?: Record<string, unknown> | null;
+  }>,
+): string | null {
+  for (const message of messages) {
+    if (message.role === "user") {
+      const fromHandle = sanitizePhoneForLookup(message.handle);
+      if (fromHandle) return fromHandle;
+    }
+    const recipient = message.metadata?.recipient_phone_e164;
+    if (typeof recipient === "string") {
+      const fromMetadata = sanitizePhoneForLookup(recipient);
+      if (fromMetadata) return fromMetadata;
+    }
   }
   return null;
 }
@@ -57,16 +106,29 @@ export function extractPhoneFromNestChat(
     "chatId" | "title" | "participantHandle" | "displayName"
   >,
 ): string | null {
-  const handle = chat.participantHandle?.trim();
-  if (handle && isLikelyPhone(handle)) return handle;
-  const title = chat.title?.trim();
-  if (title && isLikelyPhone(title)) return title;
+  const dmMatch = chat.chatId.match(/^DM#[^#]+#(.+)$/);
   const fromChatId = chat.chatId.match(/\+?\d[\d\s()-]{7,}\d/);
-  if (fromChatId) {
-    const candidate = fromChatId[0].replace(/\s+/g, "").trim();
-    if (isLikelyPhone(candidate)) return candidate;
-  }
-  return null;
+
+  return firstSanitizedPhone([
+    chat.participantHandle,
+    dmMatch?.[1],
+    fromChatId ? fromChatId[0].replace(/\s+/g, "").trim() : null,
+    chat.title,
+  ]);
+}
+
+export function resolveNestConversationPhone(
+  chat: Pick<
+    NestConversationListItem,
+    "chatId" | "title" | "participantHandle" | "displayName"
+  >,
+  messages?: Array<{
+    role: string;
+    handle?: string | null;
+    metadata?: Record<string, unknown> | null;
+  }>,
+): string | null {
+  return extractPhoneFromNestChat(chat) ?? (messages ? extractPhoneFromNestMessages(messages) : null);
 }
 
 export function nestChatNeedsNameEnrichment(
@@ -161,18 +223,34 @@ export async function resolvePhoneContactFromApi(
 ): Promise<PhoneContactRecord | null> {
   if (isLightspeedInBackoff(userId)) return null;
 
-  const phoneNormalized = normalizePhoneForDirectory(phone);
+  const queryPhone = sanitizePhoneForLookup(phone) ?? phone.trim();
+  const phoneNormalized = normalizePhoneForDirectory(queryPhone);
   if (!phoneNormalized) return null;
 
-  const match = await lookupCustomerFirstLastNameByPhone(userId, phone);
-  if (!match?.displayName) return null;
+  const lookup = await lookupLightspeedCustomerForLab(userId, {
+    phone: queryPhone,
+    maxScanPages: 10,
+  });
+  const customer = lookup.customer;
+  if (!customer) return null;
+
+  const firstName = customer.firstName ?? null;
+  const lastName = customer.lastName ?? null;
+  const displayName =
+    [firstName, lastName]
+      .map((part) => String(part ?? "").trim())
+      .filter(Boolean)
+      .join(" ") ||
+    String(customer.company ?? "").trim() ||
+    `Customer ${customer.customerID}`;
 
   return {
     phoneNormalized,
-    firstName: match.firstName,
-    lastName: match.lastName,
-    displayName: match.displayName,
-    lightspeedCustomerId: match.customerId,
+    firstName,
+    lastName,
+    displayName,
+    lightspeedCustomerId:
+      customer.customerID != null ? String(customer.customerID) : null,
   };
 }
 

@@ -45,6 +45,42 @@ export type NestLightspeedCustomer = {
   phone: string;
 };
 
+/** True when the shop still owes a reply (opening the thread does not clear this). */
+export function nestConversationNeedsAction(
+  chat: Pick<
+    NestConversationListItem,
+    | "previewRole"
+    | "lastCustomerMessageAt"
+    | "latestManualMessageAt"
+    | "hasManualMessages"
+    | "lastMessageAt"
+  >,
+  closedAt?: string | null,
+): boolean {
+  const messageNeedsAction = (() => {
+    if (chat.previewRole === "user") return true;
+    if (chat.lastCustomerMessageAt) {
+      if (!chat.latestManualMessageAt) return true;
+      return (
+        new Date(chat.lastCustomerMessageAt).getTime() >
+        new Date(chat.latestManualMessageAt).getTime()
+      );
+    }
+    return !chat.hasManualMessages;
+  })();
+
+  if (!messageNeedsAction) return false;
+  if (!closedAt) return true;
+
+  const anchor =
+    chat.lastCustomerMessageAt ||
+    (chat.previewRole === "user" ? chat.lastMessageAt : null) ||
+    chat.lastMessageAt;
+  if (!anchor) return false;
+
+  return new Date(anchor).getTime() > new Date(closedAt).getTime();
+}
+
 export function isNestPortalTestChat(
   chat: Pick<NestConversationListItem, "chatId"> & Partial<Pick<NestConversationListItem, "source">>,
 ): boolean {

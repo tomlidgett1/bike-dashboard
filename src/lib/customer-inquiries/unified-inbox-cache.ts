@@ -8,6 +8,7 @@ export type UnifiedInboxClientCache = {
   nestChats: NestConversationListItem[];
   nestReadMap: Record<string, string>;
   gmailReadMap: Record<string, string>;
+  nestCloseMap: Record<string, string>;
   gmail?: {
     configured?: boolean;
     connected?: boolean;
@@ -36,6 +37,8 @@ export function loadUnifiedInboxFromStorage(): UnifiedInboxClientCache | null {
         parsed.nestReadMap && typeof parsed.nestReadMap === "object" ? parsed.nestReadMap : {},
       gmailReadMap:
         parsed.gmailReadMap && typeof parsed.gmailReadMap === "object" ? parsed.gmailReadMap : {},
+      nestCloseMap:
+        parsed.nestCloseMap && typeof parsed.nestCloseMap === "object" ? parsed.nestCloseMap : {},
       gmail: parsed.gmail,
       nestConfigured: parsed.nestConfigured ?? true,
       fetchedAt: parsed.fetchedAt,

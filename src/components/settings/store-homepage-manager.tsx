@@ -53,7 +53,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PageHeader, PageBody } from "@/components/dashboard";
+import { SettingsRow } from "@/components/dashboard";
+import {
+  DashboardFloatingPage,
+} from "@/components/layout/dashboard-floating-page";
 import { useAuth } from "@/components/providers/auth-provider";
 import { StoreHomeTab } from "@/components/marketplace/store-profile/store-home-tab";
 import {
@@ -304,125 +307,115 @@ export function StoreHomepageManager() {
     [store, config],
   );
 
-  const landingPageTitle = (
-    <PageHeader
-      title="Landing page"
-      description="Design the landing page customers see first on your storefront."
-    />
-  );
+  const headerActions =
+    config && store ? (
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {migrated ? (
+          <span className="inline-flex min-w-[92px] items-center gap-1.5 text-sm text-muted-foreground">
+            {saving ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Saving…
+              </>
+            ) : savedAt ? (
+              <>
+                <Check className="h-3.5 w-3.5 text-muted-foreground" />
+                Saved
+              </>
+            ) : null}
+          </span>
+        ) : null}
+        <label className="flex cursor-pointer items-center gap-2">
+          <Switch checked={config.enabled} onCheckedChange={setEnabled} />
+          <span className="text-sm font-medium text-foreground">
+            {config.enabled ? "Home tab is on" : "Home tab is off"}
+          </span>
+        </label>
+        <Button asChild variant="outline" size="sm" className="gap-1.5 rounded-md">
+          <a href={`/marketplace/store/${user?.id}`} target="_blank" rel="noopener noreferrer">
+            <ExternalLink className="h-3.5 w-3.5" /> View live
+          </a>
+        </Button>
+      </div>
+    ) : undefined;
 
   if (loading) {
     return (
-      <>
-        {landingPageTitle}
-        <PageBody>
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="h-7 w-7 text-muted-foreground animate-spin" />
-          </div>
-        </PageBody>
-      </>
+      <DashboardFloatingPage title="Landing page" icon={Home} flush>
+        <div className="flex flex-1 items-center justify-center p-16">
+          <Loader2 className="h-7 w-7 text-muted-foreground animate-spin" />
+        </div>
+      </DashboardFloatingPage>
     );
   }
 
   if (loadError || !config || !store) {
     return (
-      <>
-        {landingPageTitle}
-        <PageBody>
-          <div className="rounded-md border border-destructive/30 bg-white p-6 text-center">
+      <DashboardFloatingPage title="Landing page" icon={Home} flush>
+        <div className="flex flex-1 items-center justify-center p-6">
+          <div className="max-w-sm rounded-md border border-destructive/30 bg-white p-6 text-center">
             <AlertTriangle className="h-6 w-6 text-destructive mx-auto mb-2" />
             <p className="text-sm text-foreground font-medium">{loadError || "Couldn't load your home page settings"}</p>
-            <Button variant="outline" size="sm" onClick={load} className="mt-4">
+            <Button variant="outline" size="sm" onClick={load} className="mt-4 rounded-md">
               <RotateCcw className="h-3.5 w-3.5 mr-2" /> Try again
             </Button>
           </div>
-        </PageBody>
-      </>
+        </div>
+      </DashboardFloatingPage>
     );
   }
 
-  const liveUrl = `/marketplace/store/${user?.id}`;
-
   return (
-    <>
-      <PageHeader
-        title="Landing page"
-        description="Design the landing page customers see first on your storefront."
-        actions={
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            {migrated ? (
-              <span className="inline-flex min-w-[92px] items-center gap-1.5 text-sm text-muted-foreground">
-                {saving ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Saving…
-                  </>
-                ) : savedAt ? (
-                  <>
-                    <Check className="h-3.5 w-3.5 text-gray-600" />
-                    Saved
-                  </>
-                ) : null}
-              </span>
-            ) : null}
-            <label className="flex cursor-pointer items-center gap-2.5">
-              <Switch checked={config.enabled} onCheckedChange={setEnabled} />
-              <span className="text-sm font-medium text-foreground">
-                {config.enabled ? "Home tab is on" : "Home tab is off"}
-              </span>
-            </label>
-            <Button asChild variant="ghost" size="sm" className="gap-1.5 text-muted-foreground">
-              <a href={liveUrl} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="h-3.5 w-3.5" /> View live
-              </a>
-            </Button>
-          </div>
-        }
-      />
-      <PageBody>
-    <div className="space-y-5">
-      {/* Migration warning */}
-      {!migrated && (
-        <div className="mb-4 flex items-start gap-3 rounded-md border border-gray-200 bg-white px-4 py-3">
-          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-600" />
-          <div className="text-sm text-gray-700">
-            <p className="font-medium text-gray-900">Saving isn&apos;t enabled yet</p>
-            <p className="mt-0.5">
-              The database column for home pages hasn&apos;t been created. Run{" "}
-              <code className="rounded-md bg-gray-100 px-1 py-0.5 text-xs">supabase db push</code>{" "}
-              to enable saving. You can still design your page below.
-            </p>
-          </div>
+    <DashboardFloatingPage
+      title="Landing page"
+      icon={Home}
+      flush
+      actions={headerActions}
+      description="Design the landing page customers see first on your storefront."
+      toolbar={
+        <div className="flex max-w-full flex-wrap items-center gap-0.5 rounded-md bg-gray-100 p-0.5 w-fit">
+          {EDITOR_TABS.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  "flex shrink-0 items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  isActive
+                    ? "bg-white text-gray-800 shadow-sm"
+                    : "text-gray-600 hover:bg-gray-200/70",
+                )}
+              >
+                <tab.icon className="h-3 w-3" />
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
-      )}
+      }
+    >
+      <div className="space-y-6 p-4 md:p-5">
+          {!migrated && (
+            <div className="flex items-start gap-3 rounded-md border border-border bg-white px-4 py-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-muted-foreground" />
+              <div className="text-sm text-muted-foreground">
+                <p className="font-medium text-foreground">Saving isn&apos;t enabled yet</p>
+                <p className="mt-0.5">
+                  The database column for home pages hasn&apos;t been created. Run{" "}
+                  <code className="rounded-md bg-muted px-1 py-0.5 text-xs">supabase db push</code>{" "}
+                  to enable saving. You can still design your page below.
+                </p>
+              </div>
+            </div>
+          )}
 
-      {saveError && (
-        <div className="rounded-md border border-red-200 bg-white px-3 py-2 text-sm text-red-700">
-          {saveError}
-        </div>
-      )}
-
-      <div className="mb-4 flex max-w-full flex-wrap items-center gap-0.5 rounded-md bg-gray-100 p-0.5 w-fit">
-        {EDITOR_TABS.map((tab) => {
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                "flex shrink-0 items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-                isActive
-                  ? "bg-white text-gray-800 shadow-sm"
-                  : "text-gray-600 hover:bg-gray-200/70",
-              )}
-            >
-              <tab.icon className="h-3 w-3" />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+          {saveError && (
+            <div className="rounded-md border border-red-200 bg-white px-3 py-2 text-sm text-red-700">
+              {saveError}
+            </div>
+          )}
 
       {activeTab === "theme" && (
       <EditorSection title="Theme" description="Accent colour used across buttons and highlights.">
@@ -837,31 +830,33 @@ export function StoreHomepageManager() {
       {activeTab === "layout" && (
       <div className="space-y-6">
       <EditorSection title="Badges & indicators" description="Choose which status indicators appear on your public profile.">
-        <div className="flex items-center justify-between gap-4 rounded-md border border-gray-200 bg-white px-3 py-2.5">
-          <div>
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-medium text-gray-900">Hours on hero</p>
+        <SettingsRow
+          label={
+            <span className="flex items-center gap-2">
+              Hours on hero
               <span className={cn(
                 "rounded-md px-1.5 py-0.5 text-xs font-medium transition-opacity",
-                config.badges.show_hours_on_hero ? "bg-gray-100 text-gray-700" : "bg-gray-100 text-gray-400 opacity-50",
+                config.badges.show_hours_on_hero ? "bg-muted text-foreground" : "bg-muted text-muted-foreground opacity-50",
               )}>Mon 9:00–17:00</span>
-            </div>
-            <p className="mt-0.5 text-xs text-gray-500">Show today&apos;s opening hours overlaid on the hero image.</p>
-          </div>
-          <Switch
-            checked={config.badges.show_hours_on_hero}
-            onCheckedChange={(v) => patchBadges({ show_hours_on_hero: v })}
-          />
-        </div>
+            </span>
+          }
+          description="Show today's opening hours overlaid on the hero image."
+          control={
+            <Switch
+              checked={config.badges.show_hours_on_hero}
+              onCheckedChange={(v) => patchBadges({ show_hours_on_hero: v })}
+            />
+          }
+        />
       </EditorSection>
 
       <EditorSection title="Section order" description="Drag to reorder how sections appear down the page.">
-        <Reorder.Group axis="y" values={config.section_order} onReorder={setSectionOrder} className="divide-y divide-gray-100 rounded-md border border-gray-200 bg-white">
+        <Reorder.Group axis="y" values={config.section_order} onReorder={setSectionOrder} className="divide-y divide-border rounded-md border border-border bg-background">
           {config.section_order.map((key) => (
             <Reorder.Item key={key} value={key}>
-              <div className="flex cursor-grab items-center gap-3 px-3 py-2.5 transition-colors hover:bg-gray-50 active:cursor-grabbing">
-              <GripVertical className="h-4 w-4 text-gray-400" />
-              <span className="text-sm font-medium text-gray-900">{SECTION_LABELS[key]}</span>
+              <div className="flex cursor-grab items-center gap-3 px-3 py-2.5 transition-colors hover:bg-muted/50 active:cursor-grabbing">
+              <GripVertical className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium text-foreground">{SECTION_LABELS[key]}</span>
               </div>
             </Reorder.Item>
           ))}
@@ -872,7 +867,7 @@ export function StoreHomepageManager() {
         <button
           type="button"
           onClick={resetToDefaults}
-          className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-gray-500 hover:text-gray-800"
+          className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
         >
           <RotateCcw className="h-3.5 w-3.5" /> Reset everything to defaults
         </button>
@@ -880,30 +875,30 @@ export function StoreHomepageManager() {
       </div>
       )}
 
-      {/* Live preview */}
-      <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
-        <div className="flex items-center justify-between gap-2 border-b border-gray-200 px-3 py-2">
-          <div className="flex items-center gap-2 text-xs text-gray-500">
-            <Home className="h-3.5 w-3.5" />
-            <span className="font-medium text-gray-700">Live preview</span>
+      <div className="border-t border-border/60 pt-6">
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-medium text-foreground">Live preview</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">See how your landing page looks to customers.</p>
           </div>
           <button
             type="button"
             onClick={() => setShowPreview((v) => !v)}
-            className="cursor-pointer text-xs text-gray-500 hover:text-gray-800"
+            className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground"
           >
             {showPreview ? "Hide" : "Show"}
           </button>
         </div>
-        {showPreview && previewStore && (
-          <div className="bg-gray-50">
+        {showPreview && previewStore ? (
+          <div className="overflow-hidden rounded-md border border-border bg-muted/30">
             <StoreHomeTab store={previewStore} isOwnProfile={false} onNavigate={() => {}} onOpenCollection={() => {}} />
           </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Preview hidden.</p>
         )}
       </div>
-    </div>
-      </PageBody>
-    </>
+      </div>
+    </DashboardFloatingPage>
   );
 }
 
@@ -929,12 +924,14 @@ function EditorSection({
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-medium text-gray-900">{title}</h3>
-          {description && <p className="mt-0.5 text-xs text-gray-500">{description}</p>}
+          <h3 className="text-sm font-medium text-foreground">{title}</h3>
+          {description ? <p className="mt-0.5 text-xs text-muted-foreground">{description}</p> : null}
         </div>
-        {hasToggle && <Switch checked={!!enabled} onCheckedChange={onEnabledChange} className="mt-0.5 flex-shrink-0" />}
+        {hasToggle ? (
+          <Switch checked={!!enabled} onCheckedChange={onEnabledChange} className="mt-0.5 flex-shrink-0" />
+        ) : null}
       </div>
-      {!dimmed && <div className="space-y-4">{children}</div>}
+      {!dimmed ? <div className="space-y-4">{children}</div> : null}
     </div>
   );
 }

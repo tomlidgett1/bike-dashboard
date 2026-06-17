@@ -53,6 +53,12 @@ export type LightspeedInquiryContext = {
     last_purchase_at: string | null
     last_purchase_total: number | null
     last_purchase_summary: string | null
+    recent_purchases?: Array<{
+      description: string
+      purchased_at: string
+      total: number | null
+      quantity: number | null
+    }>
   } | null
   summary?: string | null
 }

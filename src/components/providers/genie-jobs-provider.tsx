@@ -17,7 +17,13 @@ import { appendRawDebugLog } from "@/lib/genie/analysis-events";
 import type { GenieRawDebugLogEntry } from "@/lib/genie/genie-job-types";
 import { readSSE } from "@/lib/optimize/read-sse";
 import { persistCompletedHomeV2Job } from "@/lib/genie/homev2-conversation-storage";
-import { loadGenieDismissedIds, saveGenieDismissedIds } from "@/lib/floating-panel-dismiss";
+import {
+  loadGenieDismissedIds,
+  loadGenieVisitedConversationIds,
+  saveGenieDismissedIds,
+  saveGenieVisitedConversationIds,
+} from "@/lib/floating-panel-dismiss";
+import { HOMEV2_CONVERSATION_QUERY } from "@/lib/genie/homev2-navigation";
 
 export type { GenieJob };
 
@@ -105,9 +111,13 @@ const HOME_PATH = "/settings/store/home";
 export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isOnHome = pathname === HOME_PATH;
+  const [openConversationId, setOpenConversationId] = React.useState<string | null>(null);
   const [jobs, setJobs] = React.useState<GenieJob[]>([]);
   const [dismissedIds, setDismissedIds] = React.useState<Set<string>>(() =>
     loadGenieDismissedIds(),
+  );
+  const [visitedConversationIds, setVisitedConversationIds] = React.useState<Set<string>>(
+    () => loadGenieVisitedConversationIds(),
   );
   const [pillHidden, setPillHidden] = React.useState(true);
   const [nowMs, setNowMs] = React.useState(0);
@@ -120,8 +130,46 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
   dismissedRef.current = dismissedIds;
 
   React.useEffect(() => {
+    if (!isOnHome || typeof window === "undefined") {
+      setOpenConversationId(null);
+      return;
+    }
+    const id = new URLSearchParams(window.location.search)
+      .get(HOMEV2_CONVERSATION_QUERY)
+      ?.trim();
+    setOpenConversationId(id || null);
+  }, [isOnHome, pathname]);
+
+  React.useEffect(() => {
     saveGenieDismissedIds(dismissedIds);
   }, [dismissedIds]);
+
+  React.useEffect(() => {
+    saveGenieVisitedConversationIds(visitedConversationIds);
+  }, [visitedConversationIds]);
+
+  React.useEffect(() => {
+    if (!openConversationId) return;
+
+    setVisitedConversationIds((prev) => {
+      if (prev.has(openConversationId)) return prev;
+      const next = new Set(prev);
+      next.add(openConversationId);
+      return next;
+    });
+
+    setDismissedIds((prev) => {
+      const terminalIds = jobs
+        .filter(
+          (job) => job.conversationId === openConversationId && !isActive(job),
+        )
+        .map((job) => job.id);
+      if (terminalIds.length === 0) return prev;
+      const next = new Set(prev);
+      for (const id of terminalIds) next.add(id);
+      return next;
+    });
+  }, [openConversationId, jobs]);
 
   const mergeJobs = React.useCallback((incoming: GenieJob[]) => {
     const dismissed = dismissedRef.current;
@@ -419,13 +467,12 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
       jobs.filter(
         (job) =>
           !dismissedIds.has(job.id) &&
-          (isActive(job) ||
-            job.status === "failed" ||
-            (job.status === "completed" &&
-              job.completedAt &&
-              nowMs - new Date(job.completedAt).getTime() < 5 * 60 * 1000)),
+          isActive(job) &&
+          !(
+            job.conversationId && visitedConversationIds.has(job.conversationId)
+          ),
       ),
-    [jobs, dismissedIds, nowMs],
+    [jobs, dismissedIds, visitedConversationIds],
   );
 
   const value = React.useMemo(

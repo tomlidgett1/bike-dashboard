@@ -3,9 +3,9 @@
 import * as React from "react";
 import nextDynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Plus, Package, Bike, Layers } from "@/components/layout/app-sidebar/dashboard-icons";
-import { PageContainer, PageHeader, PageBody } from "@/components/dashboard";
+import { Plus, Package, Bike, Layers, GalleryHorizontal } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
+import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-page";
 import { StoreCategoriesManager } from "@/components/settings/store-categories-manager";
 import { AutoAssignCarouselsPanel } from "@/components/settings/auto-assign-carousels-panel";
 import {
@@ -63,89 +63,89 @@ export function StoreCarouselsPageContent() {
   };
 
   return (
-    <PageContainer size="wide">
-      <PageHeader
-        title="Carousels"
-        description="Manage carousels and page sections for your store."
-        actions={
-          <div className="flex items-center gap-2">
-            {activeTab === "sections" ? (
-              <Button
-                size="sm"
-                className="rounded-md"
-                onClick={() => setSectionCreateRequest((n) => n + 1)}
-              >
-                <Plus className="size-4" />
-                New section
-              </Button>
-            ) : (
-              <>
-                <AutoAssignCarouselsPanel
-                  variant="button"
-                  onApplied={() => setRefreshKey((k) => k + 1)}
-                />
-                <StoreCarouselsNewMenu
-                  defaultStorePage={carouselStorePage}
-                  onCreate={handleCreateCarousel}
-                />
-              </>
-            )}
-          </div>
-        }
-      />
-      <PageBody>
-        <div className="mb-4 flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
-            <button
-              type="button"
-              onClick={() => selectTab("products")}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                activeTab === "products"
-                  ? "text-gray-800 bg-white shadow-sm"
-                  : "text-gray-600 hover:bg-gray-200/70",
-              )}
+    <DashboardFloatingPage
+      title="Carousels"
+      icon={GalleryHorizontal}
+      description="Manage carousels and page sections for your store."
+      flush
+      actions={
+        <div className="flex items-center gap-2">
+          {activeTab === "sections" ? (
+            <Button
+              size="sm"
+              className="rounded-md"
+              onClick={() => setSectionCreateRequest((n) => n + 1)}
             >
-              <Package size={15} />
-              Products page
-            </button>
-            <button
-              type="button"
-              onClick={() => selectTab("bikes")}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                activeTab === "bikes"
-                  ? "text-gray-800 bg-white shadow-sm"
-                  : "text-gray-600 hover:bg-gray-200/70",
-              )}
-            >
-              <Bike size={15} />
-              Bikes page
-            </button>
-            <button
-              type="button"
-              onClick={() => selectTab("sections")}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                activeTab === "sections"
-                  ? "text-gray-800 bg-white shadow-sm"
-                  : "text-gray-600 hover:bg-gray-200/70",
-              )}
-            >
-              <Layers className="h-3.5 w-3.5" />
-              Sections
-            </button>
+              <Plus className="size-4" />
+              New section
+            </Button>
+          ) : (
+            <>
+              <AutoAssignCarouselsPanel
+                variant="button"
+                onApplied={() => setRefreshKey((k) => k + 1)}
+              />
+              <StoreCarouselsNewMenu
+                defaultStorePage={carouselStorePage}
+                onCreate={handleCreateCarousel}
+              />
+            </>
+          )}
         </div>
-
-        {activeTab === "sections" ? (
-          <StoreSectionsManager createSectionRequest={sectionCreateRequest} />
-        ) : (
-          <StoreCategoriesManager
-            refreshKey={refreshKey}
-            activePage={activeTab}
-            createRequest={createRequest}
-          />
-        )}
-      </PageBody>
-    </PageContainer>
+      }
+      toolbar={
+        <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+          <button
+            type="button"
+            onClick={() => selectTab("products")}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+              activeTab === "products"
+                ? "text-gray-800 bg-white shadow-sm"
+                : "text-gray-600 hover:bg-gray-200/70",
+            )}
+          >
+            <Package size={15} />
+            Products page
+          </button>
+          <button
+            type="button"
+            onClick={() => selectTab("bikes")}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+              activeTab === "bikes"
+                ? "text-gray-800 bg-white shadow-sm"
+                : "text-gray-600 hover:bg-gray-200/70",
+            )}
+          >
+            <Bike size={15} />
+            Bikes page
+          </button>
+          <button
+            type="button"
+            onClick={() => selectTab("sections")}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+              activeTab === "sections"
+                ? "text-gray-800 bg-white shadow-sm"
+                : "text-gray-600 hover:bg-gray-200/70",
+            )}
+          >
+            <Layers className="h-3.5 w-3.5" />
+            Sections
+          </button>
+        </div>
+      }
+    >
+      {activeTab === "sections" ? (
+        <StoreSectionsManager createSectionRequest={sectionCreateRequest} />
+      ) : (
+        <StoreCategoriesManager
+          refreshKey={refreshKey}
+          activePage={activeTab}
+          createRequest={createRequest}
+        />
+      )}
+    </DashboardFloatingPage>
   );
 }

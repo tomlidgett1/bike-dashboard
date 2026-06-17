@@ -4,9 +4,9 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import nextDynamic from "next/dynamic";
-import { ArrowLeft } from "@/components/layout/app-sidebar/dashboard-icons";
+import { ArrowLeft, MagicStick3 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
-import { PageContainer, PageHeader, PageBody } from "@/components/dashboard";
+import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-page";
 import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";
 
 const BulkOptimiseWorkspace = nextDynamic(
@@ -19,22 +19,23 @@ const BulkOptimiseWorkspace = nextDynamic(
 
 export default function BulkOptimisePage() {
   return (
-    <PageContainer size="full">
-      <PageHeader
-        title="Bulk optimise"
-        description="Optimise titles, descriptions, specs, photos and brands for many products at once."
-        actions={
-          <Button variant="outline" size="sm" asChild>
-            <Link href="/settings/store/products">
-              <ArrowLeft className="size-4" />
-              Back to products
-            </Link>
-          </Button>
-        }
-      />
-      <PageBody>
+    <DashboardFloatingPage
+      title="Bulk optimise"
+      icon={MagicStick3}
+      description="Optimise titles, descriptions, specs, photos and brands for many products at once."
+      flush
+      actions={
+        <Button variant="outline" size="sm" className="rounded-md" asChild>
+          <Link href="/settings/store/products">
+            <ArrowLeft className="size-4" />
+            Back to products
+          </Link>
+        </Button>
+      }
+    >
+      <div className="p-4 md:p-5">
         <BulkOptimiseWorkspace />
-      </PageBody>
-    </PageContainer>
+      </div>
+    </DashboardFloatingPage>
   );
 }

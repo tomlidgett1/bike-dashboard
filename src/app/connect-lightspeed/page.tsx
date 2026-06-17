@@ -3,7 +3,8 @@
 export const dynamic = 'force-dynamic';
 
 import * as React from "react";
-import { CheckCircle2, Database, Loader2, Play, RefreshCw, RotateCcw, SlidersHorizontal } from "@/components/layout/app-sidebar/dashboard-icons";
+import { CheckCircle2, Database, Loader2, Play, RefreshCw, RotateCcw, SlidersHorizontal, Bolt } from "@/components/layout/app-sidebar/dashboard-icons";
+import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-page";
 import { ConnectLightspeedBento } from "@/components/lightspeed/connect-lightspeed-bento";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -806,24 +807,30 @@ export default function ConnectLightspeedPage() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[70vh]">
-        <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
-      </div>
+      <DashboardFloatingPage title="Lightspeed" icon={Bolt} description="Sync inventory from your POS" flush>
+        <div className="flex flex-1 items-center justify-center p-16">
+          <Loader2 className="h-8 w-8 text-muted-foreground animate-spin" />
+        </div>
+      </DashboardFloatingPage>
     );
   }
 
-  // Not connected state
   if (!isConnected) {
     return (
-      <ConnectLightspeedBento
-        error={error}
-        isConnecting={isConnecting}
-        onConnect={connect}
-      />
+      <DashboardFloatingPage title="Lightspeed" icon={Bolt} description="Connect your Lightspeed account to sync inventory" flush>
+        <div className="p-4 md:p-5">
+          <ConnectLightspeedBento
+            error={error}
+            isConnecting={isConnecting}
+            onConnect={connect}
+          />
+        </div>
+      </DashboardFloatingPage>
     );
   }
 
   return (
+    <DashboardFloatingPage title="Lightspeed" icon={Bolt} description="Sync inventory from your POS" flush>
     <>
       {/* Metrics Header */}
       <MetricsHeader
@@ -1435,5 +1442,6 @@ export default function ConnectLightspeedPage() {
         </SheetContent>
       </Sheet>
     </>
+    </DashboardFloatingPage>
   );
 }

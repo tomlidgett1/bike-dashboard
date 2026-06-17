@@ -19,6 +19,7 @@ import {
   Sparkles,
   Upload,
   ChevronDown,
+  Tag,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -59,7 +60,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
-import { PageContainer, PageHeader, PageBody } from "@/components/dashboard";
+import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-page";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { useUserProfile } from "@/components/providers/profile-provider";
 import { SmartUploadModal } from "@/components/marketplace/sell/smart-upload-modal";
@@ -883,14 +884,15 @@ export default function MyListingsPage() {
   return (
     <>
       {isVerifiedStore ? (
-        <PageContainer size="wide">
-          <PageHeader
-            title="My listings"
-            description="Manage your marketplace listings."
-            actions={<CreateListingDropdown {...createListingProps} />}
-          />
-          <PageBody>{content}</PageBody>
-        </PageContainer>
+        <DashboardFloatingPage
+          title="My listings"
+          icon={Tag}
+          description="Manage your marketplace listings."
+          actions={<CreateListingDropdown {...createListingProps} />}
+          flush
+        >
+          <div className="p-4 md:p-5">{content}</div>
+        </DashboardFloatingPage>
       ) : (
         <>
           <MarketplaceHeader compactSearchOnMobile />

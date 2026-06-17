@@ -1,5 +1,6 @@
 const OPTIMIZE_DISMISSED_KEY = "optimize-dismissed-job-ids";
 const GENIE_DISMISSED_KEY = "genie-dismissed-job-ids";
+const GENIE_VISITED_CONVERSATIONS_KEY = "genie-visited-conversation-ids";
 
 function readDismissedIds(storageKey: string): Set<string> {
   if (typeof window === "undefined") return new Set();
@@ -37,4 +38,12 @@ export function loadGenieDismissedIds() {
 
 export function saveGenieDismissedIds(ids: Set<string>) {
   writeDismissedIds(GENIE_DISMISSED_KEY, ids);
+}
+
+export function loadGenieVisitedConversationIds() {
+  return readDismissedIds(GENIE_VISITED_CONVERSATIONS_KEY);
+}
+
+export function saveGenieVisitedConversationIds(ids: Set<string>) {
+  writeDismissedIds(GENIE_VISITED_CONVERSATIONS_KEY, ids);
 }

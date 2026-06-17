@@ -5,8 +5,8 @@ export const dynamic = "force-dynamic";
 import * as React from "react";
 import nextDynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { Loader2, Package, Settings2 } from "@/components/layout/app-sidebar/dashboard-icons";
-import { PageContainer, PageHeader, PageBody } from "@/components/dashboard";
+import { Loader2, Package, Settings2, Delivery } from "@/components/layout/app-sidebar/dashboard-icons";
+import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-page";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
 import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";
@@ -48,13 +48,13 @@ export default function UberSettingsPage() {
   }
 
   return (
-    <PageContainer size="wide">
-      <PageHeader
-        title="Uber Direct"
-        description="Offer same-day local delivery on your storefront."
-      />
-      <PageBody>
-        <div className="mb-4 flex items-center rounded-md bg-gray-100 p-0.5 w-fit">
+    <DashboardFloatingPage
+      title="Uber Direct"
+      icon={Delivery}
+      description="Offer same-day local delivery on your storefront."
+      flush
+      toolbar={
+        <div className="flex items-center rounded-md bg-gray-100 p-0.5 w-fit">
           <button
             type="button"
             onClick={() => setActiveTab("products")}
@@ -82,9 +82,11 @@ export default function UberSettingsPage() {
             Settings
           </button>
         </div>
-
+      }
+    >
+      <div className="p-4 md:p-5">
         <StoreUberManager activeTab={activeTab} />
-      </PageBody>
-    </PageContainer>
+      </div>
+    </DashboardFloatingPage>
   );
 }

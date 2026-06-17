@@ -12,6 +12,7 @@ import { ForceLightChrome } from "./force-light-chrome";
 import { GenieTransitionOverlay, GenieTransitionProvider } from "./genie-transition";
 import { Topbar } from "./topbar";
 import { SellModalHost } from "@/components/marketplace/sell/sell-modal-host";
+import { isDashboardFloatingCardRoute } from "@/lib/layout/dashboard-floating-routes";
 import { cn } from "@/lib/utils";
 
 interface DashboardLayoutProps {
@@ -22,7 +23,6 @@ const HIDE_TOPBAR_PATHS = [
   "/settings/store/home",
   "/settings/store/actions",
   "/settings/store/nest",
-  "/settings/store/customer-inquiries",
 ];
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
@@ -31,11 +31,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   // Don't show the dashboard chrome on auth pages
   const isAuthPage =
     pathname?.startsWith("/login") || pathname?.startsWith("/auth");
-  const isProductsRoute = pathname?.startsWith("/products") ?? false;
-  const isCustomerEnquiriesRoute = pathname?.startsWith("/settings/store/customer-inquiries") ?? false;
+  const isFloatingCardRoute = isDashboardFloatingCardRoute(pathname);
   const hideTopbar =
-    isProductsRoute || isCustomerEnquiriesRoute || HIDE_TOPBAR_PATHS.some((path) => pathname === path);
-  const isFullHeightPage = isProductsRoute || isCustomerEnquiriesRoute;
+    isFloatingCardRoute || HIDE_TOPBAR_PATHS.some((path) => pathname === path);
+  const isFullHeightPage = isFloatingCardRoute || HIDE_TOPBAR_PATHS.some((path) => pathname === path);
 
   if (isAuthPage) {
     return <>{children}</>;

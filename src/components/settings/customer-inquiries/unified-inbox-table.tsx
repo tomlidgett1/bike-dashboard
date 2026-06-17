@@ -42,7 +42,7 @@ function StatusBadge({ row }: { row: UnifiedInboxRow }) {
         toneClass[row.statusTone],
       )}
     >
-      {row.isUnread ? (
+      {row.needsAction ? (
         <span
           className={cn("h-1.5 w-1.5 shrink-0 rounded-full", dotClass[row.statusTone])}
           aria-hidden
@@ -86,12 +86,18 @@ export function UnifiedInboxTable({ c }: { c: UnifiedInboxController }) {
             <Inbox className="h-5 w-5 text-gray-400" />
           </span>
           <p className="mt-4 text-sm font-medium text-gray-900">
-            {c.inboxTab === "unread" ? "No unread enquiries" : "No enquiries match this filter"}
+            {c.searchActive
+              ? "No enquiries match your search"
+              : c.inboxTab === "needs_action"
+                ? "Nothing needs action right now"
+                : "No enquiries match this filter"}
           </p>
           <p className="mt-1 max-w-sm text-sm text-gray-500">
-            {c.inboxTab === "unread"
-              ? "You are up to date. New Gmail and Nest messages will appear here until you open them."
-              : "Try another tab, or refresh to pull the latest Gmail and Nest messages."}
+            {c.searchActive
+              ? "Try a different name, email, or subject line."
+              : c.inboxTab === "needs_action"
+                ? "New Gmail and Nest messages stay here until you reply or close the enquiry."
+                : "Try another tab, or refresh to pull the latest Gmail and Nest messages."}
           </p>
         </div>
       ) : (
@@ -118,7 +124,7 @@ export function UnifiedInboxTable({ c }: { c: UnifiedInboxController }) {
                   data-state={selected ? "selected" : undefined}
                   className={cn(
                     "cursor-pointer border-gray-100",
-                    row.isUnread && !selected && "bg-white",
+                    row.needsAction && !selected && "bg-white",
                     selected && "bg-gray-100",
                   )}
                   onClick={() => c.openRow(row)}
@@ -131,7 +137,7 @@ export function UnifiedInboxTable({ c }: { c: UnifiedInboxController }) {
                       <p
                         className={cn(
                           "truncate text-sm text-gray-900",
-                          row.isUnread ? "font-semibold" : "font-medium",
+                          row.needsAction ? "font-semibold" : "font-medium",
                         )}
                       >
                         {row.customerName}
@@ -146,7 +152,7 @@ export function UnifiedInboxTable({ c }: { c: UnifiedInboxController }) {
                     <p
                       className={cn(
                         "truncate text-sm",
-                        row.isUnread ? "text-gray-800" : "text-gray-500",
+                        row.needsAction ? "text-gray-800" : "text-gray-500",
                       )}
                     >
                       {row.preview}

@@ -1,9 +1,29 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { Inbox, Loader2, Mail, RefreshCw, Send, UserX, CheckCheck } from "@/components/layout/app-sidebar/dashboard-icons";
+import { useState, type ReactNode } from "react";
+import {
+  Archive,
+  Inbox,
+  Loader2,
+  Mail,
+  RefreshCw,
+  Search,
+  Send,
+  UserX,
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import { GmailLogo } from "@/components/genie/gmail-logo";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   CustomerEnquiriesPageHeader,
   storeSettingsHeaderActionClass,
@@ -76,25 +96,43 @@ function CustomerEnquiriesHeader({
   );
 }
 
-function CustomerEnquiriesFilterBar({ c }: { c: UnifiedInboxController }) {
+function CustomerEnquiriesFilterBar({
+  c,
+  onCloseAll,
+}: {
+  c: UnifiedInboxController;
+  onCloseAll: () => void;
+}) {
   return (
-    <div className="flex shrink-0 flex-col gap-2 rounded-t-xl border-b border-border/60 bg-gray-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between md:px-5">
-      <InboxFilterTabs value={c.inboxTab} onChange={c.setInboxTab} counts={c.tabCounts} />
-      {c.unreadCount > 0 ? (
-        <button
-          type="button"
-          onClick={() => void c.handleMarkAllAsRead()}
-          disabled={c.markingAllRead}
-          className={storeSettingsHeaderActionClass(false, c.markingAllRead)}
-        >
-          {c.markingAllRead ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <CheckCheck className="h-3.5 w-3.5" />
-          )}
-          Mark all as read
-        </button>
-      ) : null}
+    <div className="flex shrink-0 flex-col gap-2.5 rounded-t-xl border-b border-border/60 bg-gray-50 px-4 py-3 md:px-5">
+      <div className="relative w-full sm:max-w-xs">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+        <Input
+          type="search"
+          value={c.searchQuery}
+          onChange={(event) => c.setSearchQuery(event.target.value)}
+          placeholder="Search name, email, subject…"
+          className="rounded-md border-gray-300 bg-white pl-9"
+        />
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <InboxFilterTabs value={c.inboxTab} onChange={c.setInboxTab} counts={c.tabCounts} />
+        {c.needsActionCount > 0 ? (
+          <button
+            type="button"
+            onClick={onCloseAll}
+            disabled={c.closingCases}
+            className={storeSettingsHeaderActionClass(false, c.closingCases)}
+          >
+            {c.closingCases ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Archive className="h-3.5 w-3.5" />
+            )}
+            Close all ({c.needsActionCount})
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -120,8 +158,8 @@ function CustomerEnquiriesHeaderActions({ c }: { c: UnifiedInboxController }) {
       <button
         type="button"
         onClick={() => void c.handleRefreshAll()}
-        disabled={c.refreshing || c.listLoading}
-        className={storeSettingsHeaderActionClass(false, c.refreshing || c.listLoading)}
+        disabled={c.refreshing}
+        className={storeSettingsHeaderActionClass(false, c.refreshing)}
       >
         {c.refreshing ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -136,6 +174,7 @@ function CustomerEnquiriesHeaderActions({ c }: { c: UnifiedInboxController }) {
 
 export function StoreCustomerInquiriesPanel() {
   const c = useUnifiedInboxController();
+  const [closeAllOpen, setCloseAllOpen] = useState(false);
 
   if (!c.gmailStatusReady) {
     if (c.loading) {
@@ -217,7 +256,7 @@ export function StoreCustomerInquiriesPanel() {
 
       <FloatingCardPageBody>
         <FloatingCard>
-          <CustomerEnquiriesFilterBar c={c} />
+          <CustomerEnquiriesFilterBar c={c} onCloseAll={() => setCloseAllOpen(true)} />
           <UnifiedInboxTable c={c} />
         </FloatingCard>
       </FloatingCardPageBody>
@@ -315,6 +354,31 @@ export function StoreCustomerInquiriesPanel() {
           </div>
         </div>
       ) : null}
+
+      <AlertDialog open={closeAllOpen} onOpenChange={setCloseAllOpen}>
+        <AlertDialogContent className="rounded-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Close all cases needing action?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This closes {c.needsActionCount} case{c.needsActionCount === 1 ? "" : "s"} without
+              sending a reply. New customer messages will reopen a case automatically.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-md">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-md"
+              disabled={c.closingCases}
+              onClick={(event) => {
+                event.preventDefault();
+                void c.handleCloseAllNeedsAction().finally(() => setCloseAllOpen(false));
+              }}
+            >
+              {c.closingCases ? "Closing…" : "Close all"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

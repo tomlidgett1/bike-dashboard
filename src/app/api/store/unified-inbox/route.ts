@@ -22,6 +22,12 @@ import {
   markAllNestReadInSupabase,
   markGmailInquiryReadInSupabase,
 } from "@/lib/customer-inquiries/inbox-read-supabase";
+import {
+  clearNestCloseInSupabase,
+  loadNestCloseMapFromSupabase,
+  markAllNestClosesInSupabase,
+  markNestCloseInSupabase,
+} from "@/lib/nest/inbox-supabase";
 import { filterNestCustomerChats } from "@/lib/nest/types";
 import { isLightspeedInBackoff } from "@/lib/services/lightspeed/lightspeed-client";
 import {
@@ -101,11 +107,12 @@ export async function GET() {
     const auth = await requireStoreUser();
     if ("error" in auth) return auth.error;
 
-    const [inquiries, gmail, nestReadMap, gmailReadMap] = await Promise.all([
+    const [inquiries, gmail, nestReadMap, gmailReadMap, nestCloseMap] = await Promise.all([
       loadInquiriesFromSupabase(auth.supabase, auth.user.id),
       resolveGmailState(auth.supabase, auth.user.id),
       loadNestReadMapFromSupabase(auth.supabase, auth.user.id),
       loadGmailInquiryReadMapFromSupabase(auth.supabase, auth.user.id),
+      loadNestCloseMapFromSupabase(auth.supabase, auth.user.id),
     ]);
 
     const nestConfigured = isNestMessagingConfigured();
@@ -166,6 +173,7 @@ export async function GET() {
       nestChats: hydrated.nestChats,
       nestReadMap,
       gmailReadMap,
+      nestCloseMap,
       gmail,
       nestConfigured,
       cached: true,
@@ -190,9 +198,13 @@ export async function POST(request: NextRequest) {
       action?: string;
       chatId?: string;
       lastReadAt?: string;
+      closedAt?: string;
       inquiryId?: string;
       gmailReads?: Array<{ inquiryId: string; lastReadAt: string }>;
       nestReads?: Array<{ chatId: string; lastReadAt: string }>;
+      gmailIds?: string[];
+      nestChatIds?: string[];
+      nestCloses?: Array<{ chatId: string; closedAt: string }>;
     };
     const action = String(body.action ?? "").trim();
 
@@ -229,45 +241,72 @@ export async function POST(request: NextRequest) {
       return json({ ok: true });
     }
 
-    if (action === "refresh") {
-      const brandKey = resolveStoreNestBrandKey(auth.profile);
-      const nestConfigured = isNestMessagingConfigured();
-
-      const refreshTasks: Promise<unknown>[] = [];
-      const gmailState = await resolveGmailState(auth.supabase, auth.user.id, {
-        forceRefresh: true,
-      });
-
-      if (gmailState.connected) {
-        refreshTasks.push(
-          refreshCustomerInquiriesForUser(
-            auth.supabase,
-            auth.user.id,
-            auth.profile.business_name,
-          ),
-        );
-        refreshTasks.push(backgroundReconcileGmailThreads(auth.supabase, auth.user.id));
+    if (action === "close_nest_case") {
+      const chatId = String(body.chatId ?? "").trim();
+      const closedAt = String(body.closedAt ?? "").trim() || new Date().toISOString();
+      if (!chatId) {
+        return json({ error: "chatId is required." }, 400);
       }
 
-      if (nestConfigured && brandKey) {
-        refreshTasks.push(
-          syncNestInboxFromPortal(auth.supabase, auth.user.id, brandKey, {
-            enrichLightspeed: true,
-          }),
-        );
+      await markNestCloseInSupabase(auth.supabase, auth.user.id, chatId, closedAt);
+      return json({ ok: true, chatId, closedAt });
+    }
+
+    if (action === "reopen_nest_case") {
+      const chatId = String(body.chatId ?? "").trim();
+      if (!chatId) {
+        return json({ error: "chatId is required." }, 400);
       }
 
-      await Promise.all(refreshTasks);
+      await clearNestCloseInSupabase(auth.supabase, auth.user.id, chatId);
+      return json({ ok: true, chatId });
+    }
 
-      const gmail = await resolveGmailState(auth.supabase, auth.user.id, { forceRefresh: true });
+    if (action === "close_cases") {
+      const gmailIds = Array.isArray(body.gmailIds)
+        ? body.gmailIds.map((id) => String(id).trim()).filter(Boolean)
+        : [];
+      const nestCloses = Array.isArray(body.nestCloses)
+        ? body.nestCloses
+            .map((item) => ({
+              chatId: String(item.chatId ?? "").trim(),
+              closedAt: String(item.closedAt ?? "").trim() || new Date().toISOString(),
+            }))
+            .filter((item) => item.chatId)
+        : [];
 
-      const [inquiries, nestChats, nestReadMap, gmailReadMap] = await Promise.all([
+      const now = new Date().toISOString();
+
+      if (gmailIds.length > 0) {
+        const { error } = await auth.supabase
+          .from("store_customer_inquiries")
+          .update({
+            status: "ignored",
+            ignored_at: now,
+            updated_at: now,
+          })
+          .eq("user_id", auth.user.id)
+          .in("id", gmailIds)
+          .neq("status", "sent");
+
+        if (error) {
+          console.error("[unified-inbox] bulk gmail close failed:", error.message);
+          return json({ error: "Could not close Gmail enquiries." }, 500);
+        }
+      }
+
+      if (nestCloses.length > 0) {
+        await markAllNestClosesInSupabase(auth.supabase, auth.user.id, nestCloses);
+      }
+
+      const [inquiries, nestChats, nestReadMap, gmailReadMap, nestCloseMap] = await Promise.all([
         loadInquiriesFromSupabase(auth.supabase, auth.user.id),
-        nestConfigured
+        isNestMessagingConfigured()
           ? filterNestCustomerChats(await loadCachedNestList(auth.supabase, auth.user.id))
           : Promise.resolve([]),
         loadNestReadMapFromSupabase(auth.supabase, auth.user.id),
         loadGmailInquiryReadMapFromSupabase(auth.supabase, auth.user.id),
+        loadNestCloseMapFromSupabase(auth.supabase, auth.user.id),
       ]);
 
       const hydrated = await hydrateUnifiedInboxNames(auth.supabase, auth.user.id, {
@@ -280,6 +319,101 @@ export async function POST(request: NextRequest) {
         nestChats: hydrated.nestChats,
         nestReadMap,
         gmailReadMap,
+        nestCloseMap,
+        closedGmailIds: gmailIds,
+      });
+    }
+
+    if (action === "refresh") {
+      const brandKey = resolveStoreNestBrandKey(auth.profile);
+      const nestConfigured = isNestMessagingConfigured();
+
+      const gmailState = await resolveGmailState(auth.supabase, auth.user.id, {
+        forceRefresh: true,
+      });
+
+      const refreshTasks: Promise<unknown>[] = [];
+
+      if (gmailState.connected) {
+        refreshTasks.push(
+          refreshCustomerInquiriesForUser(
+            auth.supabase,
+            auth.user.id,
+            auth.profile.business_name,
+          ),
+        );
+      }
+
+      if (nestConfigured && brandKey) {
+        refreshTasks.push(
+          syncNestInboxFromPortal(auth.supabase, auth.user.id, brandKey, {
+            enrichLightspeed: !isLightspeedInBackoff(auth.user.id),
+            syncThreads: false,
+          }),
+        );
+      }
+
+      const REFRESH_SYNC_TIMEOUT_MS = 25_000;
+      try {
+        await Promise.race([
+          Promise.all(refreshTasks),
+          new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error("Refresh sync timed out")), REFRESH_SYNC_TIMEOUT_MS);
+          }),
+        ]);
+      } catch (error) {
+        console.error("[unified-inbox] refresh sync partial/timeout:", error);
+      }
+
+      after(async () => {
+        try {
+          if (gmailState.connected) {
+            await backgroundReconcileGmailThreads(auth.supabase, auth.user.id);
+          }
+          if (nestConfigured && brandKey) {
+            await syncNestInboxFromPortal(auth.supabase, auth.user.id, brandKey, {
+              enrichLightspeed: !isLightspeedInBackoff(auth.user.id),
+              syncThreads: true,
+            });
+          }
+          const [inquiries, nestChats] = await Promise.all([
+            loadInquiriesFromSupabase(auth.supabase, auth.user.id),
+            nestConfigured
+              ? filterNestCustomerChats(await loadCachedNestList(auth.supabase, auth.user.id))
+              : Promise.resolve([]),
+          ]);
+          await backgroundResolveInboxPhoneContacts(auth.supabase, auth.user.id, {
+            inquiries,
+            nestChats,
+          });
+        } catch (error) {
+          console.error("[unified-inbox] refresh background sync failed:", error);
+        }
+      });
+
+      const gmail = await resolveGmailState(auth.supabase, auth.user.id, { forceRefresh: true });
+
+      const [inquiries, nestChats, nestReadMap, gmailReadMap, nestCloseMap] = await Promise.all([
+        loadInquiriesFromSupabase(auth.supabase, auth.user.id),
+        nestConfigured
+          ? filterNestCustomerChats(await loadCachedNestList(auth.supabase, auth.user.id))
+          : Promise.resolve([]),
+        loadNestReadMapFromSupabase(auth.supabase, auth.user.id),
+        loadGmailInquiryReadMapFromSupabase(auth.supabase, auth.user.id),
+        loadNestCloseMapFromSupabase(auth.supabase, auth.user.id),
+      ]);
+
+      const hydrated = await hydrateUnifiedInboxNames(auth.supabase, auth.user.id, {
+        inquiries,
+        nestChats,
+      });
+
+      return json({
+        inquiries: hydrated.inquiries,
+        nestChats: hydrated.nestChats,
+        nestReadMap,
+        gmailReadMap,
+        nestCloseMap,
         gmail,
         nestConfigured,
         refreshed: true,

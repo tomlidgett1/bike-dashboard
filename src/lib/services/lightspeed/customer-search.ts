@@ -57,6 +57,13 @@ function phonesMatch(left: string, right: string): boolean {
   return false;
 }
 
+export function customerRecordMatchesPhone(
+  customer: LightspeedCustomer,
+  queryPhone: string,
+): boolean {
+  return customerPhones(customer).some((entry) => phonesMatch(queryPhone, entry));
+}
+
 function customerName(customer: LightspeedCustomer): string {
   const name = [customer.firstName, customer.lastName]
     .map((part) => String(part ?? "").trim())
@@ -537,8 +544,11 @@ async function fetchCustomerByPhoneFilterFast(
         }
       }
 
-      if (trustedFilters.has(mobileFilter)) {
-        return customers[0] ?? null;
+      if (trustedFilters.has(mobileFilter) && customers.length === 1) {
+        const only = customers[0];
+        if (only && customerRecordMatchesPhone(only, phone)) {
+          return only;
+        }
       }
     } catch {
       // Unsupported on this account — fall through to scan.

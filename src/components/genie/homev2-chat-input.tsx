@@ -75,14 +75,6 @@ export function HomeV2ChatInput({
             : "border border-gray-200 bg-white shadow-sm",
         )}
       >
-        {showShimmerPlaceholder ? (
-          <span
-            aria-hidden
-            className="genie-header-search-placeholder pointer-events-none absolute inset-y-0 left-2 right-10 flex items-center truncate text-left text-sm text-gray-500"
-          >
-            {placeholderLabel}
-          </span>
-        ) : null}
         {!header ? (
           <button
             type="button"
@@ -117,6 +109,14 @@ export function HomeV2ChatInput({
             header ? "flex h-full flex-1 items-center self-stretch" : "contents",
           )}
         >
+          {header && showShimmerPlaceholder ? (
+            <span
+              aria-hidden
+              className="genie-header-search-placeholder pointer-events-none absolute inset-y-0 left-0 flex items-center truncate pl-2 pr-1 text-left text-sm text-gray-500"
+            >
+              {placeholderLabel}
+            </span>
+          ) : null}
           {header ? (
             <input
               ref={headerInputRef}

@@ -32,7 +32,6 @@ import {
   X,
   Pencil,
   Plus,
-  Tags,
   Layers,
   SlidersHorizontal,
   ChevronDown,
@@ -1334,7 +1333,7 @@ export default function ProductsPage() {
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className={cn(filterTriggerClassName, "w-[190px] justify-between gap-1.5")}>
                     <span className="flex min-w-0 items-center gap-1.5">
-                      <Tags className="size-3.5 shrink-0 text-muted-foreground" />
+                      <Layers className="size-3.5 shrink-0 text-muted-foreground" />
                       <span className="truncate">{categoryLabel}</span>
                     </span>
                     <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
@@ -1345,10 +1344,14 @@ export default function ProductsPage() {
                     value={categoryFilter || "all"}
                     onValueChange={(v) => setCategoryFilter(v === "all" ? "" : v)}
                   >
-                    <DropdownMenuRadioItem value="all">All categories</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="all" className="gap-2">
+                      <Layers className="size-3.5 shrink-0 text-muted-foreground" />
+                      All categories
+                    </DropdownMenuRadioItem>
                     {categories.map((c) => (
-                      <DropdownMenuRadioItem key={c} value={c} className="truncate">
-                        {c}
+                      <DropdownMenuRadioItem key={c} value={c} className="gap-2 truncate">
+                        <Tag className="size-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{c}</span>
                       </DropdownMenuRadioItem>
                     ))}
                   </DropdownMenuRadioGroup>

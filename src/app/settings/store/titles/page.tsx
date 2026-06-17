@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import nextDynamic from "next/dynamic";
 import { Type } from "@/components/layout/app-sidebar/dashboard-icons";
-import { PageContainer, PageHeader, PageBody, SettingsSection } from "@/components/dashboard";
+import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-page";
 import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";
 
 const StoreProductTitlesManager = nextDynamic(
@@ -14,20 +14,15 @@ const StoreProductTitlesManager = nextDynamic(
 
 export default function StoreTitlesPage() {
   return (
-    <PageContainer size="wide">
-      <PageHeader
-        title="Titles"
-        description="Clean up Lightspeed product names into ecommerce-ready titles."
-      />
-      <PageBody>
-        <SettingsSection
-          title="Product titles"
-          description="Titles shown on the marketplace, cleaned from raw Lightspeed names."
-          icon={Type}
-        >
-          <StoreProductTitlesManager />
-        </SettingsSection>
-      </PageBody>
-    </PageContainer>
+    <DashboardFloatingPage
+      title="Titles"
+      icon={Type}
+      description="Clean up Lightspeed product names into ecommerce-ready titles."
+      flush
+    >
+      <div className="p-4 md:p-5">
+        <StoreProductTitlesManager />
+      </div>
+    </DashboardFloatingPage>
   );
 }

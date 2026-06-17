@@ -3,7 +3,8 @@
 export const dynamic = "force-dynamic";
 
 import nextDynamic from "next/dynamic";
-import { PageContainer, PageHeader, PageBody } from "@/components/dashboard";
+import { BarChart3 } from "@/components/layout/app-sidebar/dashboard-icons";
+import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-page";
 import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";
 
 const StoreAnalyticsManager = nextDynamic(
@@ -13,14 +14,13 @@ const StoreAnalyticsManager = nextDynamic(
 
 export default function StoreAnalyticsPage() {
   return (
-    <PageContainer size="wide">
-      <PageHeader
-        title="Analytics"
-        description="Website traffic, product engagement, customer search terms, distinct viewers, and device split."
-      />
-      <PageBody>
-        <StoreAnalyticsManager />
-      </PageBody>
-    </PageContainer>
+    <DashboardFloatingPage
+      title="Analytics"
+      icon={BarChart3}
+      description="Website traffic, product engagement, customer search terms, distinct viewers, and device split."
+      flush
+    >
+      <StoreAnalyticsManager />
+    </DashboardFloatingPage>
   );
 }

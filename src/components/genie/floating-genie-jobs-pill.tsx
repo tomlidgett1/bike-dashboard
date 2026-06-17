@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Check, ChevronUp, Loader2, X } from "@/components/layout/app-sidebar/dashboard-icons";
+import { Check, Loader2, X } from "@/components/layout/app-sidebar/dashboard-icons";
 import { motion, AnimatePresence } from "framer-motion";
 import { useGenieJobs, type GenieJob } from "@/components/providers/genie-jobs-provider";
 import { homeConversationUrl } from "@/lib/genie/homev2-navigation";
@@ -180,20 +180,13 @@ function JobCard({
   );
 }
 
-function collapsedPillLabel(hasRunning: boolean, hasComplete: boolean) {
-  if (hasRunning) return "Working";
-  if (hasComplete) return "Complete";
-  return "Genie";
-}
 
 export function FloatingGenieJobsPill() {
   const pathname = usePathname();
   const { visibleJobs, pillHidden, setPillHidden, dismissJob, cancelJob } = useGenieJobs();
   const wasOnHomeRef = React.useRef(pathname === HOME_PATH);
   const isOnHome = pathname === HOME_PATH;
-  const hasRunning = visibleJobs.some(jobIsRunning);
-  const hasComplete = visibleJobs.some((job) => job.status === "completed");
-  const pillLabel = collapsedPillLabel(hasRunning, hasComplete);
+  const pillLabel = "Working";
 
   React.useEffect(() => {
     const leftHome = wasOnHomeRef.current && !isOnHome;
@@ -215,26 +208,12 @@ export function FloatingGenieJobsPill() {
         className="inline-flex w-fit items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-800 shadow-lg transition hover:bg-gray-50"
         aria-label="Show Genie progress"
       >
-        {hasRunning ? (
-          <span
-            className="text-transparent bg-clip-text animate-[agent-text-shimmer_2.2s_linear_infinite] text-gray-600"
-            style={WORKING_SHIMMER_STYLE}
-          >
-            {pillLabel}
-          </span>
-        ) : hasComplete ? (
-          <>
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-800 text-white">
-              <Check className="h-3 w-3" />
-            </span>
-            <span className="text-gray-800">{pillLabel}</span>
-          </>
-        ) : (
-          <>
-            <ChevronUp className="h-4 w-4 text-gray-500" />
-            <span className="text-gray-800">{pillLabel}</span>
-          </>
-        )}
+        <span
+          className="text-transparent bg-clip-text animate-[agent-text-shimmer_2.2s_linear_infinite] text-gray-600"
+          style={WORKING_SHIMMER_STYLE}
+        >
+          {pillLabel}
+        </span>
       </button>
     );
   }
@@ -250,16 +229,7 @@ export function FloatingGenieJobsPill() {
       >
         <div className="overflow-hidden rounded-[28px] border border-gray-200 bg-white shadow-xl">
           <div className="flex items-center justify-between px-5 pb-2 pt-4">
-            <div className="flex items-center gap-2">
-              {hasComplete && !hasRunning ? (
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-800 text-white">
-                  <Check className="h-3 w-3" />
-                </span>
-              ) : null}
-              <p className="text-sm font-medium text-gray-500">
-                {hasComplete && !hasRunning ? "Complete" : "Genie"}
-              </p>
-            </div>
+            <p className="text-sm font-medium text-gray-500">Genie</p>
             <button
               type="button"
               onClick={() => setPillHidden(true)}

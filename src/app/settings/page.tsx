@@ -29,6 +29,7 @@ import {
   Moon,
   Sun,
   Trash2,
+  Settings,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import Link from "next/link";
 import Image from "next/image";
@@ -49,8 +50,9 @@ import { useAuth } from "@/components/providers/auth-provider";
 import type { OpeningHours } from "@/components/providers/profile-provider";
 import { useLightspeedConnection } from "@/lib/hooks/use-lightspeed-connection";
 import {
-  PageContainer,
-  PageHeader,
+  DashboardFloatingPage,
+} from "@/components/layout/dashboard-floating-page";
+import {
   SettingsSection,
   SettingsRow,
   SettingsDivider,
@@ -399,15 +401,16 @@ export default function SettingsPage() {
   );
 
   return (
-    <PageContainer size="wide">
-      <PageHeader
-        title="Settings"
-        description="Manage your account, store profile and preferences."
-        actions={<StoreSetupButton />}
-      />
-
+    <DashboardFloatingPage
+      title="Settings"
+      icon={Settings}
+      description="Manage your account, store profile and preferences."
+      actions={<StoreSetupButton />}
+      flush
+    >
+      <div className="space-y-6 p-4 md:p-5">
       {isFirstTime && (
-        <div className="mt-6 flex items-start gap-3 rounded-lg border bg-muted/40 p-4">
+        <div className="flex items-start gap-3 rounded-md border bg-muted/40 p-4">
           <AlertCircle className="mt-0.5 size-5 text-muted-foreground" />
           <div>
             <h3 className="text-sm font-semibold text-foreground">
@@ -422,7 +425,7 @@ export default function SettingsPage() {
       )}
 
       {error && (
-        <div className="mt-6 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+        <div className="flex items-start gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-4">
           <AlertCircle className="mt-0.5 size-5 text-destructive" />
           <div>
             <h3 className="text-sm font-semibold text-destructive">
@@ -433,7 +436,7 @@ export default function SettingsPage() {
         </div>
       )}
 
-      <div className="mt-6 space-y-6">
+      <div className="space-y-6">
         <nav
           className="border-b border-border/60"
           aria-label="Settings sections"
@@ -721,6 +724,7 @@ export default function SettingsPage() {
           )}
         </div>
       </div>
-    </PageContainer>
+      </div>
+    </DashboardFloatingPage>
   );
 }

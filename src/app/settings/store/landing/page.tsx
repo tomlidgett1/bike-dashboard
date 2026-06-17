@@ -3,7 +3,6 @@
 export const dynamic = "force-dynamic";
 
 import nextDynamic from "next/dynamic";
-import { PageContainer } from "@/components/dashboard";
 import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";
 
 const StoreHomepageManager = nextDynamic(
@@ -12,9 +11,5 @@ const StoreHomepageManager = nextDynamic(
 );
 
 export default function StoreLandingPage() {
-  return (
-    <PageContainer size="wide">
-      <StoreHomepageManager />
-    </PageContainer>
-  );
+  return <StoreHomepageManager />;
 }

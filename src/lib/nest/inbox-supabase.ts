@@ -320,6 +320,89 @@ export async function markNestReadInSupabase(
   }
 }
 
+export async function loadNestCloseMapFromSupabase(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<Record<string, string>> {
+  const { data, error } = await supabase
+    .from("store_nest_conversation_closes")
+    .select("chat_id, closed_at")
+    .eq("user_id", userId);
+
+  if (error) {
+    console.error("[nest-inbox-supabase] close map load failed:", error.message);
+    return {};
+  }
+
+  const map: Record<string, string> = {};
+  for (const row of data ?? []) {
+    if (row.chat_id && row.closed_at) {
+      map[row.chat_id] = row.closed_at as string;
+    }
+  }
+  return map;
+}
+
+export async function markNestCloseInSupabase(
+  supabase: SupabaseClient,
+  userId: string,
+  chatId: string,
+  closedAt: string,
+): Promise<void> {
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("store_nest_conversation_closes").upsert(
+    {
+      user_id: userId,
+      chat_id: chatId,
+      closed_at: closedAt,
+      updated_at: now,
+    },
+    { onConflict: "user_id,chat_id" },
+  );
+
+  if (error) {
+    console.error("[nest-inbox-supabase] mark close failed:", error.message);
+  }
+}
+
+export async function clearNestCloseInSupabase(
+  supabase: SupabaseClient,
+  userId: string,
+  chatId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from("store_nest_conversation_closes")
+    .delete()
+    .eq("user_id", userId)
+    .eq("chat_id", chatId);
+
+  if (error) {
+    console.error("[nest-inbox-supabase] clear close failed:", error.message);
+  }
+}
+
+export async function markAllNestClosesInSupabase(
+  supabase: SupabaseClient,
+  userId: string,
+  closes: Array<{ chatId: string; closedAt: string }>,
+): Promise<void> {
+  if (closes.length === 0) return;
+  const now = new Date().toISOString();
+  const rows = closes.map((item) => ({
+    user_id: userId,
+    chat_id: item.chatId,
+    closed_at: item.closedAt,
+    updated_at: now,
+  }));
+  const { error } = await supabase
+    .from("store_nest_conversation_closes")
+    .upsert(rows, { onConflict: "user_id,chat_id" });
+
+  if (error) {
+    console.error("[nest-inbox-supabase] mark all close failed:", error.message);
+  }
+}
+
 export async function getNestLastSyncedAt(
   supabase: SupabaseClient,
   userId: string,

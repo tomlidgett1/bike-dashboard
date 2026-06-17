@@ -11,6 +11,7 @@ import {
   RefreshCw,
   ChevronRight,
   ShoppingBag,
+  Bag,
   ExternalLink,
   MessageCircle,
   HelpCircle,
@@ -93,10 +94,8 @@ import { SmartUploadModal } from "@/components/marketplace/sell/smart-upload-mod
 import { FacebookImportModal } from "@/components/marketplace/sell/facebook-import-modal";
 import { BulkUploadSheet } from "@/components/marketplace/sell/bulk-upload-sheet";
 import {
-  PageBody,
-  PageContainer,
-  PageHeader,
-} from "@/components/dashboard";
+  DashboardFloatingPage,
+} from "@/components/layout/dashboard-floating-page";
 
 // ============================================================
 // Types
@@ -4158,14 +4157,15 @@ function OrderManagementPageContent() {
 
       <OrderManagementWrapper isStore={isVerifiedStore}>
         {isVerifiedStore ? (
-          <PageContainer size="wide">
-            <PageHeader
-              title="Orders"
-              description="Manage orders, listings, offers, and support claims."
-              actions={newListingActions}
-            />
-            <PageBody className="space-y-4">{pageChrome}</PageBody>
-          </PageContainer>
+          <DashboardFloatingPage
+            title="Orders"
+            icon={Bag}
+            description="Manage orders, listings, offers, and support claims."
+            actions={newListingActions}
+            flush
+          >
+            <div className="space-y-4 p-4 md:p-5">{pageChrome}</div>
+          </DashboardFloatingPage>
         ) : (
           <div className="w-full space-y-4 px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
             <div className="flex items-center justify-between">

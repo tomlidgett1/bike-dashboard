@@ -16,32 +16,43 @@ import {
   setCachedNestThread,
 } from "@/lib/nest/thread-cache";
 import {
-  buildGmailInquiryReadPayload,
   isGmailInquiryUnread,
-  markAllGmailInquiriesRead,
   markGmailInquiryRead,
   GMAIL_INQUIRY_READ_STATE_EVENT,
   setGmailInquiryReadMapFromServer,
 } from "@/lib/customer-inquiries/inquiry-read-state";
 import {
-  buildNestReadPayload,
   isNestConversationUnread,
-  markAllNestConversationsRead,
   markNestConversationRead,
   NEST_READ_STATE_EVENT,
   setNestReadMapFromServer,
 } from "@/lib/nest/conversation-read-state";
 import {
   fetchUnifiedInbox,
-  markAllInboxReadOnServer,
   refreshUnifiedInbox,
+  closeInboxCases,
+  closeNestCaseOnServer,
+  reopenNestCaseOnServer,
+  fetchLightspeedContextByPhone,
 } from "@/lib/customer-inquiries/unified-inbox-client";
+import { resolveNestConversationPhone } from "@/lib/customer-inquiries/lightspeed-phone-directory";
+import {
+  buildNestClosePayload,
+  isNestConversationClosed,
+  markNestConversationClosed,
+  markNestConversationReopened,
+  NEST_CLOSE_STATE_EVENT,
+  readNestCloseMap,
+  setNestCloseMapFromServer,
+} from "@/lib/nest/conversation-close-state";
 import {
   loadUnifiedInboxFromStorage,
   saveUnifiedInboxToStorage,
 } from "@/lib/customer-inquiries/unified-inbox-cache";
+import { inquiryNeedsReplyFromRow } from "@/lib/customer-inquiries/thread";
 import type { CustomerInquiryListItem, CustomerInquiryStatus } from "@/lib/customer-inquiries/types";
-import { useInquiriesController } from "./use-inquiries-controller";
+import { nestConversationNeedsAction } from "@/lib/nest/types";
+import { useInquiriesController, type LightspeedContext } from "./use-inquiries-controller";
 import {
   enquirySummary,
   intentLabel,
@@ -50,9 +61,8 @@ import {
 } from "./parts";
 
 export type InboxTab =
-  | "unread"
+  | "needs_action"
   | "all"
-  | "needs_reply"
   | "ready"
   | "responded"
   | "ignored"
@@ -74,6 +84,7 @@ export type UnifiedInboxRow = {
   statusLabel: string;
   statusTone: "unread" | "ready" | "responded" | "ignored" | "processing" | "error" | "neutral";
   needsReply: boolean;
+  needsAction: boolean;
   isUnread: boolean;
   intentLabel: string | null;
   threadCount: number;
@@ -83,12 +94,11 @@ export type UnifiedInboxRow = {
 };
 
 export const INBOX_TABS: Array<{ id: InboxTab; label: string }> = [
-  { id: "unread", label: "Unread" },
+  { id: "needs_action", label: "Needs Action" },
   { id: "all", label: "All" },
-  { id: "needs_reply", label: "Needs reply" },
   { id: "ready", label: "Ready" },
   { id: "responded", label: "Responded" },
-  { id: "ignored", label: "Ignored" },
+  { id: "ignored", label: "Closed" },
   { id: "gmail", label: "Gmail" },
   { id: "nest", label: "Nest" },
 ];
@@ -108,7 +118,7 @@ function gmailStatusMeta(status: CustomerInquiryStatus): {
     case "sent":
       return { statusLabel: "Responded", statusTone: "responded", needsReply: false };
     case "ignored":
-      return { statusLabel: "Ignored", statusTone: "ignored", needsReply: false };
+      return { statusLabel: "Closed", statusTone: "ignored", needsReply: false };
     case "error":
       return { statusLabel: "Error", statusTone: "error", needsReply: true };
     default:
@@ -116,21 +126,52 @@ function gmailStatusMeta(status: CustomerInquiryStatus): {
   }
 }
 
-function nestStatusMeta(chat: NestConversationListItem): {
+function nestStatusMeta(
+  chat: NestConversationListItem,
+  closedAt?: string | null,
+): {
   statusLabel: string;
   statusTone: UnifiedInboxRow["statusTone"];
   needsReply: boolean;
+  needsAction: boolean;
   isUnread: boolean;
 } {
   const unread = isNestConversationUnread(chat);
-  const responded = Boolean(chat.hasManualMessages && !unread);
-  if (unread) {
-    return { statusLabel: "Unread", statusTone: "unread", needsReply: true, isUnread: true };
+  const needsAction = nestConversationNeedsAction(chat, closedAt);
+  if (needsAction) {
+    return {
+      statusLabel: "Needs action",
+      statusTone: "unread",
+      needsReply: true,
+      needsAction: true,
+      isUnread: unread,
+    };
   }
-  if (responded) {
-    return { statusLabel: "Responded", statusTone: "responded", needsReply: false, isUnread: false };
+  if (closedAt) {
+    return {
+      statusLabel: "Closed",
+      statusTone: "ignored",
+      needsReply: false,
+      needsAction: false,
+      isUnread: false,
+    };
   }
-  return { statusLabel: "Read", statusTone: "neutral", needsReply: false, isUnread: false };
+  if (chat.hasManualMessages) {
+    return {
+      statusLabel: "Responded",
+      statusTone: "responded",
+      needsReply: false,
+      needsAction: false,
+      isUnread: false,
+    };
+  }
+  return {
+    statusLabel: "Read",
+    statusTone: "neutral",
+    needsReply: false,
+    needsAction: false,
+    isUnread: false,
+  };
 }
 
 function nestDisplayTitle(chat: NestConversationListItem): string {
@@ -186,6 +227,7 @@ export async function fetchNestThreadDetail(chatId: string): Promise<NestConvers
 
 function gmailRow(item: CustomerInquiryListItem): UnifiedInboxRow {
   const meta = gmailStatusMeta(item.status);
+  const needsAction = inquiryNeedsReplyFromRow(item);
   const name = senderName(item);
   return {
     key: `gmail:${item.id}`,
@@ -202,11 +244,14 @@ function gmailRow(item: CustomerInquiryListItem): UnifiedInboxRow {
     gmailItem: item,
     isUnread: isGmailInquiryUnread(item),
     ...meta,
+    needsReply: needsAction,
+    needsAction,
   };
 }
 
 function nestRow(chat: NestConversationListItem): UnifiedInboxRow {
-  const meta = nestStatusMeta(chat);
+  const closedAt = readNestCloseMap()[chat.chatId] ?? null;
+  const meta = nestStatusMeta(chat, closedAt);
   const name = nestDisplayTitle(chat);
   return {
     key: `nest:${chat.chatId}`,
@@ -225,14 +270,41 @@ function nestRow(chat: NestConversationListItem): UnifiedInboxRow {
   };
 }
 
+function inboxRowSearchHaystack(row: UnifiedInboxRow): string {
+  const parts = [
+    row.customerName,
+    row.customerContact,
+    row.subject,
+    row.preview,
+    row.intentLabel,
+    row.statusLabel,
+    row.gmailItem?.sender_name,
+    row.gmailItem?.sender_email,
+    row.gmailItem?.subject,
+    row.gmailItem?.snippet,
+    row.gmailItem?.body_preview,
+    row.gmailItem?.lightspeed_customer_name,
+    row.nestItem?.displayName,
+    row.nestItem?.title,
+    row.nestItem?.participantHandle,
+    row.nestItem?.preview,
+    row.nestItem?.chatId,
+  ];
+  return parts.filter(Boolean).join(" ").toLowerCase();
+}
+
+function matchesSearch(row: UnifiedInboxRow, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return inboxRowSearchHaystack(row).includes(q);
+}
+
 function matchesTab(row: UnifiedInboxRow, tab: InboxTab): boolean {
   switch (tab) {
-    case "unread":
-      return row.isUnread;
+    case "needs_action":
+      return row.needsAction;
     case "all":
       return true;
-    case "needs_reply":
-      return row.needsReply && row.statusTone !== "ignored";
     case "ready":
       return row.source === "gmail" && row.gmailItem?.status === "draft_ready";
     case "responded":
@@ -250,7 +322,8 @@ function matchesTab(row: UnifiedInboxRow, tab: InboxTab): boolean {
 
 export function useUnifiedInboxController() {
   const c = useInquiriesController({ deferListLoad: true });
-  const [inboxTab, setInboxTab] = React.useState<InboxTab>("unread");
+  const [inboxTab, setInboxTab] = React.useState<InboxTab>("needs_action");
+  const [searchQuery, setSearchQuery] = React.useState("");
   const [nestChats, setNestChats] = React.useState<NestConversationListItem[]>(() => {
     const cached = loadUnifiedInboxFromStorage();
     return cached?.nestChats ?? [];
@@ -266,6 +339,15 @@ export function useUnifiedInboxController() {
   const [readTick, setReadTick] = React.useState(0);
   const [inboxBootstrapped, setInboxBootstrapped] = React.useState(false);
   const [refreshing, setRefreshing] = React.useState(false);
+  const [closingCases, setClosingCases] = React.useState(false);
+  const [closingSelectedCase, setClosingSelectedCase] = React.useState(false);
+  const [nestLightspeedContext, setNestLightspeedContext] = React.useState<
+    LightspeedContext | undefined
+  >(undefined);
+  const [nestLightspeedLoading, setNestLightspeedLoading] = React.useState(false);
+  const nestLightspeedCacheRef = React.useRef<
+    Map<string, { phone: string; context: LightspeedContext }>
+  >(new Map());
 
   React.useEffect(() => {
     if (c.filter !== "all") c.setFilter("all");
@@ -280,6 +362,7 @@ export function useUnifiedInboxController() {
     setNestConfigured(cached.nestConfigured ?? true);
     setNestReadMapFromServer(cached.nestReadMap);
     setGmailInquiryReadMapFromServer(cached.gmailReadMap ?? {});
+    setNestCloseMapFromServer(cached.nestCloseMap ?? {});
     setNestLoading(false);
     setInboxBootstrapped(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time local cache hydrate
@@ -294,11 +377,13 @@ export function useUnifiedInboxController() {
       setNestConfigured(data.nestConfigured ?? true);
       if (data.nestReadMap) setNestReadMapFromServer(data.nestReadMap);
       if (data.gmailReadMap) setGmailInquiryReadMapFromServer(data.gmailReadMap);
+      if (data.nestCloseMap) setNestCloseMapFromServer(data.nestCloseMap);
       saveUnifiedInboxToStorage({
         inquiries: data.inquiries ?? [],
         nestChats: data.nestChats ?? [],
         nestReadMap: data.nestReadMap ?? {},
         gmailReadMap: data.gmailReadMap ?? {},
+        nestCloseMap: data.nestCloseMap ?? {},
         gmail: data.gmail,
         nestConfigured: data.nestConfigured,
         fetchedAt: new Date().toISOString(),
@@ -336,12 +421,14 @@ export function useUnifiedInboxController() {
   }, [loadUnifiedInbox]);
 
   React.useEffect(() => {
-    const onReadChange = () => setReadTick((n) => n + 1);
-    window.addEventListener(NEST_READ_STATE_EVENT, onReadChange);
-    window.addEventListener(GMAIL_INQUIRY_READ_STATE_EVENT, onReadChange);
+    const onStateChange = () => setReadTick((n) => n + 1);
+    window.addEventListener(NEST_READ_STATE_EVENT, onStateChange);
+    window.addEventListener(GMAIL_INQUIRY_READ_STATE_EVENT, onStateChange);
+    window.addEventListener(NEST_CLOSE_STATE_EVENT, onStateChange);
     return () => {
-      window.removeEventListener(NEST_READ_STATE_EVENT, onReadChange);
-      window.removeEventListener(GMAIL_INQUIRY_READ_STATE_EVENT, onReadChange);
+      window.removeEventListener(NEST_READ_STATE_EVENT, onStateChange);
+      window.removeEventListener(GMAIL_INQUIRY_READ_STATE_EVENT, onStateChange);
+      window.removeEventListener(NEST_CLOSE_STATE_EVENT, onStateChange);
     };
   }, []);
 
@@ -359,15 +446,16 @@ export function useUnifiedInboxController() {
   }, [c.inquiries, nestChats, nestConfigured, readTick]);
 
   const filteredRows = React.useMemo(
-    () => allRows.filter((row) => matchesTab(row, inboxTab)),
-    [allRows, inboxTab],
+    () => allRows.filter((row) => matchesTab(row, inboxTab) && matchesSearch(row, searchQuery)),
+    [allRows, inboxTab, searchQuery],
   );
+
+  const searchActive = searchQuery.trim().length > 0;
 
   const tabCounts = React.useMemo(() => {
     const counts: Record<InboxTab, number> = {
-      unread: allRows.filter((r) => r.isUnread).length,
+      needs_action: allRows.filter((r) => r.needsAction).length,
       all: allRows.length,
-      needs_reply: allRows.filter((r) => matchesTab(r, "needs_reply")).length,
       ready: allRows.filter((r) => matchesTab(r, "ready")).length,
       responded: allRows.filter((r) => matchesTab(r, "responded")).length,
       ignored: allRows.filter((r) => matchesTab(r, "ignored")).length,
@@ -477,16 +565,21 @@ export function useUnifiedInboxController() {
 
   const handleRefreshAll = React.useCallback(async () => {
     setRefreshing(true);
-    setNestLoading(true);
     setNestError(null);
     try {
       const data = await refreshUnifiedInbox();
       applyUnifiedPayload(data);
     } catch (err) {
-      setNestError(err instanceof Error ? err.message : "Could not refresh inbox.");
+      const message = err instanceof Error ? err.message : "Could not refresh inbox.";
+      setNestError(message);
+      try {
+        const fallback = await fetchUnifiedInbox();
+        applyUnifiedPayload(fallback);
+      } catch {
+        // Keep the refresh error message above.
+      }
     } finally {
       setRefreshing(false);
-      setNestLoading(false);
     }
   }, [applyUnifiedPayload]);
 
@@ -613,27 +706,147 @@ export function useUnifiedInboxController() {
     setSelectedKey(`nest:${chatId}`);
   }, []);
 
-  const unreadCount = tabCounts.unread;
+  const needsActionCount = tabCounts.needs_action;
 
-  const [markingAllRead, setMarkingAllRead] = React.useState(false);
-
-  const handleMarkAllAsRead = React.useCallback(async () => {
-    const gmailReads = buildGmailInquiryReadPayload(c.inquiries);
-    const nestReads = nestConfigured ? buildNestReadPayload(nestChats) : [];
-
-    if (nestConfigured) markAllNestConversationsRead(nestChats);
-    markAllGmailInquiriesRead(c.inquiries);
-    setReadTick((n) => n + 1);
-
-    setMarkingAllRead(true);
+  const handleCloseSelectedCase = React.useCallback(async () => {
+    if (!selectedRow) return;
+    setClosingSelectedCase(true);
+    setNestError(null);
     try {
-      await markAllInboxReadOnServer({ gmailReads, nestReads });
-    } catch {
-      // Local read state is already updated; server sync can retry on next open.
+      if (selectedRow.source === "gmail") {
+        await c.handleIgnore();
+        closePanel();
+        return;
+      }
+      if (selectedRow.source === "nest" && selectedRow.nestItem) {
+        const closedAt = new Date().toISOString();
+        markNestConversationClosed(selectedRow.nestItem, closedAt);
+        await closeNestCaseOnServer(selectedRow.nestItem.chatId, closedAt);
+        closePanel();
+      }
+    } catch (err) {
+      setNestError(err instanceof Error ? err.message : "Could not close case.");
     } finally {
-      setMarkingAllRead(false);
+      setClosingSelectedCase(false);
     }
-  }, [c.inquiries, nestChats, nestConfigured]);
+  }, [selectedRow, c, closePanel]);
+
+  const handleReopenSelectedNestCase = React.useCallback(async () => {
+    if (!selectedRow || selectedRow.source !== "nest" || !selectedRow.nestChatId) return;
+    setClosingSelectedCase(true);
+    setNestError(null);
+    try {
+      markNestConversationReopened(selectedRow.nestChatId);
+      await reopenNestCaseOnServer(selectedRow.nestChatId);
+    } catch (err) {
+      setNestError(err instanceof Error ? err.message : "Could not reopen case.");
+    } finally {
+      setClosingSelectedCase(false);
+    }
+  }, [selectedRow]);
+
+  const handleCloseAllNeedsAction = React.useCallback(async () => {
+    const targets = allRows.filter((row) => row.needsAction);
+    if (targets.length === 0) return;
+
+    setClosingCases(true);
+    setNestError(null);
+    try {
+      const gmailIds = targets
+        .filter((row) => row.source === "gmail" && row.gmailId)
+        .map((row) => row.gmailId as string);
+      const nestChats = targets
+        .filter((row) => row.source === "nest" && row.nestItem)
+        .map((row) => row.nestItem as NestConversationListItem);
+      const nestCloses = buildNestClosePayload(nestChats);
+
+      for (const chat of nestChats) {
+        const closedAt = nestCloses.find((item) => item.chatId === chat.chatId)?.closedAt;
+        if (closedAt) markNestConversationClosed(chat, closedAt);
+      }
+
+      const data = await closeInboxCases({ gmailIds, nestCloses });
+      applyUnifiedPayload(data);
+      if (selectedKey && targets.some((row) => row.key === selectedKey)) {
+        closePanel();
+      }
+    } catch (err) {
+      setNestError(err instanceof Error ? err.message : "Could not close all cases.");
+    } finally {
+      setClosingCases(false);
+    }
+  }, [allRows, applyUnifiedPayload, closePanel, selectedKey]);
+
+  const selectedNestClosed =
+    selectedRow?.source === "nest" &&
+    selectedRow.nestItem &&
+    isNestConversationClosed(selectedRow.nestItem);
+
+  const selectedNestPhone = React.useMemo(() => {
+    if (!selectedRow?.nestItem) return null;
+    return resolveNestConversationPhone(selectedRow.nestItem, nestDetail?.messages);
+  }, [selectedRow, nestDetail?.messages]);
+
+  React.useEffect(() => {
+    setNestLightspeedContext(undefined);
+    setNestLightspeedLoading(false);
+  }, [selectedKey]);
+
+  const ensureNestLightspeedContext = React.useCallback(async () => {
+    if (!selectedRow || selectedRow.source !== "nest" || !selectedRow.nestChatId) return;
+
+    const chatId = selectedRow.nestChatId;
+    const phone = selectedRow.nestItem
+      ? resolveNestConversationPhone(selectedRow.nestItem, nestDetail?.messages)
+      : null;
+
+    const cached = nestLightspeedCacheRef.current.get(chatId);
+    if (cached) {
+      const phoneMatches = phone && cached.phone === phone;
+      const staleNoPhone =
+        !cached.context.matched &&
+        Boolean(phone) &&
+        typeof cached.context.summary === "string" &&
+        cached.context.summary.includes("No mobile number");
+      if (phoneMatches && !staleNoPhone) {
+        setNestLightspeedContext(cached.context);
+        return;
+      }
+      nestLightspeedCacheRef.current.delete(chatId);
+    }
+
+    if (!phone) {
+      const empty: LightspeedContext = {
+        matched: false,
+        summary: nestDetailLoading
+          ? "Loading conversation to resolve mobile number…"
+          : "No mobile number found for this Nest conversation.",
+      };
+      if (!nestDetailLoading) {
+        nestLightspeedCacheRef.current.set(chatId, { phone: "", context: empty });
+      }
+      setNestLightspeedContext(empty);
+      return;
+    }
+
+    setNestLightspeedLoading(true);
+    try {
+      const context = (await fetchLightspeedContextByPhone(phone)) as LightspeedContext;
+      nestLightspeedCacheRef.current.set(chatId, { phone, context });
+      setNestLightspeedContext(context);
+    } catch (error) {
+      const fallback: LightspeedContext = {
+        matched: false,
+        summary:
+          error instanceof Error
+            ? error.message
+            : "Lightspeed lookup unavailable for this mobile number.",
+      };
+      setNestLightspeedContext(fallback);
+    } finally {
+      setNestLightspeedLoading(false);
+    }
+  }, [nestDetail?.messages, nestDetailLoading, selectedRow]);
 
   const listLoading = c.loading || nestLoading;
   const listError = c.error || nestError;
@@ -642,6 +855,9 @@ export function useUnifiedInboxController() {
     ...c,
     inboxTab,
     setInboxTab,
+    searchQuery,
+    setSearchQuery,
+    searchActive,
     tabCounts,
     allRows,
     filteredRows,
@@ -662,9 +878,17 @@ export function useUnifiedInboxController() {
     listError,
     refreshing,
     relativeTime,
-    unreadCount,
-    markingAllRead,
-    handleMarkAllAsRead,
+    needsActionCount,
+    closingCases,
+    closingSelectedCase,
+    handleCloseSelectedCase,
+    handleCloseAllNeedsAction,
+    handleReopenSelectedNestCase,
+    selectedNestClosed,
+    selectedNestPhone,
+    nestLightspeedContext,
+    nestLightspeedLoading,
+    ensureNestLightspeedContext,
   };
 }
 

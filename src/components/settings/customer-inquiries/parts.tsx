@@ -268,73 +268,61 @@ export function CustomerMessageCard({
   );
 }
 
-export function ThreadTimeline({
-  detail,
-}: {
-  detail: CustomerInquiryDetail;
-}) {
-  const messages =
-    detail.thread_messages?.length > 0
-      ? detail.thread_messages
-      : [
-          {
-            message_id: detail.id,
-            role: "customer" as const,
-            from: detail.sender_email,
-            from_name: senderName(detail),
-            body: detail.body_preview || detail.snippet,
-            received_at: detail.received_at,
-            date_label: null,
-            is_latest_customer: true,
-          },
-        ];
+function gmailThreadMessages(detail: CustomerInquiryDetail) {
+  if (detail.thread_messages?.length) return detail.thread_messages;
+  return [
+    {
+      message_id: detail.id,
+      role: "customer" as const,
+      from: detail.sender_email,
+      from_name: senderName(detail),
+      body: detail.body_preview || detail.snippet,
+      received_at: detail.received_at,
+      date_label: null,
+      is_latest_customer: true,
+    },
+  ];
+}
+
+/** Flat email thread — no nested cards or repeated subject lines. */
+export function GmailInquiryThread({ detail }: { detail: CustomerInquiryDetail }) {
+  const messages = gmailThreadMessages(detail);
 
   return (
-    <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
-      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-        <div className="flex items-center gap-1.5 text-[11px] font-medium text-gray-400">
-          <GmailMark />
-          Conversation
-        </div>
-        {messages.length > 1 ? (
-          <span className="rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[11px] font-medium text-gray-500">
-            {messages.length} messages
-          </span>
-        ) : null}
-      </div>
-      <div className="max-h-[40vh] space-y-3 overflow-y-auto px-4 py-3">
-        {detail.subject ? (
-          <p className="text-sm font-semibold text-gray-900">{detail.subject}</p>
-        ) : null}
-        {messages.map((message) => {
-          const isShop = message.role === "shop";
-          const isActive = Boolean(message.is_latest_customer);
-          return (
-            <div
-              key={message.message_id}
+    <div className="divide-y divide-gray-100">
+      {messages.map((message) => {
+        const isShop = message.role === "shop";
+        const isLatestCustomer = Boolean(message.is_latest_customer);
+        return (
+          <article key={message.message_id} className="space-y-2 py-6 first:pt-0 last:pb-0">
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="text-sm font-medium text-gray-900">
+                {isShop ? "You" : message.from_name}
+              </p>
+              <time className="shrink-0 text-xs text-gray-400">
+                {message.date_label || fullTime(message.received_at)}
+              </time>
+            </div>
+            <p
               className={cn(
-                "rounded-md border px-3 py-2.5",
-                isShop
-                  ? "ml-6 border-gray-200 bg-[#fafaf9]"
-                  : "mr-6 border-gray-200 bg-white",
-                isActive && "ring-1 ring-[#FFC72C]/60",
+                "whitespace-pre-wrap text-[13px] leading-relaxed text-gray-600",
+                isLatestCustomer && messages.length > 1 && "text-gray-800",
               )}
             >
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-[11px] font-medium text-gray-500">
-                  {isShop ? "You" : message.from_name}
-                </p>
-                <p className="shrink-0 text-[10px] text-gray-400">
-                  {message.date_label || fullTime(message.received_at)}
-                </p>
-              </div>
-              <p className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-gray-700">
-                {message.body || "—"}
-              </p>
-            </div>
-          );
-        })}
-      </div>
+              {message.body || "—"}
+            </p>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+/** @deprecated Prefer GmailInquiryThread in the slide panel. Kept for design previews. */
+export function ThreadTimeline({ detail }: { detail: CustomerInquiryDetail }) {
+  return (
+    <div className="overflow-hidden rounded-md border border-gray-200 bg-white p-4">
+      <GmailInquiryThread detail={detail} />
     </div>
   );
 }
@@ -359,21 +347,25 @@ export function LightspeedBody({ context }: { context: LightspeedContext }) {
     });
   };
 
-  const lastPurchaseDate = sales?.last_purchase_at
-    ? (() => {
-        const parsed = new Date(sales.last_purchase_at);
-        return Number.isNaN(parsed.getTime())
-          ? sales.last_purchase_at
-          : parsed.toLocaleDateString("en-AU", {
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-            });
-      })()
-    : null;
+  const formatPurchaseDate = (value: string) => {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime())
+      ? value
+      : parsed.toLocaleDateString("en-AU", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        });
+  };
+
+  const recentPurchases = sales?.recent_purchases ?? [];
 
   return (
     <div className="space-y-4 text-[13px] text-gray-700">
+      {context.customer_name ? (
+        <p className="text-sm font-medium text-gray-900">{context.customer_name}</p>
+      ) : null}
+
       {sales && sales.sale_count > 0 ? (
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded-md border border-gray-200 bg-white px-3 py-2.5">
@@ -387,18 +379,32 @@ export function LightspeedBody({ context }: { context: LightspeedContext }) {
         </div>
       ) : null}
 
-      {lastPurchaseDate ? (
-        <div className="rounded-md border border-gray-200 bg-white px-3 py-2.5">
-          <p className="text-[11px] text-gray-400">Most recent purchase</p>
-          <p className="mt-0.5 text-sm font-medium text-gray-900">{lastPurchaseDate}</p>
-          {sales?.last_purchase_total != null ? (
-            <p className="mt-0.5 text-[12px] text-gray-600">{money(sales.last_purchase_total)}</p>
-          ) : null}
-          {sales?.last_purchase_summary ? (
-            <p className="mt-1.5 text-[12px] leading-relaxed text-gray-500">
-              {sales.last_purchase_summary}
-            </p>
-          ) : null}
+      {recentPurchases.length > 0 ? (
+        <div>
+          <p className="text-[11px] font-medium text-gray-400">Recent purchases</p>
+          <ul className="mt-1.5 space-y-2">
+            {recentPurchases.map((purchase, idx) => (
+              <li
+                key={`${purchase.purchased_at}-${purchase.description}-${idx}`}
+                className="rounded-md border border-gray-200 bg-white px-3 py-2.5"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-[12px] font-medium leading-snug text-gray-900">
+                    {purchase.description}
+                  </p>
+                  {purchase.total != null ? (
+                    <p className="shrink-0 text-[12px] text-gray-600">{money(purchase.total)}</p>
+                  ) : null}
+                </div>
+                <p className="mt-1 text-[11px] text-gray-500">
+                  {formatPurchaseDate(purchase.purchased_at)}
+                  {purchase.quantity != null && purchase.quantity !== 1
+                    ? ` · Qty ${purchase.quantity}`
+                    : ""}
+                </p>
+              </li>
+            ))}
+          </ul>
         </div>
       ) : sales && sales.sale_count === 0 ? (
         <p className="text-[13px] text-gray-500">No completed purchases on record.</p>
@@ -477,21 +483,28 @@ export function Collapsible({
   icon,
   badge,
   defaultOpen = true,
+  variant = "card",
   children,
 }: {
   title: string;
   icon?: React.ReactNode;
   badge?: React.ReactNode;
   defaultOpen?: boolean;
+  variant?: "card" | "inline";
   children: React.ReactNode;
 }) {
   const [open, setOpen] = React.useState(defaultOpen);
+  const isInline = variant === "inline";
+
   return (
-    <div className="rounded-xl border border-gray-200 bg-white">
+    <div className={cn(isInline ? "border-t border-gray-100 pt-4" : "rounded-md border border-gray-200 bg-white")}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between px-5 py-3.5 text-left"
+        className={cn(
+          "flex w-full items-center justify-between text-left",
+          isInline ? "pb-3" : "px-5 py-3.5",
+        )}
       >
         <span className="flex items-center gap-2 text-sm font-medium text-gray-900">
           {icon}
@@ -511,7 +524,9 @@ export function Collapsible({
             transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
             className="overflow-hidden"
           >
-            <div className="border-t border-gray-100 px-5 pb-5 pt-3">{children}</div>
+            <div className={cn(isInline ? "pb-1" : "border-t border-gray-100 px-5 pb-5 pt-3")}>
+              {children}
+            </div>
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -549,6 +564,8 @@ export function ReplyComposer({
   setReviseInstruction,
   onRevise,
   actionMessage,
+  layout = "card",
+  showCaseActions = true,
 }: {
   detail: CustomerInquiryDetail;
   draft: string;
@@ -566,23 +583,33 @@ export function ReplyComposer({
   setReviseInstruction?: (value: string) => void;
   onRevise?: () => void;
   actionMessage: string | null;
+  layout?: "card" | "panel";
+  showCaseActions?: boolean;
 }) {
   const locked = detail.status === "sent";
   const ignored = detail.status === "ignored";
+  const isPanel = layout === "panel";
 
   return (
-    <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
-      <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
-        <p className="flex items-center gap-1.5 text-sm font-medium text-gray-900">
-          <span className="h-4 w-0.5 rounded-full bg-[#FFC72C]" aria-hidden />
-          <Sparkles className="h-3.5 w-3.5 text-gray-400" />
-          Suggested reply
-        </p>
+    <div
+      className={cn(
+        isPanel
+          ? "border-t border-gray-200 bg-white"
+          : "overflow-hidden rounded-md border border-gray-200 bg-white",
+      )}
+    >
+      <div
+        className={cn(
+          "flex items-center justify-between gap-3",
+          isPanel ? "px-5 pt-4" : "border-b border-gray-100 px-4 py-3",
+        )}
+      >
+        <p className="text-sm font-medium text-gray-900">Reply</p>
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           size="sm"
-          className="shrink-0 rounded-md"
+          className="shrink-0 rounded-md text-gray-600"
           onClick={onRegenerate}
           disabled={regenerating || detail.status === "sent"}
         >
@@ -595,53 +622,65 @@ export function ReplyComposer({
         </Button>
       </div>
 
-      <div className="p-4">
+      <div className={cn(isPanel ? "px-5 pb-4 pt-2" : "p-4")}>
         <textarea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           disabled={locked || ignored}
-          rows={12}
-          className="block min-h-[200px] max-h-[320px] w-full resize-y rounded-md border border-gray-200 bg-white px-3.5 py-3 text-[13px] leading-relaxed text-gray-800 outline-none transition-colors focus:border-gray-400 disabled:bg-gray-50 disabled:text-gray-500"
+          rows={isPanel ? 8 : 12}
+          className="block min-h-[140px] max-h-[280px] w-full resize-y rounded-md bg-gray-50 px-3.5 py-3 text-[13px] leading-relaxed text-gray-800 outline-none ring-1 ring-gray-200 transition-shadow focus:bg-white focus:ring-gray-300 disabled:text-gray-500"
           placeholder="Draft reply will appear once processing completes."
         />
 
         {!locked && !ignored && setReviseInstruction && onRevise ? (
-          <div className="mt-3 rounded-md border border-gray-200 bg-[#fafaf9] p-3">
-            <p className="text-[11px] font-medium text-gray-600">Adjust with AI</p>
-            <textarea
-              value={reviseInstruction ?? ""}
-              onChange={(event) => setReviseInstruction(event.target.value)}
-              rows={3}
-              placeholder='e.g. "Make it shorter and mention we can hold the bike until Saturday."'
-              className="mt-2 w-full resize-none rounded-md border border-gray-200 bg-white px-3 py-2 text-[12px] leading-relaxed text-gray-800 outline-none transition-colors focus:border-gray-300"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="mt-2 rounded-md bg-white"
-              onClick={onRevise}
-              disabled={revising || !draft.trim() || !reviseInstruction?.trim()}
-            >
-              {revising ? (
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-              )}
-              Apply instruction
-            </Button>
-          </div>
+          <details className="mt-3 group">
+            <summary className="cursor-pointer list-none text-xs font-medium text-gray-500 marker:content-none [&::-webkit-details-marker]:hidden">
+              <span className="inline-flex items-center gap-1">
+                <ChevronDown className="h-3.5 w-3.5 transition-transform duration-200 group-open:rotate-180" />
+                Adjust with AI
+              </span>
+            </summary>
+            <div className="mt-2 space-y-2">
+              <textarea
+                value={reviseInstruction ?? ""}
+                onChange={(event) => setReviseInstruction(event.target.value)}
+                rows={2}
+                placeholder='e.g. "Mention we can hold the bike until Saturday."'
+                className="w-full resize-none rounded-md bg-gray-50 px-3 py-2 text-[12px] leading-relaxed text-gray-800 outline-none ring-1 ring-gray-200 focus:bg-white focus:ring-gray-300"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="rounded-md bg-white"
+                onClick={onRevise}
+                disabled={revising || !draft.trim() || !reviseInstruction?.trim()}
+              >
+                {revising ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                Apply
+              </Button>
+            </div>
+          </details>
         ) : null}
 
         {ignored ? (
           <p className="mt-2.5 text-[12px] text-gray-500">
-            This enquiry is ignored. Restore it to edit or send a reply.
+            This enquiry is closed. Reopen it to edit or send a reply.
           </p>
         ) : null}
         {actionMessage ? <p className="mt-2.5 text-[12px] text-gray-600">{actionMessage}</p> : null}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 bg-[#fafaf9] px-4 py-3">
+      <div
+        className={cn(
+          "flex flex-wrap items-center gap-2",
+          isPanel ? "border-t border-gray-100 px-5 py-3" : "border-t border-gray-100 bg-[#fafaf9] px-4 py-3",
+        )}
+      >
         <Button
           type="button"
           className="rounded-md bg-[#FFC72C] text-gray-900 hover:bg-[#E6B328]"
@@ -657,21 +696,24 @@ export function ReplyComposer({
           <Send className="mr-1.5 h-4 w-4" />
           Send reply
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          className="rounded-md bg-white"
-          onClick={ignored ? onUnignore : onIgnore}
-          disabled={locked}
-        >
-          <EyeOff className="mr-1.5 h-4 w-4" />
-          {ignored ? "Restore" : "Ignore"}
-        </Button>
-        {onBanSender ? (
+        {showCaseActions ? (
           <Button
             type="button"
             variant="outline"
             className="rounded-md bg-white"
+            onClick={ignored ? onUnignore : onIgnore}
+            disabled={locked}
+          >
+            <EyeOff className="mr-1.5 h-4 w-4" />
+            {ignored ? "Reopen" : "Close case"}
+          </Button>
+        ) : null}
+        {onBanSender ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="rounded-md text-gray-600"
             onClick={onBanSender}
             disabled={locked || banning}
           >

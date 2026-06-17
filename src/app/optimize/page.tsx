@@ -5,8 +5,8 @@ export const dynamic = "force-dynamic";
 import * as React from "react";
 import { Suspense } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "@/components/layout/app-sidebar/dashboard-icons";
-import { PageContainer, PageHeader } from "@/components/dashboard";
+import { Loader2, MagicStick3 } from "@/components/layout/app-sidebar/dashboard-icons";
+import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-page";
 import { OptimiseTabPanel } from "@/components/optimize/optimise-tab-panel";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
@@ -44,13 +44,13 @@ export default function OptimizePage() {
   }
 
   return (
-    <PageContainer size="wide">
-      <PageHeader
-        title="Product Optimise"
-        description="Choose catalogue, private listings, or CSV — then follow a simple step-by-step flow to optimise copy and photos."
-      />
-
-      <div className="mt-6 min-w-0">
+    <DashboardFloatingPage
+      title="Product Optimise"
+      icon={MagicStick3}
+      description="Choose catalogue, private listings, or CSV — then follow a simple step-by-step flow to optimise copy and photos."
+      flush
+    >
+      <div className="p-4 md:p-5">
         <Suspense
           fallback={
             <div className="flex items-center justify-center py-16">
@@ -61,6 +61,6 @@ export default function OptimizePage() {
           <OptimiseTabPanel />
         </Suspense>
       </div>
-    </PageContainer>
+    </DashboardFloatingPage>
   );
 }

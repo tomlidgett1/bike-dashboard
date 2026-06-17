@@ -1,9 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { Plus, Package, CalendarDays } from "@/components/layout/app-sidebar/dashboard-icons";
-import { PageContainer, PageHeader, PageBody } from "@/components/dashboard";
+import { Plus, Package, CalendarDays, Shop } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
+import {
+  DashboardFloatingPage,
+} from "@/components/layout/dashboard-floating-page";
 import {
   StoreRentalsManager,
   type RentalsTab,
@@ -15,21 +17,21 @@ export function StoreRentalsPageContent() {
   const [addRequest, setAddRequest] = React.useState(0);
 
   return (
-    <PageContainer size="wide">
-      <PageHeader
-        title="Rentals"
-        description="Add hire products, respond to booking requests, and manage your rental calendar."
-        actions={
-          activeTab === "products" ? (
-            <Button size="sm" className="rounded-md" onClick={() => setAddRequest((n) => n + 1)}>
-              <Plus className="size-4" />
-              Add rental
-            </Button>
-          ) : undefined
-        }
-      />
-      <PageBody>
-        <div className="mb-4 flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+    <DashboardFloatingPage
+      title="Rentals"
+      icon={Shop}
+      description="Add hire products, respond to booking requests, and manage your rental calendar."
+      flush
+      actions={
+        activeTab === "products" ? (
+          <Button size="sm" className="rounded-md" onClick={() => setAddRequest((n) => n + 1)}>
+            <Plus className="size-4" />
+            Add rental
+          </Button>
+        ) : undefined
+      }
+      toolbar={
+        <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
           <button
             type="button"
             onClick={() => setActiveTab("products")}
@@ -57,9 +59,9 @@ export function StoreRentalsPageContent() {
             Bookings
           </button>
         </div>
-
-        <StoreRentalsManager activeTab={activeTab} addRequest={addRequest} />
-      </PageBody>
-    </PageContainer>
+      }
+    >
+      <StoreRentalsManager activeTab={activeTab} addRequest={addRequest} />
+    </DashboardFloatingPage>
   );
 }
