@@ -58,6 +58,7 @@ export async function POST(request: NextRequest) {
       name,
       brand: (body.brand as string | undefined)?.trim() || null,
       upc: (body.upc as string | undefined)?.trim() || null,
+      description: (body.description as string | undefined)?.trim() || null,
       searchQuery: (body.searchQuery as string | undefined)?.trim() || null,
       maxImages: Math.min(Math.max(Number(body.maxImages) || 6, 1), 6),
     };

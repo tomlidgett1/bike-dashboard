@@ -13,6 +13,8 @@ export interface ProductInput {
   name: string;
   brand?: string | null;
   upc?: string | null;
+  /** Listing copy — mined for variant attributes (colour/size/year/capacity). */
+  description?: string | null;
   /** Optional pre-built search query (e.g. canonical image_review_search_query). */
   searchQuery?: string | null;
   /** How many images the user wants back (1–6). */
@@ -40,6 +42,7 @@ export type RejectReason =
   | "too_small"
   | "bad_aspect"
   | "duplicate"
+  | "wrong_product"
   | "decode_failed";
 
 /** A hit after we have downloaded it and measured real signals. */
@@ -70,6 +73,11 @@ export interface AnalyzedCandidate {
   /** Came from a recognised official brand / manufacturer domain. */
   isOfficial: boolean;
 
+  /** 0–1 text match between the hit's title/source and the product identity. */
+  textScore: number;
+  /** 0–1 trust in the source domain (official > retailer > unknown > stock). */
+  sourceScore: number;
+
   /** 0–1 heuristic score for "good hero packshot", set during ranking. */
   heroScore: number;
 }
@@ -95,6 +103,13 @@ export interface SelectedImage {
   whiteFraction: number;
   isOfficial: boolean;
   heroScore: number;
+
+  /** Primary only: independent verification that the hero matches the product. */
+  verified?: boolean;
+  /** Primary only: 0–1 confidence from the verification pass. */
+  confidence?: number;
+  /** Primary only: attributes the verifier found mismatched, if any. */
+  mismatchNotes?: string;
 }
 
 export interface HeroImageCandidate {
@@ -134,6 +149,11 @@ export interface HeroPipelineResult {
   primaryUrl: string | null;
   selected: SelectedImage[];
   candidates: HeroImageCandidate[];
+
+  /** 0–1 confidence that the chosen hero is the exact product (verification pass). */
+  heroConfidence: number;
+  /** True when the verification pass confirmed the hero. */
+  heroVerified: boolean;
 
   reasoning: string;
   queriesUsed: string[];

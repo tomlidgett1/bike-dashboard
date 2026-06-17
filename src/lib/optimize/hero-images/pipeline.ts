@@ -14,6 +14,7 @@ import { harvestSerperImages, type SerperSearch } from "./harvest";
 import { analyzeCandidates } from "./analyze";
 import { dedupeCandidates } from "./dedupe";
 import { aiSelect } from "./ai-select";
+import { buildProductIdentity } from "./identity";
 import type {
   AnalyzedCandidate,
   HeroImageCandidate,
@@ -32,8 +33,12 @@ export async function runHeroImagePipeline(
 ): Promise<HeroPipelineResult> {
   const t0 = Date.now();
 
+  // ── Stage 0: resolve identity (brand/model tokens, variant attributes,
+  //    official domains) — everything downstream ranks against this. ──
+  const identity = buildProductIdentity(product);
+
   // ── Stage 1: harvest ──
-  const { hits, queriesUsed } = await harvestSerperImages(product, deps.serperSearch);
+  const { hits, queriesUsed } = await harvestSerperImages(identity, deps.serperSearch);
   const tHarvest = Date.now();
 
   if (hits.length === 0) {
@@ -54,7 +59,7 @@ export async function runHeroImagePipeline(
   }
 
   // ── Stage 2: download + measure ──
-  const { analyzed, rejected: analysisRejects } = await analyzeCandidates(hits, product);
+  const { analyzed, rejected: analysisRejects } = await analyzeCandidates(hits, identity);
   const tAnalyze = Date.now();
 
   // ── Stage 3: perceptual de-dup ──
@@ -80,8 +85,8 @@ export async function runHeroImagePipeline(
     });
   }
 
-  // ── Stage 4: AI select + hero lock ──
-  const ai = await aiSelect(kept, product);
+  // ── Stage 4: AI select + hero lock + verification ──
+  const ai = await aiSelect(kept, product, identity);
   const tAi = Date.now();
 
   return {
@@ -90,6 +95,8 @@ export async function runHeroImagePipeline(
     primaryUrl: ai.primaryUrl,
     selected: ai.selected,
     candidates: kept.map(toHeroImageCandidate),
+    heroConfidence: ai.heroConfidence,
+    heroVerified: ai.heroVerified,
     reasoning: ai.reasoning,
     queriesUsed,
     stats: {
@@ -127,6 +134,8 @@ function emptyResult(
     primaryUrl: null,
     selected: [],
     candidates: [],
+    heroConfidence: 0,
+    heroVerified: false,
     reasoning: "",
     queriesUsed,
     stats,

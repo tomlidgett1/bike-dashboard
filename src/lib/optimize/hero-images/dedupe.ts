@@ -51,10 +51,16 @@ function looksDuplicate(a: AnalyzedCandidate, b: AnalyzedCandidate): boolean {
   return best <= HAMMING_THRESHOLD;
 }
 
-/** Higher is better — used to choose the representative kept from each cluster. */
+/**
+ * Higher is better — chooses the representative kept from each cluster. When the
+ * same photo appears from several sources we want the copy that is best matched
+ * to the product and best sourced, not merely the largest re-upload.
+ */
 function qualityRank(c: AnalyzedCandidate): number {
   return (
-    c.megapixels * 10 +
+    c.textScore * 12 +
+    c.sourceScore * 8 +
+    c.megapixels * 6 +
     c.whiteFraction * 3 +
     (c.isOfficial ? 5 : 0)
   );

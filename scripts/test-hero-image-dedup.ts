@@ -68,7 +68,8 @@ function mkCandidate(
 ): AnalyzedCandidate {
   return {
     index: i, url, width: w, height: ht, megapixels: (w * ht) / 1e6, aspectRatio: w / ht,
-    dhash: h.full, dhashCenter: h.center, whiteFraction: 0.8, brightness: 230, isOfficial: false, heroScore: 0,
+    dhash: h.full, dhashCenter: h.center, whiteFraction: 0.8, brightness: 230, isOfficial: false,
+    textScore: 0.9, sourceScore: 0.5, heroScore: 0,
   };
 }
 

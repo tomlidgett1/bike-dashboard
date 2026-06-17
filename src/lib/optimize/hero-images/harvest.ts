@@ -1,19 +1,21 @@
 /**
- * Stage 1 — Multi-query Serper harvest.
+ * Stage 1 — Multi-query Serper harvest, driven by the resolved identity.
  *
  * The old catalogue flow runs a SINGLE query and takes whatever Google Images
- * returns. We instead fan out several complementary queries (brand+name, UPC,
- * official-site `site:` queries, a white-background packshot bias) and merge
- * the results. This both widens the pool and pulls in clean images straight
- * from manufacturer sites — the highest-quality source available.
+ * returns. We instead fan out several complementary queries (brand+model, UPC,
+ * official-site `site:` queries for EVERY derivable brand domain, a variant-
+ * qualified query, and a white-background packshot bias) and merge the results.
+ * This both widens the pool and pulls in clean images straight from manufacturer
+ * sites — the highest-quality source available.
  *
  * Serper itself is reached through the injected `serperSearch` function so the
  * caller controls auth (we go via the Supabase edge function which holds the
  * SERPER_API_KEY).
  */
 
-import { getOfficialSearchDomains } from "@/lib/bikes/official-spec-sources";
-import type { ProductInput, RawHit } from "./types";
+import type { ProductIdentity } from "./identity";
+import { domainOf } from "./identity";
+import type { RawHit } from "./types";
 
 export type SerperSearch = (query: string) => Promise<RawHit[]>;
 
@@ -32,21 +34,15 @@ const BLOCKED_DOMAINS = [
   "123rf.",
   "ebay.",
   "aliexpress.",
+  "alibaba.",
   "wish.com",
+  "temu.",
   "lookaside.",
   "fbsbx.com",
 ];
 
-const MAX_QUERIES = 6;
-const MAX_POOL = 70;
-
-function domainOf(url: string): string | null {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "").toLowerCase();
-  } catch {
-    return null;
-  }
-}
+const MAX_QUERIES = 7;
+const MAX_POOL = 80;
 
 /** Strip resize/query params so `…/img.jpg?w=200` and `?w=1200` collapse early. */
 function urlKey(url: string): string {
@@ -58,33 +54,34 @@ function urlKey(url: string): string {
   }
 }
 
-export function buildHarvestQueries(product: ProductInput): string[] {
-  const name = product.name.trim();
-  const brand = product.brand?.trim();
-  const upc = product.upc?.trim();
-  const branded = brand && !name.toLowerCase().includes(brand.toLowerCase())
-    ? `${brand} ${name}`
-    : name;
+export function buildHarvestQueries(identity: ProductIdentity): string[] {
+  const { name, brand, upc } = identity;
+  const branded =
+    brand && !name.toLowerCase().includes(brand.toLowerCase()) ? `${brand} ${name}` : name;
 
   const queries: string[] = [];
 
   // 1. The most specific identifier we have wins first.
   if (upc) queries.push(`${branded} ${upc}`);
 
-  // 2. Caller-provided / canonical query, then the plain branded name.
-  if (product.searchQuery?.trim()) queries.push(product.searchQuery.trim());
+  // 2. The plain branded name (broadest reliable query).
   queries.push(branded);
 
-  // 3. Official manufacturer sites — clean, canonical product photography.
-  const officialDomains = getOfficialSearchDomains({
-    bikeBrand: brand ?? null,
-    specValue: name,
-  });
-  for (const domain of officialDomains.slice(0, 2)) {
-    queries.push(`${name} site:${domain}`);
+  // 3. A variant-qualified query so the pool leans toward the EXACT variant,
+  //    not just the model family (colour first, else year).
+  const variant =
+    identity.attributes.colors[0] ?? identity.attributes.year ?? identity.attributes.capacities[0];
+  if (variant && !branded.toLowerCase().includes(variant.toLowerCase())) {
+    queries.push(`${branded} ${variant}`);
   }
 
-  // 4. Bias one query toward a clean studio packshot for the hero.
+  // 4. Official manufacturer sites — clean, canonical product photography.
+  //    Now works for ANY brand because officialDomains is derived dynamically.
+  for (const domain of identity.officialDomains.slice(0, 2)) {
+    queries.push(`${identity.core} site:${domain}`);
+  }
+
+  // 5. Bias one query toward a clean studio packshot for the hero.
   queries.push(`${branded} product photo white background`);
 
   // De-dupe, keep order, cap.
@@ -110,10 +107,10 @@ export interface HarvestResult {
  * and lightly interleaves results so the pool isn't dominated by one query.
  */
 export async function harvestSerperImages(
-  product: ProductInput,
+  identity: ProductIdentity,
   serperSearch: SerperSearch,
 ): Promise<HarvestResult> {
-  const queries = buildHarvestQueries(product);
+  const queries = buildHarvestQueries(identity);
 
   const settled = await Promise.all(
     queries.map(async (q) => {

@@ -15,7 +15,13 @@
 import sharp from "sharp";
 import { isOfficialSpecSourceUrl } from "@/lib/bikes/official-spec-sources";
 import { runWithConcurrency } from "@/lib/admin/image-qa-speed";
-import type { AnalyzedCandidate, ProductInput, RawHit, RejectedCandidate } from "./types";
+import {
+  isIdentityOfficialDomain,
+  sourceAuthority,
+  textRelevance,
+  type ProductIdentity,
+} from "./identity";
+import type { AnalyzedCandidate, RawHit, RejectedCandidate } from "./types";
 
 const FETCH_TIMEOUT_MS = 8000;
 const FETCH_CONCURRENCY = 8;
@@ -147,13 +153,39 @@ export interface AnalyzeResult {
  */
 export async function analyzeCandidates(
   hits: RawHit[],
-  product: ProductInput,
+  identity: ProductIdentity,
 ): Promise<AnalyzeResult> {
-  const officialOpts = { bikeBrand: product.brand ?? null, specValue: product.name };
+  const officialOpts = { bikeBrand: identity.brand ?? null, specValue: identity.name };
+  const canTextFilter = identity.brandTokens.length > 0 && identity.modelTokens.length > 0;
 
   const outcomes = await runWithConcurrency(
     hits.map((hit) => async (): Promise<AnalyzedCandidate | RejectedCandidate> => {
       const domain = hit.domain ?? domainOf(hit.url);
+
+      const isOfficial =
+        isIdentityOfficialDomain(identity, domain) ||
+        isOfficialSpecSourceUrl(hit.url, officialOpts) ||
+        (hit.source ? isOfficialSpecSourceUrl(hit.source, officialOpts) : false);
+      const textScore = textRelevance(identity, {
+        title: hit.title,
+        source: hit.source,
+        domain,
+      });
+      const sourceScore = isOfficial ? 1 : sourceAuthority(identity, domain);
+
+      // High-precision early reject: a descriptive title that matches NEITHER the
+      // brand nor any model token, from a non-official source, is almost always a
+      // different product. Saves a download + keeps the vision pool clean.
+      const titleTokenCount = (hit.title ?? "").split(/\s+/).filter((t) => t.length >= 3).length;
+      if (canTextFilter && !isOfficial && textScore === 0 && titleTokenCount >= 3) {
+        return {
+          url: hit.url,
+          domain,
+          reason: "wrong_product",
+          detail: hit.title?.slice(0, 80),
+        };
+      }
+
       const downloaded = await downloadImage(hit.url);
       if (downloaded === "dead") {
         return { url: hit.url, domain, reason: "dead_link" };
@@ -209,10 +241,6 @@ export async function analyzeCandidates(
         return { url: hit.url, domain, reason: "decode_failed" };
       }
 
-      const isOfficial =
-        isOfficialSpecSourceUrl(hit.url, officialOpts) ||
-        (hit.source ? isOfficialSpecSourceUrl(hit.source, officialOpts) : false);
-
       return {
         index: -1, // assigned after partition
         url: hit.url,
@@ -230,6 +258,8 @@ export async function analyzeCandidates(
         whiteFraction,
         brightness,
         isOfficial,
+        textScore,
+        sourceScore,
         heroScore: 0,
       };
     }),

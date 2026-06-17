@@ -279,12 +279,17 @@ function cleanPhotoSearchText(value: string | null | undefined) {
 
 function buildSmartPhotoPayload(product: BulkProduct) {
   const canonical = product.canonical_products;
+  // Listing copy helps the pipeline confirm the exact variant (colour/size/year).
+  const description = cleanPhotoSearchText(
+    product.product_description || product.description || "",
+  );
   return {
     name: cleanPhotoSearchText(
       product.display_name || canonical?.normalized_name || product.description || "Unnamed product",
     ),
     brand: cleanPhotoSearchText(canonical?.manufacturer || product.brand) || null,
     upc: cleanPhotoSearchText(canonical?.upc || product.upc) || null,
+    description: description || null,
     searchQuery: canonical?.image_review_search_query ?? null,
     maxImages: 6,
   };
@@ -292,10 +297,12 @@ function buildSmartPhotoPayload(product: BulkProduct) {
 
 function buildSmartPhotoPayloadKey(payload: ReturnType<typeof buildSmartPhotoPayload>) {
   return JSON.stringify({
-    version: 2,
+    // v3 — identity-resolved harvest + grounded select + hero verification.
+    version: 3,
     name: payload.name,
     brand: payload.brand,
     upc: payload.upc,
+    description: payload.description,
     searchQuery: payload.searchQuery,
     maxImages: payload.maxImages,
   });

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronLeft, ChevronRight, Crown, ExternalLink, Loader2, Search, Sparkles, X } from "@/components/layout/app-sidebar/dashboard-icons";
+import { AlertTriangle, ChevronLeft, ChevronRight, Crown, ExternalLink, Loader2, Search, ShieldCheck, Sparkles, X } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,6 +31,7 @@ const REJECT_LABEL: Record<RejectedCandidate["reason"], string> = {
   too_small: "Too small",
   bad_aspect: "Banner / bad shape",
   duplicate: "Duplicate (zoom/crop)",
+  wrong_product: "Wrong product (title mismatch)",
   decode_failed: "Could not decode",
 };
 
@@ -54,6 +55,18 @@ function ImageMeta({ image }: { image: SelectedImage }) {
       <Badge variant="secondary">bg {pct(image.whiteFraction)}</Badge>
       <Badge variant="secondary">hero {pct(image.heroScore)}</Badge>
       {image.isOfficial && <Badge variant="default">official</Badge>}
+      {image.isPrimary && image.confidence !== undefined && (
+        <Badge
+          variant="secondary"
+          className={cn(
+            image.verified
+              ? "bg-emerald-100 text-emerald-800"
+              : "bg-amber-100 text-amber-800",
+          )}
+        >
+          {image.verified ? "verified" : "review"} {pct(image.confidence)}
+        </Badge>
+      )}
       {image.domain && <span className="text-[11px] text-muted-foreground">{image.domain}</span>}
     </div>
   );
@@ -63,6 +76,7 @@ export function HeroImageWorkspace() {
   const [name, setName] = React.useState("");
   const [brand, setBrand] = React.useState("");
   const [upc, setUpc] = React.useState("");
+  const [description, setDescription] = React.useState("");
   const [searchQuery, setSearchQuery] = React.useState<string | null>(null);
   const [maxImages, setMaxImages] = React.useState(6);
   const [currentImage, setCurrentImage] = React.useState<string | null>(null);
@@ -127,6 +141,7 @@ export function HeroImageWorkspace() {
           name: name.trim(),
           brand: brand.trim() || null,
           upc: upc.trim() || null,
+          description: description.trim() || null,
           searchQuery,
           maxImages,
         }),
@@ -212,6 +227,19 @@ export function HeroImageWorkspace() {
             <Label className="mb-1.5 block text-xs">UPC / barcode</Label>
             <Input value={upc} onChange={(e) => setUpc(e.target.value)} placeholder="optional" />
           </div>
+          <div className="sm:col-span-3">
+            <Label className="mb-1.5 block text-xs">
+              Description / variant notes{" "}
+              <span className="text-muted-foreground">
+                (optional — used to confirm colour/size/year)
+              </span>
+            </Label>
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="e.g. 2023 model, matte black, size M, 800 lumens"
+            />
+          </div>
           <div>
             <Label className="mb-1.5 block text-xs">Images wanted</Label>
             <div className="flex items-center gap-2">
@@ -271,6 +299,34 @@ export function HeroImageWorkspace() {
             <span>· AI cost: ${result.costUsd.toFixed(4)}</span>
             <span>· Queries: {result.queriesUsed.length}</span>
           </div>
+
+          {/* Hero verification — the independent "does it match?" check */}
+          {result.selected.length > 0 && (
+            <div
+              className={cn(
+                "flex flex-wrap items-center gap-2 rounded-md border p-3 text-sm",
+                result.heroVerified
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  : "border-amber-200 bg-amber-50 text-amber-800",
+              )}
+            >
+              {result.heroVerified ? (
+                <ShieldCheck className="size-4 shrink-0" />
+              ) : (
+                <AlertTriangle className="size-4 shrink-0" />
+              )}
+              <span className="font-medium">
+                {result.heroVerified
+                  ? `Hero verified — ${pct(result.heroConfidence)} confidence`
+                  : `Hero needs review — ${pct(result.heroConfidence)} confidence`}
+              </span>
+              {result.selected.find((s) => s.isPrimary)?.mismatchNotes && (
+                <span className="text-xs opacity-90">
+                  · mismatches: {result.selected.find((s) => s.isPrimary)?.mismatchNotes}
+                </span>
+              )}
+            </div>
+          )}
 
           {result.selected.length > 0 ? (
             <ResultCarousel key={result.selected.map((s) => s.url).join("|")} images={result.selected} />
