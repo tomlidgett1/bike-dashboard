@@ -7,22 +7,23 @@ import { FacebookImportModal } from "./facebook-import-modal";
 import { TextUploadDialog } from "./text-upload-dialog";
 import { MobileUploadMethodDialog } from "./mobile-upload-method-dialog";
 import { ListingCountBento } from "./listing-count-bento";
-import { ListingLayoutBento } from "./listing-layout-bento";
+import { ListingMethodBento } from "./listing-method-bento";
 import { ListingPhotosPanel, type ListingPhotoDraft } from "./listing-photos-panel";
 import { stashSingleItemPhotoDraft } from "./single-item-photo-draft";
 import type { ListingImage } from "@/lib/types/listing";
 
 // ============================================================
 // Step 0: Upload Method Choice (/marketplace/sell with no mode)
-// One item: count → photos → guided | quick upload
-// Bulk: opens bulk flow (photos first there too)
+// One item: count → method → photos (guided | quick upload)
+// Bulk: opens bulk flow
 // ============================================================
 
 interface UploadMethodChoiceProps {
   onFacebookImportComplete?: (formData: any, images: ListingImage[]) => void;
 }
 
-type ChoiceStep = "count" | "photos" | "layout";
+type ChoiceStep = "count" | "method" | "photos";
+type ListingMode = "guided" | "form";
 
 const emptyPhotoDraft = (): ListingPhotoDraft => ({ images: [], uploadedImages: [] });
 
@@ -32,6 +33,7 @@ export function UploadMethodChoice({
   const router = useRouter();
   const [step, setStep] = React.useState<ChoiceStep>("count");
   const [photoDraft, setPhotoDraft] = React.useState<ListingPhotoDraft>(emptyPhotoDraft);
+  const [listingMode, setListingMode] = React.useState<ListingMode | null>(null);
   const [showFacebookModal, setShowFacebookModal] = React.useState(false);
   const [showTextDialog, setShowTextDialog] = React.useState(false);
   const [isMobile, setIsMobile] = React.useState<boolean | null>(null);
@@ -56,9 +58,11 @@ export function UploadMethodChoice({
   };
 
   const goBack = () => {
-    if (step === "layout") setStep("photos");
-    else if (step === "photos") {
+    if (step === "photos") {
       setPhotoDraft(emptyPhotoDraft());
+      setListingMode(null);
+      setStep("method");
+    } else if (step === "method") {
       setStep("count");
     }
   };
@@ -125,13 +129,13 @@ export function UploadMethodChoice({
             <div>
               <h2 className="text-[26px] font-bold leading-tight tracking-tight text-gray-900">
                 {step === "count" && "Create a listing"}
+                {step === "method" && "How do you want to list it?"}
                 {step === "photos" && "Add photos"}
-                {step === "layout" && "How do you want to list it?"}
               </h2>
               <p className="mt-1 text-[15px] leading-relaxed text-gray-500">
                 {step === "count" && "One item or bulk"}
+                {step === "method" && "Pick the method that suits you"}
                 {step === "photos" && "We'll recognise what you're selling"}
-                {step === "layout" && "Same photos — pick a layout"}
               </p>
             </div>
           </div>
@@ -140,11 +144,23 @@ export function UploadMethodChoice({
         <div key={step} className="mt-5 animate-in fade-in slide-in-from-right-2 duration-200">
           {step === "count" && (
             <ListingCountBento
-              onSelectOneItem={() => {
+              onSelectOneItem={() => setStep("method")}
+              onSelectBulk={() => router.push("/marketplace/sell?mode=bulk")}
+            />
+          )}
+
+          {step === "method" && (
+            <ListingMethodBento
+              onSelectGuided={() => {
                 setPhotoDraft(emptyPhotoDraft());
+                setListingMode("guided");
                 setStep("photos");
               }}
-              onSelectBulk={() => router.push("/marketplace/sell?mode=bulk")}
+              onSelectQuickUpload={() => {
+                setPhotoDraft(emptyPhotoDraft());
+                setListingMode("form");
+                setStep("photos");
+              }}
               onSelectText={() => setShowTextDialog(true)}
               onSelectFacebook={() => setShowFacebookModal(true)}
             />
@@ -154,14 +170,10 @@ export function UploadMethodChoice({
             <ListingPhotosPanel
               draft={photoDraft}
               onChange={setPhotoDraft}
-              onContinue={() => setStep("layout")}
-            />
-          )}
-
-          {step === "layout" && (
-            <ListingLayoutBento
-              onSelectGuided={() => openSingleFlow("guided")}
-              onSelectQuickUpload={() => openSingleFlow("form")}
+              onContinue={() => {
+                if (listingMode === "guided") openSingleFlow("guided");
+                else if (listingMode === "form") openSingleFlow("form");
+              }}
             />
           )}
         </div>

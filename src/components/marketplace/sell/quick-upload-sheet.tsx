@@ -9,8 +9,9 @@ import {
   DialogContent,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { FlowGuided } from "@/app/marketplace/sell-redesign/_components/flow-guided";
+import { FlowGuided, GUIDED_MACRO_LABELS } from "@/app/marketplace/sell-redesign/_components/flow-guided";
 import { FlowForm } from "@/app/marketplace/sell-redesign/_components/flow-form";
+import { MacroProgressHeader } from "@/app/marketplace/sell-redesign/_components/ui";
 import { loadTextUploadDraft } from "@/app/marketplace/sell-redesign/_components/services";
 import type { BikeDraft } from "@/app/marketplace/sell-redesign/_components/data";
 import type { SingleItemPhotoDraft } from "./single-item-photo-draft";
@@ -60,13 +61,41 @@ export function QuickUploadSheet({
   const [flowInstance, setFlowInstance] = React.useState(0);
   const loadedTokenRef = React.useRef<string | null>(null);
   const [autoAnalyseFromPhotos, setAutoAnalyseFromPhotos] = React.useState(false);
+  const [guidedHeader, setGuidedHeader] = React.useState<{
+    label: string;
+    imageUrl?: string;
+  } | null>(null);
+  const [guidedMacroStep, setGuidedMacroStep] = React.useState<number | null>(null);
+
+  const handleGuidedHeaderChange = React.useCallback(
+    (header: { label: string; imageUrl?: string } | null) => {
+      setGuidedHeader(header);
+    },
+    [],
+  );
+
+  const handleMacroStepChange = React.useCallback(
+    (step: { step: number; label: string } | null) => {
+      setGuidedMacroStep(step?.step ?? null);
+    },
+    [],
+  );
 
   const handleListAnother = () => {
     setInitialDraft(null);
     loadedTokenRef.current = null;
     setAutoAnalyseFromPhotos(false);
+    setGuidedHeader(null);
+    setGuidedMacroStep(null);
     setFlowInstance((instance) => instance + 1);
   };
+
+  React.useEffect(() => {
+    if (!isOpen) {
+      setGuidedHeader(null);
+      setGuidedMacroStep(null);
+    }
+  }, [isOpen]);
 
   React.useEffect(() => {
     if (!isOpen) return;
@@ -134,6 +163,8 @@ export function QuickUploadSheet({
       initialDraft={flowInstance === 0 ? (initialDraft ?? undefined) : undefined}
       autoAnalyseFromPhotos={flowInstance === 0 && autoAnalyseFromPhotos}
       onListAnother={handleListAnother}
+      onGuidedHeaderChange={handleGuidedHeaderChange}
+      onMacroStepChange={handleMacroStepChange}
     />
   ) : (
     <FlowForm
@@ -146,10 +177,26 @@ export function QuickUploadSheet({
 
   const panelChrome = (
     <>
-      <div className="flex h-9 flex-shrink-0 items-center justify-between px-4 md:px-5">
-        <span className="rounded-md bg-gray-100 px-2 py-1 text-[12px] font-semibold text-gray-600">
-          {modeLabel}
-        </span>
+      <div className="flex min-h-10 flex-shrink-0 items-center justify-between gap-3 px-4 py-1.5 md:px-5">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {mode === "guided" && guidedHeader && (
+            <>
+              {guidedHeader.imageUrl && (
+                <div className="h-8 w-8 flex-shrink-0 overflow-hidden rounded-md bg-gray-100">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={guidedHeader.imageUrl}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+              )}
+              <p className="min-w-0 truncate text-[13px] font-semibold text-gray-800">
+                {guidedHeader.label}
+              </p>
+            </>
+          )}
+        </div>
         <button
           type="button"
           onClick={onClose}
@@ -160,7 +207,11 @@ export function QuickUploadSheet({
         </button>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+      {mode === "guided" && guidedMacroStep !== null && (
+        <MacroProgressHeader step={guidedMacroStep} labels={GUIDED_MACRO_LABELS} />
+      )}
+
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {flowBody}
       </div>
     </>
@@ -192,7 +243,7 @@ export function QuickUploadSheet({
     <Sheet open={isOpen} onOpenChange={handleOpenChange}>
       <SheetContent
         side="bottom"
-        className="flex h-[94dvh] max-h-[94dvh] flex-col gap-0 overflow-hidden rounded-t-xl p-0"
+        className="flex h-[94dvh] max-h-[94dvh] flex-col gap-0 overflow-hidden rounded-t-xl p-0 data-[side=bottom]:h-[94dvh] data-[side=bottom]:max-h-[94dvh]"
         showCloseButton={false}
       >
         <SheetTitle className="sr-only">{modeLabel}</SheetTitle>

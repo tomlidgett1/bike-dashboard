@@ -17,7 +17,6 @@ import { cn } from "@/lib/utils";
 import {
   AI_FIELDS,
   AI_DESCRIPTION,
-  BIKE_TYPES,
   FRAME_MATERIALS,
   WHEEL_SIZES,
   FRAME_SIZE_SUGGESTIONS,
@@ -44,6 +43,7 @@ import {
   TextArea,
   NumberInput,
   OptionPills,
+  BikeTypePicker,
   Toggle,
   Collapsible,
   Chevron,
@@ -59,6 +59,10 @@ import { QualityMeter } from "./quality-meter";
 import { uploadPhotos, analysePhotos, analysisToDraftPatch, fetchListingFieldSuggestions, submitListing } from "./services";
 import { AiRedoDialog } from "./ai-redo-dialog";
 import { PriceResearchGuide } from "./price-research-guide";
+import {
+  saveSellerPickupLocation,
+  withDefaultPickupLocation,
+} from "@/lib/marketplace/seller-pickup-location";
 
 type Phase = "start" | "analysing" | "form" | "published";
 
@@ -79,7 +83,7 @@ export function FlowForm({
   onListAnother?: () => void;
 }) {
   const [phase, setPhase] = React.useState<Phase>("start");
-  const [draft, setDraft] = React.useState<BikeDraft>(emptyDraft());
+  const [draft, setDraft] = React.useState<BikeDraft>(() => withDefaultPickupLocation(emptyDraft()));
   const [msg, setMsg] = React.useState(0);
   const [specsOpen, setSpecsOpen] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
@@ -90,11 +94,16 @@ export function FlowForm({
   const [redoError, setRedoError] = React.useState<string | null>(null);
   const [aiFields, setAiFields] = React.useState<Record<string, AiField>>({});
 
-  const patch = (p: Partial<BikeDraft>) => setDraft((d) => ({ ...d, ...p }));
+  const patch = (p: Partial<BikeDraft>) => {
+    if (p.pickupLocation?.trim()) {
+      saveSellerPickupLocation(p.pickupLocation);
+    }
+    setDraft((d) => ({ ...d, ...p }));
+  };
   const quality = scoreDraft(draft);
 
   const resetForAnotherListing = () => {
-    setDraft(emptyDraft());
+    setDraft(withDefaultPickupLocation(emptyDraft()));
     setPhase("start");
     setMsg(0);
     setSpecsOpen(false);
@@ -110,7 +119,7 @@ export function FlowForm({
 
   React.useEffect(() => {
     if (!initialDraft) return;
-    setDraft((d) => ({ ...d, ...initialDraft }));
+    setDraft((d) => withDefaultPickupLocation({ ...d, ...initialDraft }));
     if (autoAnalyseFromPhotos && initialDraft.images?.length) {
       setPhase("analysing");
     } else {
@@ -265,7 +274,7 @@ export function FlowForm({
               <button
                 type="button"
                 onClick={() => {
-                  setDraft(emptyDraft());
+                  setDraft(withDefaultPickupLocation(emptyDraft()));
                   setPhase("form");
                 }}
                 className="py-1 text-[13px] font-medium text-gray-500 hover:text-gray-800"
@@ -380,7 +389,11 @@ export function FlowForm({
             {isBike && (
               <>
                 <Field label="Bike type" hint={<ConfMark field="bikeType" draft={draft} aiFields={aiFields} />}>
-                  <OptionPills value={draft.bikeType} options={BIKE_TYPES} columns={3} onChange={(v) => patch({ bikeType: v })} />
+                  <BikeTypePicker
+                    bikeType={draft.bikeType}
+                    bikeSubtype={draft.bikeSubtype}
+                    onChange={(next) => patch(next)}
+                  />
                 </Field>
                 <Field label="Year">
                   <OptionPills value={draft.year} options={YEARS.slice(0, 6)} columns={3} onChange={(v) => patch({ year: v })} />

@@ -14,6 +14,7 @@ import type { ForYouFeedPayload } from "@/lib/for-you/types";
 const EMPTY_FEED: ForYouFeedPayload = {
   feedId: "",
   carousels: [],
+  moreProducts: [],
   personalised: false,
   source: "deterministic",
   generatedAt: "",

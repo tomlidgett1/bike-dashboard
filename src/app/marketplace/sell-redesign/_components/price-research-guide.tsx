@@ -1,9 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { ExternalLink, RefreshCw, Search } from "lucide-react";
+import { ExternalLink, Hand, RefreshCw, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { BRAND, formatAUD, type BikeDraft } from "./data";
+import { BRAND, formatAUD, resolvedBikeType, type BikeDraft } from "./data";
 import { Spinner, ShimmerText } from "./ui";
 import { fetchListingPricingResearch } from "./services";
 import type { ListingPricingResearch } from "@/lib/ai/listing-pricing-schema";
@@ -23,6 +23,7 @@ export interface PriceResearchGuideProps {
     | "condition"
     | "itemType"
     | "bikeType"
+    | "bikeSubtype"
     | "frameSize"
     | "groupset"
     | "partType"
@@ -48,6 +49,7 @@ function researchKey(draft: PriceResearchGuideProps["draft"]): string {
     draft.condition,
     draft.itemType,
     draft.bikeType,
+    draft.bikeSubtype,
     draft.frameSize,
     draft.groupset,
     draft.partType,
@@ -75,7 +77,7 @@ export function PriceResearchGuide({ draft, onUse, compact = false }: PriceResea
         year: draft.year,
         condition: draft.condition,
         itemType: draft.itemType,
-        bikeType: draft.bikeType,
+        bikeType: resolvedBikeType(draft),
         frameSize: draft.frameSize,
         groupset: draft.groupset,
         partType: draft.partType,
@@ -104,7 +106,7 @@ export function PriceResearchGuide({ draft, onUse, compact = false }: PriceResea
     return (
       <div className="rounded-md border border-gray-200 bg-white p-3.5">
         <p className="text-[13px] text-gray-500">
-          Add a title, brand, or model and we&apos;ll look up brand-new pricing and similar listings.
+          Add a title, brand, or model and we&apos;ll look up brand-new pricing, Facebook Marketplace, and similar listings.
         </p>
       </div>
     );
@@ -116,11 +118,11 @@ export function PriceResearchGuide({ draft, onUse, compact = false }: PriceResea
         <div className="flex items-center gap-2">
           <Spinner size={14} />
           <ShimmerText className="text-[13px] font-medium text-gray-700">
-            Searching the web for brand-new pricing…
+            Searching retailers and Facebook Marketplace…
           </ShimmerText>
         </div>
         <p className="mt-2 text-[12px] text-gray-400">
-          Checking retailers and marketplaces in Australia
+          Checking brand-new prices and comparable listings in Australia
         </p>
       </div>
     );
@@ -252,8 +254,9 @@ export function PriceResearchGuide({ draft, onUse, compact = false }: PriceResea
           <button
             type="button"
             onClick={() => onUse(suggested)}
-            className="mt-3 w-full rounded-md border border-gray-200 py-2 text-[13px] font-semibold text-gray-800 hover:bg-gray-50"
+            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-md border border-gray-200 py-2 text-[13px] font-semibold text-gray-800 hover:bg-gray-50"
           >
+            <Hand className="h-3.5 w-3.5" strokeWidth={2} />
             Use suggested price
           </button>
         </div>

@@ -5,7 +5,7 @@ import type { ListingAnalysisResult } from "@/lib/ai/schemas";
 import type { BikeSpecsData } from "@/lib/types/bike-specs";
 import { analysisToAiFieldsFallback } from "@/lib/ai/listing-field-suggestions";
 import type { ListingPricingInput, ListingPricingResearch } from "@/lib/ai/listing-pricing-schema";
-import { SPEC_SECTIONS, type AiField, type BikeDraft, type GuidedItemType, type SpecValues, type UploadedImage } from "./data";
+import { SPEC_SECTIONS, type AiField, type BikeDraft, type GuidedItemType, type SpecValues, type UploadedImage, resolvedBikeType } from "./data";
 
 // ============================================================
 // Production wiring for the sell-redesign flows.
@@ -338,7 +338,7 @@ export function mapDraftToListingPayload(draft: BikeDraft, status: "active" | "d
     brand: draft.brand || undefined,
     model: draft.model || undefined,
     modelYear: draft.year || undefined,
-    bikeType: isBike ? draft.bikeType || undefined : undefined,
+    bikeType: isBike ? resolvedBikeType(draft) || undefined : undefined,
     frameSize: isBike ? draft.frameSize || undefined : undefined,
     frameMaterial: isBike ? draft.frameMaterial || undefined : undefined,
     wheelSize: isBike ? draft.wheelSize || undefined : undefined,

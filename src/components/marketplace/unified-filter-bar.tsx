@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Package, ChevronRight, X, Store, Sparkles } from "lucide-react";
+import { SolarProvider, MagicStick3, Bag, Shop } from "@solar-icons/react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import {
@@ -197,53 +198,57 @@ export function UnifiedFilterBar({
           BikeStoresPicker only shown on Bike Stores tab.
           ════════════════════════════════════════ */}
 
-      {/* Mobile — segmented control. Tabs only; nothing crammed alongside.
-          Labels carry the meaning on their own, so no icons (less is more). */}
+      {/* Mobile — segmented control. Solar icons on For You / Browse / Stores; Uber keeps wordmark. */}
       <div className="sm:hidden px-3 pt-2 pb-1">
-        <div className="grid grid-cols-4 gap-0.5 rounded-full bg-gray-100 p-0.5">
-          <button
-            type="button"
-            onClick={goForYou}
-            className={cn(
-              "flex h-8 min-w-0 cursor-pointer items-center justify-center rounded-full px-1.5 text-[13px] font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
-              isForYouActive ? "bg-white text-gray-900 shadow-sm" : "text-gray-500",
-            )}
-          >
-            <span className="truncate">For You</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => { setOptimisticTab("marketplace"); onViewModeChange("all"); }}
-            className={cn(
-              "flex h-8 min-w-0 cursor-pointer items-center justify-center rounded-full px-1.5 text-[13px] font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
-              isBrowseActive ? "bg-white text-gray-900 shadow-sm" : "text-gray-500",
-            )}
-          >
-            {/* "Browse" (not "Marketplace") so four tabs fit on small screens */}
-            <span className="truncate">Browse</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => { setOptimisticTab("stores"); onNavigateToStores?.(); }}
-            className={cn(
-              "flex h-8 min-w-0 cursor-pointer items-center justify-center rounded-full px-1.5 text-[13px] font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
-              isStoresActive ? "bg-white text-gray-900 shadow-sm" : "text-gray-500",
-            )}
-          >
-            <span className="truncate">Stores</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => { setOptimisticTab("uber"); onNavigateToUber?.(); }}
-            className={cn(
-              "flex h-8 min-w-0 cursor-pointer items-center justify-center rounded-full px-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
-              isUberActive ? "bg-[#0eb462] shadow-sm" : "",
-            )}
-            aria-label="Uber delivery"
-          >
-            <UberLogo active={isUberActive} />
-          </button>
-        </div>
+        <SolarProvider value={{ weight: "Linear", color: "currentColor" }} svgProps={{ strokeWidth: 2 }}>
+          <div className="grid grid-cols-4 gap-0.5 rounded-full bg-gray-100 p-0.5">
+            <button
+              type="button"
+              onClick={goForYou}
+              className={cn(
+                "flex h-8 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full px-1 text-[12px] font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+                isForYouActive ? "bg-white text-gray-900 shadow-sm" : "text-gray-500",
+              )}
+            >
+              <MagicStick3 className="h-3.5 w-3.5 flex-shrink-0" />
+              <span className="truncate">For You</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setOptimisticTab("marketplace"); onViewModeChange("all"); }}
+              className={cn(
+                "flex h-8 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full px-1 text-[12px] font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+                isBrowseActive ? "bg-white text-gray-900 shadow-sm" : "text-gray-500",
+              )}
+            >
+              <Bag className="h-3.5 w-3.5 flex-shrink-0" />
+              {/* "Browse" (not "Marketplace") so four tabs fit on small screens */}
+              <span className="truncate">Browse</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setOptimisticTab("stores"); onNavigateToStores?.(); }}
+              className={cn(
+                "flex h-8 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full px-1 text-[12px] font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+                isStoresActive ? "bg-white text-gray-900 shadow-sm" : "text-gray-500",
+              )}
+            >
+              <Shop className="h-3.5 w-3.5 flex-shrink-0" />
+              <span className="truncate">Stores</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setOptimisticTab("uber"); onNavigateToUber?.(); }}
+              className={cn(
+                "flex h-8 min-w-0 cursor-pointer items-center justify-center rounded-full px-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+                isUberActive ? "bg-[#0eb462] shadow-sm" : "",
+              )}
+              aria-label="Uber delivery"
+            >
+              <UberLogo active={isUberActive} />
+            </button>
+          </div>
+        </SolarProvider>
       </div>
 
       {/* Desktop — filters always visible, no toggle button */}

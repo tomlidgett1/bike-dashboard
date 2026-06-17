@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   AltArrowRight,
   Bag,
@@ -24,7 +25,6 @@ import {
 } from "./sidebar-icons";
 import {
   Collapsible,
-  CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
@@ -48,6 +48,7 @@ import { NavUser } from "./nav-user";
 import { SidebarLightspeedStatus } from "./sidebar-lightspeed-status";
 import { SidebarViewStoreLink } from "./sidebar-view-store-link";
 import { SidebarCollapseTrigger } from "./sidebar-collapse-trigger";
+import { cn } from "@/lib/utils";
 
 const COMPRESSED_NAV_BUTTON =
   "data-active:bg-white data-active:shadow-sm";
@@ -142,44 +143,68 @@ function CollapsibleNavItem({
   pathname: string;
   onPrefetch: (href: string) => void;
 }) {
-  const open = groupActive(pathname, item);
+  const isActive = groupActive(pathname, item);
+  const [open, setOpen] = React.useState(isActive);
+
+  React.useEffect(() => {
+    if (isActive) setOpen(true);
+  }, [isActive]);
+
   return (
-    <Collapsible asChild defaultOpen={open} className="group/collapsible">
+    <Collapsible asChild open={open} onOpenChange={setOpen} className="group/collapsible">
       <SidebarMenuItem>
         <CollapsibleTrigger asChild>
           <SidebarMenuButton
             tooltip={item.title}
-            isActive={open}
+            isActive={isActive}
             size="sm"
             className={COMPRESSED_NAV_BUTTON}
           >
             <item.icon />
             <span>{item.title}</span>
-            <AltArrowRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+            <AltArrowRight
+              className={cn(
+                "ml-auto transition-transform duration-200",
+                open && "rotate-90",
+              )}
+            />
           </SidebarMenuButton>
         </CollapsibleTrigger>
-        <CollapsibleContent>
-          <SidebarMenuSub>
-            {item.items!.map((sub) => (
-              <SidebarMenuSubItem key={sub.href}>
-                <SidebarMenuSubButton
-                  asChild
-                  size="sm"
-                  isActive={sub.exact ? pathname === sub.href : pathname.startsWith(sub.href)}
-                  className="data-active:bg-white data-active:shadow-sm"
-                >
-                  <Link
-                    href={sub.href}
-                    onFocus={() => onPrefetch(sub.href)}
-                    onPointerEnter={() => onPrefetch(sub.href)}
-                  >
-                    {sub.title}
-                  </Link>
-                </SidebarMenuSubButton>
-              </SidebarMenuSubItem>
-            ))}
-          </SidebarMenuSub>
-        </CollapsibleContent>
+        <AnimatePresence initial={false}>
+          {open ? (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{
+                duration: 0.4,
+                ease: [0.04, 0.62, 0.23, 0.98],
+              }}
+              className="overflow-hidden"
+            >
+              <SidebarMenuSub>
+                {item.items!.map((sub) => (
+                  <SidebarMenuSubItem key={sub.href}>
+                    <SidebarMenuSubButton
+                      asChild
+                      size="sm"
+                      isActive={sub.exact ? pathname === sub.href : pathname.startsWith(sub.href)}
+                      className="data-active:bg-white data-active:shadow-sm"
+                    >
+                      <Link
+                        href={sub.href}
+                        onFocus={() => onPrefetch(sub.href)}
+                        onPointerEnter={() => onPrefetch(sub.href)}
+                      >
+                        {sub.title}
+                      </Link>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                ))}
+              </SidebarMenuSub>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </SidebarMenuItem>
     </Collapsible>
   );

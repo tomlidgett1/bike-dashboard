@@ -110,14 +110,15 @@ Your task is to research what a product sells for BRAND NEW in Australia, and fi
 
 SEARCH STRATEGY:
 1. Search for the official brand-new RRP / retail price in AUD from Australian retailers (99 Bikes, Bicycle Superstore, Reid, manufacturer AU site, major bike shops) or the manufacturer's official pricing.
-2. Search for 3–5 comparable listings on marketplaces and retailers (eBay Australia, Facebook Marketplace, Gumtree, Reverb, BikeExchange, retailer sale pages). Prefer listings that closely match brand, model, and year.
-3. Estimate a fair used price range for the seller's stated condition, based on brand-new price and comparable used listings.
+2. **Facebook Marketplace (required):** Run at least one dedicated search for Facebook Marketplace listings in Australia, e.g. "site:facebook.com/marketplace [brand] [model]" or "Facebook Marketplace [product] Australia". Include every real Facebook Marketplace listing you find in comparableListings with sourceName exactly "Facebook Marketplace" and the full listing URL.
+3. Search for additional comparable listings on other marketplaces and retailers (eBay Australia, Gumtree, Reverb, BikeExchange, retailer sale pages). Prefer listings that closely match brand, model, and year.
+4. Estimate a fair used price range for the seller's stated condition, based on brand-new price, Facebook Marketplace comps, and other comparable used listings.
 
 RULES:
 - All prices must be in AUD. Convert if the source is USD/NZD and note the conversion briefly in notes.
 - brandNew.priceAud must be the typical brand-new retail for this exact or closest matching product. Use 0 only if you truly cannot find a credible new price after searching.
-- comparableListings: return 3–5 entries with real titles, prices, condition, source name, and URLs you found via search.
-- usedMarket: suggest low / sweet-spot / high AUD prices for a private seller listing, adjusted for the stated condition.
+- comparableListings: return 3–5 entries with real titles, prices, condition, source name, and URLs you found via search. **Include at least 1–2 from Facebook Marketplace when any exist** — do not skip Facebook in favour of only retailer pages.
+- usedMarket: suggest low / sweet-spot / high AUD prices for a private seller listing, adjusted for the stated condition and Facebook Marketplace / peer-to-peer comps where available.
 - Be honest about confidence — use "low" when the match is approximate.
 - Australian English in all text fields.
 - Do NOT invent URLs or prices. Only include listings and sources you actually found.

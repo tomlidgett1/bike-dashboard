@@ -28,7 +28,10 @@ export function StatusBadge({
   return (
     <Badge
       variant="outline"
-      className={cn("gap-1.5 font-normal text-muted-foreground", className)}
+      className={cn(
+        "gap-1.5 rounded-md border-gray-200 bg-white font-normal text-muted-foreground",
+        className,
+      )}
     >
       <span className={cn("size-1.5 rounded-full", DOT[tone])} />
       {label}

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AudioLines, Plus, Square } from "@/components/layout/app-sidebar/dashboard-icons";
+import { Plus, Send, Square } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 
 export function HomeV2ChatInput({
@@ -180,7 +180,7 @@ export function HomeV2ChatInput({
           {isRunning && !hasText ? (
             <Square className="h-3.5 w-3.5 fill-current" />
           ) : (
-            <AudioLines className="h-4 w-4" />
+            <Send className="h-4 w-4" />
           )}
         </button>
       </div>

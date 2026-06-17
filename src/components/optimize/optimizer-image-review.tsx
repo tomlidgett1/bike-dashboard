@@ -5,11 +5,10 @@ import Image from "next/image";
 import {
   AlertCircle,
   CheckCircle2,
-  Eye,
   Loader2,
   Plus,
   RefreshCw,
-  Sparkles,
+  Search,
   Star,
   Wand2,
   X,
@@ -33,10 +32,12 @@ export function OptimizerImageReview({
   onEnhance,
   onToggleAdditional,
   onApprove,
+  onRerunSearch,
   onEnhanceDisplayReady,
   onLightbox,
   saving,
   hideApproveAction = false,
+  hideToolbar = false,
   size = "default",
 }: {
   img: ImageRun;
@@ -47,15 +48,16 @@ export function OptimizerImageReview({
   onEnhance: (url: string) => void;
   onToggleAdditional: () => void;
   onApprove: () => void;
+  onRerunSearch?: () => void;
   onEnhanceDisplayReady?: (originalUrl: string) => void;
   onLightbox: (url: string) => void;
   saving: boolean;
   hideApproveAction?: boolean;
+  hideToolbar?: boolean;
   size?: "default" | "large" | "compact";
 }) {
   const editable = img.phase === "ready";
   const done = img.phase === "done";
-  const isSmartPhotoRun = img.photoSystem === "smart_product_photos";
   const selectedUrlsKey = img.selectedUrls.join("|");
   const enhancedUrlsKey = JSON.stringify(img.enhancedUrls ?? {});
   const [loadedDisplaySrcs, setLoadedDisplaySrcs] = React.useState<Record<string, boolean>>({});
@@ -127,71 +129,55 @@ export function OptimizerImageReview({
 
   return (
     <div className={cn("w-full min-w-0", size === "compact" ? "space-y-1" : "space-y-3")}>
-      {size !== "compact" ? (
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-1.5 text-xs font-medium text-muted-foreground">
+      {size !== "compact" && !hideToolbar && (done || editable) ? (
+        <div
+          className={cn(
+            "flex flex-wrap items-center gap-2",
+            done ? "justify-between" : "justify-end",
+          )}
+        >
           {done ? (
-            <>
+            <div className="flex flex-wrap items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
               Saved {img.savedCount ?? img.selectedUrls.length} photo
               {(img.savedCount ?? img.selectedUrls.length) === 1 ? "" : "s"}
-            </>
-          ) : (
-            <>
-              <Eye className="h-3.5 w-3.5 text-primary" />
-              Pick a primary photo, remove any you don&apos;t want, then approve.
-            </>
-          )}
-          {isSmartPhotoRun ? <SmartPhotoSystemBadge /> : null}
+            </div>
+          ) : null}
+          {editable ? (
+            <OptimizerPhotoToolbar
+              img={img}
+              hasCanonical={hasCanonical}
+              saving={saving}
+              hideApproveAction={hideApproveAction}
+              onToggleAdditional={onToggleAdditional}
+              onRerunSearch={onRerunSearch}
+              onApprove={onApprove}
+            />
+          ) : null}
         </div>
-        {editable && (
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              disabled={img.reloading}
-              onClick={onToggleAdditional}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground transition hover:bg-accent disabled:opacity-50"
-            >
-              {img.reloading ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <RefreshCw className="h-3 w-3" />
-              )}
-              {img.showAdditional ? "Hide more" : "More images"}
-            </button>
-            {!hideApproveAction && (
-              <Button type="button" size="sm" disabled={saving || !hasCanonical} onClick={onApprove}>
-                {saving ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="size-4" />
-                )}
-                Approve ({img.selectedUrls.length})
-              </Button>
+      ) : size !== "compact" && hideToolbar && done ? (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+          Saved {img.savedCount ?? img.selectedUrls.length} photo
+          {(img.savedCount ?? img.selectedUrls.length) === 1 ? "" : "s"}
+        </div>
+      ) : size === "compact" && editable ? (
+        <div className="flex items-center justify-end gap-1">
+          <button
+            type="button"
+            disabled={img.reloading}
+            onClick={onToggleAdditional}
+            className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-1.5 py-0.5 text-[10px] text-muted-foreground transition hover:bg-accent disabled:opacity-50"
+          >
+            {img.reloading ? (
+              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-2.5 w-2.5" />
             )}
-          </div>
-        )}
-      </div>
-      ) : (
-        <div className="flex items-center justify-between gap-1">
-          {isSmartPhotoRun ? <SmartPhotoSystemBadge compact /> : <span />}
-          {editable && (
-            <button
-              type="button"
-              disabled={img.reloading}
-              onClick={onToggleAdditional}
-              className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-1.5 py-0.5 text-[10px] text-muted-foreground transition hover:bg-accent disabled:opacity-50"
-            >
-              {img.reloading ? (
-                <Loader2 className="h-2.5 w-2.5 animate-spin" />
-              ) : (
-                <RefreshCw className="h-2.5 w-2.5" />
-              )}
-              More
-            </button>
-          )}
+            More
+          </button>
         </div>
-      )}
+      ) : null}
 
       {!hasCanonical && (
         <p
@@ -387,16 +373,45 @@ export function OptimizerImageReview({
   );
 }
 
-function SmartPhotoSystemBadge({ compact = false }: { compact?: boolean }) {
+export function OptimizerPhotoToolbar({
+  img,
+  hasCanonical,
+  saving,
+  hideApproveAction = false,
+  onToggleAdditional,
+  onRerunSearch,
+  onApprove,
+  className,
+}: {
+  img: ImageRun;
+  hasCanonical: boolean;
+  saving: boolean;
+  hideApproveAction?: boolean;
+  onToggleAdditional: () => void;
+  onRerunSearch?: () => void;
+  onApprove: () => void;
+  className?: string;
+}) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-md border border-border bg-white font-medium text-muted-foreground shadow-sm",
-        compact ? "px-1.5 py-0.5 text-[9px]" : "px-1.5 py-0.5 text-[10px]",
-      )}
-    >
-      <Sparkles className={compact ? "h-2.5 w-2.5" : "h-3 w-3"} />
-      Powered by new photo system
-    </span>
+    <div className={cn("flex flex-wrap items-center justify-end gap-1.5", className)}>
+      <Button type="button" size="sm" variant="outline" disabled={img.reloading} onClick={onToggleAdditional}>
+        {img.reloading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+        {img.showAdditional ? "Hide more" : "More images"}
+      </Button>
+      {!hideApproveAction ? (
+        <>
+          {onRerunSearch ? (
+            <Button type="button" size="sm" onClick={onRerunSearch}>
+              <Search className="size-4" />
+              Rerun search
+            </Button>
+          ) : null}
+          <Button type="button" size="sm" disabled={saving || !hasCanonical} onClick={onApprove}>
+            {saving ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+            Approve ({img.selectedUrls.length})
+          </Button>
+        </>
+      ) : null}
+    </div>
   );
 }

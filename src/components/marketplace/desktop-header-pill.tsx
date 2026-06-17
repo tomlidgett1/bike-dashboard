@@ -32,6 +32,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  getMarketplaceListingsRoute,
   getMarketplaceSettingsRoute,
   getMarketplaceUserNavLabels,
   shouldShowMarketplaceSidebar,
@@ -80,8 +81,7 @@ function DesktopHeaderPillContent() {
   const getSettingsRoute = () =>
     getMarketplaceSettingsRoute(isVerifiedStore);
 
-  const getPurchasesRoute = () =>
-    isVerifiedStore ? "/marketplace/purchases" : "/settings/purchases";
+  const getListingsRoute = () => getMarketplaceListingsRoute();
 
   const navLabels = getMarketplaceUserNavLabels(profile?.account_type);
 
@@ -129,9 +129,11 @@ function DesktopHeaderPillContent() {
               {navLabels.shopfront}
             </Link>
             <Link
-              href={getPurchasesRoute()}
+              href={getListingsRoute()}
               className={cn(
                 "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
+                pathname === "/settings/my-listings" ||
+                pathname.startsWith("/settings/my-listings/") ||
                 pathname === "/marketplace/purchases" ||
                 pathname === "/settings/purchases" ||
                 pathname.startsWith("/marketplace/purchases/") ||
@@ -228,7 +230,7 @@ function DesktopHeaderPillContent() {
                   <span>{navLabels.shopfront}</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => router.push(getPurchasesRoute())}
+                  onClick={() => router.push(getListingsRoute())}
                   className="cursor-pointer rounded-md"
                 >
                   <ShoppingBag className="mr-2 h-4 w-4" />

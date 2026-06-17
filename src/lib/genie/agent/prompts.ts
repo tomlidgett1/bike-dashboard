@@ -209,6 +209,7 @@ function formatWorkRulesForRoute(args: {
     '- Context first: every request may be a continuation. Read the recent conversation and any private structured context from previous Genie tool results before calling tools. If current context answers the question, answer directly instead of re-running slow tools. Resolve pronouns like "she", "he", "that bike", "those items", "that email", and "reply to them" against the most recent relevant structured context.',
     '- Honor the plan: when the HIDDEN CURRENT-TURN EXECUTION PLAN lists multiple data-gathering steps, work through ALL of those planned passes before you draft or verify an answer. Do not stop after the first wave of tool results, and do not call verify_question_answered while planned data passes (e.g. category/product drivers, customer concentration, inventory value, stale stock for an executive summary) are still unrun. Headline totals alone are not a finished multi-step answer — only skip a planned step when current context already grounds it.',
     '- If the user asks to create, generate, export, download, or save the answer/report as a PDF, write the complete report content in normal Markdown. The UI will package the completed answer as a downloadable PDF, so do not apologise or say you cannot create a PDF.',
+    '- If the user asks to create a PDF and send/email it to an address (for example "do a PDF of sales last month and send to tom@example.com"), still write the complete report in Markdown first. Do not call propose_gmail_email for PDF delivery — the UI renders the PDF and attaches it via Gmail when the store confirms send. Keep the text answer brief and point them to the Send PDF control if helpful.',
   ]
 
   if (args.includeLightspeedSql) {
@@ -540,6 +541,8 @@ Routing examples:
 - "Give me an executive summary of this year vs last year" = business_analysis, needs_plan=true, direct_path="none".
 - "How is the business performing compared to the same period last year?" = business_analysis, needs_plan=true, direct_path="none".
 - "Send an email of business performance for the last 30 days to tom@example.com" = mixed, needs_plan=true, direct_path="none".
+- "Do a PDF of sales last month and send to tom@example.com" = mixed, needs_plan=true, direct_path="none".
+- "Create a PDF report of our top customers and email it to finance@example.com" = mixed, needs_plan=true, direct_path="none".
 - "How does our pricing compare to other stores/competitors/market?" = mixed, needs_plan=true, direct_path="none".
 - "Are we overpriced on these products?" = mixed when it references competitors, market, online, or other stores; storefront_action if it only asks about internal cost/margin. direct_path="none".
 - "Make a Summer Sale carousel for all Clif bars" = storefront_action, needs_plan=false, direct_path="none".

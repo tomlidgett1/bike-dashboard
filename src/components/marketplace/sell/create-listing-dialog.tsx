@@ -3,7 +3,7 @@
 import * as React from "react";
 import { ArrowLeft } from "lucide-react";
 import { ListingCountBento } from "./listing-count-bento";
-import { ListingLayoutBento } from "./listing-layout-bento";
+import { ListingMethodBento } from "./listing-method-bento";
 import { ListingPhotosPanel, type ListingPhotoDraft } from "./listing-photos-panel";
 import {
   Dialog,
@@ -13,7 +13,7 @@ import {
 
 // ============================================================
 // Desktop "Create Listing" dialog
-// One item: count → photos → guided | quick upload
+// One item: count → method → photos (guided | quick upload)
 // ============================================================
 
 interface CreateListingDialogProps {
@@ -25,7 +25,8 @@ interface CreateListingDialogProps {
   onSelectBulk: () => void;
 }
 
-type DialogStep = "count" | "photos" | "layout";
+type DialogStep = "count" | "method" | "photos";
+type ListingMode = "guided" | "form";
 
 const emptyPhotoDraft = (): ListingPhotoDraft => ({ images: [], uploadedImages: [] });
 
@@ -39,12 +40,14 @@ export function CreateListingDialog({
 }: CreateListingDialogProps) {
   const [step, setStep] = React.useState<DialogStep>("count");
   const [photoDraft, setPhotoDraft] = React.useState<ListingPhotoDraft>(emptyPhotoDraft);
+  const [listingMode, setListingMode] = React.useState<ListingMode | null>(null);
 
   React.useEffect(() => {
     if (!open) {
       const timer = setTimeout(() => {
         setStep("count");
         setPhotoDraft(emptyPhotoDraft());
+        setListingMode(null);
       }, 250);
       return () => clearTimeout(timer);
     }
@@ -56,9 +59,11 @@ export function CreateListingDialog({
   };
 
   const goBack = () => {
-    if (step === "layout") setStep("photos");
-    else if (step === "photos") {
+    if (step === "photos") {
       setPhotoDraft(emptyPhotoDraft());
+      setListingMode(null);
+      setStep("method");
+    } else if (step === "method") {
       setStep("count");
     }
   };
@@ -81,13 +86,13 @@ export function CreateListingDialog({
             <div>
               <DialogTitle className="text-[19px] font-bold tracking-tight text-gray-900">
                 {step === "count" && "Create a listing"}
+                {step === "method" && "How do you want to list it?"}
                 {step === "photos" && "Add photos"}
-                {step === "layout" && "How do you want to list it?"}
               </DialogTitle>
               <p className="mt-0.5 text-[13.5px] text-gray-500">
                 {step === "count" && "One item or bulk"}
+                {step === "method" && "Pick the method that suits you"}
                 {step === "photos" && "We'll recognise what you're selling"}
-                {step === "layout" && "Same photos — pick a layout"}
               </p>
             </div>
           </div>
@@ -99,11 +104,23 @@ export function CreateListingDialog({
         >
           {step === "count" && (
             <ListingCountBento
-              onSelectOneItem={() => {
+              onSelectOneItem={() => setStep("method")}
+              onSelectBulk={() => choose(onSelectBulk)}
+            />
+          )}
+
+          {step === "method" && (
+            <ListingMethodBento
+              onSelectGuided={() => {
                 setPhotoDraft(emptyPhotoDraft());
+                setListingMode("guided");
                 setStep("photos");
               }}
-              onSelectBulk={() => choose(onSelectBulk)}
+              onSelectQuickUpload={() => {
+                setPhotoDraft(emptyPhotoDraft());
+                setListingMode("form");
+                setStep("photos");
+              }}
               onSelectText={() => choose(onSelectText)}
               onSelectFacebook={() => choose(onSelectFacebook)}
             />
@@ -113,14 +130,13 @@ export function CreateListingDialog({
             <ListingPhotosPanel
               draft={photoDraft}
               onChange={setPhotoDraft}
-              onContinue={() => setStep("layout")}
-            />
-          )}
-
-          {step === "layout" && (
-            <ListingLayoutBento
-              onSelectGuided={() => choose(() => onStartSingleListing("guided", photoDraft))}
-              onSelectQuickUpload={() => choose(() => onStartSingleListing("form", photoDraft))}
+              onContinue={() => {
+                if (listingMode === "guided") {
+                  choose(() => onStartSingleListing("guided", photoDraft));
+                } else if (listingMode === "form") {
+                  choose(() => onStartSingleListing("form", photoDraft));
+                }
+              }}
             />
           )}
         </div>

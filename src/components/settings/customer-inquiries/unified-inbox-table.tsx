@@ -16,13 +16,13 @@ import type { UnifiedInboxController, UnifiedInboxRow } from "./use-unified-inbo
 
 function StatusBadge({ row }: { row: UnifiedInboxRow }) {
   const toneClass: Record<UnifiedInboxRow["statusTone"], string> = {
-    unread: "border-blue-200 bg-blue-50 text-blue-800",
-    ready: "border-indigo-200 bg-indigo-50 text-indigo-800",
-    responded: "border-emerald-200 bg-emerald-50 text-emerald-800",
-    ignored: "border-gray-200 bg-gray-50 text-gray-500",
-    processing: "border-amber-200 bg-amber-50 text-amber-800",
-    error: "border-red-200 bg-red-50 text-red-800",
-    neutral: "border-gray-200 bg-white text-gray-500",
+    unread: "border-blue-200 bg-white text-blue-800",
+    ready: "border-violet-200 bg-white text-violet-800",
+    responded: "border-emerald-200 bg-white text-emerald-800",
+    ignored: "border-gray-200 bg-white text-gray-500",
+    processing: "border-amber-200 bg-white text-amber-800",
+    error: "border-red-200 bg-white text-red-800",
+    neutral: "border-gray-200 bg-white text-gray-600",
   };
 
   const dotClass: Record<UnifiedInboxRow["statusTone"], string> = {

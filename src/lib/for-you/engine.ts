@@ -8,6 +8,7 @@ import { collectSignals, persistPreferenceProfile } from "./signals";
 import { fetchCandidates, validateProductIds } from "./candidates";
 import { buildDeterministicFeed, buildLlmSummary } from "./feed";
 import { enhanceFeedWithLlm } from "./llm";
+import { fetchMoreProductsForFeed, pickMoreProductsFromCandidates } from "./more-products";
 import type {
   ForYouCarouselDef,
   ForYouFeedPayload,
@@ -146,9 +147,14 @@ async function buildFreshFeed(identity: ForYouIdentity): Promise<ForYouFeedPaylo
   void persistPreferenceProfile(identity, signals).catch(() => {});
 
   const liveRows = new Map([...candidates.entries()].map(([id, c]) => [id, c.row]));
+  const hydratedCarousels = hydrateCarousels(carousels, liveRows);
+  const moreProducts = pickMoreProductsFromCandidates(hydratedCarousels, candidates, {
+    dismissedIds: signals.dismissedProductIds,
+  });
   return {
     feedId,
-    carousels: hydrateCarousels(carousels, liveRows),
+    carousels: hydratedCarousels,
+    moreProducts,
     personalised,
     source: "deterministic",
     generatedAt: new Date().toISOString(),
@@ -170,9 +176,11 @@ export async function getForYouFeed(
       // If availability churn gutted the cached feed, rebuild instead.
       const liveCount = carousels.reduce((sum, c) => sum + c.products.length, 0);
       if (carousels.length >= 3 && liveCount >= allIds.length * 0.5) {
+        const moreProducts = await fetchMoreProductsForFeed(carousels);
         return {
           feedId: cached.id,
           carousels,
+          moreProducts,
           personalised: cached.feed.personalised,
           source: cached.source,
           generatedAt: cached.created_at,
@@ -233,9 +241,13 @@ export async function enhanceForYouFeed(
     enhanced.model,
   );
 
+  const hydratedCarousels = hydrateCarousels(enhanced.carousels, liveRows);
+  const moreProducts = await fetchMoreProductsForFeed(hydratedCarousels);
+
   return {
     feedId: newFeedId,
-    carousels: hydrateCarousels(enhanced.carousels, liveRows),
+    carousels: hydratedCarousels,
+    moreProducts,
     personalised: row.feed.personalised,
     source: "llm",
     generatedAt: new Date().toISOString(),

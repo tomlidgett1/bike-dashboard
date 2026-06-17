@@ -13,7 +13,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { BRAND, BRAND_SOFT, INK, type Confidence, confidenceMeta } from "./data";
+import { BRAND, BRAND_SOFT, BIKE_TYPES, bikeTypeSubtypes, type Confidence, confidenceMeta } from "./data";
 
 // ============================================================
 // Shared UI primitives for the sell-redesign prototypes.
@@ -139,8 +139,8 @@ export function NumberInput({
     <div className="relative">
       <span
         className={cn(
-          "pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400",
-          big && "text-[22px]",
+          "pointer-events-none absolute left-3 top-1/2 -translate-y-1/2",
+          big ? "text-[36px] font-bold text-gray-900" : "text-[16px] text-gray-400",
         )}
       >
         {prefix}
@@ -152,7 +152,7 @@ export function NumberInput({
         placeholder={placeholder}
         className={cn(
           inputBase,
-          big ? "h-16 pl-9 text-[28px] font-bold" : "h-12 pl-7",
+          big ? "h-20 pl-12 text-[36px] font-bold tracking-tight" : "h-12 pl-7",
         )}
       />
     </div>
@@ -236,6 +236,40 @@ export function OptionPills({
   );
 }
 
+export function BikeTypePicker({
+  bikeType,
+  bikeSubtype,
+  onChange,
+}: {
+  bikeType: string;
+  bikeSubtype: string;
+  onChange: (next: { bikeType: string; bikeSubtype: string }) => void;
+}) {
+  const subtypes = bikeType ? bikeTypeSubtypes(bikeType) : [];
+
+  return (
+    <div className="space-y-3">
+      <OptionPills
+        value={bikeType}
+        options={BIKE_TYPES}
+        columns={3}
+        onChange={(nextType) => onChange({ bikeType: nextType, bikeSubtype: "" })}
+      />
+      {subtypes.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[13px] text-gray-500">More specific</p>
+          <OptionPills
+            value={bikeSubtype}
+            options={subtypes}
+            columns={subtypes.length > 4 ? 3 : 2}
+            onChange={(nextSubtype) => onChange({ bikeType, bikeSubtype: nextSubtype })}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---- Toggle -------------------------------------------------
 
 export function Toggle({
@@ -255,7 +289,7 @@ export function Toggle({
         "relative h-7 w-12 flex-shrink-0 rounded-full transition-colors",
         checked ? "" : "bg-gray-200",
       )}
-      style={checked ? { backgroundColor: INK } : undefined}
+      style={checked ? { backgroundColor: BRAND } : undefined}
     >
       <span
         className={cn(
@@ -279,6 +313,35 @@ export function ProgressBar({ value }: { value: number }) {
         animate={{ width: `${Math.round(value * 100)}%` }}
         transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
       />
+    </div>
+  );
+}
+
+export function MacroProgressHeader({
+  step,
+  labels,
+}: {
+  step: number;
+  labels: readonly string[];
+}) {
+  const safeStep = Math.max(0, Math.min(step, labels.length - 1));
+  return (
+    <div className="flex-shrink-0 px-4 pb-3 pt-1">
+      <div className="flex items-center gap-1.5">
+        {labels.map((label, i) => (
+          <div
+            key={label}
+            className={cn(
+              "h-1.5 flex-1 rounded-full transition-colors",
+              i <= safeStep ? "" : "bg-gray-200",
+            )}
+            style={i <= safeStep ? { backgroundColor: BRAND } : undefined}
+          />
+        ))}
+      </div>
+      <p className="mt-1.5 text-[12px] font-medium text-gray-500">
+        Step {safeStep + 1} of {labels.length} · {labels[safeStep]}
+      </p>
     </div>
   );
 }
@@ -677,11 +740,13 @@ export function BottomSheet({
   open,
   onClose,
   title,
+  subtitle,
   children,
 }: {
   open: boolean;
   onClose: () => void;
   title?: string;
+  subtitle?: string;
   children: React.ReactNode;
 }) {
   if (!open) return null;
@@ -696,12 +761,17 @@ export function BottomSheet({
       <div className="relative z-10 w-full max-w-[460px] animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out">
         <div className="rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl">
           {title && (
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-[16px] font-bold text-gray-900">{title}</h3>
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="text-[16px] font-bold text-gray-900">{title}</h3>
+                {subtitle && (
+                  <p className="mt-0.5 text-[13px] leading-relaxed text-gray-500">{subtitle}</p>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={onClose}
-                className="grid h-8 w-8 place-items-center rounded-md text-gray-400 hover:bg-gray-100"
+                className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-md text-gray-400 hover:bg-gray-100"
                 aria-label="Close"
               >
                 <X className="h-5 w-5" />

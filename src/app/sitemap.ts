@@ -1,5 +1,6 @@
 import type { MetadataRoute } from 'next';
 import { SITE_URL, productSlugId } from '@/lib/seo/site';
+import { getAllLandingSlugs } from '@/lib/seo/landing-pages';
 import { createPublicSupabaseClient } from '@/lib/marketplace/public-card-feed';
 import { resolveProductImage } from '@/lib/services/image-resolver';
 import { toCurrentHeroPublicId } from '@/lib/utils/cloudinary-transforms';
@@ -24,6 +25,7 @@ const STATIC_ROUTES: Array<{
   { path: '/marketplace/used-products', priority: 0.8, changeFrequency: 'daily' },
   { path: '/sell-your-bike', priority: 0.8, changeFrequency: 'monthly' },
   { path: '/used-bikes', priority: 0.8, changeFrequency: 'daily' },
+  { path: '/guides', priority: 0.8, changeFrequency: 'weekly' },
   { path: '/for-you', priority: 0.5, changeFrequency: 'daily' },
   { path: '/marketplace/help', priority: 0.3, changeFrequency: 'monthly' },
 ];
@@ -116,6 +118,25 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: r.changeFrequency,
     priority: r.priority,
   }));
+
+  for (const slug of getAllLandingSlugs()) {
+    entries.push({
+      url: `${SITE_URL}/guides/${slug}`,
+      lastModified: now,
+      changeFrequency: 'weekly',
+      priority: 0.75,
+    });
+  }
+
+  // City used-bike hubs
+  for (const city of ['melbourne', 'sydney', 'brisbane', 'perth', 'adelaide']) {
+    entries.push({
+      url: `${SITE_URL}/used-bikes/${city}`,
+      lastModified: now,
+      changeFrequency: 'daily',
+      priority: 0.75,
+    });
+  }
 
   try {
     const supabase = createPublicSupabaseClient();

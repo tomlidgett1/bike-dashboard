@@ -188,7 +188,7 @@ export function DetailedSpecs({
       <AiRedoDialog
         open={redoOpen}
         title="Redo specifications"
-        description="If AI found specs for the wrong bike, type the exact product name and model year. We'll search again and replace the current spec values."
+        subtitle="If AI found specs for the wrong bike, type the exact product name and model year below."
         placeholder="e.g. 2021 Specialized Allez Elite Disc, 54cm"
         submitLabel="Search specs again"
         isSubmitting={fetching}

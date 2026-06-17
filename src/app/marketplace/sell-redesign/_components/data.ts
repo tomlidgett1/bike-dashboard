@@ -22,11 +22,44 @@ export const BIKE_TYPES = [
   "Gravel",
   "Hybrid",
   "Electric",
+  "Cyclocross",
+  "Time Trial",
+  "Track",
   "BMX",
   "Cruiser",
   "Kids",
   "Other",
 ] as const;
+
+/** Shown below the main type when a parent has refinements. */
+export const BIKE_TYPE_SUBTYPES: Record<string, readonly string[]> = {
+  Road: ["Aero Road", "Endurance", "Race", "All-rounder"],
+  Mountain: ["XC", "Trail", "Enduro", "Downhill"],
+  Gravel: ["Adventure", "Race", "Bikepacking"],
+  Hybrid: ["Fitness", "Comfort", "Commuter"],
+  Electric: ["E-Road", "E-Gravel", "E-MTB Hardtail", "E-MTB Full Suspension", "E-Commuter"],
+  BMX: ["Race", "Freestyle"],
+  Cruiser: ["Beach", "City"],
+  Kids: ["Balance", '12–16"', '20–24"'],
+  "Time Trial": ["Triathlon", "Pursuit", "Aero"],
+  Track: ["Sprint", "Keirin", "Pursuit", "Fixie"],
+  Cyclocross: [],
+  Other: [],
+};
+
+export function bikeTypeSubtypes(parent: string): readonly string[] {
+  return BIKE_TYPE_SUBTYPES[parent] ?? [];
+}
+
+export function formatBikeTypeDisplay(draft: Pick<BikeDraft, "bikeType" | "bikeSubtype">): string {
+  if (!draft.bikeType) return "";
+  if (draft.bikeSubtype) return `${draft.bikeType} · ${draft.bikeSubtype}`;
+  return draft.bikeType;
+}
+
+export function resolvedBikeType(draft: Pick<BikeDraft, "bikeType" | "bikeSubtype">): string {
+  return draft.bikeSubtype || draft.bikeType;
+}
 
 export const FRAME_MATERIALS = [
   "Carbon",
@@ -251,6 +284,7 @@ export interface BikeDraft {
   itemType: GuidedItemType;
   title: string;
   bikeType: string;
+  bikeSubtype: string;
   partType: string;
   size: string;
   brand: string;
@@ -368,6 +402,7 @@ export function emptyDraft(): BikeDraft {
     itemType: "",
     title: "",
     bikeType: "",
+    bikeSubtype: "",
     partType: "",
     size: "",
     brand: "",
@@ -387,7 +422,7 @@ export function emptyDraft(): BikeDraft {
     shippingAvailable: true,
     shippingCost: 45,
     pickupAvailable: true,
-    pickupLocation: "Brunswick, VIC",
+    pickupLocation: "",
     specs: {},
   };
 }
@@ -423,6 +458,13 @@ export function formatAUD(value: number): string {
     currency: "AUD",
     maximumFractionDigits: 0,
   }).format(value || 0);
+}
+
+export function draftProductLabel(draft: Pick<BikeDraft, "title" | "brand" | "model">): string | null {
+  const label =
+    draft.title?.trim() ||
+    [draft.brand, draft.model].filter(Boolean).join(" ").trim();
+  return label || null;
 }
 
 // Live listing quality score — drives the AI "boost your listing" nudges.

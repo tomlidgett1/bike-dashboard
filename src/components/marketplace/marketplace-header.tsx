@@ -3,12 +3,14 @@
 import * as React from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
-import { Menu, X, Settings, LogOut, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus, Mail, Loader2, Bell, SlidersHorizontal } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Menu, X, Settings, LogOut, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus, Mail, Loader2, SlidersHorizontal, Sparkles } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { InstantSearch } from "./instant-search";
 import { DesktopHeaderPill } from "./desktop-header-pill";
 import {
+  getMarketplaceListingsRoute,
   getMarketplaceSettingsRoute,
   getMarketplaceUserNavLabels,
 } from "@/lib/marketplace-nav";
@@ -90,22 +92,19 @@ interface MobileNavItemProps {
   onClick: () => void;
 }
 
-function UberLogoIcon({ className }: { className?: string }) {
-  // The wide Uber wordmark keeps its natural aspect ratio (no squashing) and is
-  // centred within the nav row's standard icon slot so the labels stay aligned.
-  return (
-    <span className={cn("flex items-center justify-center", className)}>
-      <Image
-        src="/uber.png"
-        alt="Uber"
-        width={52}
-        height={22}
-        className="h-3 w-auto max-w-none"
-        unoptimized
-      />
-    </span>
-  );
-}
+const FAB_LAYOUT_SPRING = {
+  type: "spring" as const,
+  stiffness: 520,
+  damping: 34,
+  mass: 0.75,
+};
+
+const FAB_SATELLITE_SPRING = {
+  type: "spring" as const,
+  stiffness: 460,
+  damping: 26,
+  mass: 0.7,
+};
 
 function MobileNavItem({ icon: Icon, label, subtitle, onClick }: MobileNavItemProps) {
   return (
@@ -459,7 +458,7 @@ export function MarketplaceHeader({
               {mobileBrowseSort}
               {mounted && user && (
                 <>
-                  <NotificationsDropdown />
+                  <NotificationsDropdown plainMobile />
                   <button
                     onClick={() => compactSearchOnMobile ? router.push('/messages') : setMessagesSheetOpen(true)}
                     className="relative h-9 w-9 hover:bg-gray-100 rounded-md transition-colors flex items-center justify-center overflow-visible"
@@ -513,55 +512,73 @@ export function MarketplaceHeader({
 
       {/* Mobile Space Navigator removed - now integrated into UnifiedFilterBar */}
 
-      {/* Mobile floating action bar — single glass capsule, one primary action */}
+      {/* Mobile floating list CTA — primary pill floats on its own; secondary actions are satellite orbs */}
       {showFloatingButton && mounted && !mobileUploadMethodOpen && !smartUploadModalOpen && !facebookModalOpen && !textUploadDialogOpen && !isUploading && !quickUploadMode && !bulkUploadSheetOpen && (
         <div
           className="sm:hidden fixed inset-x-0 bottom-0 z-50 pointer-events-none animate-in fade-in slide-in-from-bottom-4 duration-300"
           style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
         >
-          <div className="pointer-events-auto mx-auto w-full max-w-[340px] px-4">
-            <div
-              className="flex items-center gap-1.5 rounded-full border border-gray-200/80 bg-white/85 p-1.5 shadow-[0_4px_24px_rgba(17,17,17,0.10),0_1px_3px_rgba(17,17,17,0.06)] backdrop-blur-xl"
+          <motion.div
+            layout
+            className="pointer-events-auto mx-auto flex w-full max-w-[360px] items-center gap-2.5 px-4"
+            transition={FAB_LAYOUT_SPRING}
+          >
+            <motion.button
+              layout
+              type="button"
+              onClick={() => setMobileUploadMethodOpen(true)}
+              transition={FAB_LAYOUT_SPRING}
+              className="flex min-w-0 flex-1 items-center justify-center gap-2.5 rounded-full bg-[#ffde59] px-5 py-3.5 text-[15px] font-semibold tracking-tight text-gray-900 shadow-[0_12px_40px_rgba(255,222,89,0.55),0_8px_24px_rgba(17,17,17,0.18)] ring-1 ring-black/[0.06] transition-colors hover:bg-[#f0cf45] active:scale-[0.97]"
             >
-              <button
-                type="button"
-                onClick={() => setMobileUploadMethodOpen(true)}
-                className="flex min-w-0 flex-1 items-center justify-center gap-2 rounded-full bg-[#ffde59] px-4 py-2.5 text-[15px] font-semibold tracking-tight text-gray-900 transition-transform hover:bg-[#f0cf45] active:scale-[0.98]"
-              >
-                <Plus className="h-4 w-4 shrink-0" strokeWidth={2.25} />
-                <span className="truncate whitespace-nowrap">
-                  {user ? "List item" : "Sell"}
-                </span>
-              </button>
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-900">
+                <Plus className="h-3.5 w-3.5 text-white" strokeWidth={2.75} />
+              </span>
+              <span className="truncate whitespace-nowrap">
+                {user ? "List item" : "Sell"}
+              </span>
+            </motion.button>
 
+            <AnimatePresence mode="popLayout" initial={false}>
               {showMobileBrowseFiltersFab && onOpenMobileBrowseFilters && (
-                <button
+                <motion.button
+                  key="browse-filters-fab"
+                  layout
                   type="button"
+                  initial={{ opacity: 0, scale: 0.55 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.55 }}
+                  transition={FAB_SATELLITE_SPRING}
                   onClick={onOpenMobileBrowseFilters}
-                  className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-600 transition-colors hover:bg-gray-100/80 active:scale-95"
+                  className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-gray-700 shadow-[0_8px_28px_rgba(17,17,17,0.14),0_2px_8px_rgba(17,17,17,0.08)] ring-1 ring-black/[0.05] transition-colors hover:bg-gray-50 active:scale-95"
                   aria-label="Filters"
                 >
                   <SlidersHorizontal className="h-[18px] w-[18px]" strokeWidth={2} />
                   {mobileBrowseFiltersBadge > 0 && (
-                    <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-gray-900 px-1 text-[10px] font-semibold leading-none text-white">
+                    <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-gray-900 px-1 text-[10px] font-semibold leading-none text-white ring-2 ring-white">
                       {mobileBrowseFiltersBadge > 9 ? "9+" : mobileBrowseFiltersBadge}
                     </span>
                   )}
-                </button>
+                </motion.button>
               )}
 
               {showStickyFilters && (
-                <button
+                <motion.button
+                  key="sticky-search-fab"
+                  layout
                   type="button"
+                  initial={{ opacity: 0, scale: 0.55 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.55 }}
+                  transition={FAB_SATELLITE_SPRING}
                   onClick={() => setMobileSearchOpen(true)}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-600 transition-colors hover:bg-gray-100/80 active:scale-95 animate-in fade-in zoom-in-95 duration-200"
+                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-gray-700 shadow-[0_8px_28px_rgba(17,17,17,0.14),0_2px_8px_rgba(17,17,17,0.08)] ring-1 ring-black/[0.05] transition-colors hover:bg-gray-50 active:scale-95"
                   aria-label="Search"
                 >
                   <Search className="h-[18px] w-[18px]" strokeWidth={2} />
-                </button>
+                </motion.button>
               )}
-            </div>
-          </div>
+            </AnimatePresence>
+          </motion.div>
         </div>
       )}
 
@@ -640,10 +657,19 @@ export function MarketplaceHeader({
 
               {/* Navigation - Scrollable */}
               <div className="flex-1 overflow-y-auto">
-                {/* Browse Section - Two Distinct Spaces */}
+                {/* Browse Section */}
                 <div className="px-4 py-3">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Browse</p>
                   <nav className="space-y-1">
+                    <MobileNavItem
+                      icon={Sparkles}
+                      label="For You"
+                      subtitle="Personalised picks"
+                      onClick={() => {
+                        router.push('/marketplace?space=for-you');
+                        setMobileMenuOpen(false);
+                      }}
+                    />
                     <MobileNavItem
                       icon={ShoppingBag}
                       label="Marketplace"
@@ -662,15 +688,6 @@ export function MarketplaceHeader({
                         setMobileMenuOpen(false);
                       }}
                     />
-                    <MobileNavItem
-                      icon={UberLogoIcon}
-                      label="Uber"
-                      subtitle="Fast local delivery"
-                      onClick={() => {
-                        router.push('/marketplace?space=uber');
-                        setMobileMenuOpen(false);
-                      }}
-                    />
                   </nav>
                 </div>
 
@@ -679,16 +696,15 @@ export function MarketplaceHeader({
                   <div className="px-4 py-3 border-t border-gray-100">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Your Account</p>
                     <nav className="space-y-1">
-                      {/* Notifications */}
                       <MobileNavItem
-                        icon={Bell}
-                        label="Notifications"
+                        icon={Store}
+                        label={navLabels.shopfront}
                         onClick={() => {
-                          router.push('/settings/purchases');
+                          router.push(`/marketplace/store/${profile?.user_id || user?.id}`);
                           setMobileMenuOpen(false);
                         }}
                       />
-                      
+
                       {/* Messages with badge */}
                       <button
                         onClick={() => {
@@ -707,24 +723,12 @@ export function MarketplaceHeader({
                           </span>
                         )}
                       </button>
-                      
+
                       <MobileNavItem
-                        icon={Store}
-                        label={navLabels.shopfront}
-                        onClick={() => {
-                          router.push(`/marketplace/store/${profile?.user_id || user?.id}`);
-                          setMobileMenuOpen(false);
-                        }}
-                      />
-                      <MobileNavItem
-                        icon={ShoppingBag}
+                        icon={Package}
                         label={navLabels.orders}
                         onClick={() => {
-                          router.push(
-                            profile?.account_type === 'bicycle_store' && profile?.bicycle_store
-                              ? '/marketplace/purchases'
-                              : '/settings/purchases',
-                          );
+                          router.push(getMarketplaceListingsRoute());
                           setMobileMenuOpen(false);
                         }}
                       />

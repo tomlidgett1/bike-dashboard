@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/auth-provider";
 import { getOrCreateAnonymousId } from "@/lib/tracking/interaction-tracker";
 import { ForYouCarouselRow } from "@/components/marketplace/for-you/for-you-carousel-row";
+import { ForYouMoreProductsSection } from "@/components/marketplace/for-you/for-you-more-products-section";
 import { FOR_YOU_CAROUSEL_CARD_WIDTH } from "@/components/marketplace/for-you/carousel-card-width";
 import type { ForYouFeedPayload } from "@/lib/for-you/types";
 import {
@@ -158,6 +159,21 @@ export function ForYouFeedView({ initialFeed, hadIdentity, embedded = false }: F
     }).catch(() => {});
   }, []);
 
+  const handleDismissMoreProduct = React.useCallback((productId: string) => {
+    setFeed((prev) => ({
+      ...prev,
+      moreProducts: (prev.moreProducts || []).filter((p) => p.id !== productId),
+    }));
+    fetch("/api/for-you/dismiss", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ productId, kind: "not_interested" }),
+      keepalive: true,
+    }).catch(() => {});
+  }, []);
+
+  const moreProducts = feed.moreProducts || [];
+
   return (
     <div
       className={
@@ -168,6 +184,9 @@ export function ForYouFeedView({ initialFeed, hadIdentity, embedded = false }: F
     >
       {feed.carousels.length > 0 ? (
         <div className="space-y-1">
+          {isEnhancing && (
+            <ForYouEnhanceLoadingText messageIndex={enhanceMessageIndex} />
+          )}
           <AnimatePresence initial={false}>
             {feed.carousels.map((carousel) => (
               <motion.div
@@ -187,13 +206,17 @@ export function ForYouFeedView({ initialFeed, hadIdentity, embedded = false }: F
               </motion.div>
             ))}
           </AnimatePresence>
-          {isEnhancing && (
-            <ForYouEnhanceLoading messageIndex={enhanceMessageIndex} />
-          )}
+          <ForYouMoreProductsSection
+            products={moreProducts}
+            userId={user?.id}
+            embedded={embedded}
+            onDismissProduct={handleDismissMoreProduct}
+          />
         </div>
       ) : isEnhancing ? (
         <div className="space-y-1">
-          <ForYouEnhanceLoading messageIndex={enhanceMessageIndex} />
+          <ForYouEnhanceLoadingText messageIndex={enhanceMessageIndex} />
+          <ForYouEnhanceLoadingSkeletons />
         </div>
       ) : (
         <EmptyState embedded={embedded} />
@@ -202,37 +225,40 @@ export function ForYouFeedView({ initialFeed, hadIdentity, embedded = false }: F
   );
 }
 
-function ForYouEnhanceLoading({ messageIndex }: { messageIndex: number }) {
+function ForYouEnhanceLoadingText({ messageIndex }: { messageIndex: number }) {
   const message = ENHANCE_MESSAGES[messageIndex % ENHANCE_MESSAGES.length];
 
   return (
-    <section aria-live="polite" aria-busy="true">
-      <div className="mb-0.5 min-h-5">
-        <AnimatePresence mode="wait">
-          <motion.p
-            key={message}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.35, ease: ENHANCE_EASE }}
-            className={cn(
-              "w-fit max-w-full whitespace-normal text-sm leading-relaxed",
-              genieProgressShimmerClassName,
-            )}
-            style={genieProgressShimmerStyle}
-          >
-            {message}
-          </motion.p>
-        </AnimatePresence>
-      </div>
-      <div className="flex items-start gap-1.5 sm:gap-2 overflow-hidden opacity-70">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className={cn("flex-shrink-0", FOR_YOU_CAROUSEL_CARD_WIDTH)}>
-            <ProductCardSkeleton hideStoreMeta />
-          </div>
-        ))}
-      </div>
-    </section>
+    <div className="mb-0.5 min-h-5" aria-live="polite" aria-busy="true">
+      <AnimatePresence mode="wait">
+        <motion.p
+          key={message}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.35, ease: ENHANCE_EASE }}
+          className={cn(
+            "w-fit max-w-full whitespace-normal text-sm leading-relaxed",
+            genieProgressShimmerClassName,
+          )}
+          style={genieProgressShimmerStyle}
+        >
+          {message}
+        </motion.p>
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function ForYouEnhanceLoadingSkeletons() {
+  return (
+    <div className="flex items-start gap-1.5 sm:gap-2 overflow-hidden opacity-70">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className={cn("flex-shrink-0", FOR_YOU_CAROUSEL_CARD_WIDTH)}>
+          <ProductCardSkeleton hideStoreMeta />
+        </div>
+      ))}
+    </div>
   );
 }
 

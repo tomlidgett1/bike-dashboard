@@ -78,6 +78,8 @@ export interface ForYouCarousel {
 export interface ForYouFeedPayload {
   feedId: string;
   carousels: ForYouCarousel[];
+  /** Random extras from the same categories as the carousels — shown after the last row. */
+  moreProducts: MarketplaceProduct[];
   personalised: boolean;
   source: "deterministic" | "llm";
   generatedAt: string;

@@ -7,7 +7,7 @@ import { BottomSheet, Btn, Spinner } from "./ui";
 interface AiRedoDialogProps {
   open: boolean;
   title?: string;
-  description?: string;
+  subtitle?: string;
   placeholder?: string;
   submitLabel?: string;
   isSubmitting?: boolean;
@@ -18,8 +18,8 @@ interface AiRedoDialogProps {
 
 export function AiRedoDialog({
   open,
-  title = "Redo AI details",
-  description = "Tell us what the product actually is and we'll rerun the AI with your correction.",
+  title = "What is the correct product?",
+  subtitle = "Just tell us below.",
   placeholder = "e.g. 2022 Trek Fuel EX 8, not a Top Fuel",
   submitLabel = "Redo with this product",
   isSubmitting = false,
@@ -36,17 +36,8 @@ export function AiRedoDialog({
   const trimmed = hint.trim();
 
   return (
-    <BottomSheet open={open} onClose={isSubmitting ? () => undefined : onClose} title={title}>
+    <BottomSheet open={open} onClose={isSubmitting ? () => undefined : onClose} title={title} subtitle={subtitle}>
       <div className="space-y-4">
-        <div className="rounded-md border border-gray-200 bg-white p-3">
-          <div className="flex items-start gap-3">
-            <div className="grid h-9 w-9 flex-shrink-0 place-items-center rounded-md bg-gray-100">
-              <RefreshCw className="h-4.5 w-4.5 text-gray-700" />
-            </div>
-            <p className="text-[13px] leading-relaxed text-gray-600">{description}</p>
-          </div>
-        </div>
-
         <label className="block">
           <span className="mb-1.5 block text-[12px] font-semibold uppercase tracking-wide text-gray-500">
             Correct product

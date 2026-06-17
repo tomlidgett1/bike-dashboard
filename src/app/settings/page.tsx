@@ -109,7 +109,8 @@ type SectionId =
   | "hours"
   | "integrations"
   | "notifications"
-  | "appearance";
+  | "appearance"
+  | "danger";
 
 const NAV: { id: SectionId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "account", label: "Account", icon: User },
@@ -120,6 +121,7 @@ const NAV: { id: SectionId; label: string; icon: React.ComponentType<{ className
   { id: "integrations", label: "Integrations", icon: Store },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "danger", label: "Danger zone", icon: Trash2 },
 ];
 
 export default function SettingsPage() {
@@ -494,19 +496,6 @@ export default function SettingsPage() {
                   </SettingsField>
                 </div>
               </SettingsSection>
-
-              <SettingsSection
-                title="Danger zone"
-                description="Irreversible account actions."
-                icon={Trash2}
-                className="ring-destructive/30"
-              >
-                <SettingsRow
-                  label="Delete account"
-                  description="Permanently remove your account, store profile and all marketplace listings."
-                  control={<div className="sm:flex sm:justify-end"><DeleteAccountDialog /></div>}
-                />
-              </SettingsSection>
             </>
           )}
 
@@ -720,6 +709,21 @@ export default function SettingsPage() {
                   );
                 })}
               </div>
+            </SettingsSection>
+          )}
+
+          {section === "danger" && (
+            <SettingsSection
+              title="Danger zone"
+              description="Irreversible account actions."
+              icon={Trash2}
+              className="ring-destructive/30"
+            >
+              <SettingsRow
+                label="Delete account"
+                description="Permanently remove your account, store profile and all marketplace listings."
+                control={<div className="sm:flex sm:justify-end"><DeleteAccountDialog /></div>}
+              />
             </SettingsSection>
           )}
         </div>

@@ -293,15 +293,28 @@ export async function fetchLiveProductSoh(
 
 export async function fetchOptimizerProductsBySearch(
   search: string,
-  options?: { signal?: AbortSignal; pageSize?: number },
+  options?: {
+    signal?: AbortSignal;
+    pageSize?: number;
+    brand?: string;
+    category?: string;
+    readiness?: "all" | "needs-optimisation";
+  },
 ): Promise<OptimizerProduct[]> {
   const params = new URLSearchParams({
     page: "1",
     pageSize: String(options?.pageSize ?? 15),
     status: "active",
-    search,
     includeOptimizeCanonical: "true",
+    includeFilters: "false",
   });
+  const trimmedSearch = search.trim();
+  if (trimmedSearch) params.set("search", trimmedSearch);
+  if (options?.brand) params.set("brand", options.brand);
+  if (options?.category) params.set("category", options.category);
+  if (options?.readiness === "needs-optimisation") {
+    params.set("readiness", "needs-optimisation");
+  }
   try {
     const res = await fetch(`/api/products?${params}`, { signal: options?.signal });
     if (!res.ok) return [];

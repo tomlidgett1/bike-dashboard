@@ -24,20 +24,25 @@ export const marketplaceBrowsingNavItems: MarketplaceNavItem[] = [
   },
 ];
 
-/** Bike-store header nav — labels match what each destination actually does. */
-export const bicycleStoreNavLabels = {
-  /** Public storefront customers see on the marketplace */
-  shopfront: "Shopfront",
-  /** Sales orders, listings, offers, and support claims */
-  orders: "Orders & Listings",
-  /** Account, business, payments, logo, hours, integrations */
-  settings: "Store Settings",
+/** Account nav labels — shared across marketplace header, sidebar, and desktop pill. */
+export const marketplaceAccountNavLabels = {
+  shopfront: "My Store",
+  listings: "My Listings",
+  settings: "Account Settings",
 } as const;
 
+/** @deprecated Use marketplaceAccountNavLabels */
+export const bicycleStoreNavLabels = {
+  shopfront: marketplaceAccountNavLabels.shopfront,
+  orders: marketplaceAccountNavLabels.listings,
+  settings: marketplaceAccountNavLabels.settings,
+} as const;
+
+/** @deprecated Use marketplaceAccountNavLabels */
 export const individualUserNavLabels = {
-  shopfront: "My Store",
-  orders: "Order Management",
-  settings: "Settings",
+  shopfront: marketplaceAccountNavLabels.shopfront,
+  orders: marketplaceAccountNavLabels.listings,
+  settings: marketplaceAccountNavLabels.settings,
 } as const;
 
 export type MarketplaceUserNavLabels =
@@ -61,6 +66,10 @@ export function getMarketplaceSettingsRoute(isVerifiedStore: boolean): string {
     : "/marketplace/settings";
 }
 
+export function getMarketplaceListingsRoute(): string {
+  return "/settings/my-listings";
+}
+
 export const marketplaceIndividualUserNavItems: MarketplaceNavItem[] = [
   { type: "separator" },
   {
@@ -71,8 +80,8 @@ export const marketplaceIndividualUserNavItems: MarketplaceNavItem[] = [
   },
   {
     type: "item",
-    title: individualUserNavLabels.orders,
-    value: "purchases",
+    title: marketplaceAccountNavLabels.listings,
+    value: "my-listings",
     icon: ShoppingBag,
   },
   {
@@ -94,7 +103,7 @@ export const marketplaceStoreUserNavItems: MarketplaceNavItem[] = [
   {
     type: "item",
     title: bicycleStoreNavLabels.orders,
-    value: "purchases",
+    value: "my-listings",
     icon: ShoppingBag,
   },
   {
@@ -125,8 +134,13 @@ export function getMarketplaceActiveView(
   ) {
     return "settings";
   }
-  if (pathname === "/settings/purchases" || pathname === "/marketplace/purchases") {
-    return "purchases";
+  if (
+    pathname === "/settings/purchases" ||
+    pathname === "/marketplace/purchases" ||
+    pathname === "/settings/my-listings" ||
+    pathname.startsWith("/settings/my-listings/")
+  ) {
+    return "my-listings";
   }
 
   const storeMatch = pathname.match(/^\/marketplace\/store\/(.+)$/);
@@ -164,9 +178,8 @@ export function buildMarketplaceNavUrl(
     case "settings":
       return getMarketplaceSettingsRoute(isVerifiedStore);
     case "purchases":
-      return isVerifiedStore
-        ? "/marketplace/purchases"
-        : "/settings/purchases";
+    case "my-listings":
+      return getMarketplaceListingsRoute();
     case "my-store":
       return `/marketplace/store/${profileUserId || authUserId}`;
     default:

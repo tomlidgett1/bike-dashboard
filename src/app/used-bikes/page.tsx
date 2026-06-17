@@ -145,6 +145,39 @@ export default async function UsedBikesPage() {
         </div>
       </section>
 
+      {/* SEO guides */}
+      <section className="mx-auto max-w-[1340px] px-5 py-8 sm:px-6 sm:py-12">
+        <h2 className="text-[1.5rem] font-medium tracking-tight text-zinc-950 sm:text-[1.9rem]">
+          Buying & selling guides
+        </h2>
+        <div className="mt-5 flex flex-wrap gap-2.5">
+          <Link
+            href="/guides/bikes-for-sale-melbourne"
+            className="rounded-full border border-black/[0.08] bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:border-black/20 hover:text-zinc-900"
+          >
+            Bikes for sale Melbourne
+          </Link>
+          <Link
+            href="/guides/road-bikes-melbourne"
+            className="rounded-full border border-black/[0.08] bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:border-black/20 hover:text-zinc-900"
+          >
+            Road bikes Melbourne
+          </Link>
+          <Link
+            href="/guides/bike-marketplace-australia"
+            className="rounded-full border border-black/[0.08] bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:border-black/20 hover:text-zinc-900"
+          >
+            Bike marketplace Australia
+          </Link>
+          <Link
+            href="/guides"
+            className="rounded-full border border-black/[0.08] bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:border-black/20 hover:text-zinc-900"
+          >
+            All guides
+          </Link>
+        </div>
+      </section>
+
       {/* CTA */}
       <section className="border-t border-black/[0.06] py-20 sm:py-28">
         <div className="mx-auto max-w-[1340px] px-5 text-center sm:px-6">

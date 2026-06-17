@@ -243,3 +243,15 @@ export function breadcrumbSchema(items: Array<{ name: string; url: string }>): J
     })),
   };
 }
+
+export function faqSchema(items: Array<{ q: string; a: string }>): Json {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: items.map((f) => ({
+      '@type': 'Question',
+      name: f.q,
+      acceptedAnswer: { '@type': 'Answer', text: f.a },
+    })),
+  };
+}

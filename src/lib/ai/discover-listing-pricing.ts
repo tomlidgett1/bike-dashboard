@@ -72,6 +72,14 @@ function buildSearchTerms(input: ListingPricingInput): string {
     .join(" ");
 }
 
+function buildFacebookSearchQuery(input: ListingPricingInput): string {
+  const terms = [input.brand, input.model, input.title, input.partType]
+    .filter((v) => typeof v === "string" && v.trim().length > 0)
+    .join(" ")
+    .trim();
+  return terms ? `site:facebook.com/marketplace ${terms} Australia` : "";
+}
+
 export async function discoverListingPricing(
   openai: OpenAI,
   input: ListingPricingInput,
@@ -86,6 +94,7 @@ export async function discoverListingPricing(
   }
 
   const details = buildProductContext(input);
+  const facebookSearchQuery = buildFacebookSearchQuery(input);
 
   const response = await openai.responses.create({
     model: MODEL,
@@ -111,7 +120,9 @@ ${details}
 
 Search terms: ${searchTerms}
 
-Return valid JSON matching the schema. Include 3–5 comparableListings with real URLs from your web search.`,
+Facebook Marketplace search (run this explicitly): ${facebookSearchQuery || `"Facebook Marketplace" ${searchTerms} Australia`}
+
+Return valid JSON matching the schema. Include 3–5 comparableListings with real URLs from your web search. Prioritise Facebook Marketplace listings when you find them.`,
   });
 
   let outputText = "";
@@ -132,9 +143,13 @@ Return valid JSON matching the schema. Include 3–5 comparableListings with rea
     };
   }
 
-  const listings = (parsed.comparableListings ?? []).filter(
-    (l) => l.title && l.priceAud > 0 && l.sourceName,
-  );
+  const listings = (parsed.comparableListings ?? [])
+    .filter((l) => l.title && l.priceAud > 0 && l.sourceName)
+    .sort((a, b) => {
+      const aFb = a.sourceName.toLowerCase().includes("facebook") ? 0 : 1;
+      const bFb = b.sourceName.toLowerCase().includes("facebook") ? 0 : 1;
+      return aFb - bFb;
+    });
 
   return {
     ok: true,

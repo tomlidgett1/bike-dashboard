@@ -75,6 +75,7 @@ interface MarketplacePageContentProps {
 const EMPTY_FOR_YOU_FEED: ForYouFeedPayload = {
   feedId: "",
   carousels: [],
+  moreProducts: [],
   personalised: false,
   source: "deterministic",
   generatedAt: "",

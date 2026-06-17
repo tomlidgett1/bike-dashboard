@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -13,6 +14,8 @@ import { ChatRound, Letter } from '@/components/layout/app-sidebar/sidebar-icons
 import { useCombinedUnreadCount } from '@/lib/hooks/use-combined-unread-count';
 import { useNotifications } from '@/lib/hooks/use-notifications';
 import { useMessages } from '@/components/providers/messages-provider';
+import { useNestNotificationsContext } from '@/components/providers/nest-notifications-provider';
+import { isNestConversationUnread } from '@/lib/nest/conversation-read-state';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { topbarIconButtonClass } from '@/components/layout/topbar-nav-pills';
@@ -27,60 +30,231 @@ import {
   useStoreHeaderDropdownStyle,
 } from '@/components/layout/store-header-dropdown-panel';
 
+const MAX_INBOX_ITEMS = 10;
+
+type UnifiedInboxItem =
+  | {
+      source: 'marketplace';
+      id: string;
+      notificationId: string;
+      conversationId: string;
+      displayName: string;
+      preview: string;
+      receivedAt: string;
+      isRead: boolean;
+    }
+  | {
+      source: 'nest';
+      id: string;
+      chatId: string;
+      displayName: string;
+      preview: string;
+      receivedAt: string;
+    };
+
+function formatBadgeCount(count: number) {
+  return count > 99 ? '99+' : count;
+}
+
 export function MessagesDropdown() {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const useStoreStyle = useStoreHeaderDropdownStyle();
   const { counts, refresh: refreshCount } = useCombinedUnreadCount();
-  const count = counts.messages;
   const { notifications, markAsRead } = useNotifications(5, true, open);
   const { open: openPanel, openConversation } = useMessages();
+  const {
+    configured: nestConfigured,
+    chats: nestChats,
+    notifications: nestNotifications,
+    unreadCount: nestUnreadCount,
+    markNotificationRead,
+    markAllRead: markAllNestRead,
+    refresh: refreshNest,
+  } = useNestNotificationsContext();
+
+  const combinedCount = counts.messages + (nestConfigured ? nestUnreadCount : 0);
+
+  const inboxItems = useMemo<UnifiedInboxItem[]>(() => {
+    const marketplaceItems: UnifiedInboxItem[] = notifications.map((notification) => ({
+      source: 'marketplace',
+      id: `marketplace:${notification.id}`,
+      notificationId: notification.id,
+      conversationId: notification.conversation_id,
+      displayName:
+        notification.sender?.business_name || notification.sender?.name || 'Someone',
+      preview: notification.message?.content || 'Sent you a message',
+      receivedAt: notification.created_at,
+      isRead: notification.is_read,
+    }));
+
+    if (!nestConfigured) {
+      return marketplaceItems
+        .sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())
+        .slice(0, MAX_INBOX_ITEMS);
+    }
+
+    const unreadNestChats = nestChats.filter(isNestConversationUnread).slice(0, 10);
+    const nestItems: UnifiedInboxItem[] =
+      nestNotifications.length > 0
+        ? nestNotifications.map((notification) => ({
+            source: 'nest',
+            id: `nest:${notification.id}`,
+            chatId: notification.chatId,
+            displayName: notification.displayName,
+            preview: notification.preview,
+            receivedAt: notification.receivedAt,
+          }))
+        : unreadNestChats.map((chat) => ({
+            source: 'nest',
+            id: `nest:${chat.chatId}`,
+            chatId: chat.chatId,
+            displayName:
+              chat.displayName || chat.title || chat.participantHandle || chat.chatId,
+            preview: chat.preview || 'Unread message',
+            receivedAt: chat.lastCustomerMessageAt || chat.lastMessageAt || new Date(0).toISOString(),
+          }));
+
+    return [...marketplaceItems, ...nestItems]
+      .sort((a, b) => new Date(b.receivedAt).getTime() - new Date(a.receivedAt).getTime())
+      .slice(0, MAX_INBOX_ITEMS);
+  }, [notifications, nestConfigured, nestNotifications, nestChats]);
 
   const handleOpenChange = (isOpen: boolean) => {
     setOpen(isOpen);
+    if (isOpen && nestConfigured) {
+      refreshNest();
+    }
   };
 
-  const handleNotificationClick = async (notificationId: string, conversationId: string) => {
+  const handleMarketplaceClick = async (notificationId: string, conversationId: string) => {
     setOpen(false);
     await markAsRead(notificationId);
     openConversation(conversationId);
     refreshCount();
   };
 
-  const handleViewAll = () => {
+  const handleNestClick = (chatId: string) => {
+    markNotificationRead(chatId);
+    setOpen(false);
+    router.push(`/settings/store/nest?chatId=${encodeURIComponent(chatId)}`);
+  };
+
+  const handleItemClick = (item: UnifiedInboxItem) => {
+    if (item.source === 'marketplace') {
+      void handleMarketplaceClick(item.notificationId, item.conversationId);
+      return;
+    }
+    handleNestClick(item.chatId);
+  };
+
+  const handleOpenMarketplaceInbox = () => {
     setOpen(false);
     openPanel();
+  };
+
+  const handleOpenNestInbox = () => {
+    setOpen(false);
+    router.push('/settings/store/nest');
+  };
+
+  const renderInboxItemContent = (item: UnifiedInboxItem, compact = false) => {
+    const isUnread = item.source === 'marketplace' ? !item.isRead : true;
+    const sourceLabel = item.source === 'nest' ? 'Nest' : 'Marketplace';
+
+    return (
+      <div className="flex items-start gap-3">
+        <div
+          className={cn(
+            'flex shrink-0 items-center justify-center rounded-full text-xs font-medium',
+            compact ? 'h-7 w-7 sm:h-8 sm:w-8' : 'h-8 w-8',
+            useStoreStyle || compact
+              ? 'bg-gray-100 text-gray-700'
+              : 'bg-blue-500 text-white',
+          )}
+        >
+          {item.displayName.slice(0, 1).toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <p
+              className={cn(
+                'truncate font-medium',
+                compact ? 'text-xs text-gray-900 sm:text-sm' : 'text-sm text-gray-800',
+              )}
+            >
+              {item.displayName}
+            </p>
+            {nestConfigured ? (
+              <span className="shrink-0 rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+                {sourceLabel}
+              </span>
+            ) : null}
+          </div>
+          <p
+            className={cn(
+              'mt-0.5 line-clamp-2 text-xs',
+              compact ? 'text-gray-600' : 'text-gray-500',
+            )}
+          >
+            {item.preview}
+          </p>
+          <p className={cn('mt-1 text-xs', compact ? 'text-gray-500 sm:mt-1' : 'text-gray-400')}>
+            {formatDistanceToNow(new Date(item.receivedAt), { addSuffix: true })}
+          </p>
+        </div>
+        {isUnread ? (
+          <div
+            className={cn(
+              'mt-1 h-2 w-2 shrink-0 rounded-full',
+              useStoreStyle || compact ? 'bg-gray-800' : 'bg-blue-500',
+            )}
+          />
+        ) : null}
+      </div>
+    );
   };
 
   return (
     <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
-        <button
-          className={topbarIconButtonClass}
-          aria-label="Messages"
-        >
+        <button className={topbarIconButtonClass} aria-label="Messages">
           <ChatRound className="size-4" />
-          {count > 0 && (
-            <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
-              {count > 99 ? '99+' : count}
+          {combinedCount > 0 ? (
+            <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-medium text-white">
+              {formatBadgeCount(combinedCount)}
             </span>
-          )}
+          ) : null}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
         sideOffset={8}
         className={cn(
-          useStoreStyle
-            ? storeHeaderDropdownContentClass
-            : 'w-[calc(100vw-2rem)] max-w-96',
+          useStoreStyle ? storeHeaderDropdownContentClass : 'w-[calc(100vw-2rem)] max-w-96',
         )}
       >
         {useStoreStyle ? (
           <StoreHeaderDropdownHeader
             title="Messages"
+            actions={
+              nestConfigured && nestUnreadCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    markAllNestRead();
+                  }}
+                  className="text-xs font-medium text-gray-500 transition hover:text-gray-800"
+                >
+                  Mark all read
+                </button>
+              ) : null
+            }
             subtitle={
-              count > 0 ? (
-                <p className="mt-1 text-xs text-gray-500">{count} unread</p>
+              combinedCount > 0 ? (
+                <p className="mt-1 text-xs text-gray-500">{combinedCount} unread</p>
               ) : null
             }
           />
@@ -89,9 +263,9 @@ export function MessagesDropdown() {
             <DropdownMenuLabel className="font-normal">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold">Messages</span>
-                {count > 0 && (
-                  <span className="text-xs text-gray-600">{count} unread</span>
-                )}
+                {combinedCount > 0 ? (
+                  <span className="text-xs text-gray-600">{combinedCount} unread</span>
+                ) : null}
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
@@ -100,91 +274,41 @@ export function MessagesDropdown() {
 
         {useStoreStyle ? (
           <StoreHeaderDropdownBody>
-            {notifications.length === 0 ? (
+            {inboxItems.length === 0 ? (
               <StoreHeaderDropdownEmpty icon={Letter} message="No new messages" />
             ) : (
-              notifications.map((notification) => (
+              inboxItems.map((item) => (
                 <StoreHeaderDropdownItem
-                  key={notification.id}
-                  onClick={() =>
-                    handleNotificationClick(notification.id, notification.conversation_id)
-                  }
-                  className={cn(!notification.is_read && 'bg-gray-50')}
+                  key={item.id}
+                  onClick={() => handleItemClick(item)}
+                  className={cn(
+                    item.source === 'marketplace' && !item.isRead && 'bg-gray-50',
+                  )}
                 >
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-medium text-gray-700">
-                      {notification.sender?.name?.[0]?.toUpperCase() ||
-                        notification.sender?.business_name?.[0]?.toUpperCase() ||
-                        '?'}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-gray-800">
-                        {notification.sender?.business_name ||
-                          notification.sender?.name ||
-                          'Someone'}
-                      </p>
-                      <p className="mt-0.5 line-clamp-2 text-xs text-gray-500">
-                        {notification.message?.content || 'Sent you a message'}
-                      </p>
-                      <p className="mt-1 text-xs text-gray-400">
-                        {formatDistanceToNow(new Date(notification.created_at), {
-                          addSuffix: true,
-                        })}
-                      </p>
-                    </div>
-                    {!notification.is_read ? (
-                      <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-gray-800" />
-                    ) : null}
-                  </div>
+                  {renderInboxItemContent(item)}
                 </StoreHeaderDropdownItem>
               ))
             )}
           </StoreHeaderDropdownBody>
         ) : (
           <div className="max-h-[50vh] overflow-y-auto sm:max-h-[400px]">
-            {notifications.length === 0 ? (
+            {inboxItems.length === 0 ? (
               <div className="p-3 text-center text-xs text-gray-500 sm:p-4 sm:text-sm">
                 <Letter className="mx-auto mb-2 h-7 w-7 text-gray-400 sm:h-8 sm:w-8" />
                 <p>No new messages</p>
               </div>
             ) : (
               <div className="space-y-1">
-                {notifications.map((notification) => (
+                {inboxItems.map((item) => (
                   <button
-                    key={notification.id}
-                    onClick={() =>
-                      handleNotificationClick(notification.id, notification.conversation_id)
-                    }
+                    key={item.id}
+                    onClick={() => handleItemClick(item)}
                     className={cn(
                       'w-full border-b border-gray-100 p-2.5 text-left transition-colors last:border-0 hover:bg-gray-50 sm:p-3',
-                      !notification.is_read && 'bg-blue-50/50',
+                      item.source === 'marketplace' && !item.isRead && 'bg-blue-50/50',
                     )}
                   >
-                    <div className="flex items-start gap-2 sm:gap-3">
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-500 text-xs font-medium text-white sm:h-8 sm:w-8">
-                        {notification.sender?.name?.[0]?.toUpperCase() ||
-                          notification.sender?.business_name?.[0]?.toUpperCase() ||
-                          '?'}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-medium text-gray-900 sm:text-sm">
-                          {notification.sender?.business_name ||
-                            notification.sender?.name ||
-                            'Someone'}
-                        </p>
-                        <p className="mt-0.5 line-clamp-2 text-xs text-gray-600">
-                          {notification.message?.content || 'Sent you a message'}
-                        </p>
-                        <p className="mt-0.5 text-xs text-gray-500 sm:mt-1">
-                          {formatDistanceToNow(new Date(notification.created_at), {
-                            addSuffix: true,
-                          })}
-                        </p>
-                      </div>
-                      {!notification.is_read ? (
-                        <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-blue-500" />
-                      ) : null}
-                    </div>
+                    {renderInboxItemContent(item, true)}
                   </button>
                 ))}
               </div>
@@ -194,21 +318,41 @@ export function MessagesDropdown() {
 
         {useStoreStyle ? (
           <StoreHeaderDropdownFooter>
-            <StoreHeaderDropdownFooterAction onClick={handleViewAll}>
-              Open Inbox
-            </StoreHeaderDropdownFooterAction>
+            {nestConfigured ? (
+              <div className="space-y-2">
+                <StoreHeaderDropdownFooterAction onClick={handleOpenMarketplaceInbox}>
+                  Open marketplace inbox
+                </StoreHeaderDropdownFooterAction>
+                <StoreHeaderDropdownFooterAction onClick={handleOpenNestInbox}>
+                  Open Nest inbox
+                </StoreHeaderDropdownFooterAction>
+              </div>
+            ) : (
+              <StoreHeaderDropdownFooterAction onClick={handleOpenMarketplaceInbox}>
+                Open inbox
+              </StoreHeaderDropdownFooterAction>
+            )}
           </StoreHeaderDropdownFooter>
         ) : (
           <>
             <DropdownMenuSeparator />
-            <div className="p-1.5 sm:p-2">
+            <div className="space-y-1 p-1.5 sm:p-2">
               <Button
                 variant="ghost"
                 className="w-full rounded-md text-xs sm:text-sm"
-                onClick={handleViewAll}
+                onClick={handleOpenMarketplaceInbox}
               >
-                Open Inbox
+                Open marketplace inbox
               </Button>
+              {nestConfigured ? (
+                <Button
+                  variant="ghost"
+                  className="w-full rounded-md text-xs sm:text-sm"
+                  onClick={handleOpenNestInbox}
+                >
+                  Open Nest inbox
+                </Button>
+              ) : null}
             </div>
           </>
         )}

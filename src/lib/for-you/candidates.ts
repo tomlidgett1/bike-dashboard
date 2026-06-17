@@ -5,6 +5,7 @@ import {
   type PublicMarketplaceCardRow,
 } from "@/lib/marketplace/public-card-feed";
 import { createServiceRoleClient } from "@/lib/supabase/server";
+import { isCyclingMarketplaceRow } from "./cycling-filter";
 import type { BehaviouralSignals } from "./types";
 
 // ============================================================
@@ -35,16 +36,6 @@ export type CandidateMap = Map<string, Candidate>;
 
 const ACTIVE_FILTER = "listing_status.is.null,listing_status.eq.active";
 
-// Same hard gate as llm-similar-products: obvious non-cycling inventory
-// (e.g. automotive parts test stores) must never reach the For You feed.
-const NON_CYCLING_TITLE =
-  /\b(mercedes|bmw|audi|toyota|honda civic|nissan|ford|holden|mazda|volkswagen|porsche|ferrari|lamborghini|automotive|car part|engine oil|motor oil|wiper blade|spark plug|transmission fluid|car battery|vehicle|automobile|abs unit|serpentine belt)\b/i;
-
-function isCyclingRow(row: PublicMarketplaceCardRow): boolean {
-  const title = `${row.display_name || ""} ${row.description || ""}`;
-  return !NON_CYCLING_TITLE.test(title);
-}
-
 export async function fetchCandidates(signals: BehaviouralSignals): Promise<CandidateMap> {
   const supabase = createPublicSupabaseClient();
   const candidates: CandidateMap = new Map();
@@ -53,7 +44,7 @@ export async function fetchCandidates(signals: BehaviouralSignals): Promise<Cand
   const add = (rows: PublicMarketplaceCardRow[] | null | undefined, pool: CandidatePool) => {
     for (const row of rows || []) {
       if (dismissed.has(row.id)) continue; // hard suppression at the source
-      if (!isCyclingRow(row)) continue;
+      if (!isCyclingMarketplaceRow(row)) continue;
       const existing = candidates.get(row.id);
       if (existing) {
         existing.pools.add(pool);
@@ -198,7 +189,7 @@ export async function fetchCandidates(signals: BehaviouralSignals): Promise<Cand
         .or(ACTIVE_FILTER);
       for (const row of (trendingRows || []) as PublicMarketplaceCardRow[]) {
         if (dismissed.has(row.id)) continue;
-        if (!isCyclingRow(row)) continue;
+        if (!isCyclingMarketplaceRow(row)) continue;
         candidates.set(row.id, {
           row,
           pools: new Set<CandidatePool>(["trending"]),

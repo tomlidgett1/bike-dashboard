@@ -11,7 +11,6 @@ import { TopbarViewStoreButton } from "@/components/layout/topbar-view-store-but
 import { HeaderSidebarTrigger } from "@/components/layout/app-sidebar/sidebar-collapse-trigger";
 import { NotificationsDropdown } from "./notifications-dropdown";
 import { MessagesDropdown } from "./messages-dropdown";
-import { NestMessagesDropdown } from "./nest-messages-dropdown";
 import { StoreSetupButton } from "@/components/settings/store-setup-button";
 import { useAuth } from "@/components/providers/auth-provider";
 import { dashboardHorizontalPadding } from "@/lib/layout/dashboard-padding";
@@ -102,7 +101,6 @@ export function DashboardHeader() {
               <>
                 <StoreSetupButton iconOnly />
                 <TopbarViewStoreButton />
-                {user ? <NestMessagesDropdown /> : null}
               </>
             ) : null}
             {user ? <NotificationsDropdown /> : null}

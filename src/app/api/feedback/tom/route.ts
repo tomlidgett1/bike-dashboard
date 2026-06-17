@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-const MIN_FEEDBACK_LENGTH = 30;
+const MIN_FEEDBACK_LENGTH = 10;
 const MAX_FEEDBACK_LENGTH = 8000;
 
 function asTrimmedString(value: unknown, maxLength: number): string | null {

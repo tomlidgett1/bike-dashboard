@@ -6,6 +6,7 @@ import {
   AlertCircle,
   Bike,
   CheckCircle2,
+  CheckIcon,
   ChevronDown,
   Dot,
   ImageIcon,
@@ -17,16 +18,25 @@ import {
   Search,
   Sparkles,
   Tag,
+  Layers,
   Wand2,
   X,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { SafeProductImage } from "@/components/settings/safe-product-image";
-import { OptimizerImageReview } from "@/components/optimize/optimizer-image-review";
+import { OptimizerImageReview, OptimizerPhotoToolbar } from "@/components/optimize/optimizer-image-review";
 import {
   type CanonicalImage,
   type ImageRun,
@@ -399,38 +409,21 @@ function FieldChip({
           : `${FIELD_LABELS[field]} will be skipped — click to include`
       }
       className={cn(
-        "flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
         active
-          ? "border-foreground bg-foreground text-background"
+          ? "border-amber-600 bg-amber-50 text-foreground shadow-xs"
           : "border-border bg-background text-muted-foreground hover:bg-muted",
       )}
     >
       {FIELD_LABELS[field]}
-      {hasContent ? (
-        <CheckCircle2 className="h-2.5 w-2.5" />
+      {active ? (
+        <CheckIcon className="size-3.5 shrink-0 text-amber-700" />
+      ) : hasContent ? (
+        <CheckCircle2 className="size-3.5 shrink-0 text-muted-foreground" />
       ) : (
-        <Dot className="-mx-1 h-3.5 w-3.5" />
+        <Dot className="size-3.5 shrink-0" />
       )}
     </button>
-  );
-}
-
-function StatChip({
-  label,
-  value,
-  className,
-}: {
-  label: string;
-  value: string | number;
-  className?: string;
-}) {
-  return (
-    <div className={cn("rounded-md border border-border bg-background px-3 py-2", className)}>
-      <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
-      <p className="mt-0.5 text-lg font-semibold tracking-tight text-foreground tabular-nums">
-        {value}
-      </p>
-    </div>
   );
 }
 
@@ -463,7 +456,13 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
 
   // Add-products search
   const [searchQuery, setSearchQuery] = React.useState("");
+  const [addCategoryFilter, setAddCategoryFilter] = React.useState("");
+  const [addBrandFilter, setAddBrandFilter] = React.useState("");
+  const [addReadinessFilter, setAddReadinessFilter] = React.useState<"all" | "needs-optimisation">("all");
+  const [addCategories, setAddCategories] = React.useState<string[]>([]);
+  const [addBrands, setAddBrands] = React.useState<string[]>([]);
   const [searchResults, setSearchResults] = React.useState<BulkProduct[]>([]);
+  const [pickerSelected, setPickerSelected] = React.useState<Set<string>>(new Set());
   const [searching, setSearching] = React.useState(false);
   const searchAbortRef = React.useRef<AbortController | null>(null);
 
@@ -1182,17 +1181,26 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
     writeBulkOptimiseIds(list.map((product) => product.id));
   }, []);
 
-  const addProduct = React.useCallback(
-    (product: BulkProduct) => {
+  const addProducts = React.useCallback(
+    (items: BulkProduct[]) => {
+      const existingIds = new Set(productsRef.current.map((product) => product.id));
+      const newItems = items.filter((item) => !existingIds.has(item.id));
+      if (newItems.length === 0) return;
+
       setProducts((prev) => {
-        if (prev.some((item) => item.id === product.id)) return prev;
-        const next = [product, ...prev];
+        const next = [...newItems, ...prev];
         persistIds(next);
         return next;
       });
-      setFields((prev) => ({ ...prev, [product.id]: defaultFieldSelection(product) }));
-      setRowSelected((prev) => new Set([...prev, product.id]));
-      void hydrateCachedImageRuns([product]);
+      setFields((prev) => {
+        const next = { ...prev };
+        for (const item of newItems) {
+          next[item.id] = defaultFieldSelection(item);
+        }
+        return next;
+      });
+      setRowSelected((prev) => new Set([...prev, ...newItems.map((item) => item.id)]));
+      void hydrateCachedImageRuns(newItems);
     },
     [hydrateCachedImageRuns, persistIds],
   );
@@ -1318,10 +1326,39 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
 
   // ── Add-products search ───────────────────────────────────────────────────
 
+  const hasAddPickerQuery =
+    searchQuery.trim().length >= 2 ||
+    addCategoryFilter !== "" ||
+    addBrandFilter !== "" ||
+    addReadinessFilter === "needs-optimisation";
+
   React.useEffect(() => {
-    const query = searchQuery.trim();
+    void (async () => {
+      try {
+        const params = new URLSearchParams({
+          page: "1",
+          pageSize: "1",
+          status: "active",
+          includeFilters: "true",
+        });
+        const res = await fetch(`/api/products?${params}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data.categories)) setAddCategories(data.categories);
+        if (Array.isArray(data.brands)) setAddBrands(data.brands);
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, []);
+
+  React.useEffect(() => {
+    setPickerSelected(new Set());
+  }, [searchQuery, addCategoryFilter, addBrandFilter, addReadinessFilter]);
+
+  React.useEffect(() => {
     searchAbortRef.current?.abort();
-    if (query.length < 2) {
+    if (!hasAddPickerQuery) {
       setSearchResults([]);
       setSearching(false);
       return;
@@ -1331,9 +1368,12 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
     setSearching(true);
     const timeout = window.setTimeout(async () => {
       try {
-        const results = await fetchOptimizerProductsBySearch(query, {
+        const results = await fetchOptimizerProductsBySearch(searchQuery.trim(), {
           signal: controller.signal,
-          pageSize: 10,
+          pageSize: 50,
+          brand: addBrandFilter,
+          category: addCategoryFilter,
+          readiness: addReadinessFilter,
         });
         if (!controller.signal.aborted) setSearchResults(results as BulkProduct[]);
       } catch {
@@ -1341,32 +1381,18 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
       } finally {
         if (!controller.signal.aborted) setSearching(false);
       }
-    }, 300);
+    }, searchQuery.trim().length >= 2 ? 300 : 0);
     return () => {
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [searchQuery]);
+  }, [searchQuery, addCategoryFilter, addBrandFilter, addReadinessFilter, hasAddPickerQuery]);
 
   // ── Derived state ─────────────────────────────────────────────────────────
 
   const selectedProducts = React.useMemo(
     () => products.filter((product) => rowSelected.has(product.id)),
     [products, rowSelected],
-  );
-
-  const missingBrandIds = React.useMemo(
-    () => products.filter((product) => !product.brand?.trim()).map((product) => product.id),
-    [products],
-  );
-
-  const readyPhotoCount = React.useMemo(
-    () =>
-      products.filter((product) => {
-        const run = imageRuns[product.id];
-        return run?.phase === "ready" && !!run.primaryUrl;
-      }).length,
-    [imageRuns, products],
   );
 
   const photosBusy = photoProgress !== null;
@@ -1387,6 +1413,18 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
     }
     return state;
   }, [fields, selectedProducts]);
+
+  const batchProductIds = React.useMemo(() => new Set(products.map((product) => product.id)), [products]);
+  const addableResults = React.useMemo(
+    () => searchResults.filter((result) => !batchProductIds.has(result.id)),
+    [searchResults, batchProductIds],
+  );
+  const pickerSelectedAddable = React.useMemo(
+    () => addableResults.filter((result) => pickerSelected.has(result.id)),
+    [addableResults, pickerSelected],
+  );
+  const allPickerAddableSelected =
+    addableResults.length > 0 && addableResults.every((result) => pickerSelected.has(result.id));
 
   const toggleMasterField = (field: FieldKey) => {
     const nextValue = !masterFieldState[field];
@@ -1473,14 +1511,6 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
     }
   };
 
-  const approveAllReady = async () => {
-    const ready = products.filter((product) => {
-      const run = imageRuns[product.id];
-      return run?.phase === "ready" && !!run.primaryUrl;
-    });
-    await Promise.all(ready.map((product) => approveImages(product)));
-  };
-
   // ── Render ────────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -1499,32 +1529,130 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
   const allSelected = products.length > 0 && rowSelected.size === products.length;
   const someSelected = rowSelected.size > 0;
 
-  const statsRow = (
-    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-      <StatChip label="Products in batch" value={products.length.toLocaleString()} className={isProductsCard ? "bg-white" : undefined} />
-      <StatChip label="Selected" value={rowSelected.size.toLocaleString()} className={isProductsCard ? "bg-white" : undefined} />
-      <StatChip label="Missing brand" value={missingBrandIds.length.toLocaleString()} className={isProductsCard ? "bg-white" : undefined} />
-      <StatChip label="Photos ready to approve" value={readyPhotoCount.toLocaleString()} className={isProductsCard ? "bg-white" : undefined} />
-    </div>
-  );
+  const addCategoryLabel = addCategoryFilter || "All categories";
+  const addBrandLabel =
+    addBrandFilter === "__none__" ? "No brand" : addBrandFilter || "All brands";
+  const addFilterTriggerClassName =
+    "h-9 shrink-0 rounded-md border-input bg-white px-2.5 font-normal shadow-none";
+
+  const togglePickerProduct = (id: string) => {
+    setPickerSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllPickerProducts = () => {
+    setPickerSelected((prev) => {
+      if (allPickerAddableSelected) {
+        const next = new Set(prev);
+        for (const result of addableResults) next.delete(result.id);
+        return next;
+      }
+      const next = new Set(prev);
+      for (const result of addableResults) next.add(result.id);
+      return next;
+    });
+  };
+
+  const addPickerSelection = () => {
+    const items = pickerSelectedAddable.map(
+      (result) => searchResults.find((item) => item.id === result.id) ?? result,
+    );
+    addProducts(items);
+    setPickerSelected(new Set());
+    setSearchQuery("");
+    setAddCategoryFilter("");
+    setAddBrandFilter("");
+  };
 
   const toolbar = (
     <div className={cn("space-y-3", isProductsCard ? "" : "rounded-md border border-border bg-background p-4")}>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           {/* Add products */}
-          <div className="relative w-full lg:max-w-md">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search to add products to this batch..."
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              className={cn(
-                "rounded-md pl-8 text-sm",
-                isProductsCard ? "h-9" : "h-8 text-xs",
-              )}
-            />
+          <div className="relative w-full min-w-0 lg:max-w-2xl">
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="relative min-w-0 flex-1 sm:max-w-[280px]">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search name, SKU, brand or category..."
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  className={cn(
+                    "rounded-md pl-8 text-sm",
+                    isProductsCard ? "h-9 bg-white shadow-none" : "h-8 text-xs",
+                  )}
+                />
+              </div>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn(addFilterTriggerClassName, "w-[170px] justify-between gap-1.5")}
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <Layers className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{addCategoryLabel}</span>
+                    </span>
+                    <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-72 w-56 overflow-y-auto rounded-md">
+                  <DropdownMenuRadioGroup
+                    value={addCategoryFilter || "all"}
+                    onValueChange={(value) => setAddCategoryFilter(value === "all" ? "" : value)}
+                  >
+                    <DropdownMenuRadioItem value="all" className="gap-2">
+                      <Layers className="size-3.5 shrink-0 text-muted-foreground" />
+                      All categories
+                    </DropdownMenuRadioItem>
+                    {addCategories.map((category) => (
+                      <DropdownMenuRadioItem key={category} value={category} className="gap-2 truncate">
+                        <Tag className="size-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{category}</span>
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn(addFilterTriggerClassName, "w-[150px] justify-between gap-1.5")}
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <Tag className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{addBrandLabel}</span>
+                    </span>
+                    <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-72 w-56 overflow-y-auto rounded-md">
+                  <DropdownMenuRadioGroup
+                    value={addBrandFilter || "all"}
+                    onValueChange={(value) => setAddBrandFilter(value === "all" ? "" : value)}
+                  >
+                    <DropdownMenuRadioItem value="all">All brands</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="__none__">No brand</DropdownMenuRadioItem>
+                    {addBrands.map((brand) => (
+                      <DropdownMenuRadioItem key={brand} value={brand} className="truncate">
+                        {brand}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
             <AnimatePresence>
-              {searchQuery.trim().length >= 2 ? (
+              {hasAddPickerQuery ? (
                 <motion.div
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: "auto", opacity: 1 }}
@@ -1540,58 +1668,103 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
                   ) : searchResults.length === 0 ? (
                     <p className="px-3 py-2.5 text-xs text-muted-foreground">No products found.</p>
                   ) : (
-                    <div className="max-h-72 overflow-y-auto py-1">
-                      {searchResults.map((result) => {
-                        const inBatch = products.some((product) => product.id === result.id);
-                        return (
-                          <button
-                            key={result.id}
-                            type="button"
-                            disabled={inBatch}
-                            onClick={() => {
-                              addProduct(result);
-                              setSearchQuery("");
-                            }}
-                            className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-muted/60 disabled:opacity-50"
-                          >
-                            <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/50">
-                              {result.resolved_image_url || result.primary_image_url ? (
-                                <SafeProductImage
-                                  src={(result.resolved_image_url || result.primary_image_url)!}
-                                  alt=""
-                                  width={32}
-                                  height={32}
-                                  className="h-full w-full object-cover"
-                                />
-                              ) : (
-                                <Package className="h-3.5 w-3.5 text-muted-foreground" />
+                    <>
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 bg-muted/30 px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-foreground">
+                            <SelectionCheckbox
+                              checked={allPickerAddableSelected}
+                              indeterminate={
+                                !allPickerAddableSelected &&
+                                addableResults.some((result) => pickerSelected.has(result.id))
+                              }
+                              disabled={addableResults.length === 0}
+                              onChange={toggleAllPickerProducts}
+                            />
+                            Select all ({addableResults.length})
+                          </label>
+                          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-muted-foreground">
+                            <Switch
+                              checked={addReadinessFilter === "needs-optimisation"}
+                              onCheckedChange={(checked) =>
+                                setAddReadinessFilter(checked ? "needs-optimisation" : "all")
+                              }
+                            />
+                            Needs optimisation only
+                          </label>
+                        </div>
+                        <Button
+                          size="xs"
+                          className="rounded-md"
+                          disabled={pickerSelectedAddable.length === 0}
+                          onClick={addPickerSelection}
+                        >
+                          <Plus className="size-3.5" />
+                          Add to batch ({pickerSelectedAddable.length})
+                        </Button>
+                      </div>
+                      <div className="max-h-72 overflow-y-auto py-1">
+                        {searchResults.map((result) => {
+                          const inBatch = batchProductIds.has(result.id);
+                          const checked = pickerSelected.has(result.id);
+                          return (
+                            <div
+                              key={result.id}
+                              className={cn(
+                                "flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors",
+                                inBatch ? "opacity-50" : "hover:bg-muted/60",
                               )}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-xs font-medium text-foreground">
-                                {result.display_name || result.description}
-                              </p>
-                              {result.description?.trim() ? (
-                                <p
-                                  className="truncate text-[10px] text-muted-foreground"
-                                  title={result.description}
-                                >
-                                  Lightspeed: {result.description}
-                                </p>
+                            >
+                              <SelectionCheckbox
+                                checked={checked}
+                                disabled={inBatch}
+                                onChange={() => togglePickerProduct(result.id)}
+                                aria-label={`Select ${result.display_name || result.description}`}
+                              />
+                              <button
+                                type="button"
+                                disabled={inBatch}
+                                onClick={() => togglePickerProduct(result.id)}
+                                className="flex min-w-0 flex-1 items-center gap-2.5 text-left disabled:cursor-default"
+                              >
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/50">
+                                  {result.resolved_image_url || result.primary_image_url ? (
+                                    <SafeProductImage
+                                      src={(result.resolved_image_url || result.primary_image_url)!}
+                                      alt=""
+                                      width={32}
+                                      height={32}
+                                      className="h-full w-full object-cover"
+                                    />
+                                  ) : (
+                                    <Package className="h-3.5 w-3.5 text-muted-foreground" />
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-xs font-medium text-foreground">
+                                    {result.display_name || result.description}
+                                  </p>
+                                  {result.description?.trim() ? (
+                                    <p
+                                      className="truncate text-[10px] text-muted-foreground"
+                                      title={result.description}
+                                    >
+                                      Lightspeed: {result.description}
+                                    </p>
+                                  ) : null}
+                                  <p className="truncate font-mono text-[10px] text-muted-foreground">
+                                    {getSku(result) ?? "No SKU"} · SOH {result.qoh ?? 0}
+                                  </p>
+                                </div>
+                              </button>
+                              {inBatch ? (
+                                <span className="shrink-0 text-[10px] text-muted-foreground">In batch</span>
                               ) : null}
-                              <p className="truncate font-mono text-[10px] text-muted-foreground">
-                                {getSku(result) ?? "No SKU"} · SOH {result.qoh ?? 0}
-                              </p>
                             </div>
-                            {inBatch ? (
-                              <span className="text-[10px] text-muted-foreground">In batch</span>
-                            ) : (
-                              <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
+                          );
+                        })}
+                      </div>
+                    </>
                   )}
                 </motion.div>
               ) : null}
@@ -1600,12 +1773,6 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
 
           {/* Primary actions */}
           <div className="flex flex-wrap items-center gap-2">
-            {readyPhotoCount > 0 ? (
-              <Button size="sm" variant="outline" className="rounded-md" onClick={() => void approveAllReady()}>
-                <CheckCircle2 className="size-3.5" />
-                Approve all photos ({readyPhotoCount})
-              </Button>
-            ) : null}
             <Button
               size="sm"
               className="rounded-md"
@@ -1690,7 +1857,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
       <div
         className={cn(
           "py-16 text-center",
-          isProductsCard ? "" : "rounded-md border border-border bg-background",
+          isProductsCard ? "px-4 md:px-5" : "rounded-md border border-border bg-background",
         )}
       >
         <Package className="mx-auto mb-3 h-8 w-8 text-muted-foreground/40" />
@@ -1700,10 +1867,16 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
         </p>
       </div>
     ) : (
-      <div className="space-y-2">
+      <div
+        className={cn(
+          "w-full",
+          isProductsCard ? "space-y-3 px-4 md:px-5" : "divide-y divide-border/60",
+        )}
+      >
         {products.map((product) => (
           <ProductRow
             key={product.id}
+            layout={isProductsCard ? "floating" : "list"}
             product={product}
             fieldSelection={fields[product.id] ?? defaultFieldSelection(product)}
             selected={rowSelected.has(product.id)}
@@ -1770,11 +1943,12 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="shrink-0 rounded-t-xl border-b border-border/60 bg-gray-50">
           <div className="flex flex-col gap-3 px-4 py-3 md:px-5">
-            {statsRow}
             {toolbar}
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto px-4 py-4 md:px-5">{productList}</div>
+        <div className={cn("min-h-0 flex-1 overflow-auto py-4", isProductsCard && "bg-[#f6f6f7]")}>
+          {productList}
+        </div>
         <LightboxOverlay url={lightbox} onClose={() => setLightbox(null)} />
       </div>
     );
@@ -1782,7 +1956,6 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
 
   return (
     <div className="space-y-4">
-      {statsRow}
       {toolbar}
       {productList}
 
@@ -1830,8 +2003,14 @@ function ProgressLine({
 
 // ── Product row ─────────────────────────────────────────────────────────────
 
+const PRODUCT_ROW_X = "px-4 md:px-5";
+const PRODUCT_FLOATING_CARD =
+  "overflow-hidden rounded-[28px] border border-gray-200 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)]";
+const PRODUCT_FLOATING_PAD = "px-4 md:px-5";
+
 function ProductRow({
   product,
+  layout = "list",
   fieldSelection,
   selected,
   expanded,
@@ -1861,6 +2040,7 @@ function ProductRow({
   onLightbox,
 }: {
   product: BulkProduct;
+  layout?: "list" | "floating";
   fieldSelection: FieldSelection;
   selected: boolean;
   expanded: boolean;
@@ -1907,14 +2087,290 @@ function ProductRow({
           ? "Photos saved"
           : null;
 
+  const isFloating = layout === "floating";
+  const rowPad = isFloating ? PRODUCT_FLOATING_PAD : PRODUCT_ROW_X;
+
+  const fieldChips = (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {FIELD_ORDER.map((field) => (
+        <FieldChip
+          key={field}
+          field={field}
+          active={fieldSelection[field]}
+          hasContent={fieldHasContent(product, field)}
+          disabled={optimiseBusy}
+          onToggle={() => onToggleField(field)}
+        />
+      ))}
+    </div>
+  );
+
+  const metaLine = (
+    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+      <span>SOH {(product.qoh ?? 0).toLocaleString()}</span>
+      {product.brand?.trim() ? (
+        <>
+          <span aria-hidden className="text-border">
+            ·
+          </span>
+          <span className="text-foreground/80">{product.brand}</span>
+        </>
+      ) : (
+        <>
+          <span aria-hidden className="text-border">
+            ·
+          </span>
+          <button
+            type="button"
+            disabled={brandBusy}
+            onClick={onIdentifyBrand}
+            title={brandError || "Identify brand with AI"}
+            className={cn(
+              "transition-colors hover:text-foreground disabled:opacity-60",
+              brandError ? "text-destructive" : "",
+            )}
+          >
+            {brandBusy ? "Identifying brand…" : brandError ? "Brand not found" : "Identify brand"}
+          </button>
+        </>
+      )}
+      <span aria-hidden className="text-border">
+        ·
+      </span>
+      <label className="inline-flex cursor-pointer items-center gap-1">
+        <input
+          type="checkbox"
+          checked={!!product.is_bicycle}
+          disabled={bicycleBusy}
+          onChange={(event) => onSetBicycle(event.target.checked)}
+          className="h-3 w-3 rounded-md border-border accent-foreground disabled:opacity-50"
+        />
+        Bicycle
+      </label>
+      <button
+        type="button"
+        disabled={bicycleBusy}
+        onClick={onAutoDetectBicycle}
+        title="Auto-detect bicycle"
+        className="text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+      >
+        {bicycleBusy ? "Detecting…" : "Auto-detect"}
+      </button>
+    </p>
+  );
+
+  const photoToolbarFloating =
+    isFloating &&
+    imageRun.phase === "ready" &&
+    imageRun.selectedUrls.length > 0 ? (
+      <OptimizerPhotoToolbar
+        img={imageRun}
+        hasCanonical={!!product.canonical_product_id}
+        saving={false}
+        onToggleAdditional={() => onImageUpdate((prev) => ({ showAdditional: !prev.showAdditional }))}
+        onRerunSearch={photoBusyNow ? undefined : onRerunPhotos}
+        onApprove={onApproveImages}
+      />
+    ) : null;
+
+  const photosSection =
+    imageRun.phase !== "idle" || hasSerperImage(product) || fieldSelection.photos ? (
+      <div className={cn(isFloating ? cn("border-t border-gray-100 py-4", rowPad) : cn("border-t border-border/40 py-3", rowPad))}>
+        {hasSerperImage(product) ? (
+          <ApprovedImagesStrip product={product} onLightbox={onLightbox} />
+        ) : imageRun.phase === "idle" ? (
+          <div className="flex items-center gap-2.5">
+            <p className="text-xs text-muted-foreground">No photos yet.</p>
+            <Button type="button" size="sm" variant="outline" disabled={photoBusyNow} onClick={onFindPhotos}>
+              <Search className="size-4" />
+              Find photos
+            </Button>
+          </div>
+        ) : (
+          <OptimizerImageReview
+            img={imageRun}
+            hasCanonical={!!product.canonical_product_id}
+            saving={imageRun.phase === "saving"}
+            size="default"
+            hideToolbar={isFloating}
+            onRerunSearch={photoBusyNow ? undefined : onRerunPhotos}
+            onSetPrimary={(url) => onImageUpdate({ primaryUrl: url })}
+            onRemove={(url) =>
+              onImageUpdate((prev) => {
+                if (prev.selectedUrls.length <= 1) return {};
+                const selectedUrls = prev.selectedUrls.filter((item) => item !== url);
+                return {
+                  selectedUrls,
+                  selectedCandidates: prev.selectedCandidates.filter((candidate) => candidate.url !== url),
+                  primaryUrl: prev.primaryUrl === url ? selectedUrls[0] ?? null : prev.primaryUrl,
+                };
+              })
+            }
+            onAdd={(candidate) =>
+              onImageUpdate((prev) => {
+                if (prev.selectedUrls.includes(candidate.url) || prev.selectedUrls.length >= 6) return {};
+                return {
+                  selectedUrls: [...prev.selectedUrls, candidate.url],
+                  selectedCandidates: [...prev.selectedCandidates, candidate],
+                  primaryUrl: prev.primaryUrl ?? candidate.url,
+                };
+              })
+            }
+            onEnhance={onEnhance}
+            onToggleAdditional={() => onImageUpdate((prev) => ({ showAdditional: !prev.showAdditional }))}
+            onApprove={onApproveImages}
+            onLightbox={onLightbox}
+          />
+        )}
+      </div>
+    ) : null;
+
+  if (isFloating) {
+    return (
+      <div className={cn(PRODUCT_FLOATING_CARD, "transition-shadow", selected && "border-gray-300 shadow-md")}>
+        <div className="flex gap-3 p-4 md:gap-4 md:p-5">
+          <SelectionCheckbox
+            checked={selected}
+            disabled={optimiseBusy}
+            aria-label={`Select ${title}`}
+            onChange={onToggleSelect}
+            className="mt-1"
+          />
+          <button
+            type="button"
+            onClick={() => imageUrl && onLightbox(imageUrl)}
+            className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-gray-200 bg-gray-50"
+          >
+            {imageUrl ? (
+              <SafeProductImage src={imageUrl} alt={title} width={56} height={56} className="h-full w-full object-cover" />
+            ) : (
+              <Package className="h-5 w-5 text-muted-foreground" />
+            )}
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold leading-snug text-foreground" title={sku ? `SKU ${sku}` : title}>
+                  <span className="line-clamp-2">{title}</span>
+                  {lightspeedName ? (
+                    <span className="font-normal text-muted-foreground"> ({lightspeedName})</span>
+                  ) : null}
+                </p>
+                {metaLine}
+              </div>
+              <div className="flex shrink-0 items-center gap-0.5">
+                {(copyBusy || photoBusyNow) && (
+                  <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                )}
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  aria-label={expanded ? "Hide copy editor" : "Edit copy"}
+                  onClick={onToggleExpand}
+                  className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground"
+                >
+                  <ChevronDown className={cn("h-4 w-4 transition-transform duration-200", expanded && "rotate-180")} />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Remove from batch"
+                  onClick={onRemove}
+                  className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className={cn("border-t border-gray-100 bg-gray-50/50 py-3", PRODUCT_FLOATING_PAD)}>
+          <p className="mb-2 text-[11px] font-medium text-muted-foreground">Optimise</p>
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+            {fieldChips}
+            {photoToolbarFloating}
+          </div>
+        </div>
+        {photosSection}
+        <AnimatePresence>
+          {expanded ? (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={DROPDOWN_TRANSITION}
+              className="overflow-hidden"
+            >
+              <div className={cn("space-y-3 border-t border-gray-100 py-4", PRODUCT_FLOATING_PAD)}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                    <PenLine className="h-3 w-3 text-muted-foreground" />
+                    Copy
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={
+                        copyBusy ||
+                        (!fieldSelection.title && !fieldSelection.description && !fieldSelection.specs)
+                      }
+                      onClick={onGenerateCopy}
+                    >
+                      {copyBusy ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                      Generate
+                    </Button>
+                    <Button type="button" size="sm" disabled={saving || !draft} onClick={onSaveDraft}>
+                      {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                      Save
+                    </Button>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-muted-foreground">Optimised title</label>
+                  <Input
+                    value={draft?.title ?? product.display_name ?? ""}
+                    onChange={(event) => onDraftChange({ title: event.target.value })}
+                    placeholder="No optimised title yet"
+                    className="h-9 rounded-md text-sm"
+                  />
+                </div>
+                <div className="grid gap-3 xl:grid-cols-2">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium text-muted-foreground">Description</label>
+                    <Textarea
+                      value={draft?.description ?? product.product_description ?? ""}
+                      onChange={(event) => onDraftChange({ description: event.target.value })}
+                      placeholder="No description yet"
+                      className="min-h-32 rounded-md text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-medium text-muted-foreground">Specifications</label>
+                    <Textarea
+                      value={draft?.specs ?? product.product_specs ?? ""}
+                      onChange={(event) => onDraftChange({ specs: event.target.value })}
+                      placeholder="No specs yet"
+                      className="min-h-32 rounded-md text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
-        "rounded-md border bg-background transition-colors",
-        selected ? "border-foreground/30" : "border-border",
+        "w-full bg-white transition-colors",
+        selected && "ring-1 ring-inset ring-border/80",
       )}
     >
-      <div className="flex items-center gap-3 px-3 py-2.5">
+      <div className={cn("flex items-center gap-3 py-2.5", PRODUCT_ROW_X)}>
         <SelectionCheckbox
           checked={selected}
           disabled={optimiseBusy}
@@ -1942,23 +2398,20 @@ function ProductRow({
 
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
-            <p className="truncate text-xs font-semibold text-foreground">{title}</p>
+            <p
+              className="min-w-0 truncate text-xs font-semibold text-foreground"
+              title={sku ? `SKU ${sku}` : title}
+            >
+              {title}
+              {lightspeedName ? (
+                <span className="font-normal text-muted-foreground"> ({lightspeedName})</span>
+              ) : null}
+            </p>
             {copyBusy || photoBusyNow ? (
               <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" />
             ) : null}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1">
-            <span className="font-mono text-[10px] text-muted-foreground">
-              SKU {sku ?? "—"}
-            </span>
-            {lightspeedName ? (
-              <span
-                className="max-w-[220px] truncate text-[10px] text-muted-foreground"
-                title={lightspeedName}
-              >
-                Lightspeed: {lightspeedName}
-              </span>
-            ) : null}
             <Badge variant="outline" className="h-4.5 rounded-md border-border bg-background px-1.5 text-[10px] font-medium text-muted-foreground">
               SOH {(product.qoh ?? 0).toLocaleString()}
             </Badge>
@@ -2058,7 +2511,7 @@ function ProductRow({
       </div>
 
       {/* Mobile field chips */}
-      <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2.5 md:hidden">
+      <div className={cn("flex flex-wrap items-center gap-1.5 pb-2.5 md:hidden", PRODUCT_ROW_X)}>
         {FIELD_ORDER.map((field) => (
           <FieldChip
             key={field}
@@ -2073,7 +2526,7 @@ function ProductRow({
 
       {/* Photos — always visible, no expand needed */}
       {imageRun.phase !== "idle" || hasSerperImage(product) || fieldSelection.photos ? (
-        <div className="border-t border-border/40 px-4 py-3">
+        <div className={cn("border-t border-border/40 py-3", PRODUCT_ROW_X)}>
           {hasSerperImage(product) ? (
             <ApprovedImagesStrip product={product} onLightbox={onLightbox} />
           ) : imageRun.phase === "idle" ? (
@@ -2092,26 +2545,12 @@ function ProductRow({
               </Button>
             </div>
           ) : (
-            <div className="space-y-2">
-              {!photoBusyNow ? (
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    size="xs"
-                    variant="outline"
-                    className="rounded-md"
-                    onClick={onRerunPhotos}
-                  >
-                    <Search className="size-3" />
-                    Rerun search
-                  </Button>
-                </div>
-              ) : null}
-              <OptimizerImageReview
-                img={imageRun}
-                hasCanonical={!!product.canonical_product_id}
-                saving={imageRun.phase === "saving"}
-                size="default"
+            <OptimizerImageReview
+              img={imageRun}
+              hasCanonical={!!product.canonical_product_id}
+              saving={imageRun.phase === "saving"}
+              size="default"
+              onRerunSearch={photoBusyNow ? undefined : onRerunPhotos}
                 onSetPrimary={(url) => onImageUpdate({ primaryUrl: url })}
                 onRemove={(url) =>
                   onImageUpdate((prev) => {
@@ -2146,10 +2585,9 @@ function ProductRow({
                 onToggleAdditional={() =>
                   onImageUpdate((prev) => ({ showAdditional: !prev.showAdditional }))
                 }
-                onApprove={onApproveImages}
-                onLightbox={onLightbox}
-              />
-            </div>
+              onApprove={onApproveImages}
+              onLightbox={onLightbox}
+            />
           )}
         </div>
       ) : null}
@@ -2163,7 +2601,7 @@ function ProductRow({
             transition={DROPDOWN_TRANSITION}
             className="overflow-hidden"
           >
-            <div className="space-y-3 border-t border-border/60 px-4 py-4">
+            <div className={cn("space-y-3 border-t border-border/60 py-4", PRODUCT_ROW_X)}>
               {/* Copy editor */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-xs font-medium text-foreground">

@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
+  Camera,
   Wand2,
   ListChecks,
   ChevronRight,
@@ -25,6 +26,8 @@ import {
   emptyDraft,
   aiPrefilledDraft,
   formatAUD,
+  draftProductLabel,
+  formatBikeTypeDisplay,
   scoreDraft,
   type BikeDraft,
   type GuidedQuestion,
@@ -36,8 +39,8 @@ import {
   TextArea,
   NumberInput,
   OptionPills,
+  BikeTypePicker,
   Toggle,
-  ProgressBar,
   Collapsible,
   ConfidenceDot,
   Spinner,
@@ -51,6 +54,10 @@ import { uploadPhotos, analysePhotos, analysisToDraftPatch, fetchListingFieldSug
 import { QualityMeter } from "./quality-meter";
 import { AiRedoDialog } from "./ai-redo-dialog";
 import { PriceResearchGuide } from "./price-research-guide";
+import {
+  saveSellerPickupLocation,
+  withDefaultPickupLocation,
+} from "@/lib/marketplace/seller-pickup-location";
 
 const ANALYSE_MSGS = [
   "Looking at your photos…",
@@ -59,16 +66,28 @@ const ANALYSE_MSGS = [
   "Pre-filling your details…",
 ];
 
+export const GUIDED_MACRO_LABELS = ["Photos", "Details", "Review"] as const;
+
+export function guidedMacroStepIndex(q: GuidedQuestion, analysing: boolean): number {
+  if (q.kind === "photos" || analysing) return 0;
+  if (q.kind === "review") return 2;
+  return 1;
+}
+
 export function FlowGuided({
   initialDraft,
   autoAnalyseFromPhotos,
   onListAnother,
+  onGuidedHeaderChange,
+  onMacroStepChange,
 }: {
   initialDraft?: Partial<BikeDraft>;
   autoAnalyseFromPhotos?: boolean;
   onListAnother?: () => void;
+  onGuidedHeaderChange?: (header: { label: string; imageUrl?: string } | null) => void;
+  onMacroStepChange?: (step: { step: number; label: string } | null) => void;
 }) {
-  const [draft, setDraft] = React.useState<BikeDraft>(emptyDraft());
+  const [draft, setDraft] = React.useState<BikeDraft>(() => withDefaultPickupLocation(emptyDraft()));
   const [qi, setQi] = React.useState(0);
   const [dir, setDir] = React.useState(1);
   const [analysing, setAnalysing] = React.useState(false);
@@ -87,13 +106,18 @@ export function FlowGuided({
   // a helmet or jersey shouldn't be asked what kind of bike it is.
   const questions = questionsForItemType(draft.itemType);
   const q = questions[qi];
-  const progress = qi / (questions.length - 1);
+  const macroStep = guidedMacroStepIndex(q, analysing);
 
-  const patch = (p: Partial<BikeDraft>) => setDraft((d) => ({ ...d, ...p }));
+  const patch = (p: Partial<BikeDraft>) => {
+    if (p.pickupLocation?.trim()) {
+      saveSellerPickupLocation(p.pickupLocation);
+    }
+    setDraft((d) => ({ ...d, ...p }));
+  };
 
   const resetForAnotherListing = () => {
     setPublished(false);
-    setDraft(emptyDraft());
+    setDraft(withDefaultPickupLocation(emptyDraft()));
     setQi(0);
     setDir(1);
     setAnalysing(false);
@@ -111,7 +135,7 @@ export function FlowGuided({
 
   React.useEffect(() => {
     if (!initialDraft) return;
-    setDraft((d) => ({ ...d, ...initialDraft }));
+    setDraft((d) => withDefaultPickupLocation({ ...d, ...initialDraft }));
     setDir(1);
     if (autoAnalyseFromPhotos && initialDraft.images?.length) {
       setQi(1);
@@ -239,13 +263,55 @@ export function FlowGuided({
     return String(v ?? "").trim().length > 0;
   })();
 
+  const guidedHeader = React.useMemo(() => {
+    if (macroStep === 0 || analysing) {
+      return {
+        label: analysing ? "Analysing your photos…" : "Add photos",
+        imageUrl: draft.images[0] || undefined,
+      };
+    }
+
+    const label = draftProductLabel(draft);
+    if (label) {
+      return { label, imageUrl: draft.images[0] || undefined };
+    }
+
+    return {
+      label: "Listing details",
+      imageUrl: draft.images[0] || undefined,
+    };
+  }, [draft, macroStep, analysing]);
+
+  React.useEffect(() => {
+    onGuidedHeaderChange?.(guidedHeader);
+  }, [guidedHeader, onGuidedHeaderChange]);
+
+  React.useEffect(() => {
+    return () => onGuidedHeaderChange?.(null);
+  }, [onGuidedHeaderChange]);
+
+  React.useEffect(() => {
+    if (published) {
+      onMacroStepChange?.(null);
+      return;
+    }
+    onMacroStepChange?.({
+      step: macroStep,
+      label: GUIDED_MACRO_LABELS[macroStep],
+    });
+  }, [macroStep, published, onMacroStepChange]);
+
+  React.useEffect(() => {
+    return () => onMacroStepChange?.(null);
+  }, [onMacroStepChange]);
+
   if (published) return <SuccessScreen draft={draft} onListAnother={resetForAnotherListing} />;
 
   return (
-    <div className="flex min-h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white px-4 pb-3 pt-3 md:px-6">
-        <div className="flex items-center gap-3">
+      {q.kind !== "review" && (
+        <div className="sticky top-0 z-10 flex-shrink-0 bg-white px-4 pb-2 pt-2 md:px-6">
           <button
             type="button"
             onClick={() => go(qi - 1)}
@@ -255,34 +321,11 @@ export function FlowGuided({
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
-          <div className="flex-1">
-            <ProgressBar value={analysing ? progress : progress} />
-          </div>
-          <span className="text-[12px] font-medium tabular-nums text-gray-400">
-            {qi + 1}/{questions.length}
-          </span>
         </div>
-        {draft.images.length > 0 && qi > 0 && !analysing && (
-          <div className="mt-2 flex items-center justify-between gap-3 rounded-md border border-gray-200 bg-white px-3 py-2">
-            <p className="min-w-0 truncate text-[12px] text-gray-500">
-              AI recognised{" "}
-              <span className="font-semibold text-gray-800">
-                {draft.title || [draft.brand, draft.model].filter(Boolean).join(" ") || "this item"}
-              </span>
-            </p>
-            <button
-              type="button"
-              onClick={() => setRedoOpen(true)}
-              className="flex-shrink-0 rounded-md bg-gray-100 px-2 py-1 text-[12px] font-semibold text-gray-700 hover:bg-gray-200"
-            >
-              Wrong product?
-            </button>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Body */}
-      <div className="flex-1 px-4 pb-4 md:px-6">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4 md:px-6">
         {analysing ? (
           <Analysing message={ANALYSE_MSGS[msg]} count={draft.images.length} />
         ) : (
@@ -305,6 +348,7 @@ export function FlowGuided({
                 setSpecsOpen={setSpecsOpen}
                 onFiles={handleFiles}
                 uploading={uploading}
+                onWrongProduct={() => setRedoOpen(true)}
                 onJump={(id) => {
                   const idx = questions.findIndex((x) => x.id === id);
                   if (idx >= 0) go(idx);
@@ -316,9 +360,13 @@ export function FlowGuided({
       </div>
 
       {/* Bottom CTA */}
-      {!analysing && (
-        <div className="sticky bottom-0 z-20 mt-auto w-full border-t border-gray-100 bg-white/95 px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-3 backdrop-blur md:px-6">
-          {q.kind === "specsOffer" && !specsOpen ? (
+      <div
+        className={cn(
+          "sticky bottom-0 z-20 mt-auto w-full flex-shrink-0 border-t border-gray-100 bg-white/95 px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-3 backdrop-blur md:px-6",
+          analysing && "pointer-events-none invisible",
+        )}
+      >
+        {q.kind === "specsOffer" && !specsOpen ? (
             <div className="flex items-center gap-2">
               <Btn variant="secondary" onClick={() => go(qi + 1)}>
                 Skip
@@ -361,8 +409,7 @@ export function FlowGuided({
               </div>
             </div>
           )}
-        </div>
-      )}
+      </div>
       <AiRedoDialog
         open={redoOpen}
         isSubmitting={redoing}
@@ -383,6 +430,18 @@ function ctaLabel(q: GuidedQuestion, draft: BikeDraft, specsOpen: boolean): stri
 
 // ---- Per-question renderer ---------------------------------
 
+function AiRecognitionBanner({ onWrongProduct }: { onWrongProduct: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onWrongProduct}
+      className="text-[13px] font-semibold text-gray-600 transition-colors hover:text-gray-900"
+    >
+      Wrong product?
+    </button>
+  );
+}
+
 function QuestionView({
   q,
   draft,
@@ -392,6 +451,7 @@ function QuestionView({
   onFiles,
   uploading,
   onJump,
+  onWrongProduct,
   aiFields,
 }: {
   q: GuidedQuestion;
@@ -403,6 +463,7 @@ function QuestionView({
   onFiles: (files: File[]) => void;
   uploading: boolean;
   onJump: (id: string) => void;
+  onWrongProduct: () => void;
 }) {
   const ai = q.field ? aiFields[q.field as string] : undefined;
 
@@ -441,6 +502,9 @@ function QuestionView({
             placeholder={q.question}
             autoFocus={q.field !== "title"}
           />
+          {q.field === "title" && draft.images.length > 0 && (
+            <AiRecognitionBanner onWrongProduct={onWrongProduct} />
+          )}
           {q.suggestions && q.field !== "title" && (
             <div className="flex flex-wrap gap-1.5">
               {q.suggestions.slice(0, 8).map((s) => (
@@ -469,14 +533,28 @@ function QuestionView({
       {/* Pills */}
       {q.kind === "pills" && q.field && q.options && (
         <div className="mt-5 space-y-3">
-          <OptionPills
-            value={String(draft[q.field] ?? "")}
-            options={q.options}
-            columns={q.options.length > 6 ? 3 : 2}
-            onChange={(v) => patch({ [q.field as string]: v } as Partial<BikeDraft>)}
-            allowCustom={q.field === "frameSize" || q.field === "size"}
-          />
-          {ai && <AiAssist ai={ai} onPick={(v) => patch({ [q.field as string]: v } as Partial<BikeDraft>)} />}
+          {q.field === "bikeType" ? (
+            <BikeTypePicker
+              bikeType={draft.bikeType}
+              bikeSubtype={draft.bikeSubtype}
+              onChange={(next) => patch(next)}
+            />
+          ) : (
+            <OptionPills
+              value={String(draft[q.field] ?? "")}
+              options={q.options}
+              columns={q.options.length > 6 ? 3 : 2}
+              onChange={(v) => patch({ [q.field as string]: v } as Partial<BikeDraft>)}
+              allowCustom={q.field === "frameSize" || q.field === "size"}
+            />
+          )}
+          {ai && (
+            <AiAssist
+              ai={ai}
+              onPick={(v) => patch({ [q.field as string]: v } as Partial<BikeDraft>)}
+              hideAlternatives={q.field === "bikeType"}
+            />
+          )}
         </div>
       )}
 
@@ -624,7 +702,9 @@ function QuestionView({
       )}
 
       {/* Review */}
-      {q.kind === "review" && <ReviewView draft={draft} onJump={onJump} />}
+      {q.kind === "review" && (
+        <ReviewView draft={draft} onJump={onJump} onFiles={onFiles} uploading={uploading} />
+      )}
     </div>
   );
 }
@@ -641,11 +721,13 @@ function Header({ question, helper }: { question: string; helper?: string }) {
 function AiAssist({
   ai,
   onPick,
+  hideAlternatives = false,
 }: {
   ai: { value: string; confidence: "high" | "medium" | "low"; alternatives?: string[] };
   onPick: (v: string) => void;
+  hideAlternatives?: boolean;
 }) {
-  const alternatives = ai.alternatives?.filter(Boolean) ?? [];
+  const alternatives = hideAlternatives ? [] : (ai.alternatives?.filter(Boolean) ?? []);
   const needsAttention = ai.confidence !== "high";
 
   if (!needsAttention && alternatives.length === 0) return null;
@@ -785,7 +867,18 @@ function DeliveryFields({ draft, patch }: { draft: BikeDraft; patch: (p: Partial
   );
 }
 
-function ReviewView({ draft, onJump }: { draft: BikeDraft; onJump: (id: string) => void }) {
+function ReviewView({
+  draft,
+  onJump,
+  onFiles,
+  uploading = false,
+}: {
+  draft: BikeDraft;
+  onJump: (id: string) => void;
+  onFiles: (files: File[]) => void;
+  uploading?: boolean;
+}) {
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const quality = scoreDraft(draft);
   const isBike = draft.itemType === "" || draft.itemType === "bike";
   const rows: { id: string; label: string; value: string }[] =
@@ -810,7 +903,7 @@ function ReviewView({ draft, onJump }: { draft: BikeDraft; onJump: (id: string) 
           ]
         : [
             { id: "title", label: "Title", value: draft.title },
-            { id: "bikeType", label: "Type", value: draft.bikeType },
+            { id: "bikeType", label: "Type", value: formatBikeTypeDisplay(draft) },
             { id: "brand", label: "Brand", value: draft.brand },
             { id: "model", label: "Model", value: draft.model },
             { id: "frameSize", label: "Size", value: draft.frameSize },
@@ -834,6 +927,29 @@ function ReviewView({ draft, onJump }: { draft: BikeDraft; onJump: (id: string) 
               <img src={u} alt="" className="h-full w-full object-cover" />
             </div>
           ))}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="flex h-20 w-20 flex-shrink-0 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-gray-300 bg-white text-gray-500 transition-colors hover:bg-gray-50 disabled:opacity-50"
+          >
+            {uploading ? <Spinner size={18} /> : <Camera className="h-5 w-5" strokeWidth={1.75} />}
+            <span className="text-[10px] font-semibold leading-tight">
+              {uploading ? "Adding…" : "Add more"}
+            </span>
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const files = e.target.files ? Array.from(e.target.files) : [];
+              if (files.length) onFiles(files);
+              e.target.value = "";
+            }}
+          />
         </div>
       )}
 

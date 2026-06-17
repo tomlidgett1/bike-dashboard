@@ -5,7 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SpringBottomSheet } from "@/components/ui/spring-bottom-sheet";
 import { ListingCountBento } from "./listing-count-bento";
-import { ListingLayoutBento } from "./listing-layout-bento";
+import { ListingMethodBento } from "./listing-method-bento";
 import { ListingPhotosPanel, type ListingPhotoDraft } from "./listing-photos-panel";
 
 interface MobileUploadMethodDialogProps {
@@ -18,14 +18,21 @@ interface MobileUploadMethodDialogProps {
   onSelectBulk: () => void;
 }
 
-type SheetView = "count" | "photos" | "layout";
+type SheetView = "count" | "method" | "photos";
+type ListingMode = "guided" | "form";
 
 const emptyPhotoDraft = (): ListingPhotoDraft => ({ images: [], uploadedImages: [] });
 
 const VIEW_TITLES: Record<SheetView, { title: string; subtitle: string }> = {
   count: { title: "List on Yellow Jersey", subtitle: "One item or bulk" },
-  photos: { title: "Add photos", subtitle: "We'll recognise what you're selling" },
-  layout: { title: "How do you want to list it?", subtitle: "Same photos — pick a layout" },
+  method: {
+    title: "How do you want to list it?",
+    subtitle: "Pick the method that suits you",
+  },
+  photos: {
+    title: "Add photos",
+    subtitle: "We'll recognise what you're selling",
+  },
 };
 
 function AnimatedHeight({ children }: { children: React.ReactNode }) {
@@ -65,6 +72,7 @@ export function MobileUploadMethodDialog({
 }: MobileUploadMethodDialogProps) {
   const [view, setView] = React.useState<SheetView>("count");
   const [photoDraft, setPhotoDraft] = React.useState<ListingPhotoDraft>(emptyPhotoDraft);
+  const [listingMode, setListingMode] = React.useState<ListingMode | null>(null);
   const [direction, setDirection] = React.useState<"forward" | "back">("forward");
 
   React.useEffect(() => {
@@ -72,6 +80,7 @@ export function MobileUploadMethodDialog({
       const timer = setTimeout(() => {
         setView("count");
         setPhotoDraft(emptyPhotoDraft());
+        setListingMode(null);
       }, 350);
       return () => clearTimeout(timer);
     }
@@ -83,9 +92,11 @@ export function MobileUploadMethodDialog({
   };
 
   const goBack = () => {
-    if (view === "layout") goTo("photos", "back");
-    else if (view === "photos") {
+    if (view === "photos") {
       setPhotoDraft(emptyPhotoDraft());
+      setListingMode(null);
+      goTo("method", "back");
+    } else if (view === "method") {
       goTo("count", "back");
     }
   };
@@ -118,8 +129,8 @@ export function MobileUploadMethodDialog({
               </button>
             )}
             <div className="min-w-0">
-              <p className="text-[17px] font-bold tracking-tight text-gray-900">{title}</p>
-              <p className="text-[13px] text-gray-500">{subtitle}</p>
+              <p className="text-[19px] font-bold tracking-tight text-gray-900">{title}</p>
+              <p className="text-[14px] text-gray-500">{subtitle}</p>
             </div>
           </div>
         </div>
@@ -133,11 +144,23 @@ export function MobileUploadMethodDialog({
         >
           {view === "count" && (
             <ListingCountBento
-              onSelectOneItem={() => {
+              onSelectOneItem={() => goTo("method", "forward")}
+              onSelectBulk={() => choose(onSelectBulk)}
+            />
+          )}
+
+          {view === "method" && (
+            <ListingMethodBento
+              onSelectGuided={() => {
                 setPhotoDraft(emptyPhotoDraft());
+                setListingMode("guided");
                 goTo("photos", "forward");
               }}
-              onSelectBulk={() => choose(onSelectBulk)}
+              onSelectQuickUpload={() => {
+                setPhotoDraft(emptyPhotoDraft());
+                setListingMode("form");
+                goTo("photos", "forward");
+              }}
               onSelectText={() => choose(onSelectText)}
               onSelectFacebook={() => choose(onSelectFacebook)}
             />
@@ -147,14 +170,13 @@ export function MobileUploadMethodDialog({
             <ListingPhotosPanel
               draft={photoDraft}
               onChange={setPhotoDraft}
-              onContinue={() => goTo("layout", "forward")}
-            />
-          )}
-
-          {view === "layout" && (
-            <ListingLayoutBento
-              onSelectGuided={() => choose(() => onSelectGuided(photoDraft))}
-              onSelectQuickUpload={() => choose(() => onSelectQuickUpload(photoDraft))}
+              onContinue={() => {
+                if (listingMode === "guided") {
+                  choose(() => onSelectGuided(photoDraft));
+                } else if (listingMode === "form") {
+                  choose(() => onSelectQuickUpload(photoDraft));
+                }
+              }}
             />
           )}
         </div>

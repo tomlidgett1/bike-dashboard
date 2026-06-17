@@ -20,6 +20,10 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import {
+  getSavedSellerPickupLocation,
+  saveSellerPickupLocation,
+} from "@/lib/marketplace/seller-pickup-location";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -183,7 +187,7 @@ function productFormDataFromAnalysis(
     originalRrp: maxPrice,
     shippingAvailable: false,
     shippingCost: 0,
-    pickupLocation: "",
+    pickupLocation: getSavedSellerPickupLocation(),
     pickupAvailable: true,
   };
 }
@@ -530,7 +534,7 @@ export function BulkUploadSheet({
           originalRrp: priceEstimate.max_aud || 0,
           shippingAvailable: false,
           shippingCost: 0,
-          pickupLocation: "",
+          pickupLocation: getSavedSellerPickupLocation(),
           pickupAvailable: true,
         };
 
@@ -653,16 +657,30 @@ export function BulkUploadSheet({
     field: keyof ProductFormData,
     value: ProductFieldValue
   ) => {
+    if (field === "pickupLocation" && typeof value === "string" && value.trim()) {
+      saveSellerPickupLocation(value);
+    }
+
     setProducts((prev) =>
-      prev.map((p, i) =>
-        i === index
-          ? {
-              ...p,
-              formData: { ...p.formData, [field]: value },
-              isValid: validateProduct({ ...p.formData, [field]: value }),
-            }
-          : p
-      )
+      prev.map((p, i) => {
+        const nextFormData = { ...p.formData, [field]: value };
+
+        if (
+          field === "pickupLocation" &&
+          typeof value === "string" &&
+          value.trim() &&
+          i !== index &&
+          !p.formData.pickupLocation?.trim()
+        ) {
+          nextFormData.pickupLocation = value;
+        }
+
+        return {
+          ...p,
+          formData: nextFormData,
+          isValid: validateProduct(nextFormData),
+        };
+      })
     );
   };
 

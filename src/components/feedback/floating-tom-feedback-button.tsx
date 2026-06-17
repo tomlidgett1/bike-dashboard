@@ -4,22 +4,13 @@ import * as React from "react";
 import { usePathname } from "next/navigation";
 import { CheckCircle, Refresh } from "@/components/layout/app-sidebar/sidebar-icons";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
 import { isStoreDashboardPath } from "@/lib/routes/store-dashboard";
 import { cn } from "@/lib/utils";
 
-const MIN_FEEDBACK_LENGTH = 30;
+const MIN_FEEDBACK_LENGTH = 10;
 
 function pageTitleFromPath(pathname: string) {
   const segments = pathname.split("/").filter(Boolean);
@@ -83,6 +74,7 @@ export function FloatingTomFeedbackButton({
   const [submitting, setSubmitting] = React.useState(false);
   const [submitted, setSubmitted] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const rootRef = React.useRef<HTMLDivElement>(null);
 
   const visible = isStoreDashboardPath(pathname) && !!user;
   const trimmedLength = feedback.trim().length;
@@ -95,7 +87,24 @@ export function FloatingTomFeedbackButton({
         setFeedback("");
         setSubmitted(false);
       }
+      return;
     }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (rootRef.current?.contains(event.target as Node)) return;
+      setOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
   }, [open, submitted]);
 
   if (!visible) return null;
@@ -145,7 +154,7 @@ export function FloatingTomFeedbackButton({
       }
 
       setSubmitted(true);
-      window.setTimeout(() => setOpen(false), 1200);
+      window.setTimeout(() => setOpen(false), 900);
     } catch (submitError) {
       setError(
         submitError instanceof Error
@@ -158,113 +167,77 @@ export function FloatingTomFeedbackButton({
   };
 
   return (
-    <>
+    <div ref={rootRef} className="relative">
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => setOpen((current) => !current)}
         className={cn(
           placement === "header"
             ? "inline-flex h-8 items-center justify-center rounded-[28px] border px-3.5 text-xs font-medium transition-colors !bg-[var(--dashboard-header-control-bg)] !border-[color:var(--dashboard-header-control-border)] !text-[color:var(--dashboard-header-control-fg)] hover:!bg-[var(--dashboard-header-control-hover-bg)] hover:!text-[color:var(--dashboard-header-control-hover-fg)]"
             : "pointer-events-auto inline-flex items-center gap-2 rounded-[28px] border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-800 shadow-md transition-colors hover:bg-gray-50",
         )}
         aria-label="Feedback"
+        aria-expanded={open}
       >
         {placement === "header" ? "Feedback" : "Tom feedback"}
       </button>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent
-          overlayClassName="animate-in fade-in duration-200"
-          className="max-h-[min(40rem,90vh)] overflow-y-auto rounded-[28px] border border-gray-200 bg-white sm:max-w-lg animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out"
+      {open ? (
+        <div
+          className={cn(
+            "absolute z-50 w-[min(calc(100vw-2rem),18rem)] rounded-md border border-gray-200 bg-white p-3 shadow-xl",
+            "animate-in fade-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out",
+            placement === "header" ? "right-0 top-[calc(100%+8px)]" : "right-0 top-[calc(100%+8px)]",
+          )}
         >
-          <DialogHeader>
-            <DialogTitle>Tom feedback</DialogTitle>
-            <DialogDescription>
-              Share detailed feedback about what is broken, confusing, or missing.
-              Include steps to reproduce, what you expected, and what happened instead.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
-              <p>
-                <span className="font-medium text-gray-800">Page:</span> {pathname}
-                {pageSearch ? pageSearch : ""}
-              </p>
-              <p className="mt-1">
-                <span className="font-medium text-gray-800">Title:</span> {pageTitle}
-              </p>
+          {submitted ? (
+            <div className="flex items-center gap-2 py-2 text-sm text-gray-800">
+              <CheckCircle className="h-4 w-4 shrink-0 text-gray-700" />
+              Thanks — feedback sent.
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="tom-feedback-text">Your feedback</Label>
+          ) : (
+            <>
               <Textarea
-                id="tom-feedback-text"
                 value={feedback}
                 onChange={(event) => setFeedback(event.target.value)}
-                placeholder="Describe the issue or idea in detail. What were you trying to do? What went wrong? What would good look like?"
-                rows={8}
-                className="rounded-md resize-y min-h-[10rem]"
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                    event.preventDefault();
+                    void handleSubmit();
+                  }
+                }}
+                placeholder="What's on your mind?"
+                rows={4}
+                autoFocus
+                className="min-h-[5.5rem] resize-none rounded-md border-gray-200 text-sm"
               />
-              <p
-                className={cn(
-                  "text-xs",
-                  trimmedLength < MIN_FEEDBACK_LENGTH
-                    ? "text-gray-500"
-                    : "text-gray-700",
-                )}
-              >
-                {trimmedLength}/{MIN_FEEDBACK_LENGTH} minimum characters
-              </p>
-            </div>
 
-            {error ? (
-              <div className="rounded-md border border-red-200 bg-white px-3 py-2 text-sm text-red-700">
-                {error}
+              {error ? (
+                <p className="mt-2 text-xs text-red-600">{error}</p>
+              ) : null}
+
+              <div className="mt-2 flex justify-end">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="rounded-md min-w-[72px]"
+                  onClick={() => void handleSubmit()}
+                  disabled={!canSubmit}
+                >
+                  {submitting ? (
+                    <>
+                      <Refresh className="h-3.5 w-3.5 animate-spin" />
+                      Sending…
+                    </>
+                  ) : (
+                    "Send"
+                  )}
+                </Button>
               </div>
-            ) : null}
-
-            {submitted ? (
-              <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800">
-                <CheckCircle className="h-4 w-4 text-gray-700" />
-                Thanks — your feedback was logged for review.
-              </div>
-            ) : null}
-          </div>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              className="rounded-md"
-              onClick={() => setOpen(false)}
-              disabled={submitting}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              className="rounded-md min-w-[120px]"
-              onClick={() => void handleSubmit()}
-              disabled={!canSubmit}
-            >
-              {submitting ? (
-                <>
-                  <Refresh className="h-4 w-4 animate-spin" />
-                  Sending…
-                </>
-              ) : submitted ? (
-                <>
-                  <CheckCircle className="h-4 w-4" />
-                  Sent
-                </>
-              ) : (
-                "Send feedback"
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+            </>
+          )}
+        </div>
+      ) : null}
+    </div>
   );
 }

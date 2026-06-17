@@ -38,9 +38,9 @@ export default function ProductsBulkOptimisePage() {
           icon={Sparkles}
           actions={
             <Button variant="outline" size="sm" className="rounded-md" asChild>
-              <Link href="/products">
+              <Link href="/optimize">
                 <ArrowLeft className="size-4" />
-                Back to products
+                Back to optimise
               </Link>
             </Button>
           }
@@ -48,7 +48,7 @@ export default function ProductsBulkOptimisePage() {
       </FloatingCardPageHeader>
 
       <FloatingCardPageBody>
-        <FloatingCard>
+        <FloatingCard className="border-gray-300">
           <BulkOptimiseWorkspace variant="products-card" />
         </FloatingCard>
       </FloatingCardPageBody>

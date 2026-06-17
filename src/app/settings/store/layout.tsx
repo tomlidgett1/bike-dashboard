@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getUserProfile } from "@/lib/server/get-user-profile";
+import { StoreSettingsMobileGate } from "@/components/settings/store-settings-mobile-gate";
 
 /**
  * Shared auth guard for every Storefront sub-page. Only verified bicycle stores
@@ -23,5 +24,5 @@ export default async function StoreSettingsLayout({
     redirect("/marketplace/settings");
   }
 
-  return <>{children}</>;
+  return <StoreSettingsMobileGate>{children}</StoreSettingsMobileGate>;
 }

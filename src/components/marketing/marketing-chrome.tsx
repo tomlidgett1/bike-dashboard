@@ -9,6 +9,7 @@ const NAV_LINKS = [
   { href: "/marketplace", label: "Marketplace" },
   { href: "/sell-your-bike", label: "Sell your bike" },
   { href: "/used-bikes", label: "Used bikes" },
+  { href: "/guides", label: "Guides" },
   { href: "/home2", label: "For shops" },
 ];
 
@@ -48,6 +49,7 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
             <Link href="/marketplace/new-products" className="hover:text-zinc-900">New bikes</Link>
             <Link href="/marketplace/used-products" className="hover:text-zinc-900">Used bikes</Link>
             <Link href="/sell-your-bike" className="hover:text-zinc-900">Sell your bike</Link>
+            <Link href="/guides" className="hover:text-zinc-900">Guides</Link>
             <Link href="/home2" className="hover:text-zinc-900">For bike shops</Link>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-4 border-t border-black/[0.06] pt-5">

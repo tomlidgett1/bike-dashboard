@@ -348,7 +348,7 @@ function NotificationItem({
   );
 }
 
-export function NotificationsDropdown() {
+export function NotificationsDropdown({ plainMobile = false }: { plainMobile?: boolean } = {}) {
   const router = useRouter();
   const { openConversation } = useMessages();
   const useStoreStyle = useStoreHeaderDropdownStyle();
@@ -443,18 +443,30 @@ export function NotificationsDropdown() {
     </>
   );
 
+  const mobileTriggerClass = plainMobile
+    ? 'relative h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center overflow-visible'
+    : topbarIconButtonClass;
+
+  const mobileBellClass = plainMobile
+    ? 'h-[22px] w-[22px] text-gray-700 stroke-[2]'
+    : 'size-4';
+
+  const mobileBadgeClass = plainMobile
+    ? 'absolute -top-1.5 -right-1.5 h-5 min-w-[20px] px-1 rounded-full bg-red-500 text-white text-[11px] flex items-center justify-center font-bold shadow-sm z-10'
+    : 'absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium';
+
   // Mobile: Use Sheet
   if (isMobile) {
     return (
       <>
         <button
           onClick={handleBellClick}
-          className={topbarIconButtonClass}
+          className={mobileTriggerClass}
           aria-label="Notifications"
         >
-          <Bell className="size-4" />
+          <Bell className={mobileBellClass} />
           {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
+            <span className={mobileBadgeClass}>
               {unreadCount > 99 ? '99+' : unreadCount}
             </span>
           )}
