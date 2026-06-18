@@ -1189,6 +1189,9 @@ function ServicesTeaser({
     [store.services],
   );
   const shell = useStoreHomeShell();
+  const handleBookService = React.useCallback(() => {
+    onNavigate(store.phone ? "call" : "service");
+  }, [onNavigate, store.phone]);
 
   return (
     <section
@@ -1228,13 +1231,13 @@ function ServicesTeaser({
             service={svc}
             accent={accent}
             accentText={accentText}
-            onBook={() => onNavigate("service")}
+            onBook={handleBookService}
           />
         ))}
       </div>
 
       {/* Mobile: horizontal carousel — wide cards (67vw) so the next one peeks */}
-      <div className="sm:hidden -mx-5 overflow-x-auto scrollbar-hide snap-x snap-mandatory scroll-pl-5">
+      <div className="sm:hidden -mx-5 overflow-x-auto scrollbar-hide snap-x snap-mandatory scroll-pl-5 py-px">
         <div className="flex items-stretch gap-3.5" style={{ minWidth: "min-content" }}>
           {/* Leading spacer */}
           <div className="w-5 flex-shrink-0" aria-hidden />
@@ -1244,7 +1247,7 @@ function ServicesTeaser({
                 service={svc}
                 accent={accent}
                 accentText={accentText}
-                onBook={() => onNavigate("service")}
+                onBook={handleBookService}
               />
             </div>
           ))}

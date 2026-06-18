@@ -8,6 +8,7 @@ import {
   Tag,
   ThumbsDown,
   ThumbsUp,
+  X,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 import type { StoreProfile } from "@/lib/types/store";
@@ -71,25 +72,19 @@ function cardTransform(x: number): string {
 
 const SWIPE_CARD_CSS = `
 @keyframes weekly-specials-card-enter {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 14px, 0) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 .weekly-specials-card {
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
+  -webkit-touch-callout: none;
   backface-visibility: hidden;
-  transform: translate3d(0, 0, 0);
   will-change: transform, opacity;
 }
 .weekly-specials-card-enter {
-  animation: weekly-specials-card-enter 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: weekly-specials-card-enter 0.32s ease-out both;
 }
 .weekly-specials-card.is-dragging {
   cursor: grabbing;
@@ -347,9 +342,17 @@ function SpecialsSwipe({
         exit={{ y: 24, scale: 0.97, opacity: 0 }}
         transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
       >
-        {/* Title */}
-        <div className="flex-shrink-0 px-5 pb-2 pt-[max(16px,env(safe-area-inset-top))] text-center">
-          <h2 className="text-lg font-bold tracking-tight text-white">Weekly specials</h2>
+        {/* Title + exit */}
+        <div className="relative flex-shrink-0 px-5 pb-2 pt-[max(16px,env(safe-area-inset-top))]">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="absolute left-5 top-[max(16px,env(safe-area-inset-top))] grid h-9 w-9 place-items-center rounded-full bg-white/10 text-white/80 transition-colors active:bg-white/20"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <h2 className="text-center text-lg font-bold tracking-tight text-white">Weekly specials</h2>
         </div>
 
         {/* Deck */}
@@ -439,6 +442,13 @@ const SwipeCard = React.forwardRef<
     if (skipRef.current) skipRef.current.style.opacity = String(stampOpacity(x, "skip"));
   }, []);
 
+  const clearEnterAnimation = React.useCallback(() => {
+    const card = cardRef.current;
+    if (!card) return;
+    card.classList.remove("weekly-specials-card-enter");
+    card.style.animation = "none";
+  }, []);
+
   const flyOut = React.useCallback(
     (dir: 1 | -1) => {
       if (exitingRef.current) return;
@@ -449,23 +459,32 @@ const SwipeCard = React.forwardRef<
         return;
       }
 
-      const targetX = dir * SWIPE_FLY_DISTANCE;
-      applyOffset(targetX, true);
-      card.style.opacity = "0";
+      clearEnterAnimation();
+      dragRef.current.active = false;
 
-      const onDone = (event: TransitionEvent) => {
-        if (event.propertyName !== "transform") return;
-        card.removeEventListener("transitionend", onDone);
-        window.clearTimeout(fallback);
+      const targetX = dir * SWIPE_FLY_DISTANCE;
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        card.removeEventListener("transitionend", onTransitionEnd);
         onSwipeComplete(dir);
       };
-      card.addEventListener("transitionend", onDone);
-      const fallback = window.setTimeout(() => {
-        card.removeEventListener("transitionend", onDone);
-        onSwipeComplete(dir);
-      }, 400);
+
+      const onTransitionEnd = (event: TransitionEvent) => {
+        if (event.target !== card || event.propertyName !== "transform") return;
+        finish();
+      };
+
+      // Force reflow so the browser picks up the new transition from the current drag offset.
+      applyOffset(dragRef.current.offsetX, false);
+      void card.offsetWidth;
+      applyOffset(targetX, true);
+      card.style.opacity = "0";
+      card.addEventListener("transitionend", onTransitionEnd);
+      window.setTimeout(finish, 450);
     },
-    [applyOffset, onSwipeComplete],
+    [applyOffset, clearEnterAnimation, onSwipeComplete],
   );
 
   React.useImperativeHandle(ref, () => ({ flyOut }), [flyOut]);
@@ -479,15 +498,25 @@ const SwipeCard = React.forwardRef<
     card.style.opacity = "1";
     card.style.transition = "none";
     card.style.transform = cardTransform(0);
+    card.style.animation = "";
     if (likeRef.current) likeRef.current.style.opacity = "0";
     if (skipRef.current) skipRef.current.style.opacity = "0";
 
+    const onAnimEnd = () => {
+      card.classList.remove("weekly-specials-card-enter");
+      card.style.animation = "";
+    };
+
     requestAnimationFrame(() => {
       card.classList.remove("weekly-specials-card-enter");
-      // Force reflow so the animation can replay on the next card.
       void card.offsetWidth;
       card.classList.add("weekly-specials-card-enter");
+      card.addEventListener("animationend", onAnimEnd, { once: true });
     });
+
+    return () => {
+      card.removeEventListener("animationend", onAnimEnd);
+    };
   }, [deal.product.id]);
 
   const finishDrag = React.useCallback(() => {
@@ -496,7 +525,14 @@ const SwipeCard = React.forwardRef<
 
     drag.active = false;
     const card = cardRef.current;
-    card?.releasePointerCapture(drag.pointerId);
+    if (card && drag.pointerId >= 0) {
+      try {
+        card.releasePointerCapture(drag.pointerId);
+      } catch {
+        /* pointer may already be released */
+      }
+    }
+    cardRef.current?.classList.remove("is-dragging");
 
     const { offsetX, velocityX } = drag;
     if (offsetX > SWIPE_THRESHOLD || velocityX > SWIPE_VELOCITY) {
@@ -510,38 +546,36 @@ const SwipeCard = React.forwardRef<
     applyOffset(0, true);
   }, [applyOffset, flyOut]);
 
-  const onPointerDown = React.useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
+  const beginDrag = React.useCallback(
+    (clientX: number, pointerId: number) => {
       if (exitingRef.current) return;
-      // Let buttons/links handle their own taps.
-      if ((event.target as HTMLElement).closest("button,a")) return;
+      clearEnterAnimation();
 
       const drag = dragRef.current;
       drag.active = true;
-      drag.pointerId = event.pointerId;
-      drag.startX = event.clientX;
+      drag.pointerId = pointerId;
+      drag.startX = clientX;
       drag.offsetX = 0;
-      drag.lastX = event.clientX;
+      drag.lastX = clientX;
       drag.lastTime = performance.now();
       drag.velocityX = 0;
 
-      event.currentTarget.setPointerCapture(event.pointerId);
       applyOffset(0, false);
       cardRef.current?.classList.add("is-dragging");
     },
-    [applyOffset],
+    [applyOffset, clearEnterAnimation],
   );
 
-  const onPointerMove = React.useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
+  const moveDrag = React.useCallback(
+    (clientX: number) => {
       const drag = dragRef.current;
-      if (!drag.active || event.pointerId !== drag.pointerId) return;
+      if (!drag.active || exitingRef.current) return;
 
       const now = performance.now();
       const dt = Math.max(now - drag.lastTime, 1);
-      const nextX = event.clientX - drag.startX;
-      drag.velocityX = (event.clientX - drag.lastX) / dt;
-      drag.lastX = event.clientX;
+      const nextX = clientX - drag.startX;
+      drag.velocityX = (clientX - drag.lastX) / dt;
+      drag.lastX = clientX;
       drag.lastTime = now;
       drag.offsetX = nextX;
 
@@ -550,11 +584,30 @@ const SwipeCard = React.forwardRef<
     [applyOffset],
   );
 
+  const onPointerDown = React.useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (exitingRef.current) return;
+      if ((event.target as HTMLElement).closest("button,a")) return;
+
+      event.currentTarget.setPointerCapture(event.pointerId);
+      beginDrag(event.clientX, event.pointerId);
+    },
+    [beginDrag],
+  );
+
+  const onPointerMove = React.useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const drag = dragRef.current;
+      if (!drag.active || event.pointerId !== drag.pointerId) return;
+      moveDrag(event.clientX);
+    },
+    [moveDrag],
+  );
+
   const onPointerEnd = React.useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       const drag = dragRef.current;
       if (!drag.active || event.pointerId !== drag.pointerId) return;
-      cardRef.current?.classList.remove("is-dragging");
       finishDrag();
     },
     [finishDrag],
@@ -564,11 +617,11 @@ const SwipeCard = React.forwardRef<
     <div
       ref={cardRef}
       className="weekly-specials-card absolute inset-0 z-10 flex cursor-grab flex-col overflow-hidden rounded-3xl bg-white shadow-2xl"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerEnd}
-        onPointerCancel={onPointerEnd}
-      >
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerEnd}
+      onPointerCancel={onPointerEnd}
+    >
         {/* Product image */}
         <div className="relative flex-1 bg-white">
           {image ? (

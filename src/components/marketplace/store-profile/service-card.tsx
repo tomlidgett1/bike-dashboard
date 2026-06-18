@@ -44,6 +44,15 @@ function CheckIcon() {
   );
 }
 
+function CardPattern() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle,rgb(0_0_0/0.055)_1px,transparent_1px)] [background-size:12px_12px]"
+    />
+  );
+}
+
 interface ServiceCardProps {
   service: StoreService;
   /** Store accent colour (used for the featured badge + button). */
@@ -71,8 +80,9 @@ export function ServiceCard({
     service.duration_minutes != null ? formatDuration(service.duration_minutes) : null;
 
   return (
-    <Card className={cn("flex h-full w-full flex-col", className)}>
-      <CardHeader>
+    <Card className={cn("relative flex h-full w-full flex-col", className)}>
+      <CardPattern />
+      <CardHeader className="relative z-10">
         <div className="flex items-center justify-between gap-2">
           <CardTitle className="text-base font-semibold tracking-tight">
             {service.name}
@@ -117,7 +127,7 @@ export function ServiceCard({
       </CardHeader>
 
       {includes.length > 0 && (
-        <CardContent className="flex flex-1 flex-col gap-2.5">
+        <CardContent className="relative z-10 flex flex-1 flex-col gap-2.5">
           {includes.map((item, i) => (
             <div key={i} className="flex items-center gap-2 text-sm">
               <CheckIcon />
@@ -128,7 +138,7 @@ export function ServiceCard({
       )}
 
       {onBook && (
-        <CardFooter>
+        <CardFooter className="relative z-10">
           <Button
             type="button"
             className="w-full"
