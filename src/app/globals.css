@@ -426,6 +426,11 @@
   100% { transform: translateX(200%); }
 }
 
+@keyframes home-search-dot {
+  0%, 80%, 100% { opacity: 0.2; }
+  40% { opacity: 1; }
+}
+
 @keyframes optimise-title-shimmer {
   0% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }

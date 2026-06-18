@@ -12,6 +12,7 @@ import {
   Loader2,
   MessageCircle,
   Navigation,
+  Search,
   Settings2,
   Store as StoreIcon,
   X,
@@ -33,6 +34,7 @@ import { ProductCard } from "@/components/marketplace/product-card";
 import { type StoreAnalyticsEventType, useProductImpressions } from "@/lib/tracking/store-analytics";
 import { STORE_PAGE_CONTENT_SHELL } from "@/components/marketplace/store-profile/store-profile-chrome";
 import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
+import { WeeklySpecials } from "@/components/marketplace/store-profile/weekly-specials";
 
 // ============================================================
 // Store Home Tab — the public landing page for a bicycle store.
@@ -52,6 +54,8 @@ interface StoreHomeTabProps {
   /** Open the shared store hours sheet/dialog. */
   onOpenHours?: () => void;
   onTrackBehaviour?: (eventType: StoreAnalyticsEventType, metadata?: Record<string, unknown>) => void;
+  storeSearch?: string;
+  onStoreSearchChange?: (value: string) => void;
 }
 
 const DAY_KEYS: (keyof OpeningHours)[] = [
@@ -131,6 +135,8 @@ export function StoreHomeTab({
   onOpenCollection,
   onOpenHours,
   onTrackBehaviour,
+  storeSearch = "",
+  onStoreSearchChange,
 }: StoreHomeTabProps) {
   const [messageOpen, setMessageOpen] = React.useState(false);
   const handleCloseMessage = React.useCallback(() => setMessageOpen(false), []);
@@ -185,6 +191,9 @@ export function StoreHomeTab({
           config={config}
           trackAnalytics={trackAnalytics}
           onOpenCollection={onOpenCollection}
+          storeSearch={storeSearch}
+          onStoreSearchChange={onStoreSearchChange}
+          onTrackBehaviour={onTrackBehaviour}
         />
       ) : null,
     story: () =>
@@ -257,10 +266,20 @@ export function StoreHomeTab({
         <StoreMessageDialog
           open={messageOpen}
           storeName={store.store_name}
+          storeLogoUrl={store.logo_url}
           accent={accent}
           accentText={accentText}
           onClose={handleCloseMessage}
           onTrackBehaviour={onTrackBehaviour}
+        />
+
+        {/* Weekly specials — mobile-only "swipe the sale" concept */}
+        <WeeklySpecials
+          store={store}
+          accent={accent}
+          accentText={accentText}
+          contentShell={contentShell}
+          onBrowseAll={() => onNavigate("products")}
         />
 
         {/* Ordered sections */}
@@ -513,7 +532,7 @@ function Hero({
       data-store-analytics-label="Home hero"
     >
       {isOwnProfile && <EditButton />}
-      <div className="relative isolate flex min-h-[280px] items-center overflow-hidden sm:min-h-[600px]">
+      <div className="relative isolate flex min-h-[280px] items-stretch overflow-hidden sm:min-h-[600px] sm:items-center">
         {/* Background */}
         <div className="absolute inset-0 -z-10">
           {heroImages.length > 0 ? (
@@ -531,34 +550,42 @@ function Hero({
           />
         </div>
 
-        <div className={cn(shell, "w-full py-10 sm:py-16")}>
+        <div className={cn(shell, "flex w-full flex-col py-8 sm:block sm:py-16")}>
           <div
-            className={cn("max-w-2xl", alignCenter && "mx-auto text-center")}
+            className={cn(
+              "max-w-2xl",
+              "flex flex-1 flex-col justify-end gap-4 sm:min-h-0 sm:justify-start sm:gap-0 sm:block",
+              alignCenter && "mx-auto text-center",
+            )}
           >
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-white leading-[1.08] drop-shadow-sm sm:mt-4 sm:text-6xl lg:text-7xl sm:leading-[1.04]">
-              {hero.headline}
-            </h1>
-            <p
-              className="mt-2 text-base leading-snug text-white/85 drop-shadow-sm sm:mt-5 sm:max-w-xl sm:text-xl sm:leading-relaxed"
-              style={alignCenter ? { marginLeft: "auto", marginRight: "auto" } : undefined}
-            >
-              {hero.subheadline}
-            </p>
-            <div className={cn("mt-5 flex flex-wrap items-center gap-3 sm:mt-8", alignCenter && "justify-center")}>
-              {PrimaryBtn}
-              {DarkMessageBtn}
-              {hero.secondary_cta && (
-                <button
-                  type="button"
-                  onClick={onSecondary}
-                  className="hidden items-center gap-2 rounded-full border border-white/30 bg-white/10 backdrop-blur-sm px-6 py-3 text-sm font-semibold text-white hover:bg-white/20 transition-colors cursor-pointer sm:inline-flex"
-                >
-                  {hero.secondary_cta.label}
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              )}
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight text-white leading-[1.08] drop-shadow-sm sm:mt-4 sm:text-6xl lg:text-7xl sm:leading-[1.04]">
+                {hero.headline}
+              </h1>
+              <p
+                className="mt-2 text-base leading-snug text-white/85 drop-shadow-sm sm:mt-5 sm:max-w-xl sm:text-xl sm:leading-relaxed"
+                style={alignCenter ? { marginLeft: "auto", marginRight: "auto" } : undefined}
+              >
+                {hero.subheadline}
+              </p>
             </div>
-            {UberBanner(alignCenter, "dark")}
+            <div className="sm:contents">
+              <div className={cn("flex flex-wrap items-center gap-3 sm:mt-8", alignCenter && "justify-center")}>
+                {PrimaryBtn}
+                {DarkMessageBtn}
+                {hero.secondary_cta && (
+                  <button
+                    type="button"
+                    onClick={onSecondary}
+                    className="hidden items-center gap-2 rounded-full border border-white/30 bg-white/10 backdrop-blur-sm px-6 py-3 text-sm font-semibold text-white hover:bg-white/20 transition-colors cursor-pointer sm:inline-flex"
+                  >
+                    {hero.secondary_cta.label}
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+              {UberBanner(alignCenter, "dark")}
+            </div>
           </div>
         </div>
 
@@ -579,6 +606,7 @@ function Hero({
 function StoreMessageDialog({
   open,
   storeName,
+  storeLogoUrl,
   accent,
   accentText,
   onClose,
@@ -586,6 +614,7 @@ function StoreMessageDialog({
 }: {
   open: boolean;
   storeName: string;
+  storeLogoUrl?: string | null;
   accent: string;
   accentText: string;
   onClose: () => void;
@@ -707,7 +736,7 @@ function StoreMessageDialog({
   return (
     <div
       data-state={isLeaving ? "closed" : "open"}
-      className="store-message-overlay fixed inset-0 z-[120] flex items-end justify-center bg-black/45 px-0 backdrop-blur-sm sm:items-center sm:px-4"
+      className="store-message-overlay fixed inset-0 z-[120] flex items-end justify-center bg-black/40 px-0 backdrop-blur-md sm:items-center sm:px-4"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
@@ -718,50 +747,56 @@ function StoreMessageDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="store-message-title"
-        className="store-message-sheet max-h-[calc(100dvh-1rem)] w-full overflow-y-auto rounded-t-3xl bg-white shadow-2xl ring-1 ring-black/10 sm:max-w-md sm:rounded-3xl"
+        className="store-message-sheet flex max-h-[calc(100dvh-0.5rem)] w-full flex-col overflow-hidden rounded-t-[1.25rem] bg-white shadow-[0_-8px_40px_rgba(0,0,0,0.12)] sm:max-h-[min(90dvh,640px)] sm:max-w-[400px] sm:rounded-3xl sm:shadow-2xl"
       >
-        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
-          <div className="flex items-center gap-3">
-            <span
-              className="flex h-10 w-10 items-center justify-center rounded-2xl"
-              style={{ backgroundColor: `${accent}26` }}
-            >
-              <MessageCircle className="h-5 w-5 text-gray-900" />
-            </span>
-            <div>
-              <h2 id="store-message-title" className="text-base font-semibold text-gray-900">
+        <div className="flex shrink-0 justify-center pt-2.5 sm:hidden" aria-hidden="true">
+          <div className="h-1 w-9 rounded-full bg-gray-300/90" />
+        </div>
+
+        <div className="flex shrink-0 items-start justify-between gap-3 px-5 pb-3 pt-1 sm:px-6 sm:pb-4 sm:pt-5">
+          <div className="flex min-w-0 items-center gap-3">
+            {storeLogoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={storeLogoUrl}
+                alt={storeName}
+                className="h-11 w-11 flex-shrink-0 rounded-full object-cover ring-1 ring-black/[0.06]"
+              />
+            ) : (
+              <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-gray-100 ring-1 ring-black/[0.06]">
+                <StoreIcon className="h-5 w-5 text-gray-400" />
+              </div>
+            )}
+            <div className="min-w-0">
+              <h2 id="store-message-title" className="truncate text-[17px] font-semibold tracking-tight text-gray-900">
                 Message {storeName}
               </h2>
-              <p className="text-sm text-gray-500">One quick mobile check.</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex h-9 w-9 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-black/[0.05] text-gray-500 transition-colors hover:bg-black/[0.08] hover:text-gray-700"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {success ? (
-          <div className="px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-7 text-center sm:pb-6">
-            <div
-              className="mx-auto flex h-14 w-14 items-center justify-center rounded-full"
-              style={{ backgroundColor: `${accent}26` }}
-            >
+          <div className="overflow-y-auto bg-white px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-2 text-center sm:px-6 sm:pb-6">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-gray-100">
               <CheckCircle2 className="h-7 w-7 text-gray-900" />
             </div>
-            <h3 className="mt-4 text-lg font-semibold text-gray-900">Opening Messages...</h3>
-            <p className="mt-2 text-sm leading-relaxed text-gray-500">
+            <h3 className="mt-4 text-[17px] font-semibold text-gray-900">Opening Messages…</h3>
+            <p className="mx-auto mt-2 max-w-[280px] text-[13px] leading-relaxed text-gray-500">
               If Messages does not open automatically, use the button below.
             </p>
-            <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+            <div className="mt-6 flex flex-col gap-2.5">
               {messageHref && (
                 <a
                   href={messageHref}
-                  className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-full px-4 text-sm font-semibold transition-transform hover:-translate-y-0.5"
+                  className="inline-flex h-[50px] w-full items-center justify-center gap-2 rounded-2xl text-[17px] font-semibold transition-opacity active:opacity-80"
                   style={{ backgroundColor: accent, color: accentText }}
                 >
                   <MessageCircle className="h-4 w-4" />
@@ -771,40 +806,47 @@ function StoreMessageDialog({
               <button
                 type="button"
                 onClick={onClose}
-                className="inline-flex h-11 flex-1 items-center justify-center rounded-full border border-gray-200 px-4 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-50"
+                className="inline-flex h-[50px] w-full items-center justify-center rounded-2xl bg-gray-100 text-[17px] font-semibold text-gray-900 transition-colors active:bg-gray-200"
               >
                 Done
               </button>
             </div>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 sm:pb-6">
-            <p className="text-sm leading-relaxed text-gray-600">
-              Enter your mobile first. We do not use it for marketing or account storage; it only creates the
-              anti-spam route for this store message.
+          <form
+            onSubmit={handleSubmit}
+            className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-white px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-1 sm:px-6 sm:pb-6"
+          >
+            <p className="text-[13px] leading-relaxed text-gray-500">
+              Enter your mobile to connect to our messaging service.
             </p>
 
-            <div className="mt-5">
-              <label htmlFor="store-message-phone" className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <div className="mt-4">
+              <label
+                htmlFor="store-message-phone"
+                className="mb-2 block text-[13px] font-medium text-gray-500"
+              >
                 Mobile number
               </label>
-              <input
-                ref={inputRef}
-                id="store-message-phone"
-                name="phone"
-                type="tel"
-                inputMode="tel"
-                autoComplete="tel"
-                value={phone}
-                onChange={(event) => {
-                  setPhone(event.target.value);
-                  if (error) setError(null);
-                }}
-                placeholder="0400 000 000"
-                className="mt-2 h-12 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 text-base text-gray-900 outline-none transition-colors placeholder:text-gray-400 focus:border-gray-900 focus:bg-white"
-              />
+              <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                <input
+                  ref={inputRef}
+                  id="store-message-phone"
+                  name="phone"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  value={phone}
+                  onChange={(event) => {
+                    setPhone(event.target.value);
+                    if (error) setError(null);
+                  }}
+                  placeholder="0400 000 000"
+                  className="h-[50px] w-full bg-transparent px-4 text-[17px] text-gray-900 outline-none placeholder:text-gray-400"
+                />
+              </div>
               {error && (
-                <p className="mt-2 text-sm text-red-600" role="alert">
+                <p className="mt-2 text-[13px] text-red-600" role="alert">
                   {error}
                 </p>
               )}
@@ -813,23 +855,24 @@ function StoreMessageDialog({
             <button
               type="submit"
               disabled={submitting}
-              className="mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:translate-y-0"
+              className="mt-5 inline-flex h-[50px] w-full items-center justify-center gap-2 rounded-2xl text-[17px] font-semibold transition-opacity active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
               style={{ backgroundColor: accent, color: accentText }}
             >
               {submitting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Setting up...
+                  Setting up…
                 </>
               ) : (
-                <>
-                  Continue
-                  <ArrowRight className="h-4 w-4" />
-                </>
+                "Continue"
               )}
             </button>
           </form>
         )}
+
+        <p className="shrink-0 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-1 text-center text-[11px] text-gray-400">
+          Powered by Yellow Jersey
+        </p>
       </div>
     </div>
   );
@@ -1250,16 +1293,111 @@ function GallerySection({ config }: { config: StoreHomepageConfig }) {
 }
 
 // ── Featured carousels ─────────────────────────────────────
+function AnimatedEllipsis() {
+  return (
+    <span className="inline-flex w-[0.85em]" aria-hidden="true">
+      <span className="animate-[home-search-dot_1.2s_ease-in-out_infinite]">.</span>
+      <span className="animate-[home-search-dot_1.2s_ease-in-out_0.15s_infinite]">.</span>
+      <span className="animate-[home-search-dot_1.2s_ease-in-out_0.3s_infinite]">.</span>
+    </span>
+  );
+}
+
+function HomeFloatingSearchBar({
+  storeSearch,
+  onStoreSearchChange,
+  onTrackBehaviour,
+}: {
+  storeSearch: string;
+  onStoreSearchChange: (value: string) => void;
+  onTrackBehaviour?: (eventType: StoreAnalyticsEventType, metadata?: Record<string, unknown>) => void;
+}) {
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const hasTrackedFocus = React.useRef(false);
+  const [focused, setFocused] = React.useState(false);
+  const [draft, setDraft] = React.useState(storeSearch);
+
+  React.useEffect(() => {
+    setDraft(storeSearch);
+  }, [storeSearch]);
+
+  const showHint = !draft.trim() && !focused;
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+    onStoreSearchChange(trimmed);
+    onTrackBehaviour?.("search_focus", {
+      tab: "home",
+      source: "home_floating_search_submit",
+      query: trimmed,
+    });
+    inputRef.current?.blur();
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="mt-6 sm:hidden">
+      <h3 className="mb-3 text-center text-lg font-semibold tracking-tight text-gray-900">
+        What are you looking for?
+      </h3>
+      <label className="flex h-12 cursor-text items-center gap-2.5 rounded-2xl border border-gray-200 bg-white px-4 shadow-[0_4px_20px_rgba(17,17,17,0.08)] transition-shadow focus-within:border-gray-300 focus-within:shadow-[0_6px_24px_rgba(17,17,17,0.1)] focus-within:ring-2 focus-within:ring-gray-900/5">
+        <Search
+          className="h-4 w-4 flex-shrink-0 text-gray-400"
+          aria-hidden="true"
+        />
+        <div className="relative min-w-0 flex-1">
+          {showHint && (
+            <span
+              className="pointer-events-none absolute inset-0 flex items-center text-[15px] text-gray-400"
+              aria-hidden="true"
+            >
+              Search for anything
+              <AnimatedEllipsis />
+            </span>
+          )}
+          <input
+            ref={inputRef}
+            type="search"
+            enterKeyHint="search"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onFocus={() => {
+              setFocused(true);
+              if (hasTrackedFocus.current) return;
+              hasTrackedFocus.current = true;
+              onTrackBehaviour?.("search_focus", {
+                tab: "home",
+                source: "home_floating_search",
+              });
+            }}
+            onBlur={() => setFocused(false)}
+            placeholder=""
+            aria-label="Search for anything"
+            className="w-full bg-transparent text-[15px] text-gray-900 outline-none"
+          />
+        </div>
+      </label>
+    </form>
+  );
+}
+
 function FeaturedCarouselsSection({
   store,
   config,
   trackAnalytics,
   onOpenCollection,
+  storeSearch = "",
+  onStoreSearchChange,
+  onTrackBehaviour,
 }: {
   store: StoreProfile;
   config: StoreHomepageConfig;
   trackAnalytics?: boolean;
   onOpenCollection: (categoryName: string) => void;
+  storeSearch?: string;
+  onStoreSearchChange?: (value: string) => void;
+  onTrackBehaviour?: (eventType: StoreAnalyticsEventType, metadata?: Record<string, unknown>) => void;
 }) {
   const shell = useStoreHomeShell();
   const slots = [config.featured_carousels.slot1, config.featured_carousels.slot2]
@@ -1301,6 +1439,13 @@ function FeaturedCarouselsSection({
           />
         );
       })}
+      {onStoreSearchChange && (
+        <HomeFloatingSearchBar
+          storeSearch={storeSearch}
+          onStoreSearchChange={onStoreSearchChange}
+          onTrackBehaviour={onTrackBehaviour}
+        />
+      )}
     </section>
   );
 }

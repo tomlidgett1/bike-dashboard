@@ -1618,6 +1618,8 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                 onOpenCollection={handleOpenCollection}
                 onOpenHours={() => handleHoursOpenChange(true)}
                 onTrackBehaviour={trackBehaviour}
+                storeSearch={storeSearch}
+                onStoreSearchChange={allProducts.length > 0 ? handleStoreSearchChange : undefined}
               />
             )}
 
