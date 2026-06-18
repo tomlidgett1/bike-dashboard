@@ -277,9 +277,7 @@ export function StoreHomeTab({
         <WeeklySpecials
           store={store}
           accent={accent}
-          accentText={accentText}
           contentShell={contentShell}
-          onBrowseAll={() => onNavigate("products")}
         />
 
         {/* Ordered sections */}
@@ -1315,29 +1313,10 @@ function HomeFloatingSearchBar({
   const inputRef = React.useRef<HTMLInputElement>(null);
   const hasTrackedFocus = React.useRef(false);
   const [focused, setFocused] = React.useState(false);
-  const [draft, setDraft] = React.useState(storeSearch);
-
-  React.useEffect(() => {
-    setDraft(storeSearch);
-  }, [storeSearch]);
-
-  const showHint = !draft.trim() && !focused;
-
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const trimmed = draft.trim();
-    if (!trimmed) return;
-    onStoreSearchChange(trimmed);
-    onTrackBehaviour?.("search_focus", {
-      tab: "home",
-      source: "home_floating_search_submit",
-      query: trimmed,
-    });
-    inputRef.current?.blur();
-  };
+  const showHint = !storeSearch.trim() && !focused;
 
   return (
-    <form onSubmit={handleSubmit} className="mt-6 sm:hidden">
+    <div className="mt-6 sm:hidden">
       <h3 className="mb-3 text-center text-lg font-semibold tracking-tight text-gray-900">
         What are you looking for?
       </h3>
@@ -1360,8 +1339,8 @@ function HomeFloatingSearchBar({
             ref={inputRef}
             type="search"
             enterKeyHint="search"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+            value={storeSearch}
+            onChange={(event) => onStoreSearchChange(event.target.value)}
             onFocus={() => {
               setFocused(true);
               if (hasTrackedFocus.current) return;
@@ -1378,7 +1357,7 @@ function HomeFloatingSearchBar({
           />
         </div>
       </label>
-    </form>
+    </div>
   );
 }
 
