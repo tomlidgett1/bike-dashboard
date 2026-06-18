@@ -264,7 +264,7 @@ export function StoreHomeTab({
         />
 
         {/* Ordered sections */}
-        <div className="space-y-10 sm:space-y-14 py-8 sm:py-12">
+        <div className="space-y-10 sm:space-y-14 pt-4 pb-8 sm:py-12">
           {config.section_order.map((key) => sectionRenderers[key]?.())}
         </div>
 
@@ -368,7 +368,7 @@ function Hero({
     <button
       type="button"
       onClick={onPrimary}
-      className="group inline-flex items-center gap-2 rounded-full px-6 py-3 text-sm font-semibold shadow-sm transition-transform hover:-translate-y-0.5 cursor-pointer"
+      className="group inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold shadow-sm transition-transform hover:-translate-y-0.5 cursor-pointer sm:px-6 sm:py-3"
       style={{ backgroundColor: accent, color: accentText }}
     >
       {hero.primary_cta.label}
@@ -389,7 +389,7 @@ function Hero({
     <button
       type="button"
       onClick={onMessageStore}
-      className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-6 py-3 text-sm font-semibold text-gray-900 shadow-sm transition-colors hover:bg-gray-50 cursor-pointer"
+      className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-5 py-2.5 text-sm font-semibold text-gray-900 shadow-sm transition-colors hover:bg-gray-50 cursor-pointer sm:px-6 sm:py-3"
     >
       <MessageCircle className="h-4 w-4" />
       Message store
@@ -399,7 +399,7 @@ function Hero({
     <button
       type="button"
       onClick={onMessageStore}
-      className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 backdrop-blur-sm px-6 py-3 text-sm font-semibold text-white hover:bg-white/20 transition-colors cursor-pointer"
+      className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 backdrop-blur-sm px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/20 transition-colors cursor-pointer sm:px-6 sm:py-3"
     >
       <MessageCircle className="h-4 w-4" />
       Message store
@@ -408,7 +408,7 @@ function Hero({
 
   const UberBanner = (centered = false, variant: "light" | "dark" = "light") =>
     onUberDelivery ? (
-      <div className={cn("mt-4", centered && "flex justify-center")}>
+      <div className={cn("mt-4 hidden sm:block", centered && "flex justify-center")}>
         <HeroUberDeliveryBanner
           onClick={onUberDelivery}
           variant={variant}
@@ -443,7 +443,7 @@ function Hero({
             </div>
             {UberBanner()}
             {config.badges.show_hours_on_hero && (
-              <div className="mt-5">
+              <div className="mt-5 hidden sm:block">
                 <HeroHoursCard store={store} status={status} onDark={false} onClick={onOpenHours} />
               </div>
             )}
@@ -494,7 +494,7 @@ function Hero({
             </div>
             {UberBanner(true, "light")}
             {config.badges.show_hours_on_hero && (
-              <div className="mt-5 flex justify-center">
+              <div className="mt-5 hidden justify-center sm:flex">
                 <HeroHoursCard store={store} status={status} onDark={false} onClick={onOpenHours} />
               </div>
             )}
@@ -513,7 +513,7 @@ function Hero({
       data-store-analytics-label="Home hero"
     >
       {isOwnProfile && <EditButton />}
-      <div className="relative isolate min-h-[364px] sm:min-h-[600px] flex items-center overflow-hidden">
+      <div className="relative isolate flex min-h-[280px] items-center overflow-hidden sm:min-h-[600px]">
         {/* Background */}
         <div className="absolute inset-0 -z-10">
           {heroImages.length > 0 ? (
@@ -531,24 +531,27 @@ function Hero({
           />
         </div>
 
-        <div className={cn(shell, "w-full py-16")}>
+        <div className={cn(shell, "w-full py-10 sm:py-16")}>
           <div
             className={cn("max-w-2xl", alignCenter && "mx-auto text-center")}
           >
-            <h1 className="mt-4 text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-white leading-[1.04] drop-shadow-sm">
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-white leading-[1.08] drop-shadow-sm sm:mt-4 sm:text-6xl lg:text-7xl sm:leading-[1.04]">
               {hero.headline}
             </h1>
-            <p className="mt-5 text-lg sm:text-xl text-white/85 leading-relaxed max-w-xl drop-shadow-sm" style={alignCenter ? { marginLeft: "auto", marginRight: "auto" } : undefined}>
+            <p
+              className="mt-2 text-base leading-snug text-white/85 drop-shadow-sm sm:mt-5 sm:max-w-xl sm:text-xl sm:leading-relaxed"
+              style={alignCenter ? { marginLeft: "auto", marginRight: "auto" } : undefined}
+            >
               {hero.subheadline}
             </p>
-            <div className={cn("mt-8 flex flex-wrap items-center gap-3", alignCenter && "justify-center")}>
+            <div className={cn("mt-5 flex flex-wrap items-center gap-3 sm:mt-8", alignCenter && "justify-center")}>
               {PrimaryBtn}
               {DarkMessageBtn}
               {hero.secondary_cta && (
                 <button
                   type="button"
                   onClick={onSecondary}
-                  className="inline-flex items-center gap-2 rounded-full border border-white/30 bg-white/10 backdrop-blur-sm px-6 py-3 text-sm font-semibold text-white hover:bg-white/20 transition-colors cursor-pointer"
+                  className="hidden items-center gap-2 rounded-full border border-white/30 bg-white/10 backdrop-blur-sm px-6 py-3 text-sm font-semibold text-white hover:bg-white/20 transition-colors cursor-pointer sm:inline-flex"
                 >
                   {hero.secondary_cta.label}
                   <ChevronRight className="h-4 w-4" />
@@ -559,10 +562,10 @@ function Hero({
           </div>
         </div>
 
-        {/* Today's hours — bottom corner overlay */}
+        {/* Today's hours — bottom corner overlay (desktop only; mobile uses sticky header) */}
         {config.badges.show_hours_on_hero && (
           <div className={cn(
-            "absolute bottom-5 z-10",
+            "absolute bottom-5 z-10 hidden sm:block",
             alignCenter ? "left-1/2 -translate-x-1/2" : "left-5 sm:left-8 lg:left-10"
           )}>
             <HeroHoursCard store={store} status={status} onDark onClick={onOpenHours} />
@@ -1290,6 +1293,11 @@ function FeaturedCarouselsSection({
             perRow={perRow}
             trackAnalytics={trackAnalytics}
             onOpenCollection={onOpenCollection}
+            subtitle={
+              cat!.section_id
+                ? store.sections.find((s) => s.id === cat!.section_id)?.description ?? null
+                : null
+            }
           />
         );
       })}
@@ -1305,6 +1313,7 @@ function FeaturedCarouselBlock({
   perRow,
   trackAnalytics,
   onOpenCollection,
+  subtitle,
 }: {
   category: StoreProfile["categories"][number];
   products: StoreProfile["categories"][number]["products"];
@@ -1313,6 +1322,7 @@ function FeaturedCarouselBlock({
   perRow: number;
   trackAnalytics?: boolean;
   onOpenCollection: (categoryName: string) => void;
+  subtitle?: string | null;
 }) {
   const impressionContext = React.useMemo(
     () => ({
@@ -1341,24 +1351,60 @@ function FeaturedCarouselBlock({
   return (
     <Reveal>
       <div ref={impressionRef}>
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3 min-w-0">
+        {/* Mobile: floating banner card */}
+        <div className="mb-4 rounded-2xl border border-gray-200 bg-white px-4 py-3.5 shadow-[0_4px_20px_rgba(17,17,17,0.08)] sm:hidden">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              {category.logo_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={category.logo_url}
+                  alt={category.name}
+                  className="h-8 w-auto max-w-[96px] flex-shrink-0 rounded-sm object-contain"
+                />
+              )}
+              {!category.hide_title && (
+                <div className="min-w-0">
+                  <h3 className="m-0 truncate text-base font-bold leading-tight text-gray-900">
+                    {category.name}
+                  </h3>
+                  {subtitle && (
+                    <p className="m-0 mt-0.5 truncate text-sm leading-snug text-gray-500">
+                      {subtitle}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => onOpenCollection(category.name)}
+              className="inline-flex flex-shrink-0 cursor-pointer items-center justify-center rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-900 shadow-sm transition-colors hover:bg-gray-50"
+            >
+              View all {category.products.length}
+            </button>
+          </div>
+        </div>
+
+        {/* Desktop / tablet header row */}
+        <div className="mb-3 hidden items-center justify-between gap-3 sm:flex">
+          <div className="flex min-w-0 items-center gap-3">
             {category.logo_url && (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={category.logo_url}
                 alt={category.name}
-                className="h-8 w-auto max-w-[96px] flex-shrink-0 object-contain rounded-sm"
+                className="h-8 w-auto max-w-[96px] flex-shrink-0 rounded-sm object-contain"
               />
             )}
             {!category.hide_title && (
-              <h3 className="text-lg font-semibold text-gray-900 truncate">{category.name}</h3>
+              <h3 className="truncate text-lg font-semibold text-gray-900">{category.name}</h3>
             )}
           </div>
           <button
             type="button"
             onClick={() => onOpenCollection(category.name)}
-            className="text-sm text-gray-500 hover:text-gray-900 transition-colors cursor-pointer"
+            className="flex-shrink-0 cursor-pointer text-sm text-gray-500 transition-colors hover:text-gray-900"
           >
             View all {category.products.length}
           </button>

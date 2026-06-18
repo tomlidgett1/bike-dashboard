@@ -536,17 +536,25 @@ export function StoreProfileChrome({
 
       <div
         className={cn(
-          "border-b border-gray-200 bg-gray-50",
-          contentShell,
           mobileSearchMode && "hidden md:block",
+          "max-md:bg-gray-50/95 max-md:backdrop-blur-sm max-md:px-3 max-md:pb-2 max-md:pt-1.5",
+          "md:border-b md:border-gray-200 md:bg-gray-50",
+          contentShell,
+          "max-md:!px-3",
         )}
       >
-        <div className="flex items-center">
-          <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overflow-y-hidden overscroll-x-contain scrollbar-hide sm:gap-1">
+        <div
+          className={cn(
+            "flex items-center",
+            "max-md:overflow-hidden max-md:rounded-xl max-md:border max-md:border-gray-200 max-md:bg-white max-md:shadow-[0_4px_20px_rgba(17,17,17,0.08)]",
+          )}
+        >
+          <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overflow-y-hidden overscroll-x-contain scrollbar-hide sm:gap-1 max-md:px-0.5">
             {tabs.map(({ key, label, icon: Icon }) => {
               const active = activeTab === key;
               const tabClassName = cn(
                 "relative flex cursor-pointer items-center gap-1.5 whitespace-nowrap px-3 py-3.5 text-sm font-medium transition-colors focus:outline-none sm:px-3.5",
+                "max-md:px-2.5 max-md:py-2.5",
                 active ? "text-gray-900" : "text-gray-500 hover:text-gray-900",
               );
               const tabChildren = (
@@ -559,7 +567,7 @@ export function StoreProfileChrome({
                   />
                   {label}
                   {active && (
-                    <span className="absolute inset-x-1.5 -bottom-px h-[2px] rounded-full bg-gray-900" />
+                    <span className="absolute inset-x-1.5 -bottom-px h-[2px] rounded-full bg-gray-900 max-md:bottom-1" />
                   )}
                 </>
               );

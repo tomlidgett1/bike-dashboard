@@ -12,6 +12,10 @@ import { ProductAskGenieImageBadge } from "@/components/marketplace/product-ask-
 import { ProductGeniePanel } from "@/components/genie/product-genie-panel";
 import { EnhancedImageGallery } from "@/components/marketplace/product-detail/enhanced-image-gallery";
 import {
+  ProductRecommendationsSection,
+  type ProductRecommendations,
+} from "@/components/marketplace/product-detail/product-recommendations-section";
+import {
   AboutThisSellerSection,
   type ProductSellerProfile,
 } from "@/components/marketplace/product-detail/about-this-seller-section";
@@ -27,11 +31,6 @@ import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useProductView, trackGalleryView } from "@/lib/tracking/interaction-tracker";
 import { useStoreProductView } from "@/lib/tracking/store-analytics";
-
-const RecommendationCarousel = dynamic(
-  () => import("@/components/marketplace/product-detail/recommendation-carousel").then((mod) => mod.RecommendationCarousel),
-  { ssr: false },
-);
 
 const SimilarProductsCarousel = dynamic(
   () => import("@/components/marketplace/product-detail/similar-products-carousel").then((mod) => mod.SimilarProductsCarousel),
@@ -63,9 +62,9 @@ interface SellerInfo {
 
 interface ProductPageClientProps {
   product: MarketplaceProduct;
-  sellerProducts: MarketplaceProduct[];
   sellerInfo: SellerInfo | null;
-  brandProducts: MarketplaceProduct[];
+  /** Seller + brand recommendation lists, streamed in after first paint. */
+  recommendationsPromise: Promise<ProductRecommendations>;
   brandName: string | null;
   brandLogoUrl?: string | null;
   sellerProfile?: ProductSellerProfile | null;
@@ -83,9 +82,8 @@ type ProductPageImage = {
 
 export function ProductPageClient({
   product,
-  sellerProducts,
   sellerInfo,
-  brandProducts,
+  recommendationsPromise,
   brandName,
   brandLogoUrl = null,
   sellerProfile = null,
@@ -216,8 +214,7 @@ export function ProductPageClient({
         product={localProduct}
         images={images}
         sellerInfo={sellerInfo}
-        sellerProducts={sellerProducts}
-        brandProducts={brandProducts}
+        recommendationsPromise={recommendationsPromise}
         brandName={brandName}
         isOwner={isOwner}
       />
@@ -301,34 +298,21 @@ export function ProductPageClient({
 
           {/* Recommendation Carousels */}
           <div className="mx-auto min-w-0 max-w-[1536px] space-y-2 overflow-x-hidden border-t border-gray-200 bg-gray-50 px-4 pt-4 pb-4 sm:px-4 sm:pb-5 lg:px-4 lg:pt-5 lg:pb-6 xl:px-5">
-            {/* Similar Items Carousel — LLM-ranked in real time */}
+            {/* Similar Items Carousel — LLM-ranked in real time (client-fetched) */}
             <SimilarProductsCarousel
               productId={product.id}
               seeAllHref={similarSeeAllHref}
               seeAllLabel="Browse Category"
             />
 
-            {/* More from Seller Carousel */}
-            <RecommendationCarousel
-              title={sellerInfo?.name ? `More from ${sellerInfo.name}` : "More from this Seller"}
-              products={sellerProducts}
-              isLoading={false}
-              icon="store"
-              seeAllHref={sellerSeeAllHref}
-              seeAllLabel="View All Listings"
+            {/* Seller + Brand carousels — streamed in after first paint */}
+            <ProductRecommendationsSection
+              promise={recommendationsPromise}
+              sellerName={sellerInfo?.name ?? null}
+              sellerSeeAllHref={sellerSeeAllHref}
+              sellerSeeAllLabel="View All Listings"
+              brandName={brandName}
             />
-
-            {/* More from Brand Carousel */}
-            {brandName && (
-              <RecommendationCarousel
-                title={`More from ${brandName}`}
-                products={brandProducts}
-                isLoading={false}
-                icon="sparkles"
-                seeAllHref={`/marketplace?brand=${encodeURIComponent(brandName)}`}
-                seeAllLabel={`All ${brandName}`}
-              />
-            )}
           </div>
         </div>
       </div>

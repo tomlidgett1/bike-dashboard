@@ -595,40 +595,63 @@ async function fetchSellerProducts(product: MarketplaceProduct): Promise<{ produ
   }
 }
 
-const fetchProductPageData = unstable_cache(
+// Core product data — everything needed for first paint (hero, gallery, price,
+// details, SEO) plus the cheap single-row seller profile and brand logo. The
+// heavier "more from seller / brand" product lists are fetched separately and
+// streamed (see fetchProductRecommendations) so they never block first paint.
+const fetchCoreProductData = unstable_cache(
   async (productId: string, allowSoldProducts: boolean) => {
     const product = await fetchProduct(productId, allowSoldProducts);
     if (!product) return null;
 
     const productBrand = product.brand?.trim() || null;
     const supabase = createPublicSupabaseClient();
-    const [sellerData, brandProducts, brandLogoUrl, sellerProfile] =
-      await Promise.all([
-        fetchSellerProducts(product),
-        productBrand ? fetchBrandProducts(productId, productBrand) : Promise.resolve([]),
-        product.user_id && product.store_bicycle_store
-          ? resolveProductBrandLogoUrl(supabase, product.user_id, {
-              manufacturer_id: (product as { manufacturer_id?: string | null }).manufacturer_id,
-              manufacturer_name: (product as { manufacturer_name?: string | null }).manufacturer_name,
-              brand: product.brand,
-            })
-          : Promise.resolve(null),
-        product.user_id ? fetchSellerProfile(supabase, product.user_id) : Promise.resolve(null),
-      ]);
+    const [brandLogoUrl, sellerProfile] = await Promise.all([
+      product.user_id && product.store_bicycle_store
+        ? resolveProductBrandLogoUrl(supabase, product.user_id, {
+            manufacturer_id: (product as { manufacturer_id?: string | null }).manufacturer_id,
+            manufacturer_name: (product as { manufacturer_name?: string | null }).manufacturer_name,
+            brand: product.brand,
+          })
+        : Promise.resolve(null),
+      product.user_id ? fetchSellerProfile(supabase, product.user_id) : Promise.resolve(null),
+    ]);
 
-    return {
-      product,
-      sellerData,
-      brandProducts,
-      productBrand,
-      brandLogoUrl,
-      sellerProfile,
-    };
+    // Seller identity for the header and "see all" links is derivable from the
+    // product row itself (fetchProduct already resolves these) — no extra query.
+    const sellerInfo: SellerInfo | null = product.user_id
+      ? {
+          id: product.user_id,
+          name: product.store_name || 'Unknown Seller',
+          logo_url: product.store_logo_url || null,
+          account_type: product.store_account_type || null,
+        }
+      : null;
+
+    return { product, sellerInfo, productBrand, brandLogoUrl, sellerProfile };
   },
-  ['marketplace-product-page-data-v2'],
-  {
-    revalidate: 60,
+  ['marketplace-product-core-v1'],
+  { revalidate: 60 },
+);
+
+// Below-the-fold recommendation lists. Resolved off the critical path and
+// streamed to the client, so the product itself paints without waiting on them.
+const fetchProductRecommendations = unstable_cache(
+  async (
+    productId: string,
+    userId: string | null,
+    brand: string | null,
+  ): Promise<{ sellerProducts: MarketplaceProduct[]; brandProducts: MarketplaceProduct[] }> => {
+    const [sellerData, brandProducts] = await Promise.all([
+      userId
+        ? fetchSellerProducts({ id: productId, user_id: userId } as MarketplaceProduct)
+        : Promise.resolve({ products: [] as MarketplaceProduct[], seller: null }),
+      brand ? fetchBrandProducts(productId, brand) : Promise.resolve([] as MarketplaceProduct[]),
+    ]);
+    return { sellerProducts: sellerData.products, brandProducts };
   },
+  ['marketplace-product-recs-v1'],
+  { revalidate: 60 },
 );
 
 export async function generateMetadata({
@@ -638,7 +661,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { productId: param } = await params;
   const productId = extractProductId(param);
-  const data = await fetchProductPageData(productId, false);
+  const data = await fetchCoreProductData(productId, false);
   const product = (data?.product ?? undefined) as unknown as ProductLike | undefined;
 
   if (!product) {
@@ -704,12 +727,20 @@ export default async function ProductPage({
   // Allow viewing sold products if coming from purchase history
   const allowSoldProducts = fromPurchase === 'true';
 
-  const data = await fetchProductPageData(productId, allowSoldProducts);
+  const data = await fetchCoreProductData(productId, allowSoldProducts);
 
   // If product not found, show 404
   if (!data) {
     notFound();
   }
+
+  // Recommendation lists stream in after first paint — start fetching now but
+  // DON'T await: the promise is handed to the client and resolved with use().
+  const recommendationsPromise = fetchProductRecommendations(
+    data.product.id,
+    data.product.user_id ?? null,
+    data.productBrand,
+  );
 
   const seoProduct = data.product as unknown as ProductLike;
   const canonicalUrl = absoluteUrl(
@@ -733,10 +764,9 @@ export default async function ProductPage({
       />
       <ProductPageClient
         product={data.product}
-        sellerProducts={data.sellerData.products}
-        sellerInfo={data.sellerData.seller}
+        sellerInfo={data.sellerInfo}
         sellerProfile={data.sellerProfile}
-        brandProducts={data.brandProducts}
+        recommendationsPromise={recommendationsPromise}
         brandName={data.productBrand ?? null}
         brandLogoUrl={data.brandLogoUrl}
         showUploadBanner={fromUpload === 'true'}

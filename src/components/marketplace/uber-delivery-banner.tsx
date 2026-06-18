@@ -3,6 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
+import { UberDeliveryInfoSheet } from "./uber-delivery-info-sheet";
 
 // ============================================================
 // Uber On-Demand Delivery Banner
@@ -91,33 +92,48 @@ interface UberDeliveryInlineBadgeProps {
 }
 
 export function UberDeliveryInlineBadge({ className }: UberDeliveryInlineBadgeProps) {
+  const [infoOpen, setInfoOpen] = React.useState(false);
+
   return (
-    <div
-      className={cn(
-        "inline-flex items-center gap-1 px-1.5 py-0.5 bg-gray-900 rounded-md text-[10px]",
-        className
-      )}
-    >
-      <Image
-        src="/delivery.png"
-        alt="Delivery"
-        width={10}
-        height={10}
-        style={{ filter: "brightness(0) saturate(100%) invert(67%) sepia(93%) saturate(1352%) hue-rotate(87deg) brightness(95%) contrast(85%)" }}
-      />
-      <span className="font-medium">
-        <span className="text-green-400">1hr</span>
-        <span className="text-white"> delivery</span>
-      </span>
-      <span className="text-white/30">|</span>
-      <Image
-        src="/uber.png"
-        alt="Uber"
-        width={32}
-        height={13}
-        style={{ filter: 'brightness(0) invert(1)' }}
-        className="object-contain opacity-70"
-      />
-    </div>
+    <>
+      <button
+        type="button"
+        onClick={() => setInfoOpen(true)}
+        className={cn(
+          "inline-flex items-center gap-1 rounded-md bg-gray-900 px-2 py-1 text-xs font-medium transition-opacity hover:opacity-90 active:opacity-80",
+          className,
+        )}
+        aria-label="Learn about Uber Express delivery"
+      >
+        <Image
+          src="/delivery.png"
+          alt=""
+          width={12}
+          height={12}
+          aria-hidden
+          style={{
+            filter:
+              "brightness(0) saturate(100%) invert(67%) sepia(93%) saturate(1352%) hue-rotate(87deg) brightness(95%) contrast(85%)",
+          }}
+          className="h-3 w-3 shrink-0"
+        />
+        <span className="whitespace-nowrap">
+          <span className="text-green-400">1hr</span>
+          <span className="text-white"> delivery</span>
+        </span>
+        <span className="text-white/30" aria-hidden>
+          |
+        </span>
+        <Image
+          src="/uber.png"
+          alt="Uber"
+          width={36}
+          height={14}
+          style={{ filter: "brightness(0) invert(1)" }}
+          className="h-3 w-auto shrink-0 object-contain opacity-70"
+        />
+      </button>
+      <UberDeliveryInfoSheet open={infoOpen} onOpenChange={setInfoOpen} />
+    </>
   );
 }

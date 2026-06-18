@@ -12,6 +12,8 @@ const IOS_EASE = "cubic-bezier(0.32, 0.72, 0, 1)";
 const DRAG_DISMISS_PX = 90;
 const DRAG_DISMISS_VELOCITY = 0.6; // px per ms
 
+const IOS_SYSTEM_GROUPED_BG = "#f2f2f7";
+
 interface SpringBottomSheetProps {
   open: boolean;
   onClose: () => void;
@@ -145,19 +147,32 @@ export function SpringBottomSheet({
         }}
       />
       <div
+        aria-hidden
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-50"
+        style={{
+          height: "env(safe-area-inset-bottom)",
+          backgroundColor: IOS_SYSTEM_GROUPED_BG,
+          opacity: shown ? 1 : 0,
+          transition: `opacity ${shown ? 280 : CLOSE_MS}ms ease`,
+        }}
+      />
+      <div
         ref={sheetRef}
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel}
         className={cn(
           "fixed inset-x-0 bottom-0 z-50 flex flex-col overflow-hidden",
-          "rounded-t-3xl border border-white/70 bg-white/90 shadow-[0_-16px_56px_rgba(15,23,42,0.16),0_-4px_16px_rgba(15,23,42,0.06)] backdrop-blur-2xl",
+          "rounded-t-3xl border-x border-t border-black/[0.04] bg-[#f2f2f7]",
+          "pb-[max(12px,env(safe-area-inset-bottom))]",
+          "shadow-[0_-8px_32px_rgba(15,23,42,0.08)]",
           className,
         )}
         style={{
           transform: shown ? "translateY(0)" : "translateY(100%)",
           transition: `transform ${shown ? OPEN_MS : CLOSE_MS}ms ${IOS_EASE}`,
           willChange: "transform",
+          backgroundColor: IOS_SYSTEM_GROUPED_BG,
         }}
       >
         {showDragHandle ? (

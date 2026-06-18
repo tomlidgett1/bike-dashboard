@@ -596,9 +596,9 @@ function MessagesPageInner() {
 
             {/* Product Info Card (if product conversation) */}
             {conversation.product && (
-              <div className="mx-4 mt-2 mb-1 p-2 bg-blue-50 border border-blue-100 rounded-lg flex items-center gap-2 flex-shrink-0 w-[calc(100%-2rem)]">
+              <div className="mx-4 mt-2 mb-1 flex w-[calc(100%-2rem)] flex-shrink-0 items-center gap-2 rounded-md border border-gray-200 bg-white p-2">
                 {conversation.product.primary_image_url && (
-                  <div className="w-10 h-10 rounded-md overflow-hidden border border-blue-200 flex-shrink-0">
+                  <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-md border border-gray-200">
                     <Image
                       src={conversation.product.primary_image_url}
                       alt={conversation.product.display_name || conversation.product.description}
@@ -612,7 +612,7 @@ function MessagesPageInner() {
                   <p className="font-medium text-gray-900 truncate text-xs leading-tight">
                     {conversation.product.display_name || conversation.product.description}
                   </p>
-                  <p className="text-xs font-semibold text-blue-600 mt-0.5">
+                  <p className="mt-0.5 text-xs font-semibold text-gray-900">
                     ${conversation.product.price?.toFixed(2)}
                   </p>
                 </div>

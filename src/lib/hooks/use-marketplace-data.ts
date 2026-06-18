@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from 'react';
-import useSWR from 'swr';
-import type { MarketplaceProduct } from '@/lib/types/marketplace';
+import useSWR, { preload } from 'swr';
+import type { MarketplaceProduct, MarketplaceSpace } from '@/lib/types/marketplace';
+import type { ForYouFeedPayload } from '@/lib/for-you/types';
 import { MARKETPLACE_INITIAL_PAGE_SIZE } from '@/lib/marketplace-constants';
 
 // ============================================================
@@ -167,6 +168,93 @@ function buildApiUrl(params: MarketplaceDataParams): string {
   }
 
   return endpoint;
+}
+
+// ============================================================
+// Tab prefetching — warm the SWR cache for sibling spaces so
+// switching between For You / Browse / Stores / Uber is instant
+// (cache hit → no skeleton, no blocking network on tap).
+// ============================================================
+
+/** SWR key for the personalised For You feed. */
+export const FOR_YOU_FEED_KEY = '/api/for-you/feed';
+
+/** Empty feed used when the For You request fails or returns nothing. */
+export const EMPTY_FOR_YOU_FEED: ForYouFeedPayload = {
+  feedId: '',
+  carousels: [],
+  moreProducts: [],
+  personalised: false,
+  source: 'deterministic',
+  generatedAt: '',
+  enhanceable: false,
+};
+
+/** Fetcher for the For You feed — normalises the API envelope to a payload. */
+export const forYouFetcher = async (url: string): Promise<ForYouFeedPayload> => {
+  const res = await fetch(url);
+  if (!res.ok) return EMPTY_FOR_YOU_FEED;
+  const data = await res.json();
+  if (data?.success && data.feed?.carousels) {
+    return data.feed as ForYouFeedPayload;
+  }
+  return EMPTY_FOR_YOU_FEED;
+};
+
+/**
+ * The default first-page product URL for a space (no filters / no search).
+ * Must produce the exact same key the live `useMarketplaceData` hook builds on
+ * a fresh visit, so a preloaded response is read straight from cache on switch.
+ */
+export function spaceProductUrl(space: MarketplaceSpace): string | null {
+  switch (space) {
+    case 'stores':
+      return buildApiUrl({ viewMode: 'all', page: 1, pageSize: MARKETPLACE_INITIAL_PAGE_SIZE, listingType: 'store_inventory' });
+    case 'uber':
+      return buildApiUrl({ viewMode: 'all', page: 1, pageSize: MARKETPLACE_INITIAL_PAGE_SIZE, listingType: 'store_inventory', uberOnly: true });
+    case 'marketplace':
+      return buildApiUrl({ viewMode: 'all', page: 1, pageSize: MARKETPLACE_INITIAL_PAGE_SIZE, listingType: 'private_listing' });
+    default:
+      return null; // for-you uses its own feed endpoint
+  }
+}
+
+/**
+ * Warm the cache for a marketplace space. Safe to call repeatedly (SWR dedupes)
+ * and from event handlers (e.g. onPointerDown for predictive prefetch).
+ */
+export function prefetchMarketplaceSpace(space: MarketplaceSpace): void {
+  if (typeof window === 'undefined') return;
+  if (space === 'for-you') {
+    preload(FOR_YOU_FEED_KEY, forYouFetcher);
+    return;
+  }
+  const url = spaceProductUrl(space);
+  if (url) preload(url, fetcher);
+  if (space === 'stores') {
+    // Warm the secondary stores-list request (CDN-cached) used by the picker
+    // and store identity strip, so it's ready when the tab opens.
+    fetch('/api/marketplace/stores').catch(() => {});
+  }
+}
+
+/**
+ * SWR-backed For You feed. Session-stable: preloaded data is reused without a
+ * refetch (revalidateIfStale: false), matching the original "fetch once" behaviour
+ * while letting `prefetchMarketplaceSpace('for-you')` make the tab open instantly.
+ */
+export function useForYouFeed(enabled: boolean): { feed: ForYouFeedPayload | null } {
+  const { data } = useSWR<ForYouFeedPayload>(
+    enabled ? FOR_YOU_FEED_KEY : null,
+    forYouFetcher,
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      revalidateIfStale: false,
+      dedupingInterval: 60_000,
+    },
+  );
+  return { feed: data ?? null };
 }
 
 /**

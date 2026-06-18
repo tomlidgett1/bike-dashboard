@@ -180,8 +180,6 @@ export function MobileUploadMethodDialog({
             />
           )}
         </div>
-
-        <div className="pb-[max(1rem,env(safe-area-inset-bottom))]" />
       </AnimatedHeight>
     </SpringBottomSheet>
   );

@@ -215,29 +215,6 @@ export function EnhancedImageGallery({
         />
       </div>
 
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation();
-          goToPrevImage();
-        }}
-        className="absolute left-2 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-gray-100 bg-white/70 text-gray-400 transition-colors hover:bg-gray-50 hover:text-gray-600 sm:hidden"
-        aria-label="Previous image"
-      >
-        <ChevronLeft className="h-3.5 w-3.5" />
-      </button>
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation();
-          goToNextImage();
-        }}
-        className="absolute right-2 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-gray-100 bg-white/70 text-gray-400 transition-colors hover:bg-gray-50 hover:text-gray-600 sm:hidden"
-        aria-label="Next image"
-      >
-        <ChevronRight className="h-3.5 w-3.5" />
-      </button>
-
       <span
         className={cn(
           "absolute top-3 left-3 z-10 flex h-8 items-center rounded-full px-2.5 text-xs font-medium tabular-nums sm:hidden",

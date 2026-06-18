@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { ShoppingBag, Store } from '@/components/layout/app-sidebar/dashboard-icons';
 import Image from "next/image";
@@ -205,7 +205,6 @@ export function FixedMobileSpaceNavigator({
 // ============================================================
 
 export function useMarketplaceSpace() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   
   // Get current space from URL, default to 'marketplace'
@@ -241,9 +240,13 @@ export function useMarketplaceSpace() {
     const newUrl = params.toString()
       ? `/marketplace?${params.toString()}`
       : '/marketplace';
-    
-    router.push(newUrl, { scroll: false });
-  }, [router, searchParams]);
+
+    // Switch via the History API so the tab change is instant: this syncs
+    // useSearchParams (and therefore currentSpace) on the client without a
+    // server (RSC) navigation round-trip. Data for the target space is already
+    // warmed in the SWR cache, so the new grid renders immediately.
+    window.history.pushState(null, '', newUrl);
+  }, [searchParams]);
   
   return { currentSpace, setSpace };
 }

@@ -12,19 +12,19 @@ import { ListItemBannerSlot } from "@/components/marketplace/list-item-banner";
 import { UnifiedFilterBar, ViewMode, ListingTypeFilter as ListingTypeFilterType } from "@/components/marketplace/unified-filter-bar";
 import { SpaceNavigator, useMarketplaceSpace } from "@/components/marketplace/space-navigator";
 import { ForYouFeedView, ForYouFeedSkeletonBody } from "@/app/for-you/for-you-content";
-import type { ForYouFeedPayload } from "@/lib/for-you/types";
 import { StoreCategoryPills } from "@/components/marketplace/store-category-pills";
 import type { MarketplaceSpace } from "@/lib/types/marketplace";
 import { AdvancedFilters, DEFAULT_ADVANCED_FILTERS, countActiveFilters, type AdvancedFiltersState } from "@/components/marketplace/advanced-filters";
 import { ImageDiscoveryModal } from "@/components/marketplace/image-discovery-modal";
 import { PromoBannerCarousel } from "@/components/marketplace/promo-banner-carousel";
+import { UberExpressTabBanner } from "@/components/marketplace/uber-express-tab-banner";
 import { useUserVouchers } from "@/lib/hooks/use-user-vouchers";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useInteractionTracker } from "@/lib/tracking/interaction-tracker";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
-import { useMarketplaceData, useLightspeedCategories } from "@/lib/hooks/use-marketplace-data";
+import { useMarketplaceData, useLightspeedCategories, useForYouFeed, prefetchMarketplaceSpace } from "@/lib/hooks/use-marketplace-data";
 import { MARKETPLACE_PROMO_BANNERS_ENABLED } from "@/lib/marketplace-feature-flags";
 import { MARKETPLACE_INITIAL_PAGE_SIZE } from "@/lib/marketplace-constants";
 import { saveStoreSplashSeed } from "@/lib/marketplace/store-splash";
@@ -72,16 +72,6 @@ interface MarketplacePageContentProps {
   initialPagination?: InitialMarketplacePagination;
 }
 
-const EMPTY_FOR_YOU_FEED: ForYouFeedPayload = {
-  feedId: "",
-  carousels: [],
-  moreProducts: [],
-  personalised: false,
-  source: "deterministic",
-  generatedAt: "",
-  enhanceable: false,
-};
-
 export function MarketplacePageContent({ initialProducts, initialPagination }: MarketplacePageContentProps = {}) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -104,30 +94,34 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   const isForYouView = currentSpace === 'for-you';
   const isStoreInventoryView = isStoresView || isUberView;
 
-  const [forYouFeed, setForYouFeed] = React.useState<ForYouFeedPayload | null>(null);
+  // For You feed — SWR-backed so it is shared, deduped, and (critically)
+  // prefetchable: warming the cache makes opening the tab instant.
+  const { feed: forYouFeed } = useForYouFeed(isForYouView);
 
+  // Predictive prefetch: warm a space's data the instant its tab is pressed.
+  // onPointerDown fires ~100ms before the click resolves on mobile, so the
+  // fetch is usually already in flight by the time the space actually switches.
+  const handlePrefetchSpace = React.useCallback((space: MarketplaceSpace) => {
+    prefetchMarketplaceSpace(space);
+  }, []);
+
+  // Warm every sibling tab shortly after first paint so switching between
+  // For You / Browse / Stores / Uber is an instant cache hit instead of a cold
+  // edge→DB round-trip with a skeleton. The current space is already loaded (or
+  // SSR-seeded), so it's skipped. A plain setTimeout (rather than
+  // requestIdleCallback) is used so it fires reliably on every browser and
+  // survives StrictMode's dev double-mount.
   React.useEffect(() => {
-    if (!isForYouView || forYouFeed) return;
-
-    let active = true;
-    fetch("/api/for-you/feed")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!active) return;
-        if (data?.success && data.feed?.carousels) {
-          setForYouFeed(data.feed as ForYouFeedPayload);
-        } else {
-          setForYouFeed(EMPTY_FOR_YOU_FEED);
-        }
-      })
-      .catch(() => {
-        if (active) setForYouFeed(EMPTY_FOR_YOU_FEED);
+    if (typeof window === 'undefined') return;
+    const t = window.setTimeout(() => {
+      (['for-you', 'marketplace', 'stores', 'uber'] as MarketplaceSpace[]).forEach((space) => {
+        if (space !== currentSpace) prefetchMarketplaceSpace(space);
       });
-
-    return () => {
-      active = false;
-    };
-  }, [isForYouView, forYouFeed]);
+    }, 500);
+    return () => window.clearTimeout(t);
+    // Warm once after mount; currentSpace is only read to skip the active tab.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // View mode state (trending, all) - only for products view
   // Default to 'all' for browsing all products
@@ -387,15 +381,17 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     setSelectedStoreId(null);
     setSelectedStoreCategory(null);
     resetProductsForFilterChange();
-    router.push("/marketplace?space=stores", { scroll: false });
-  }, [router, resetProductsForFilterChange]);
+    // History API (not router.push) → instant client switch, no RSC round-trip.
+    window.history.pushState(null, '', "/marketplace?space=stores");
+  }, [resetProductsForFilterChange]);
 
   const handleNavigateToUber = React.useCallback(() => {
     setSelectedStoreId(null);
     setSelectedStoreCategory(null);
     resetProductsForFilterChange();
-    router.push("/marketplace?space=uber", { scroll: false });
-  }, [router, resetProductsForFilterChange]);
+    // History API (not router.push) → instant client switch, no RSC round-trip.
+    window.history.pushState(null, '', "/marketplace?space=uber");
+  }, [resetProductsForFilterChange]);
 
   const handleNavigateToStore = React.useCallback(
     (storeId: string) => {
@@ -405,9 +401,9 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
       const params = new URLSearchParams();
       params.set("space", "stores");
       params.set("store", storeId);
-      router.push(`/marketplace?${params.toString()}`, { scroll: false });
+      window.history.pushState(null, '', `/marketplace?${params.toString()}`);
     },
-    [router, resetProductsForFilterChange]
+    [resetProductsForFilterChange]
   );
 
   const handleStoreFilterChange = React.useCallback(
@@ -419,9 +415,9 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
       params.set("space", "stores");
       if (storeId) params.set("store", storeId);
       else params.delete("store");
-      router.replace(`/marketplace?${params.toString()}`, { scroll: false });
+      window.history.replaceState(null, '', `/marketplace?${params.toString()}`);
     },
-    [router, resetProductsForFilterChange]
+    [resetProductsForFilterChange]
   );
 
   React.useEffect(() => {
@@ -714,10 +710,12 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
       ? `/marketplace?${params.toString()}`
       : '/marketplace';
 
-    startTransition(() => {
-      router.replace(newUrl, { scroll: false });
-    });
-  }, [viewMode, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, isStoreInventoryView, router]);
+    // Keep the URL shareable without a server (RSC) navigation: filters/search
+    // refetch client-side via SWR, so the URL update is purely cosmetic here.
+    if (`${window.location.pathname}${window.location.search}` !== newUrl) {
+      window.history.replaceState(null, '', newUrl);
+    }
+  }, [viewMode, selectedLevel1, selectedLevel2, selectedLevel3, searchQuery, isStoreInventoryView]);
 
   const [isPaginating, setIsPaginating] = React.useState(false);
 
@@ -1179,6 +1177,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
               onNavigateToStores={handleNavigateToAllStores}
               onNavigateToUber={handleNavigateToUber}
               onNavigateToForYou={() => setSpace("for-you")}
+              onPrefetchSpace={handlePrefetchSpace}
               selectedStoreId={selectedStoreId}
               onStoreSelect={handleNavigateToStore}
               browseFilters={advancedFilters}
@@ -1228,6 +1227,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                   onNavigateToStores={handleNavigateToAllStores}
                   onNavigateToUber={handleNavigateToUber}
                   onNavigateToForYou={() => setSpace("for-you")}
+                  onPrefetchSpace={handlePrefetchSpace}
                   selectedStoreId={selectedStoreId}
                   onStoreSelect={handleNavigateToStore}
                   browseFilters={advancedFilters}
@@ -1278,6 +1278,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                 onNavigateToStores={handleNavigateToAllStores}
                 onNavigateToUber={handleNavigateToUber}
                 onNavigateToForYou={() => setSpace("for-you")}
+                onPrefetchSpace={handlePrefetchSpace}
                 selectedStoreId={selectedStoreId}
                 onStoreSelect={handleNavigateToStore}
                 browseFilters={advancedFilters}
@@ -1319,6 +1320,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                 onNavigateToStores={handleNavigateToAllStores}
                 onNavigateToUber={handleNavigateToUber}
                 onNavigateToForYou={() => setSpace("for-you")}
+                onPrefetchSpace={handlePrefetchSpace}
                 selectedStoreId={selectedStoreId}
                 onStoreSelect={handleNavigateToStore}
                 browseFilters={advancedFilters}
@@ -1353,6 +1355,12 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                   isLoggedIn={!!user}
                   onNavigateToStores={() => setSpace("stores")}
                 />
+              </div>
+            )}
+
+            {isUberView && !searchQuery && (
+              <div className="sm:hidden">
+                <UberExpressTabBanner />
               </div>
             )}
 

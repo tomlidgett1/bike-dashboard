@@ -527,13 +527,11 @@ export function MarketplaceHeader({
               type="button"
               onClick={() => setMobileUploadMethodOpen(true)}
               transition={FAB_LAYOUT_SPRING}
-              className="flex min-w-0 flex-1 items-center justify-center gap-2.5 rounded-full bg-[#ffde59] px-5 py-3.5 text-[15px] font-semibold tracking-tight text-gray-900 shadow-[0_12px_40px_rgba(255,222,89,0.55),0_8px_24px_rgba(17,17,17,0.18)] ring-1 ring-black/[0.06] transition-colors hover:bg-[#f0cf45] active:scale-[0.97]"
+              className="flex min-w-0 flex-1 items-center justify-center gap-2 rounded-full bg-[#ffde59] px-5 py-3.5 text-[15px] font-semibold tracking-tight text-gray-900 shadow-[0_12px_40px_rgba(255,222,89,0.55),0_8px_24px_rgba(17,17,17,0.18)] ring-1 ring-black/[0.06] transition-colors hover:bg-[#f0cf45] active:scale-[0.97]"
             >
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-900">
-                <Plus className="h-3.5 w-3.5 text-white" />
-              </span>
+              <Plus className="h-4 w-4 shrink-0" strokeWidth={2.25} />
               <span className="truncate whitespace-nowrap">
-                {user ? "List item" : "Sell"}
+                {user ? "Create listing" : "Sell"}
               </span>
             </motion.button>
 

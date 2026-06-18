@@ -22,6 +22,11 @@ import { FALLBACK_PRODUCT_GENIE_SUGGESTIONS } from "@/lib/genie/product-suggesti
 import { GenieSellerMessageCta } from "@/components/genie/genie-seller-message-cta";
 import { resolveSellerCta, type SellerIntentReason } from "@/lib/genie/seller-intent";
 import type { ProductGenieContext } from "@/lib/genie/product-context";
+import {
+  getMobileSheetHeight,
+  useBodyScrollLock,
+  useMobileSheetViewport,
+} from "@/hooks/use-mobile-sheet-viewport";
 import { cn } from "@/lib/utils";
 
 interface Citation {
@@ -50,7 +55,7 @@ const SUGGESTION_SKELETON_WIDTHS = ["w-[7.5rem]", "w-[9rem]", "w-[8rem]"] as con
 const ASSISTANT_MARKDOWN_CLASS =
   "max-w-none text-left text-sm leading-relaxed text-gray-700 [&_a]:text-gray-700 [&_a]:underline [&_strong]:font-medium [&_strong]:text-gray-900 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-4 [&_ul]:text-left [&_table]:w-full [&_th]:whitespace-nowrap [&_td]:whitespace-normal [&_td]:break-words";
 
-const PANEL_CLOSE_MS = 320;
+const PANEL_CLOSE_MS = 380;
 const DESKTOP_PANEL_WIDTH_PX = 400;
 const DESKTOP_PANEL_EXPANDED_WIDTH = "clamp(400px, 40vw, calc(100vw - 3rem))";
 const DESKTOP_PANEL_HEIGHT = "min(85vh, 680px)";
@@ -58,71 +63,7 @@ const DESKTOP_PANEL_EXPANDED_HEIGHT = "min(92vh, 920px)";
 const DESKTOP_EXPAND_STORAGE_KEY = "yj-product-genie-expanded";
 const DESKTOP_PANEL_SPRING = { type: "spring" as const, damping: 19, stiffness: 280, mass: 0.82 };
 const SHEET_HEIGHT = "min(85dvh, calc(100dvh - env(safe-area-inset-bottom)))";
-const MOBILE_KEYBOARD_THRESHOLD_PX = 80;
-
-type MobileSheetViewport = {
-  top: number;
-  bottom: number;
-  height: number;
-  keyboardOpen: boolean;
-};
-
-function useMobileSheetViewport(active: boolean) {
-  const [metrics, setMetrics] = React.useState<MobileSheetViewport>({
-    top: 0,
-    bottom: 0,
-    height: 0,
-    keyboardOpen: false,
-  });
-  const refreshRef = React.useRef<() => void>(() => {});
-
-  React.useEffect(() => {
-    if (!active || typeof window === "undefined") return;
-
-    const update = () => {
-      const layoutHeight = window.innerHeight;
-      const vv = window.visualViewport;
-
-      if (!vv) {
-        setMetrics({
-          top: 0,
-          bottom: 0,
-          height: layoutHeight,
-          keyboardOpen: false,
-        });
-        return;
-      }
-
-      const bottomInset = Math.max(0, layoutHeight - vv.height - vv.offsetTop);
-      setMetrics({
-        top: vv.offsetTop,
-        bottom: bottomInset,
-        height: vv.height,
-        keyboardOpen: bottomInset > MOBILE_KEYBOARD_THRESHOLD_PX,
-      });
-    };
-
-    refreshRef.current = update;
-    update();
-
-    const vv = window.visualViewport;
-    vv?.addEventListener("resize", update);
-    vv?.addEventListener("scroll", update);
-    window.addEventListener("orientationchange", update);
-
-    return () => {
-      vv?.removeEventListener("resize", update);
-      vv?.removeEventListener("scroll", update);
-      window.removeEventListener("orientationchange", update);
-    };
-  }, [active]);
-
-  const refresh = React.useCallback(() => {
-    refreshRef.current();
-  }, []);
-
-  return { metrics, refresh };
-}
+const MOBILE_SHEET_HEIGHT_RATIO = 0.85;
 
 function createMessageId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -284,6 +225,7 @@ function ProductGeniePanelBody({
   isExpanded,
   onToggleExpand,
   showExpandControl,
+  keyboardOpen,
 }: {
   productContext: NonNullable<ReturnType<typeof useGenie>["productContext"]>;
   headerTitle: string;
@@ -304,47 +246,85 @@ function ProductGeniePanelBody({
   isExpanded?: boolean;
   onToggleExpand?: () => void;
   showExpandControl?: boolean;
+  keyboardOpen?: boolean;
 }) {
+  React.useEffect(() => {
+    const textarea = inputRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
+  }, [input, inputRef]);
+
+  const scrollMessagesToBottom = React.useCallback((behavior: ScrollBehavior = "auto") => {
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior,
+    });
+  }, [scrollRef]);
+
+  const handleInputFocus = React.useCallback(() => {
+    onInputFocus?.();
+    window.requestAnimationFrame(() => scrollMessagesToBottom("smooth"));
+  }, [onInputFocus, scrollMessagesToBottom]);
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden text-left">
-      <header className="shrink-0 px-4 pt-3 sm:pt-4">
-        <div className="mb-3 mx-auto h-1 w-10 rounded-full bg-gray-200 sm:hidden" aria-hidden />
-        <div className="flex w-full items-start justify-between gap-3 pb-3">
+      <header
+        className={cn(
+          "shrink-0 px-4",
+          keyboardOpen ? "pt-2" : "pt-3 sm:pt-4",
+        )}
+      >
+        {!keyboardOpen ? (
+          <div className="mb-3 mx-auto h-1 w-10 rounded-full bg-gray-200 sm:hidden" aria-hidden />
+        ) : null}
+        <div
+          className={cn(
+            "flex w-full items-start justify-between gap-3",
+            keyboardOpen ? "pb-2" : "pb-3",
+          )}
+        >
           <div className="min-w-0 flex-1">
-            <p
-              className={cn(
-                "font-semibold text-gray-900 tracking-tight",
-                isExpanded ? "text-2xl" : "text-lg sm:text-xl",
-              )}
-            >
-              {headerTitle}
-            </p>
-            <div className="mt-2 flex items-center gap-2.5">
-              <div
-                className={cn(
-                  "relative shrink-0 overflow-hidden rounded-md bg-gray-100",
-                  isExpanded ? "h-12 w-12" : "h-10 w-10",
-                )}
-              >
-                {productContext.image ? (
-                  <Image
-                    src={productContext.image}
-                    alt=""
-                    fill
-                    className="object-cover"
-                    sizes={isExpanded ? "48px" : "40px"}
-                  />
-                ) : null}
-              </div>
-              <div className="min-w-0">
-                <p className={cn("truncate text-gray-600", isExpanded ? "text-sm" : "text-xs")}>
-                  {productContext.name}
+            {!keyboardOpen ? (
+              <>
+                <p
+                  className={cn(
+                    "font-semibold text-gray-900 tracking-tight",
+                    isExpanded ? "text-2xl" : "text-lg sm:text-xl",
+                  )}
+                >
+                  {headerTitle}
                 </p>
-                <p className={cn("font-medium text-gray-900", isExpanded ? "text-sm" : "text-xs")}>
-                  {formatPrice(productContext.price)}
-                </p>
-              </div>
-            </div>
+                <div className="mt-2 flex items-center gap-2.5">
+                  <div
+                    className={cn(
+                      "relative shrink-0 overflow-hidden rounded-md bg-gray-100",
+                      isExpanded ? "h-12 w-12" : "h-10 w-10",
+                    )}
+                  >
+                    {productContext.image ? (
+                      <Image
+                        src={productContext.image}
+                        alt=""
+                        fill
+                        className="object-cover"
+                        sizes={isExpanded ? "48px" : "40px"}
+                      />
+                    ) : null}
+                  </div>
+                  <div className="min-w-0">
+                    <p className={cn("truncate text-gray-600", isExpanded ? "text-sm" : "text-xs")}>
+                      {productContext.name}
+                    </p>
+                    <p className={cn("font-medium text-gray-900", isExpanded ? "text-sm" : "text-xs")}>
+                      {formatPrice(productContext.price)}
+                    </p>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="truncate text-sm font-semibold text-gray-900">{productContext.name}</p>
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-0.5">
             {showExpandControl ? (
@@ -370,7 +350,7 @@ function ProductGeniePanelBody({
         </div>
       </header>
 
-      {isEmpty ? (
+      {isEmpty && !keyboardOpen ? (
         <div className="shrink-0 border-b border-gray-100 px-4 pb-3">
           <div className="flex flex-col items-stretch gap-2">
             {suggestionsLoading
@@ -432,8 +412,12 @@ function ProductGeniePanelBody({
       </div>
 
       <footer
-        className="shrink-0 border-t border-gray-100 px-4 py-3"
-        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+        className={cn("shrink-0 border-t border-gray-100 px-4", keyboardOpen ? "py-2.5" : "py-3")}
+        style={
+          keyboardOpen
+            ? undefined
+            : { paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }
+        }
       >
         <form onSubmit={handleSubmit}>
           <div className="relative rounded-xl border border-gray-200 bg-white">
@@ -442,13 +426,17 @@ function ProductGeniePanelBody({
               value={input}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={handleKeyDown}
-              onFocus={onInputFocus}
+              onFocus={handleInputFocus}
               placeholder="Ask anything about this…"
               rows={1}
               disabled={isLoading}
+              autoComplete="off"
+              autoCorrect="on"
+              enterKeyHint="send"
+              spellCheck
               className={cn(
                 "max-h-[120px] resize-none rounded-xl border-0 bg-transparent px-3 py-2.5 pr-11 text-left leading-relaxed text-foreground shadow-none focus-visible:ring-0",
-                isExpanded ? "min-h-[52px] text-base" : "min-h-[44px] text-sm",
+                isExpanded ? "min-h-[52px] text-base" : "min-h-[44px] text-base",
               )}
             />
             <Button
@@ -479,6 +467,8 @@ export function ProductGeniePanel() {
   const [shouldRender, setShouldRender] = React.useState(isOpen && !!productContext);
   const [isLeaving, setIsLeaving] = React.useState(false);
   const [isMounted, setIsMounted] = React.useState(false);
+  const [activeProductContext, setActiveProductContext] =
+    React.useState<ProductGenieContext | null>(productContext);
   const [headerTitle, setHeaderTitle] = React.useState(pickRandomProductGenieTitle);
   const [suggestions, setSuggestions] = React.useState<string[]>([
     ...FALLBACK_PRODUCT_GENIE_SUGGESTIONS,
@@ -493,6 +483,14 @@ export function ProductGeniePanel() {
   React.useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  React.useEffect(() => {
+    if (productContext) setActiveProductContext(productContext);
+  }, [productContext]);
+
+  React.useEffect(() => {
+    if (!shouldRender) setActiveProductContext(null);
+  }, [shouldRender]);
 
   const toggleDesktopExpand = React.useCallback(() => {
     setIsDesktopExpanded((current) => {
@@ -568,14 +566,7 @@ export function ProductGeniePanel() {
     return () => window.clearTimeout(timer);
   }, [panelActive, shouldRender]);
 
-  React.useEffect(() => {
-    if (!shouldRender) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [shouldRender]);
+  useBodyScrollLock(shouldRender);
 
   React.useEffect(() => {
     if (!panelActive) return;
@@ -603,6 +594,14 @@ export function ProductGeniePanel() {
     window.setTimeout(() => refreshMobileViewport(), 120);
     window.setTimeout(() => refreshMobileViewport(), 360);
   }, [refreshMobileViewport]);
+
+  React.useEffect(() => {
+    if (!mobileViewport.keyboardOpen) return;
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [mobileViewport.keyboardOpen]);
 
   React.useEffect(() => {
     if (!isOpen) {
@@ -819,19 +818,14 @@ export function ProductGeniePanel() {
     }
   };
 
-  if (!productContext || !shouldRender || !isMounted) return null;
+  if (!activeProductContext || !shouldRender || !isMounted) return null;
 
   const isEmpty = messages.length === 0;
   const panelState = isLeaving ? "closed" : "open";
-  const mobileSheetHeight =
-    mobileViewport.height > 0
-      ? mobileViewport.keyboardOpen
-        ? mobileViewport.height
-        : Math.round(mobileViewport.height * 0.85)
-      : undefined;
+  const mobileSheetHeight = getMobileSheetHeight(mobileViewport, MOBILE_SHEET_HEIGHT_RATIO);
 
   const bodyProps = {
-    productContext,
+    productContext: activeProductContext,
     headerTitle,
     suggestions,
     suggestionsLoading,
@@ -847,6 +841,7 @@ export function ProductGeniePanel() {
     handleSubmit,
     handleKeyDown,
     onInputFocus: handleMobileInputFocus,
+    keyboardOpen: mobileViewport.keyboardOpen,
   };
 
   const desktopBodyProps = {
@@ -877,11 +872,14 @@ export function ProductGeniePanel() {
           role="dialog"
           aria-modal="true"
           aria-label="Ask about this product"
-          className="store-message-sheet flex w-full flex-col overflow-hidden rounded-t-2xl border border-gray-200/80 bg-white shadow-xl"
-          style={{
-            height: mobileSheetHeight ?? SHEET_HEIGHT,
-            maxHeight: mobileViewport.height > 0 ? mobileViewport.height : SHEET_HEIGHT,
-          }}
+        className={cn(
+          "store-message-sheet flex w-full flex-col overflow-hidden rounded-t-2xl border border-gray-200/80 bg-white shadow-xl",
+          mobileViewport.keyboardOpen && "rounded-t-xl",
+        )}
+        style={{
+          height: mobileSheetHeight ?? SHEET_HEIGHT,
+          maxHeight: mobileViewport.height > 0 ? mobileViewport.height : SHEET_HEIGHT,
+        }}
         >
           <ProductGeniePanelBody {...bodyProps} />
         </div>

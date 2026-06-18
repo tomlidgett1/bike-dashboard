@@ -395,6 +395,16 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
     storeId,
   ]);
 
+  // Predictively warm the product page's RSC on hover (desktop) and press-in
+  // (mobile) so the route + loading skeleton are ready before the click resolves.
+  const handlePrefetch = React.useCallback(() => {
+    router.prefetch(
+      storeId
+        ? `/marketplace/product/${product.id}?store=${storeId}`
+        : `/marketplace/product/${product.id}`,
+    );
+  }, [router, product.id, storeId]);
+
   const isList = layout === "list";
   // Resolve live price once so both the photo badge and the price row can use it.
   const live = resolveLivePrice(product);
@@ -411,6 +421,8 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
     <Link
       href={storeId ? `/marketplace/product/${product.id}?store=${storeId}` : `/marketplace/product/${product.id}`}
       onClick={handleClick}
+      onPointerEnter={handlePrefetch}
+      onPointerDown={handlePrefetch}
       className={cn(
         "product-card-root block",
         inCarousel && "product-card-root--in-carousel w-full",

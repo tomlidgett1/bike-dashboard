@@ -19,6 +19,7 @@ import {
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { BikeStoresPicker } from "@/components/marketplace/bike-stores-picker";
 import type { MarketplaceSpace } from "@/lib/types/marketplace";
+import { UBER_GREEN } from "@/lib/uber-brand-colors";
 
 // ============================================================
 // Unified Filter Bar — view tabs + filter toolbar on same row
@@ -56,6 +57,8 @@ interface UnifiedFilterBarProps {
   onNavigateToUber?: () => void;
   /** Switch to the For You space in place. Falls back to marketplace route nav. */
   onNavigateToForYou?: () => void;
+  /** Predictively warm a space's data on press-in / hover (before the click resolves). */
+  onPrefetchSpace?: (space: MarketplaceSpace) => void;
 
   selectedStoreId?: string | null;
   onStoreSelect?: (storeId: string) => void;
@@ -103,6 +106,7 @@ export function UnifiedFilterBar({
   onNavigateToStores,
   onNavigateToUber,
   onNavigateToForYou,
+  onPrefetchSpace,
   selectedStoreId,
   onStoreSelect,
   onLevel3Change,
@@ -204,6 +208,7 @@ export function UnifiedFilterBar({
           <div className="grid grid-cols-4 gap-0.5 rounded-full bg-gray-100 p-0.5">
             <button
               type="button"
+              onPointerDown={() => onPrefetchSpace?.("for-you")}
               onClick={goForYou}
               className={cn(
                 "flex h-8 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full px-1 text-[12px] font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
@@ -215,6 +220,7 @@ export function UnifiedFilterBar({
             </button>
             <button
               type="button"
+              onPointerDown={() => onPrefetchSpace?.("marketplace")}
               onClick={() => { setOptimisticTab("marketplace"); onViewModeChange("all"); }}
               className={cn(
                 "flex h-8 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full px-1 text-[12px] font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
@@ -227,6 +233,7 @@ export function UnifiedFilterBar({
             </button>
             <button
               type="button"
+              onPointerDown={() => onPrefetchSpace?.("stores")}
               onClick={() => { setOptimisticTab("stores"); onNavigateToStores?.(); }}
               className={cn(
                 "flex h-8 min-w-0 cursor-pointer items-center justify-center gap-1 rounded-full px-1 text-[12px] font-medium whitespace-nowrap transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
@@ -238,11 +245,13 @@ export function UnifiedFilterBar({
             </button>
             <button
               type="button"
+              onPointerDown={() => onPrefetchSpace?.("uber")}
               onClick={() => { setOptimisticTab("uber"); onNavigateToUber?.(); }}
               className={cn(
                 "flex h-8 min-w-0 cursor-pointer items-center justify-center rounded-full px-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
-                isUberActive ? "bg-[#0eb462] shadow-sm" : "",
+                isUberActive ? "shadow-sm" : "",
               )}
+              style={isUberActive ? { backgroundColor: UBER_GREEN } : undefined}
               aria-label="Uber delivery"
             >
               <UberLogo active={isUberActive} />
@@ -257,6 +266,7 @@ export function UnifiedFilterBar({
           <div className="h-11 rounded-full bg-white border border-gray-200 shadow-sm p-1 inline-flex flex-shrink-0">
             <button
               type="button"
+              onPointerDown={() => onPrefetchSpace?.("for-you")}
               onClick={goForYou}
               className={cn(
                 "flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
@@ -268,6 +278,7 @@ export function UnifiedFilterBar({
             </button>
             <button
               type="button"
+              onPointerDown={() => onPrefetchSpace?.("marketplace")}
               onClick={() => { setOptimisticTab("marketplace"); onViewModeChange("all"); }}
               className={cn(
                 "flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
@@ -279,6 +290,7 @@ export function UnifiedFilterBar({
             </button>
             <button
               type="button"
+              onPointerDown={() => onPrefetchSpace?.("stores")}
               onClick={() => { setOptimisticTab("stores"); onNavigateToStores?.(); }}
               className={cn(
                 "flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
@@ -290,11 +302,13 @@ export function UnifiedFilterBar({
             </button>
             <button
               type="button"
+              onPointerDown={() => onPrefetchSpace?.("uber")}
               onClick={() => { setOptimisticTab("uber"); onNavigateToUber?.(); }}
               className={cn(
                 "flex h-9 min-w-16 cursor-pointer items-center justify-center rounded-full px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
-                isUberActive ? "bg-[#0eb462] text-white shadow-[0_0_10px_rgba(17,24,39,0.16)]" : "text-gray-500 hover:text-gray-700",
+                isUberActive ? "text-white shadow-[0_0_10px_rgba(17,24,39,0.16)]" : "text-gray-500 hover:text-gray-700",
               )}
+              style={isUberActive ? { backgroundColor: UBER_GREEN } : undefined}
               aria-label="Uber delivery"
             >
               <UberLogo active={isUberActive} className="h-3.5" />

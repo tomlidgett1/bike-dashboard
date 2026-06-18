@@ -11,8 +11,11 @@ import { AddToCartButton } from "@/components/marketplace/add-to-cart-button";
 import { MakeOfferButton } from "@/components/marketplace/make-offer-button";
 import { ProductInquiryButton } from "@/components/marketplace/product-inquiry-button";
 import { ProductDescription } from "@/components/marketplace/product-details-panel-simple";
-import { RecommendationCarousel } from "@/components/marketplace/product-detail/recommendation-carousel";
 import { SimilarProductsCarousel } from "@/components/marketplace/product-detail/similar-products-carousel";
+import {
+  ProductRecommendationsSection,
+  type ProductRecommendations,
+} from "@/components/marketplace/product-detail/product-recommendations-section";
 import { resolveLivePrice } from "@/lib/marketplace/pricing";
 import { formatStockOnHandLabel } from "@/lib/marketplace/stock-display";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
@@ -29,8 +32,8 @@ interface ImmersiveProductLayoutProps {
   product: MarketplaceProduct;
   images: string[];
   sellerInfo: SellerInfo | null;
-  sellerProducts: MarketplaceProduct[];
-  brandProducts: MarketplaceProduct[];
+  /** Seller + brand recommendation lists, streamed in after first paint. */
+  recommendationsPromise: Promise<ProductRecommendations>;
   brandName: string | null;
   isOwner: boolean;
 }
@@ -49,8 +52,7 @@ export function ImmersiveProductLayout({
   product,
   images,
   sellerInfo,
-  sellerProducts,
-  brandProducts,
+  recommendationsPromise,
   brandName,
   isOwner,
 }: ImmersiveProductLayoutProps) {
@@ -490,24 +492,14 @@ export function ImmersiveProductLayout({
             seeAllHref={similarSeeAllHref}
             seeAllLabel="Browse category"
           />
-          <RecommendationCarousel
-            title={sellerName ? `More from ${sellerName}` : "More from this seller"}
-            products={sellerProducts}
-            isLoading={false}
-            icon="store"
-            seeAllHref={storeHref}
-            seeAllLabel="View all"
+          {/* Seller + Brand carousels — streamed in after first paint */}
+          <ProductRecommendationsSection
+            promise={recommendationsPromise}
+            sellerName={sellerName ?? null}
+            sellerSeeAllHref={storeHref}
+            sellerSeeAllLabel="View all"
+            brandName={brandName}
           />
-          {brandName && (
-            <RecommendationCarousel
-              title={`More from ${brandName}`}
-              products={brandProducts}
-              isLoading={false}
-              icon="sparkles"
-              seeAllHref={`/marketplace?brand=${encodeURIComponent(brandName)}`}
-              seeAllLabel={`All ${brandName}`}
-            />
-          )}
         </div>
       </div>
 
