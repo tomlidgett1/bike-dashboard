@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { ArrowUpRight, Tag } from "lucide-react";
+import { ArrowUpRight, Tag } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 import { useSellModal } from "@/components/providers/sell-modal-provider";
 import { shouldRenderListItemBanner } from "@/lib/marketplace/list-item-banner-placement";
@@ -47,7 +47,7 @@ export function ListItemBanner({ className }: ListItemBannerProps) {
             className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-full"
             style={{ backgroundColor: BRAND_YELLOW }}
           >
-            <Tag className="h-5 w-5" style={{ color: FILTER_INK }} strokeWidth={2.25} />
+            <Tag className="h-5 w-5" style={{ color: FILTER_INK }} />
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-[15px] font-semibold leading-tight text-white">
@@ -60,7 +60,7 @@ export function ListItemBanner({ className }: ListItemBannerProps) {
             style={{ backgroundColor: BRAND_YELLOW, color: FILTER_INK }}
           >
             List now
-            <ArrowUpRight className="h-4 w-4" strokeWidth={2.25} />
+            <ArrowUpRight className="h-4 w-4" />
           </span>
         </div>
       </button>

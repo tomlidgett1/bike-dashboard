@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Search, X, Loader2, Package } from "lucide-react";
+import { Search, X, Loader2, Package } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { trackStoreSearchEvent } from "@/lib/tracking/store-analytics";

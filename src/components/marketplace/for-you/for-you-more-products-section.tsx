@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { X } from "lucide-react";
+import { X } from '@/components/layout/app-sidebar/dashboard-icons';
 import { ProductCard } from "@/components/marketplace/product-card";
 import {
   trackCarouselClick,

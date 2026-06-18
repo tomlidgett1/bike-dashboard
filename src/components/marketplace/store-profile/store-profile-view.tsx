@@ -24,7 +24,7 @@ import {
   Loader2 as SpinnerIcon,
   Eye,
   EyeOff,
-} from "lucide-react";
+} from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {

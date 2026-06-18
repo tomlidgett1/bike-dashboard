@@ -68,13 +68,13 @@ export const DEFAULT_RUNTIME_POLICY: GenieRuntimePolicy = {
   maxTurnsForRoute: (route, planned) => {
     if (route === 'business_analysis') return 40
     if (planned) return 40
-    if (route === 'web_research') return 8
+    if (route === 'web_research') return 12
     if (route === 'lightspeed_sql' || route === 'storefront_action') return 16
     if (route === 'mixed') return 24
     return 8
   },
   executorReasoningEffort: (route, planned) => {
-    if (planned || route === 'business_analysis') return 'medium'
+    if (planned || route === 'business_analysis' || route === 'web_research') return 'medium'
     return 'low'
   },
   fastAnswerPrompt: false,

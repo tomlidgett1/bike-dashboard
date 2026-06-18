@@ -4,7 +4,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
-import { ChevronRight, Clock, Globe, MapPin, Store, User, X } from "lucide-react";
+import { ChevronRight, Clock, Globe, MapPin, Store, User, X } from '@/components/layout/app-sidebar/dashboard-icons';
 import { getStoreOpenStatus } from "@/components/marketplace/store-profile/store-profile-chrome";
 import type { OpeningHours } from "@/lib/types/store";
 import { cn } from "@/lib/utils";
@@ -233,7 +233,7 @@ export function AboutThisSellerSection({
                   </div>
                 </div>
 
-                <div className="mt-5 rounded-md border border-gray-200 bg-white p-4">
+                <div className="mt-5">
                   <SellerDetailRows
                     seller={seller}
                     openStatus={openStatus}
@@ -286,37 +286,46 @@ export function AboutThisSellerSection({
 
       {/* Tablet / desktop */}
       <div className="hidden sm:block">
-        <h2 className="text-sm font-semibold text-gray-900">About this seller</h2>
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
+          About this seller
+        </p>
 
-        <div className="mt-4 flex items-start gap-4">
+        <Link
+          href={profileHref}
+          className="group flex items-start gap-3 rounded-md border border-gray-200 bg-white px-3 py-3 transition-colors hover:bg-gray-50"
+        >
           <SellerAvatar
             seller={seller}
             logoError={logoError}
             onLogoError={() => setLogoError(true)}
+            size="sm"
           />
 
-          <div className="min-w-0 flex-1 space-y-3">
-            <div>
-              <p className="text-base font-medium text-gray-900">{seller.name}</p>
-              <p className="mt-0.5 text-xs text-gray-500">{sellerSubtitle}</p>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-gray-900">{seller.name}</p>
+                <p className="mt-0.5 truncate text-xs text-gray-500">
+                  {[sellerSubtitle, openStatus?.label].filter(Boolean).join(" · ")}
+                </p>
+              </div>
+              <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5" />
             </div>
 
-            <SellerDetailRows
-              seller={seller}
-              openStatus={openStatus}
-              websiteHref={websiteHref}
-              clampBio
-            />
+            {seller.bio ? (
+              <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-gray-500">
+                {seller.bio}
+              </p>
+            ) : null}
 
-            <Link
-              href={profileHref}
-              className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 hover:text-gray-900"
-            >
-              {seller.is_bicycle_store ? "View store profile" : "View seller profile"}
-              <ChevronRight className="h-3.5 w-3.5" />
-            </Link>
+            {seller.address ? (
+              <p className="mt-2 flex items-start gap-1.5 text-xs text-gray-500">
+                <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" />
+                <span className="line-clamp-1">{seller.address}</span>
+              </p>
+            ) : null}
           </div>
-        </div>
+        </Link>
       </div>
     </>
   );
@@ -325,7 +334,7 @@ export function AboutThisSellerSection({
     return (
       <div
         className={cn(
-          "border-t border-gray-100 px-4 pt-4 pb-3 sm:px-5 sm:pt-5 lg:px-0",
+          "border-t border-gray-100 px-4 pt-4 pb-3 sm:px-5 sm:pt-4 lg:px-0 lg:pb-0",
           className,
         )}
       >

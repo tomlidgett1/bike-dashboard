@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { Edit, Trash2, Loader2, CheckCircle, AlertCircle, DollarSign } from "lucide-react";
+import { Edit, Trash2, Loader2, CheckCircle, AlertCircle, DollarSign } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import Image from "next/image";

@@ -104,25 +104,74 @@ function renderHeading(
     return `<h4 class="mt-1.5 first:mt-0 text-sm font-semibold leading-snug text-foreground">${inner}</h4>`
   }
   const byLevel: Record<number, string> = {
-    1: 'mt-5 first:mt-0 mb-1.5 text-[1.35em] font-semibold leading-tight tracking-[-0.01em] text-foreground',
-    2: 'mt-4 first:mt-0 mb-1 text-[1.15em] font-semibold leading-snug tracking-[-0.005em] text-foreground',
-    3: 'mt-3.5 first:mt-0 mb-1 text-[1em] font-semibold leading-snug text-foreground',
-    4: 'mt-3 first:mt-0 mb-0.5 text-[0.8em] font-semibold uppercase tracking-wider text-muted-foreground',
+    1: 'mt-3 first:mt-0 mb-1 text-[1.35em] font-semibold leading-tight tracking-[-0.01em] text-foreground',
+    2: 'mt-2.5 first:mt-0 mb-0.5 text-[1.15em] font-semibold leading-snug tracking-[-0.005em] text-foreground',
+    3: 'mt-2 first:mt-0 mb-0.5 text-[1em] font-semibold leading-snug text-foreground',
+    4: 'mt-2 first:mt-0 mb-0.5 text-[0.8em] font-semibold uppercase tracking-wider text-muted-foreground',
   }
   const tag = level <= 1 ? 'h1' : level === 2 ? 'h2' : level === 3 ? 'h3' : 'h4'
   const cls = byLevel[Math.min(Math.max(level, 1), 4)]
   return `<${tag} class="${cls}">${inner}</${tag}>`
 }
 
+function renderTakeawayLine(line: string, linkMode: LinkMode): string {
+  const colonIndex = line.indexOf(':')
+  if (colonIndex > 0 && colonIndex <= 48) {
+    const label = line.slice(0, colonIndex + 1)
+    const body = line.slice(colonIndex + 1).trimStart()
+    return `<span class="font-semibold text-gray-900">${renderInlineMarkdown(label, linkMode)}</span> ${renderInlineMarkdown(body, linkMode)}`
+  }
+  return renderInlineMarkdown(line, linkMode)
+}
+
 function renderBlockquote(
   lines: string[],
   options: Required<RenderGenieMarkdownOptions>,
 ): string {
-  const inner = lines.map(line => renderInlineMarkdown(line, options.linkMode)).join('<br/>')
+  const inner = lines.map(line => renderTakeawayLine(line, options.linkMode)).join('<br/>')
   if (options.compact) {
-    return `<blockquote class="my-1.5 border-l-2 border-border pl-2 text-xs leading-snug text-muted-foreground">${inner}</blockquote>`
+    return `<blockquote class="my-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs leading-snug text-gray-600">${inner}</blockquote>`
   }
-  return `<blockquote class="my-3 rounded-r-md border-l-2 border-primary/40 bg-muted/40 px-3 py-2 leading-relaxed text-foreground/90">${inner}</blockquote>`
+  return `<blockquote class="my-2 rounded-md border border-gray-200 bg-white px-3.5 py-2.5 leading-relaxed text-gray-700">${inner}</blockquote>`
+}
+
+function nextNonEmptyLine(lines: string[], startIndex: number): string | null {
+  for (let i = startIndex; i < lines.length; i++) {
+    const trimmed = lines[i].trimStart()
+    if (trimmed) return trimmed
+  }
+  return null
+}
+
+function matchesListType(line: string, type: 'ul' | 'ol'): boolean {
+  if (type === 'ol') return /^\d+\.\s+/.test(line)
+  return /^[•\-*]\s+/.test(line)
+}
+
+function isBlockStarterLine(line: string): boolean {
+  const trimmed = line.trimStart()
+  if (!trimmed) return false
+  if (/^#{1,6}\s/.test(trimmed)) return true
+  if (/^>\s?/.test(trimmed)) return true
+  if (/^---+$/.test(trimmed)) return true
+  if (isTableRow(line)) return true
+  if (/^[•\-*]\s+/.test(trimmed)) return true
+  if (/^\d+\.\s+/.test(trimmed)) return true
+  return false
+}
+
+function isListContinuationLine(line: string, listType: 'ul' | 'ol'): boolean {
+  const trimmed = line.trimStart()
+  if (!trimmed) return false
+  if (matchesListType(trimmed, listType)) return false
+  if (isBlockStarterLine(line)) return false
+  return true
+}
+
+function openListTag(type: 'ul' | 'ol', compact: boolean): string {
+  const marker = type === 'ol' ? 'list-decimal' : 'list-disc'
+  const spacing = compact ? 'my-1 space-y-0.5 pl-5' : 'my-1.5 space-y-0.5 pl-5'
+  return `<${type} class="${spacing} ${marker}">`
 }
 
 function renderTable(rows: string[][], options: Required<RenderGenieMarkdownOptions>): string {
@@ -131,7 +180,7 @@ function renderTable(rows: string[][], options: Required<RenderGenieMarkdownOpti
 
   const tableTextSize = options.compact ? 'text-xs' : 'text-sm'
   const cellPadding = options.compact ? 'px-2 py-1.5' : 'px-3 py-2'
-  const containerMargin = options.compact ? 'my-2' : 'my-3'
+  const containerMargin = options.compact ? 'my-2' : 'my-1.5'
 
   return [
     `<div class="${containerMargin} max-w-full overflow-x-auto rounded-md border border-gray-200 bg-white">`,
@@ -157,16 +206,41 @@ export function renderGenieMarkdown(text: string, options: RenderGenieMarkdownOp
   const lines = text.split('\n')
   const html: string[] = []
   let listType: 'ul' | 'ol' | null = null
+  let openListItemHtml: string | null = null
+
+  const flushListItem = () => {
+    if (openListItemHtml === null) return
+    html.push(`<li class="${resolved.compact ? 'leading-snug text-sm' : 'leading-relaxed'}">${openListItemHtml}</li>`)
+    openListItemHtml = null
+  }
 
   const closeList = () => {
+    flushListItem()
     if (!listType) return
     html.push(`</${listType}>`)
     listType = null
   }
 
+  const appendListContinuation = (trimmed: string) => {
+    const block = `<p class="${resolved.compact ? 'mt-1 leading-snug text-sm' : 'mt-1 leading-relaxed'}">${renderInlineMarkdown(trimmed, resolved.linkMode)}</p>`
+    openListItemHtml = openListItemHtml === null ? block : `${openListItemHtml}${block}`
+  }
+
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index]
     const trimmed = line.trimStart()
+
+    if (!trimmed) {
+      const nextLine = nextNonEmptyLine(lines, index + 1)
+      if (listType && nextLine && (matchesListType(nextLine, listType) || isListContinuationLine(nextLine, listType))) {
+        continue
+      }
+      closeList()
+      if (nextLine) {
+        html.push(`<div class="h-1"></div>`)
+      }
+      continue
+    }
 
     if (isTableRow(line)) {
       const rows = [splitTableRow(line)]
@@ -214,25 +288,28 @@ export function renderGenieMarkdown(text: string, options: RenderGenieMarkdownOp
       if (listType !== nextType) {
         closeList()
         listType = nextType
-        html.push(`<${nextType} class="${resolved.compact ? 'my-1 space-y-0.5 pl-4' : 'my-2 space-y-1 pl-5'}">`)
+        html.push(openListTag(nextType, resolved.compact))
+      } else {
+        flushListItem()
       }
       const content = trimmed.replace(/^[•\-*]\s+/, '').replace(/^\d+\.\s+/, '')
-      html.push(`<li class="${ordered ? 'list-decimal' : 'list-disc'} ${resolved.compact ? 'leading-snug text-sm' : 'leading-relaxed'}">${renderInlineMarkdown(content, resolved.linkMode)}</li>`)
+      openListItemHtml = renderInlineMarkdown(content, resolved.linkMode)
+      continue
+    }
+
+    if (listType && isListContinuationLine(trimmed, listType)) {
+      appendListContinuation(trimmed)
       continue
     }
 
     closeList()
 
-    if (!trimmed) {
-      if (index < lines.length - 1 && lines[index + 1]?.trim() !== '') {
-        html.push(`<div class="${resolved.compact ? 'h-1' : 'h-2'}"></div>`)
-      }
-    } else if (/^#{1,6}\s/.test(trimmed)) {
+    if (/^#{1,6}\s/.test(trimmed)) {
       const level = trimmed.match(/^#+/)?.[0].length ?? 3
       const headingText = trimmed.replace(/^#{1,6}\s+/, '')
       html.push(renderHeading(level, headingText, resolved))
     } else if (/^---+$/.test(trimmed)) {
-      html.push(`<hr class="${resolved.compact ? 'my-2' : 'my-3'} border-border/70" />`)
+      html.push(`<hr class="${resolved.compact ? 'my-2' : 'my-2'} border-border/70" />`)
     } else {
       html.push(`<p class="${resolved.compact ? 'leading-snug text-sm' : 'leading-relaxed'}">${renderInlineMarkdown(trimmed, resolved.linkMode)}</p>`)
     }

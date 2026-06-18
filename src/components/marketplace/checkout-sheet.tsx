@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { X, MapPin, Truck, Loader2, Check, CheckCircle2, Shield, ChevronLeft, ChevronRight, Package, AlertCircle } from "lucide-react";
+import { X, MapPin, Truck, Loader2, Check, CheckCircle2, Shield, ChevronLeft, ChevronRight, Package, AlertCircle } from '@/components/layout/app-sidebar/dashboard-icons';
 import { PaymentElement, AddressElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import type { StripeAddressElementChangeEvent } from "@stripe/stripe-js";
 import { Button } from "@/components/ui/button";

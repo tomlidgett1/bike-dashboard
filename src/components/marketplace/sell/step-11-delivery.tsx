@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { MapPin } from "lucide-react";
+import { MapPin } from '@/components/layout/app-sidebar/dashboard-icons';
 import { PricingFormData } from "@/lib/types/listing";
 import { FormField, SectionHeader, InfoBox, PriceInput } from "./form-elements";
 import { Input } from "@/components/ui/input";

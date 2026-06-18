@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Bike, Settings, Shirt, Apple, ChevronDown, Package, Loader2, ChevronLeft } from "lucide-react";
+import { Bike, Settings, Shirt, Apple, ChevronDown, Package, Loader2, ChevronLeft } from '@/components/layout/app-sidebar/dashboard-icons';
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { preload } from "swr";

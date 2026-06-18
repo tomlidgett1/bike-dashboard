@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { X, Gift, ChevronRight } from "lucide-react";
+import { X, Gift, ChevronRight } from '@/components/layout/app-sidebar/dashboard-icons';
 import { motion, AnimatePresence } from "framer-motion";
 
 // ============================================================

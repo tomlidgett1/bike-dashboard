@@ -92,6 +92,7 @@ export const DEPUTY_TOOL_NAMES = [
 ]
 
 export const WEB_RESEARCH_TOOL_NAMES = [
+  'web_search',
   'search_web_images',
 ]
 
@@ -145,6 +146,7 @@ export function toolNameSetForRoute(
   const planRequestsStorefrontRead = planRequestsTool(plannedToolNames, /get_store|search_store|list_active_discounts|find_discount_candidates|get_product_costs|brands|categories|products/i)
   const planRequestsStorefrontProposal = planRequestsTool(plannedToolNames, /propose_carousel|propose_create_carousel|propose_rename_carousel|propose_discount|propose_remove_discount|propose_price_update|propose_product_brand_category_update|propose_lightspeed_category_create|\bcarousel\b|\bdiscount\b|\bprice\b|\bbrand\b|\bcategory\b/i)
   const planRequestsImageSearch = planRequestsTool(plannedToolNames, /search_web_images/i)
+  const planRequestsWebSearch = planRequestsTool(plannedToolNames, /web_search|competitor|compatibility|market|official|manual|standard/i)
   const planRequestsXero = planRequestsTool(plannedToolNames, /\bxero\b|profit_and_loss|balance_sheet|trial_balance|aged_payable|aged_receivable|purchase_order|bank_transaction|chart_of_accounts/i)
   const planRequestsDeputy = planRequestsTool(plannedToolNames, /\bdeputy\b|get_deputy|list_deputy|\broster\b|\btimesheet\b|\bshift\b|\bstaff\b|hours_worked|who_worked|who_is_working/i)
   const planRequestsBikeStoreSpecialist = planRequestsTool(plannedToolNames, /consult_bike_store_analyst/i)
@@ -175,13 +177,15 @@ export function toolNameSetForRoute(
   }
 
   if (route === 'web_research') {
-    add(WEB_RESEARCH_TOOL_NAMES)
+    add(['web_search'])
+    if (planRequestsImageSearch) add(['search_web_images'])
     add(['consult_cycling_compatibility_specialist'])
     if (planRequestsGmail) addPlannedGmailTools(plannedToolNames, add)
     return names
   }
 
   if (route === 'business_analysis') {
+    names.delete('verify_question_answered')
     add(['record_lightspeed_plan'])
     add(LIGHTSPEED_READ_TOOL_NAMES)
     add(XERO_TOOL_NAMES)
@@ -205,7 +209,8 @@ export function toolNameSetForRoute(
       add(LIGHTSPEED_READ_TOOL_NAMES)
     }
     if (planRequestsStorefrontRead) add(STOREFRONT_READ_TOOL_NAMES)
-    if (planRequestsImageSearch) add(WEB_RESEARCH_TOOL_NAMES)
+    if (planRequestsWebSearch) add(['web_search'])
+    if (planRequestsImageSearch) add(['search_web_images'])
     if (planRequestsGmail) addPlannedGmailTools(plannedToolNames, add)
     if (planRequestsStorefrontProposal) add(STOREFRONT_PROPOSAL_TOOL_NAMES)
     return names

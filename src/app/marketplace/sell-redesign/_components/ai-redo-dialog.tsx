@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw } from '@/components/layout/app-sidebar/dashboard-icons';
 import { BottomSheet, Btn, Spinner } from "./ui";
 
 interface AiRedoDialogProps {

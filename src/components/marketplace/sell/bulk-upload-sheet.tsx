@@ -17,7 +17,7 @@ import {
   Truck,
   MapPin,
   RotateCw,
-} from "lucide-react";
+} from '@/components/layout/app-sidebar/dashboard-icons';
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {

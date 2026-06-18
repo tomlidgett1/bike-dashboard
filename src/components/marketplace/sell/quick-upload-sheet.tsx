@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { X } from "lucide-react";
+import { X } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import {
@@ -228,7 +228,7 @@ export function QuickUploadSheet({
           showCloseButton={false}
           overlayClassName="animate-in fade-in duration-200"
           className={cn(
-            "flex h-[min(94dvh,920px)] max-h-[min(94dvh,920px)] w-[min(calc(100vw-2rem),52rem)] max-w-3xl flex-col gap-0 overflow-hidden rounded-md border border-gray-200 bg-white p-0 shadow-xl",
+            "flex h-[min(94dvh,920px)] max-h-[min(94dvh,920px)] w-[min(calc(100vw-2rem),52rem)] max-w-3xl flex-col gap-0 overflow-hidden rounded-[28px] border border-gray-200 bg-white p-0 shadow-xl",
             "animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out",
           )}
         >

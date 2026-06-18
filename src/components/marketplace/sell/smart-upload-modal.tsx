@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Upload, X, Monitor, Smartphone, Camera, ImageIcon, Plus } from "lucide-react";
+import { Upload, X, Monitor, Smartphone, Camera, ImageIcon, Plus } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

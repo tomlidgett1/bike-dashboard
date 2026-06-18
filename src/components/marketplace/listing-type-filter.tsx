@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Store, User, Grid } from "lucide-react";
+import { Store, User, Grid } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 
 // ============================================================

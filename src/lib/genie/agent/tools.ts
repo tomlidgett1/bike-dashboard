@@ -98,6 +98,8 @@ import {
   type GenieModelProfile,
 } from './model-profiles'
 import { type GenieExecutionPlan } from './prompts'
+import { formatRowsForDossierPreview } from './business-analysis-synthesis'
+import { webSearchContextSizeForRoute, userRequestsWebImages } from '@/lib/genie/web-research-policy'
 import { buildVisibleGmailPayload, fullWorkorderForAgent, type ComposioSessionIds, type Message } from './context'
 import { DEPRECATED_LIGHTSPEED_ANALYTICAL_TOOL_NAMES, GENIE_LIGHTSPEED_INVENTORY_SQL_SCHEMA, GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW, GENIE_LIGHTSPEED_SQL_AVAILABLE_COLUMNS, GENIE_LIGHTSPEED_SQL_DEFAULT_LIMIT, GENIE_LIGHTSPEED_SQL_FALLBACK_MAX_LINES, GENIE_LIGHTSPEED_SQL_MAX_LIMIT, GENIE_LIGHTSPEED_SQL_RPC, GENIE_LIGHTSPEED_SQL_SCHEMA, GENIE_LIGHTSPEED_SQL_VIEW } from './sql-constants'
 
@@ -7112,6 +7114,15 @@ function validateLightspeedReportSql(sql: string): string | null {
   if (/;/.test(sql)) return 'Only one SQL statement is allowed.'
   if (/(\/\*|--)/.test(sql)) return 'SQL comments are not allowed.'
   if (!/^\s*(select|with)\s/i.test(sql)) return 'Only SELECT/WITH read queries are allowed.'
+  if (/`[^`]+`/.test(sql)) {
+    return 'Use PostgreSQL SQL, not MySQL: backtick-quoted identifiers are not supported.'
+  }
+  if (/\b(date_format|str_to_date|ifnull|curdate|date_sub|date_add|timestampdiff|datediff|from_unixtime|unix_timestamp)\s*\(/i.test(scrubbed)) {
+    return 'Use PostgreSQL SQL, not MySQL functions. Prefer date_trunc, to_char, coalesce, current_date, interval literals, and extract.'
+  }
+  if (/\binterval\s+\d+\s+(day|week|month|year|hour|minute|second)s?\b/i.test(scrubbed)) {
+    return "Use PostgreSQL interval syntax, e.g. interval '1 day' or interval '1 month'."
+  }
   if (/\b(insert|update|delete|drop|alter|truncate|create|replace|grant|revoke|copy|call|do|execute|merge|vacuum|analyze|refresh|listen|notify|set|reset|show|lock|begin|commit|rollback)\b/i.test(scrubbed)) {
     return 'Mutating or administrative SQL is not allowed.'
   }
@@ -7382,7 +7393,7 @@ function emitAnalysisPlan(emit: Emit, plan: GenieAnalysisPlanPayload) {
 
 function emitAnalysisQuery(
   emit: Emit,
-  query: Omit<GenieAnalysisQueryPayload, 'id' | 'at'> & Partial<Pick<GenieAnalysisQueryPayload, 'id' | 'at'>>,
+  query: Omit<GenieAnalysisQueryPayload, 'id' | 'at'> & Partial<Pick<GenieAnalysisQueryPayload, 'id' | 'at' | 'result_preview'>>,
 ) {
   emit({
     event: 'analysis_query',
@@ -7395,6 +7406,7 @@ function emitAnalysisQuery(
       status: query.status,
       row_count: query.row_count ?? null,
       error: query.error ?? null,
+      result_preview: query.result_preview ?? null,
     },
   })
 }
@@ -7525,6 +7537,7 @@ async function runLightspeedSqlQuery(
     row_count: rowCount,
     visual: args.visual ?? null,
     limit,
+    result_preview: formatRowsForDossierPreview(rows),
   })
 
   return {
@@ -7544,6 +7557,263 @@ async function runLightspeedSqlQuery(
     chart_emitted: Boolean(chart),
     recheck_required: rows.length === 0 || limitApplied,
   }
+}
+
+function safeIsoDate(value: string | null | undefined): string | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  return value
+}
+
+function businessAnalysisNeedsBikeLightRecovery(question: string, plan?: GenieExecutionPlan | null): boolean {
+  const haystack = [
+    question,
+    plan?.user_intent,
+    plan?.sql_strategy?.filters.join(' '),
+    plan?.sql_strategy?.aggregation,
+    plan?.execution_steps.join(' '),
+    plan?.answer_success_criteria?.join(' '),
+  ].filter(Boolean).join(' ')
+  return /\bbike\s+lights?\b|\blights?\s+performance\b|\bfront\s+lights?\b|\brear\s+lights?\b|\bheadlights?\b|\btaillights?\b|\btail\s+lights?\b/i.test(haystack)
+}
+
+function strictBikeLightSalesPredicate(): string {
+  return `(
+    coalesce(category, '') ~* '(^|/)lights?$'
+    OR coalesce(description, '') ~* '(^|[^a-z])(front light|rear light|rr light|headlight|tail light|taillight|bike light|light set|lamp|blinder|flare|lumen|lumens)([^a-z]|$)'
+    OR coalesce(sku, '') ~* '(^|[^a-z])(front light|rear light|rr light|headlight|tail light|taillight|bike light|light set|lamp|blinder|flare|lumen|lumens)([^a-z]|$)'
+  )
+  AND coalesce(description, '') !~* '(light[ -]?(grey|gray|blue|brown)|lightgrey|lightgray|lightweight|light weight|highlight|daylight|light lever)'`
+}
+
+function strictBikeLightInventoryPredicate(alias = 'i'): string {
+  const prefix = alias ? `${alias}.` : ''
+  return `(
+    coalesce(${prefix}category_name, '') ~* '^lights?$'
+    OR coalesce(${prefix}category_path, '') ~* '(^|/)Lights$'
+    OR coalesce(${prefix}name, '') ~* '(^|[^a-z])(front light|rear light|rr light|headlight|tail light|taillight|bike light|light set|lamp|blinder|flare|lumen|lumens)([^a-z]|$)'
+    OR coalesce(${prefix}description, '') ~* '(^|[^a-z])(front light|rear light|rr light|headlight|tail light|taillight|bike light|light set|lamp|blinder|flare|lumen|lumens)([^a-z]|$)'
+  )
+  AND coalesce(${prefix}name, '') !~* '(light[ -]?(grey|gray|blue|brown)|lightgrey|lightgray|lightweight|light weight|highlight|daylight|light lever)'
+  AND coalesce(${prefix}description, '') !~* '(light[ -]?(grey|gray|blue|brown)|lightgrey|lightgray|lightweight|light weight|highlight|daylight|light lever)'`
+}
+
+function businessAnalysisDateRange(plan?: GenieExecutionPlan | null): { startDate: string; endDate: string } {
+  const endDate = safeIsoDate(plan?.date_range?.end_date) ?? getStoreToday()
+  const startDate = safeIsoDate(plan?.date_range?.start_date)
+    ?? isoDateFromUtcDate(addUtcDays(isoDateToUtcDate(endDate), -365))
+  return { startDate, endDate }
+}
+
+async function runBusinessAnalysisRecoveryPasses(args: {
+  userId: string
+  latestUserMessage: string
+  executionPlan?: GenieExecutionPlan | null
+  emit: Emit
+  visualPrefs: VisualPrefs
+  signal: AbortSignal
+}): Promise<{ attempted: boolean; successful: number }> {
+  if (!businessAnalysisNeedsBikeLightRecovery(args.latestUserMessage, args.executionPlan)) {
+    return { attempted: false, successful: 0 }
+  }
+
+  const { startDate, endDate } = businessAnalysisDateRange(args.executionPlan)
+  const start = sqlLiteral(startDate)
+  const end = sqlLiteral(endDate)
+  const salePredicate = strictBikeLightSalesPredicate()
+  const inventoryPredicate = strictBikeLightInventoryPredicate('i')
+
+  const queries = [
+    {
+      purpose: 'Recovery: bike light category headline sales and current stock',
+      limit: 10,
+      sql: `WITH light_sales AS (
+  SELECT item_id, quantity, subtotal, total, discount, cost, profit
+  FROM ${GENIE_LIGHTSPEED_SQL_VIEW}
+  WHERE complete_time >= ${start}::date
+    AND complete_time < (${end}::date + interval '1 day')
+    AND ${salePredicate}
+), current_lights AS (
+  SELECT item_id, total_qoh, total_sellable, default_price, avg_cost, default_cost
+  FROM ${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW} i
+  WHERE archived IS NOT TRUE
+    AND ${inventoryPredicate}
+)
+SELECT
+  ${start} || ' to ' || ${end} AS period,
+  ROUND(SUM(CASE WHEN quantity > 0 THEN quantity ELSE 0 END)::numeric, 2) AS units_sold,
+  ROUND(SUM(subtotal)::numeric, 2) AS net_sales,
+  ROUND(SUM(total)::numeric, 2) AS gross_sales_inc_tax,
+  ROUND(SUM(profit)::numeric, 2) AS gross_profit,
+  ROUND((SUM(profit) / NULLIF(SUM(subtotal), 0) * 100)::numeric, 2) AS gross_margin_pct,
+  ROUND(SUM(discount)::numeric, 2) AS discount_dollars,
+  ROUND((SUM(discount) / NULLIF(SUM(subtotal + discount), 0) * 100)::numeric, 2) AS discount_rate_pct,
+  COUNT(DISTINCT item_id) FILTER (WHERE quantity > 0) AS distinct_light_skus_sold,
+  (SELECT COUNT(*) FROM current_lights) AS current_light_skus_ranged,
+  (SELECT COUNT(*) FROM current_lights WHERE total_qoh > 0) AS current_light_skus_with_qoh,
+  (SELECT ROUND(SUM(total_qoh)::numeric, 2) FROM current_lights WHERE total_qoh > 0) AS current_units_on_hand,
+  (SELECT ROUND(SUM(total_sellable)::numeric, 2) FROM current_lights WHERE total_sellable > 0) AS current_sellable_units,
+  (SELECT ROUND(SUM(COALESCE(NULLIF(avg_cost, 0), NULLIF(default_cost, 0), 0) * total_qoh)::numeric, 2) FROM current_lights WHERE total_qoh > 0) AS current_stock_value_at_cost
+FROM light_sales`,
+    },
+    {
+      purpose: 'Recovery: monthly bike light sales trend',
+      limit: 24,
+      visual: {
+        chart_kind: 'line' as const,
+        chart_title: 'Bike light sales trend',
+        chart_x_key: 'sale_month',
+        chart_y_keys: ['net_sales', 'units_sold'],
+        value_format: 'currency' as const,
+      },
+      sql: `SELECT
+  to_char(date_trunc('month', complete_time AT TIME ZONE '${STORE_TIME_ZONE}'), 'YYYY-MM') AS sale_month,
+  ROUND(SUM(CASE WHEN quantity > 0 THEN quantity ELSE 0 END)::numeric, 2) AS units_sold,
+  ROUND(SUM(subtotal)::numeric, 2) AS net_sales,
+  ROUND(SUM(profit)::numeric, 2) AS gross_profit,
+  ROUND((SUM(profit) / NULLIF(SUM(subtotal), 0) * 100)::numeric, 2) AS gross_margin_pct,
+  ROUND(SUM(discount)::numeric, 2) AS discount_dollars,
+  ROUND((SUM(discount) / NULLIF(SUM(subtotal + discount), 0) * 100)::numeric, 2) AS discount_rate_pct
+FROM ${GENIE_LIGHTSPEED_SQL_VIEW}
+WHERE complete_time >= ${start}::date
+  AND complete_time < (${end}::date + interval '1 day')
+  AND ${salePredicate}
+GROUP BY date_trunc('month', complete_time AT TIME ZONE '${STORE_TIME_ZONE}')
+ORDER BY date_trunc('month', complete_time AT TIME ZONE '${STORE_TIME_ZONE}')`,
+    },
+    {
+      purpose: 'Recovery: top bike light products by sales and margin',
+      limit: 30,
+      sql: `WITH product_sales AS (
+  SELECT
+    item_id,
+    COALESCE(NULLIF(MAX(description), ''), 'Unknown') AS product,
+    COALESCE(NULLIF(MAX(sku), ''), '') AS sku,
+    ROUND(SUM(CASE WHEN quantity > 0 THEN quantity ELSE 0 END)::numeric, 2) AS units_sold,
+    ROUND(SUM(subtotal)::numeric, 2) AS net_sales,
+    ROUND(SUM(profit)::numeric, 2) AS gross_profit,
+    ROUND((SUM(profit) / NULLIF(SUM(subtotal), 0) * 100)::numeric, 2) AS gross_margin_pct,
+    ROUND((SUM(subtotal) / NULLIF(SUM(CASE WHEN quantity > 0 THEN quantity ELSE 0 END), 0))::numeric, 2) AS avg_selling_price,
+    ROUND(SUM(discount)::numeric, 2) AS discount_dollars,
+    ROUND((SUM(discount) / NULLIF(SUM(subtotal + discount), 0) * 100)::numeric, 2) AS discount_rate_pct,
+    MAX(complete_time) AS last_sold_at
+  FROM ${GENIE_LIGHTSPEED_SQL_VIEW}
+  WHERE complete_time >= ${start}::date
+    AND complete_time < (${end}::date + interval '1 day')
+    AND quantity > 0
+    AND ${salePredicate}
+  GROUP BY item_id
+)
+SELECT
+  ps.product,
+  ps.sku,
+  COALESCE(NULLIF(i.brand_name, ''), 'Unknown') AS brand,
+  COALESCE(NULLIF(i.category_path, ''), NULLIF(i.category_name, ''), 'Unknown') AS category,
+  ps.units_sold,
+  ps.net_sales,
+  ps.gross_profit,
+  ps.gross_margin_pct,
+  ps.avg_selling_price,
+  ps.discount_rate_pct,
+  COALESCE(i.total_qoh, 0) AS qoh,
+  COALESCE(i.total_sellable, 0) AS sellable,
+  ROUND(COALESCE(NULLIF(i.avg_cost, 0), NULLIF(i.default_cost, 0), 0)::numeric, 2) AS current_cost,
+  ROUND(i.default_price::numeric, 2) AS current_price,
+  to_char(ps.last_sold_at AT TIME ZONE '${STORE_TIME_ZONE}', 'YYYY-MM-DD') AS last_sold
+FROM product_sales ps
+LEFT JOIN ${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW} i ON i.item_id = ps.item_id
+ORDER BY ps.net_sales DESC, ps.units_sold DESC
+LIMIT 30`,
+    },
+    {
+      purpose: 'Recovery: current bike light poor movers and dead stock',
+      limit: 40,
+      sql: `WITH current_lights AS (
+  SELECT
+    item_id,
+    COALESCE(NULLIF(system_sku, ''), NULLIF(custom_sku, ''), NULLIF(manufacturer_sku, ''), '') AS sku,
+    COALESCE(NULLIF(name, ''), NULLIF(description, ''), item_id) AS product,
+    COALESCE(NULLIF(brand_name, ''), 'Unknown') AS brand,
+    COALESCE(NULLIF(category_path, ''), NULLIF(category_name, ''), 'Unknown') AS category,
+    default_price,
+    COALESCE(NULLIF(avg_cost, 0), NULLIF(default_cost, 0), 0) AS unit_cost,
+    total_qoh,
+    total_sellable
+  FROM ${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW} i
+  WHERE archived IS NOT TRUE
+    AND COALESCE(total_qoh, 0) > 0
+    AND ${inventoryPredicate}
+), sales AS (
+  SELECT
+    item_id,
+    SUM(quantity) FILTER (WHERE complete_time >= ${start}::date AND complete_time < (${end}::date + interval '1 day')) AS units_365,
+    SUM(total) FILTER (WHERE complete_time >= ${start}::date AND complete_time < (${end}::date + interval '1 day')) AS revenue_365,
+    SUM(profit) FILTER (WHERE complete_time >= ${start}::date AND complete_time < (${end}::date + interval '1 day')) AS profit_365,
+    SUM(quantity) FILTER (WHERE complete_time >= (${end}::date - interval '90 days') AND complete_time < (${end}::date + interval '1 day')) AS units_90,
+    MAX(complete_time) FILTER (WHERE complete_time >= ${start}::date AND complete_time < (${end}::date + interval '1 day')) AS last_sold_at
+  FROM ${GENIE_LIGHTSPEED_SQL_VIEW}
+  WHERE complete_time >= ${start}::date
+    AND complete_time < (${end}::date + interval '1 day')
+  GROUP BY item_id
+)
+SELECT
+  i.sku,
+  i.product,
+  i.brand,
+  i.category,
+  ROUND(i.default_price::numeric, 2) AS price,
+  ROUND(i.unit_cost::numeric, 2) AS unit_cost,
+  CASE WHEN i.default_price > 0 THEN ROUND(((i.default_price - i.unit_cost) / i.default_price * 100)::numeric, 1) ELSE NULL END AS shelf_margin_pct,
+  ROUND(i.total_qoh::numeric, 2) AS qoh,
+  ROUND(i.total_sellable::numeric, 2) AS sellable,
+  ROUND((i.unit_cost * i.total_qoh)::numeric, 2) AS stock_value_at_cost,
+  COALESCE(ROUND(s.units_365::numeric, 2), 0) AS units_365,
+  COALESCE(ROUND(s.units_90::numeric, 2), 0) AS units_90,
+  COALESCE(ROUND(s.revenue_365::numeric, 2), 0) AS revenue_365,
+  COALESCE(ROUND(s.profit_365::numeric, 2), 0) AS profit_365,
+  CASE WHEN s.revenue_365 > 0 THEN ROUND((s.profit_365 / NULLIF(s.revenue_365, 0) * 100)::numeric, 1) ELSE NULL END AS sold_margin_pct,
+  to_char(s.last_sold_at AT TIME ZONE '${STORE_TIME_ZONE}', 'YYYY-MM-DD') AS last_sold,
+  CASE WHEN COALESCE(s.units_90, 0) > 0 THEN ROUND((i.total_sellable / NULLIF(s.units_90 / 13.0, 0))::numeric, 1) ELSE NULL END AS weeks_cover_90d,
+  CASE
+    WHEN COALESCE(s.units_365, 0) = 0 THEN 'dead/no 12m sales'
+    WHEN COALESCE(s.units_90, 0) = 0 AND COALESCE(i.total_sellable, 0) > 0 THEN 'stale/no 90d sales'
+    WHEN COALESCE(s.units_90, 0) > 0 AND i.total_sellable / NULLIF(s.units_90 / 13.0, 0) > 26 THEN 'overstocked >26 weeks cover'
+    WHEN COALESCE(s.units_365, 0) <= 2 AND COALESCE(i.total_sellable, 0) >= 2 THEN 'slow mover'
+    ELSE 'ok/monitor'
+  END AS action_bucket
+FROM current_lights i
+LEFT JOIN sales s ON s.item_id = i.item_id
+ORDER BY
+  CASE WHEN COALESCE(s.units_365, 0) = 0 THEN 0 ELSE 1 END,
+  stock_value_at_cost DESC,
+  weeks_cover_90d DESC NULLS FIRST,
+  i.product
+LIMIT 40`,
+    },
+  ]
+
+  args.emit({
+    event: '_debug',
+    stage: 'business_analysis_recovery_passes',
+    reason: 'insufficient_or_failed_model_investigation',
+    segment: 'bike_lights',
+    query_count: queries.length,
+  })
+  emitStatus(args.emit, 'rechecking', 'Running deterministic bike-light data passes')
+
+  let successful = 0
+  for (const query of queries) {
+    if (args.signal.aborted) break
+    const result = await runLightspeedSqlQuery(
+      args.userId,
+      query,
+      args.emit,
+      args.visualPrefs,
+      args.latestUserMessage,
+    )
+    if (isRecord(result) && result.status === 'ok') successful += 1
+  }
+
+  return { attempted: true, successful }
 }
 
 async function findDiscountCandidatesSql(
@@ -9300,6 +9570,7 @@ function executorModelForRoute(
   models: GenieModelConfig = DEFAULT_GENIE_MODELS,
 ): string {
   if (route === 'business_analysis') return models.strategicExecutor
+  if (route === 'web_research') return models.strategicExecutor
   if (route === 'mixed' && planned) return models.strategicExecutor
   return models.fastExecutor
 }
@@ -9403,6 +9674,9 @@ function buildAgentTools(
   verifyGate: { awaitingContinuation: boolean } = { awaitingContinuation: false },
 ) {
   const allowedToolNames = toolNameSetForRoute(route, executionPlan?.primary_tools ?? [])
+  if (userRequestsWebImages(latestUserMessage) && (route === 'web_research' || route === 'mixed')) {
+    allowedToolNames.add('search_web_images')
+  }
   const runtime = getGenieRuntimePolicy(modelProfile)
   // Hard cap on answer-verification passes. The model otherwise treats
   // verify_question_answered as a "keep working" checkpoint and loops it
@@ -9434,7 +9708,7 @@ function buildAgentTools(
     ...(shouldExposeHostedWebSearch(route)
       ? [
         webSearchTool({
-          searchContextSize: 'low',
+          searchContextSize: webSearchContextSizeForRoute(route),
           externalWebAccess: true,
         }),
       ]
@@ -9444,7 +9718,7 @@ function buildAgentTools(
     ...buildPurchaseOrderTools(supabase, userId, emit),
     tool({
       name: 'search_web_images',
-      description: 'Search the web for reference product or cycling photos when the user wants to see what something looks like. Use for specific bikes, parts, gear, colours, setup examples, or "what does X look like" — not for analytics, rankings, or abstract non-visual questions. Prefer show_product_images on store inventory tools when the user wants to see their own stock.',
+      description: 'Search the web for reference product or cycling photos ONLY when the user explicitly wants to see what something looks like ("what does X look like", "show me photos of"). Never use for race standings, leaders, results, specs, compatibility facts, prices, or other non-visual questions — use hosted web_search for those.',
       parameters: z.object({
         query: z.string().describe('Specific visual search, e.g. "2024 Trek Fuel EX 8", "Shimano XT rear derailleur", "gravel bike setup".'),
         limit: z.number().int().min(1).max(6).optional().describe('Number of images to show. Defaults to 4.'),
@@ -9634,10 +9908,10 @@ function buildAgentTools(
     }),
     tool({
       name: 'run_lightspeed_sql_query',
-      description: `Run one validated read-only SQL query for Lightspeed reporting. Use this for Lightspeed sales analytics, customer rankings, customer purchase history, sold-product analysis, current inventory, stock-on-hand, brand/supplier/category inventory, inventory value, cost/profit/margin reporting, transaction lists, and chart/table requests. Available tenant-scoped relations: ${GENIE_LIGHTSPEED_SQL_VIEW} (${GENIE_LIGHTSPEED_SQL_SCHEMA.join(', ')}), and ${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW} (${GENIE_LIGHTSPEED_INVENTORY_SQL_SCHEMA.join(', ')}). Write a single SELECT/WITH query whenever possible. For customer rankings, aggregate sale lines to sale_id first, then aggregate by customer. For current inventory, use brand_name and supplier_name as first-class columns. Do not query raw tables, raw JSON, secrets, or user_id.`,
+      description: `Run one validated read-only PostgreSQL query for Lightspeed reporting. The database is Supabase Postgres 17, so use Postgres syntax only (date_trunc, to_char, extract, coalesce, FILTER, ::type casts, interval '1 day'); never use MySQL syntax such as DATE_FORMAT, IFNULL, CURDATE, DATE_SUB, INTERVAL 1 DAY, backtick identifiers, or LIMIT offset,count. Use this for Lightspeed sales analytics, customer rankings, customer purchase history, sold-product analysis, current inventory, stock-on-hand, brand/supplier/category inventory, inventory value, cost/profit/margin reporting, transaction lists, and chart/table requests. Available tenant-scoped relations: ${GENIE_LIGHTSPEED_SQL_VIEW} (${GENIE_LIGHTSPEED_SQL_SCHEMA.join(', ')}), and ${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW} (${GENIE_LIGHTSPEED_INVENTORY_SQL_SCHEMA.join(', ')}). Write a single SELECT/WITH query whenever possible. For customer rankings, aggregate sale lines to sale_id first, then aggregate by customer. For current inventory, use brand_name and supplier_name as first-class columns. For product-segment/category analysis, build a deliberate product universe; never rely on parent category_path substring matches alone. For bike lights specifically, category_path ILIKE '%light%' is too broad because it matches the parent "Electronics & Lights" and pulls Computers, Radar, Batteries, Chargers, Sensors, Power Meters, Mirrors, and colour phrases. Use leaf category_name='Lights' or category_path ending '/Lights' plus specific product terms such as front light, rear light, headlight, taillight, light set, lamp, blinder, flare, lumen/lumens. Do not use standalone "light" as a product-text match outside the trusted Lights leaf category; exclude lightweight/light weight/highlight/daylight/light grey/lightgray/light blue/light brown. Do not query raw tables, raw JSON, secrets, or user_id.`,
       parameters: z.object({
         purpose: z.string().min(3).describe('Brief business purpose for the query, e.g. "Top customers by gross sales over the last 3 years".'),
-        sql: z.string().min(10).describe(`A single SELECT/WITH query against ${GENIE_LIGHTSPEED_SQL_VIEW} and/or ${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW}. Do not include semicolons or comments.`),
+        sql: z.string().min(10).describe(`A single PostgreSQL SELECT/WITH query against ${GENIE_LIGHTSPEED_SQL_VIEW} and/or ${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW}. Do not include semicolons or comments. Use Postgres syntax only; no MySQL functions or backticks.`),
         limit: z.number().int().min(1).max(GENIE_LIGHTSPEED_SQL_MAX_LIMIT).optional().describe('Maximum rows to return. Defaults to 500, hard max 1000.'),
         visual: z.object({
           table_title: z.string().optional(),
@@ -10543,6 +10817,9 @@ function buildAgentTools(
   return tools.filter(candidate => {
     const name = 'name' in candidate ? String(candidate.name) : ''
     if (DEPRECATED_LIGHTSPEED_ANALYTICAL_TOOL_NAMES.has(name)) return false
+    if (route === 'business_analysis' && executionPlan != null && name === 'record_lightspeed_plan') {
+      return false
+    }
     if (!name) return true
     if (isToolExcludedForProfile(name, modelProfile)) return false
     return allowedToolNames.has(name)
@@ -10552,6 +10829,7 @@ function buildAgentTools(
 export {
   buildAgentTools,
   buildSpecialistAgentTools,
+  runBusinessAnalysisRecoveryPasses,
   executorModelForRoute,
   buildLightspeedCustomerProfile,
   emitCustomerProfile,

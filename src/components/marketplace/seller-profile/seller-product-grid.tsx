@@ -4,7 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Package, CheckCircle } from "lucide-react";
+import { Package, CheckCircle } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 import type { SellerProduct, SellerCategory } from "@/app/api/marketplace/seller/[sellerId]/route";
 import { ListItemBannerSlot } from "@/components/marketplace/list-item-banner";

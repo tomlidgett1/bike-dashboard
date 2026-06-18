@@ -68,8 +68,21 @@ function genieTraceMetadata(args: {
   }
 }
 
+const GENIE_TRACE_STAGE_SLUG: Record<string, string> = {
+  executor: 'exec',
+  business_analysis_synthesis: 'syn',
+  orchestrator: 'orch',
+  planner: 'plan',
+  router: 'router',
+}
+
 function genieTraceId(requestId: string, stage: string): string {
-  return `trace_${requestId.replace(/-/g, '')}_${stage}`
+  const compactRequestId = requestId.replace(/-/g, '')
+  const stageSlug = GENIE_TRACE_STAGE_SLUG[stage] ?? stage.replace(/[^a-z]/gi, '').slice(0, 6)
+  const traceId = `trace_${compactRequestId}_${stageSlug}`
+  if (traceId.length <= 64) return traceId
+  const idBudget = 64 - stageSlug.length - 7
+  return `trace_${compactRequestId.slice(0, Math.max(8, idBudget))}_${stageSlug}`
 }
 let cachedLightspeedInstructions: string | null = null
 

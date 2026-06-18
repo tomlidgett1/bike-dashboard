@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft } from '@/components/layout/app-sidebar/dashboard-icons';
 import { useRouter } from "next/navigation";
 import { FacebookImportModal } from "./facebook-import-modal";
 import { TextUploadDialog } from "./text-upload-dialog";

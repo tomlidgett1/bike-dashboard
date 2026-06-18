@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { motion } from "framer-motion";
-import { Store, Package } from "lucide-react";
+import { Store, Package } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Card, CardContent } from "@/components/ui/card";
 import { saveStoreSplashSeed } from "@/lib/marketplace/store-splash";
 

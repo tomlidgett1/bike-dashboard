@@ -4,7 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { User, Package, ArrowLeft, X } from "lucide-react";
+import { User, Package, ArrowLeft, X } from '@/components/layout/app-sidebar/dashboard-icons';
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { ProductCard } from "@/components/marketplace/product-card";
 import { ListItemBannerSlot } from "@/components/marketplace/list-item-banner";

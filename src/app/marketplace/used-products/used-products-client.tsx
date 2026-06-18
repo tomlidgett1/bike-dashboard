@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { SlidersHorizontal, RefreshCw } from "lucide-react";
+import { SlidersHorizontal, RefreshCw } from '@/components/layout/app-sidebar/dashboard-icons';
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductGrid } from "@/components/marketplace/product-grid";

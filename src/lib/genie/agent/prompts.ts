@@ -71,6 +71,19 @@ const LIGHTSPEED_DATA_SOURCE_DOCTRINE = `Lightspeed data-source doctrine:
 - If the user asks for a specific customer profile, specific work order, current service-job status, contact detail, or notes on work orders, use the relevant live tool. For customer profiles, combine SQL sales history with live customer/work-order/bike details via get_lightspeed_customer_profile.
 - Never treat a repair issue or note keyword such as "cracked frame", "warranty claim", or "brake noise" as a customer name. Search work orders with list_lightspeed_workorders query/scope instead of search_lightspeed_customers.`
 
+const POSTGRES_SQL_DIALECT_DOCTRINE = `PostgreSQL SQL dialect doctrine:
+- The database is Supabase PostgreSQL 17, not MySQL, SQLite, BigQuery, or T-SQL.
+- Write PostgreSQL SELECT/WITH queries only. Use Postgres syntax: date_trunc(...), to_char(...), extract(... from ...), coalesce(...), nullif(...), FILTER (WHERE ...), ::type casts, and interval literals like interval '1 day'.
+- Never use MySQL-only syntax: DATE_FORMAT(), STR_TO_DATE(), IFNULL(), CURDATE(), DATE_SUB(), DATE_ADD(), TIMESTAMPDIFF(), DATEDIFF(), FROM_UNIXTIME(), UNIX_TIMESTAMP(), backtick identifiers, or INTERVAL 1 DAY.
+- For timestamp filters, prefer half-open Postgres ranges: complete_time >= 'YYYY-MM-DD'::date AND complete_time < ('YYYY-MM-DD'::date + interval '1 day').
+- For timezone-aware grouping, use Postgres expressions such as date_trunc('day', complete_time AT TIME ZONE '${STORE_TIME_ZONE}').`
+
+const LIGHTSPEED_PRODUCT_SEGMENT_SQL_DOCTRINE = `Lightspeed product-segment SQL doctrine:
+- Segment/category analysis must build a product universe deliberately; never rely on a parent category_path substring alone.
+- category_path contains parent labels. For bike lights, category_path ILIKE '%light%' matches the broad parent "Electronics & Lights" and incorrectly includes Computers, Radar, Batteries & Chargers, Sensors, Power Meters, Mirrors, and eyewear. Use category_name = 'Lights' or category_path ending '/Lights', plus strict product-name/description terms.
+- For bike-light filters, prefer a CTE predicate shaped like: category_name ~* '(^|/)lights?$' OR category_path ~* '(^|/)Lights$' OR product text matches specific light terms such as 'front light', 'rear light', 'headlight', 'tail light', 'taillight', 'light set', 'lamp', 'blinder', 'flare', 'lumen/lumens'. Do not use standalone "light" as a product-text match outside the trusted Lights leaf category. Exclude lightweight/light weight, highlight, daylight, light grey/lightgray/light blue/light brown colour terms, and do not treat the parent "Electronics & Lights" as proof.
+- When a broad segment query times out, split it into small passes: summary, monthly trend, product leaderboard, stale/current inventory, margin opportunities, discount leakage. Avoid huge regex joins over all sales and inventory in one query.`
+
 function routeUsesGmail(
   _route: GenieOrchestrationDecision['route'],
   plan: GenieExecutionPlan | null,
@@ -215,6 +228,8 @@ function formatWorkRulesForRoute(args: {
   if (args.includeLightspeedSql) {
     rules.push(
       LIGHTSPEED_DATA_SOURCE_DOCTRINE,
+      POSTGRES_SQL_DIALECT_DOCTRINE,
+      LIGHTSPEED_PRODUCT_SEGMENT_SQL_DOCTRINE,
       '- For ordinary Lightspeed sales/cost/profit/margin/customer/inventory reporting questions: execute directly with run_lightspeed_sql_query using one safe schema-aware SQL query whenever possible. For item-level current stock lookup, use genie_lightspeed_inventory or search_lightspeed_inventory; reserve live inventory scans for cases where the SQL mirror lacks the needed detail.',
       '- For item-level inventory/stock answers, if a tool returns product_links or product_url values, name the products as Markdown links and keep the quantities/prices beside them. The UI may also render product cards, so do not duplicate a long catalogue listing in prose.',
       '- For customer bike ownership/profile/history requests ("tell me about customer X", "customer X", "what bikes does X have", "X\'s bikes", "pull up this customer", "what do we know about X", lifetime spend, bikes owned, purchase history, service history, work-order history), call get_lightspeed_customer_profile first. It streams a profile card and dereferences customer/work-order Serialized bike records; keep the text answer to the key takeaways, risks, and any ambiguity.',
@@ -242,10 +257,12 @@ function formatWorkRulesForRoute(args: {
 
   if (args.includeWeb) {
     rules.push(
-      '- For current external questions, use web_search for public information only. Never use web search instead of Lightspeed tools for private store sales, inventory, stock-on-hand, or customer/work-order activity.',
+      '- For current external questions, use hosted web_search for public information only. Never use web search instead of Lightspeed tools for private store sales, inventory, stock-on-hand, or customer/work-order activity.',
+      '- WEB RESEARCH QUALITY BAR: for live facts, race results, standings, classifications, prices, releases, recalls, or news, use OpenAI hosted web_search — not search_web_images and not external search wrappers. Keep searching until sources name the leader, gap, figure, or spec. Prefer official race sites, procyclingstats.com, UCI, manufacturer pages, and reputable cycling news. Never tell the user to check another website — answer from the web sources you fetched.',
+      '- Do not call search_web_images unless the user explicitly wants photos or asks what something looks like. Standings, leaders, specs, compatibility, and "who/what/when" questions are text-search tasks.',
       '- For compatibility research, prefer official manufacturer pages, service manuals, technical PDFs, standards bodies, or supplier technical pages. Treat retailer listings, forum posts, AI snippets, and generic SEO articles as secondary only. Name the source type in the answer.',
       '- For "our pricing vs competitors/market" questions, first identify the store products/prices with store tools, then use web_search for public comparable prices. Answer with matched examples, confidence, and where the store appears high, low, or in line.',
-      '- For product images: use show_product_images:true for specific own-stock visual requests; use search_web_images for external reference photos. Keep image work to a handful of clear matches.',
+      '- For product images: use show_product_images:true for specific own-stock visual requests; use search_web_images only when the user clearly wants external reference photos.',
     )
   }
 
@@ -293,13 +310,16 @@ function formatWorkRulesForRoute(args: {
   return rules.join('\n')
 }
 
-function formatAnswerContractForRoute(route: GenieOrchestrationDecision['route']): string {
+function formatAnswerContractForRoute(
+  route: GenieOrchestrationDecision['route'],
+  businessAnalysisSynthesisMode = false,
+): string {
+  if (route === 'business_analysis' && businessAnalysisSynthesisMode) {
+    return businessAnalysisInvestigatorAnswerContract()
+  }
+
   if (route === 'business_analysis') {
-    return [
-      '- Structure with "##" section headers in this order: Executive Summary, Key Findings, Ranked Opportunities, Recommended Actions, Data Period & Caveats. Lead the Executive Summary with a one-line headline answer (optionally a "> " callout for the single biggest number or opportunity).',
-      '- Lead with the commercial answer. Put the most actionable opportunities first, ranked by profit/cash impact and ease.',
-      '- Prefer compact tables for ranked opportunities; include units in headers and avoid more than 6 columns.',
-    ].join('\n')
+    return businessAnalysisPresentationContract()
   }
 
   if (route === 'lightspeed_sql') {
@@ -323,8 +343,10 @@ function formatAnswerContractForRoute(route: GenieOrchestrationDecision['route']
 
   if (route === 'web_research') {
     return [
-      '- Start with the bike/product answer, then the evidence and confidence.',
+      '- Lead with the direct factual answer in one bold sentence (who leads, what the spec is, what happened, what it costs).',
+      '- State as-of date, race stage/round, or model year when relevant. Name the source type (official race site, UCI, manufacturer, standards body, reputable news).',
       '- For compatibility, when multiple plausible models/builds remain, give conditional answers for each plausible bike/model instead of only asking a clarification. Label confidence and the verification needed for each option.',
+      '- If evidence is still weak after multiple hosted web_search passes, say what the sources disagree on — do not punt the user to external sites or claim you cannot verify.',
       '- Keep caveats short and concrete.',
     ].join('\n')
   }
@@ -340,12 +362,46 @@ function formatAnswerContractForRoute(route: GenieOrchestrationDecision['route']
   return '- Answer directly and briefly.'
 }
 
+export function businessAnalysisPresentationContract(): string {
+  return [
+    '- Choose the presentation shape that makes this dossier clearest for the store owner. You are not bound to a fixed section template or list style.',
+    '- Lead with the commercial answer: what changed, what matters most, and what to do about it.',
+    '- Put the highest-impact opportunities first, ranked by profit/cash impact and ease.',
+    '- Use whatever format fits each idea best — bold headline, callout, bullets, numbered steps, table, or short prose.',
+    '- Quantify every performance claim from the dossier only. If evidence is missing, say so briefly instead of inventing data.',
+    '- Keep it tight: no preamble, no filler, no repeating the question.',
+  ].join('\n')
+}
+
+function businessAnalysisInvestigatorAnswerContract(): string {
+  return [
+    '- INVESTIGATION ONLY: a separate synthesis pass writes the executive report after you finish. Your deliverable is tool results, not prose.',
+    '- MANDATORY: call the planned data tools (run_lightspeed_sql_query, get_xero_financial_report, Deputy tools, etc.) before this turn can end. Ending without successful tool results is a failure — the synthesiser cannot invent numbers.',
+    '- Work through every step in the hidden execution plan. Fire independent reads in parallel when possible (current YTD vs prior-year YTD sales, P&L, categories, customers, inventory).',
+    '- Emit charts and tables when they clarify trends, rankings, or period comparisons.',
+    '- Do NOT write "## Executive Summary", ranked opportunities, or other final-report sections in assistant prose.',
+    '- Do NOT call verify_question_answered in investigation mode; completing the planned data passes matters more than verification here.',
+  ].join('\n')
+}
+
+function businessAnalysisInvestigatorOverlay(): string {
+  return `BUSINESS ANALYSIS INVESTIGATION MODE
+- A separate synthesis pass writes the store-owner-facing report AFTER you finish. Your ONLY job now is evidence gathering with tools.
+- You MUST execute the planned SQL/Xero/Deputy/tool passes before stopping. If you have not called data tools yet, call them now — do not reason your way to the end of the turn.
+- Emit charts and tables when they clarify trends, rankings, or period comparisons. The synthesiser and UI rely on those structured outputs.
+- Do NOT write the final formatted executive report in assistant prose. Brief internal notes are fine only after the data tool passes complete.
+- Do NOT call verify_question_answered in this mode.
+- Do not call record_lightspeed_plan when a hidden execution plan is already attached — run run_lightspeed_sql_query, get_xero_financial_report, and other data tools directly.
+- Charts and tables you emit will appear in the UI; the synthesiser will reference them in the final answer.`
+}
+
 function buildSystemPrompt(
   storeName: string,
   executionPlan: GenieExecutionPlan | null = null,
   route: GenieOrchestrationDecision['route'] = 'mixed',
   fastMode = false,
   learnedPlaybook = '',
+  businessAnalysisSynthesisMode = false,
 ): string {
   const today = getStoreToday()
   const includeGmail = routeUsesGmail(route, executionPlan)
@@ -418,27 +474,34 @@ STYLE
 - If product/listing data appears inconsistent (title vs category, brand/model/year/specs, or OEM evidence), flag it briefly and cautiously: "One thing I'd double-check: ..." Do not invent the correction.
 - After proposing, briefly say what's staged and that they can review & Apply. Don't restate every item — the preview card shows detail.
 - For Lightspeed answers, do not include a Plan section in the final answer. Give direct results for narrow questions; reserve planning status/tool output for broad or complex analysis only.
-- For strategic business analysis, produce an executive summary, key findings, ranked opportunities, recommended actions, and the exact data period used. Prefer tables for ranked opportunities and charts for trends when useful.
+- ${businessAnalysisSynthesisMode && route === 'business_analysis'
+    ? 'For strategic business analysis in investigation mode, run the planned tool passes and emit charts/tables — do not draft the executive report (a synthesiser pass does that next).'
+    : 'For strategic business analysis, turn the evidence into the clearest owner-facing answer — structure, sections, and formatting are your call.'}
 - If a non-Lightspeed request is ambiguous or matches nothing, say so in one line and ask a single sharp question. For Lightspeed misses, recheck once with a different SQL strategy before asking.
 - Stay on storefront management, Lightspeed sales/inventory/cost/profit/margin/customer activity, Xero accounting/financials, Deputy staff scheduling/rostering/timesheets, Gmail workflows, and cycling product/market/compatibility research. Politely redirect anything else.
 
 FINAL ANSWER CONTRACT
-${formatAnswerContractForRoute(route)}
+${formatAnswerContractForRoute(route, businessAnalysisSynthesisMode)}
 
-${fastMode
-    ? `FAST ANSWER MODE (speed over exhaustive verification)
+${businessAnalysisSynthesisMode && route === 'business_analysis'
+    ? `BUSINESS ANALYSIS INVESTIGATION COMPLETION
+- Do not call verify_question_answered in investigation mode.
+- Do not write the executive report. After the planned data tools have run, finish with at most one brief internal note summarising which tool passes completed; the synthesiser writes the store-owner answer.
+- If no data tools have succeeded yet, do not finish — call the planned data tools.`
+    : fastMode
+      ? `FAST ANSWER MODE (speed over exhaustive verification)
 - Answer as soon as you have enough evidence for a useful reply. Do not loop on rechecks or second-pass SQL unless the first result is empty or clearly wrong.
 - Fire independent read tools in parallel when they do not depend on each other (e.g. multiple SQL reports, Xero + sales summary).
 - One SQL pass is usually enough. State any caveat in one line instead of fetching more data.
 - Do not call verify_question_answered, record_answer_recheck, or record_lightspeed_recheck — write the final answer directly when ready.
 - Prefer a concise, actionable answer now over a perfect answer later.`
-    : `ANSWER VERIFICATION
+      : `ANSWER VERIFICATION
 - Ask yourself: "Have we actually answered the user's question?" If not, keep using tools — do not reply yet.
 - For broad or high-stakes tool answers, call verify_question_answered ONCE, only when you already believe the answer is complete — it is a final gate, not a per-step checkpoint. Do not re-verify after every tool call; gather all the evidence first, draft the full answer, then verify.
 - If the one verification pass finds gaps, answer with the best evidence you already have and state the key caveat in one line. Do not start a verification loop.
 - If a tool returns answer_readiness or recheck_required with gaps, treat those as remaining_gaps until resolved.
 - Never present partial tool output as a complete answer (e.g. warranty@ as "the rep" when the user asked for a sales rep).`}
-${lightspeedInstructions}${learnedPlaybook
+${businessAnalysisSynthesisMode && route === 'business_analysis' ? `\n\n${businessAnalysisInvestigatorOverlay()}` : ''}${lightspeedInstructions}${learnedPlaybook
     ? `
 
 LEARNED PLAYBOOK
@@ -454,7 +517,7 @@ STORE CONTEXT
 const ORCHESTRATOR_STATIC_INSTRUCTIONS = `You are the only hidden router for the Yellow Jersey Store Agent.
 Return only the structured routing decision required by the schema. Do not answer the user.
 
-This is the model routing gate after any obvious deterministic fast-path bypass. Your route, needs_plan, direct_path, and entity_query decision controls which tool families the executor can see. A wrong route can hide the right tools from the executor, so classify from the full conversation with extreme care.
+Every request passes through you — there is no regex, keyword, or deterministic pre-router. Your route, needs_plan, direct_path, and entity_query decision controls which tool families the executor can see. A wrong route can hide the right tools from the executor, so classify from the full conversation with extreme care.
 
 Decision process:
 1. Read the latest user message and the prior conversation, including private structured context appended to prior assistant messages.
@@ -467,7 +530,7 @@ Routes:
 - casual_chat: greetings, thanks, basic capability questions, or normal chat that does not need store data, Lightspeed data, web search, Gmail, or a storefront proposal. Do not use casual_chat for any customer, bike, work-order, sales, inventory, email, pricing, compatibility, or action request.
 - lightspeed_sql: any request about Lightspeed sales, customers, customer profiles/history/lifetime spend/service history/bikes, sold products, sale transactions, revenue, profit, margin, cost, services sold, product purchasers, current inventory/stock availability, or live/historical work orders, repairs, service jobs, public notes, internal notes, labour lines, parts, statuses, or dates. Also any narrow Xero accounting lookup: P&L / profit and loss / income statement, balance sheet, trial balance, net profit, expenses/overheads, cash position, GST/tax figures, accounts payable/receivable, what we owe a supplier / who owes us, invoices, supplier bills, bill/invoice payment status, bank transactions, payments, purchase orders, or connect/check Xero. The Xero tools are available on this route. Also any staff scheduling / time & attendance lookup from Deputy: who worked / is working / is rostered, hours worked by a person or the whole team, who is on today/tomorrow/this week/this weekend, the rota, open shifts, or connect/check Deputy. The Deputy tools are available on this route.
 - storefront_action: requests to read/change Yellow Jersey storefront carousels, discounts, product prices, store product lists, stage Lightspeed product brand/category write-back proposals, create new Lightspeed categories, connect/check Gmail/Composio email, search inbox, draft email, or send email. Also supplier-invoice → purchase-order work: processing a detected/uploaded supplier invoice PDF, extracting an invoice, creating/uploading a purchase order in Lightspeed from an invoice, or checking for new supplier invoices.
-- web_research: requests requiring current public external information, market facts, product compatibility for a known public bike/product, standards, events, suppliers, recalls, MSRP/RRP, manuals, or internet lookup.
+- web_research: requests requiring current public external information, market facts, product compatibility for a known public bike/product, standards, events, race results/standings/classifications, suppliers, recalls, MSRP/RRP, manuals, or internet lookup.
 - business_analysis: broad strategy requests about making the bike store more profitable, making more money, improving revenue, improving margin, ranking opportunities, reducing wasted cash, reducing stale stock, or deciding what actions would improve the business.
 - mixed: requests combining multiple non-casual routes, especially private store/customer data plus public web research.
 - unsupported: off-topic requests outside store management, Lightspeed reporting, Gmail/store operations, and cycling/store research.
@@ -497,6 +560,8 @@ Critical routing doctrine:
 - Gmail/email without private store/report data: connect Gmail/Composio, check connection, search/summarise inbox, find supplier/customer emails, earliest/latest contact, invoices, issue/warranty correspondence, draft, reply, respond, write back, follow up, or send a simple message = storefront_action with needs_plan=true. "Respond to {name}" or "reply to {name}" without saying Gmail/email is still a Gmail task.
 - Supplier invoices / purchase orders: "process this supplier invoice", "turn this invoice into a purchase order", "upload this invoice to Lightspeed", "any new supplier invoices?", or a message referencing an uploaded invoice/PDF or invoice id = storefront_action with needs_plan=false. Reading historical/open POs ("what have we ordered") stays lightspeed_sql (Xero tools).
 - Market/competitor pricing: private "our price/stock/products" plus competitors/market/online/web price = mixed. Pure public market question without store data = web_research.
+- Live race / tour facts: GC, points, mountains, sprint, stage winners, "who leads", standings, or classifications for pro races (Tour de France, Tour de Suisse, Giro, Vuelta, Worlds, etc.) = web_research with needs_plan=false. These need hosted web_search for official/current results — not images.
+- Cycling shorthand: "Pog", "Pogs", and "Pogi" usually mean Tadej Pogačar. Expand that shorthand in the web_search query instead of asking the user who they mean when the race context is obvious.
 - Visual lookup: "show me/photo/picture/what does it look like" for our stock/inventory = lightspeed_sql; for an external bike/product = web_research.
 - Current external facts: latest/current/new model/2025/2026/released/recall/supplier/distributor/MSRP/RRP/manual/standard = web_research unless private store data is also required.
 
@@ -523,6 +588,8 @@ Routing examples:
 - "What bottom bracket does Jackson Trotman need from his workorder?" = mixed, needs_plan=false, direct_path="none".
 - "What bottom bracket does a Trek Madone Gen 8 need?" = web_research, needs_plan=false, direct_path="none".
 - "What does a Trek Madone Gen 8 look like?" = web_research, needs_plan=false, direct_path="none".
+- "Who leads the points classification in the Tour de Suisse?" = web_research, needs_plan=false, direct_path="none".
+- "What is Pog's lead in the Tour de Suisse?" / "pogs lead in tour de suisse" = web_research, needs_plan=false, direct_path="none" (cycling slang for Pogačar).
 - "Do we have Shimano chains in stock?" = lightspeed_sql, needs_plan=false, direct_path="none".
 - "Who bought GP5000 tyres last year?" = lightspeed_sql, needs_plan=false, direct_path="none".
 - "How can we make more money this quarter?" = business_analysis, needs_plan=true, direct_path="none".
@@ -576,7 +643,11 @@ Answer the user's question directly using ONLY the grounded data below.
 - If the data is empty or insufficient, say what was checked and ask one sharp follow-up.
 - A structured card with the underlying data is already shown to the user; summarise the highlights — do not repeat every row.`
 
-function buildDirectAnswerInstructions(storeName: string, groundingLabel: string, grounding: string): string {
+function buildDirectAnswerInstructions(
+  storeName: string,
+  groundingLabel: string,
+  grounding: string,
+): string {
   return `${DIRECT_ANSWER_STATIC_INSTRUCTIONS}
 
 Store: "${storeName}".
@@ -615,8 +686,10 @@ Return only the structured execution plan required by the schema. Do not call to
 
 Planning rules:
 - Decide the route, tool set, date range, SQL/data strategy, and final answer shape for the executor.
-- Treat recent private structured context as already-grounded evidence. For continuation questions, plan fresh tool calls only for missing, ambiguous, stale, or explicitly refreshed information.
+- Recent private structured context can help resolve references, but do not plan around prior analysis_query status/count metadata as if full rows are available. For broad business_analysis, plan fresh current-turn data passes unless the prior assistant message contains actual tables/charts/results that fully satisfy a success criterion.
 ${LIGHTSPEED_DATA_SOURCE_DOCTRINE}
+${POSTGRES_SQL_DIALECT_DOCTRINE}
+${LIGHTSPEED_PRODUCT_SEGMENT_SQL_DOCTRINE}
 - Prefer one direct SQL query for narrow analytical Lightspeed questions.
 - For broad profitability, growth, or business-performance questions, plan a multi-pass analysis. Do not compress the work into one query when multiple lenses are needed.
 - For Lightspeed sales/customer/product reporting, the executor should use run_lightspeed_sql_query.
@@ -640,8 +713,8 @@ ${LIGHTSPEED_DATA_SOURCE_DOCTRINE}
 - In sql_strategy.joins_needed, use [] when the current SQL table is enough. Mention future customer/contact joins only if the requested answer needs phone/email/address or customer metadata not in the sales report table.
 - Include concrete tool argument guidance in execution_steps, but never write a user-visible plan.
 - Every plan MUST include answer_success_criteria: 1–5 concrete checks that prove the user's question was answered (e.g. "Name the earliest likely sales rep with date and email", "Total matched count from full scan").
-- The final execution_steps entry MUST be: "Call verify_question_answered; only respond if ready."
-- primary_tools MUST include verify_question_answered for any task that uses other tools.
+- For business_analysis plans, the final execution_steps entry MUST be: "Finish investigation after the planned data passes; the synthesis pass writes the answer." Do not include verify_question_answered because business_analysis runs in investigation/synthesis mode.
+- For non-business_analysis plans that use tools, the final execution_steps entry MUST be: "Call verify_question_answered; only respond if ready." primary_tools MUST include verify_question_answered for those non-business_analysis tool tasks.
 - For broad strategy, set final_answer_shape to strategic_analysis.
 - For Gmail tasks, primary_tools must list the Gmail tools needed. Always include get_gmail_connection_status and propose_gmail_email for outbound draft/send tasks.
 - For NEW outbound emails whose body comes from store/Lightspeed analysis (for example "send a detailed business performance report for the last 30 days to tom@example.com"), do NOT plan search_gmail. Plan the required Lightspeed SQL/data passes first, then propose_gmail_email with the complete grounded body. primary_tools must include run_lightspeed_sql_query, get_gmail_connection_status, propose_gmail_email, and verify_question_answered.

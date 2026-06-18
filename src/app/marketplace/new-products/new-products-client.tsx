@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { Sparkles, SlidersHorizontal } from "lucide-react";
+import { Sparkles, SlidersHorizontal } from '@/components/layout/app-sidebar/dashboard-icons';
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductGrid } from "@/components/marketplace/product-grid";

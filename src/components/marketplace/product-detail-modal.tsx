@@ -3,7 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Store, Heart, Share2, BadgeCheck, Zap } from "lucide-react";
+import { X, Store, Heart, Share2, BadgeCheck, Zap } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Button } from "@/components/ui/button";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { cn } from "@/lib/utils";

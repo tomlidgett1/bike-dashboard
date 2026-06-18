@@ -3,9 +3,11 @@
 // purchase orders, payments, contacts, chart of accounts).
 
 import { tool } from '@openai/agents'
+import { randomUUID } from 'crypto'
 import { z } from 'zod'
 
 import { compactGenieProgressText } from '@/lib/genie/progress-text'
+import { formatObjectForDossierPreview } from '@/lib/genie/agent/business-analysis-synthesis'
 import {
   XeroNotConnectedError,
   getXeroAgedPayables,
@@ -31,6 +33,26 @@ type Emit = (data: object) => void
 
 function emitXeroStatus(emit: Emit, phase: string, text: string) {
   emit({ event: 'status', phase, text: compactGenieProgressText(text, phase) })
+}
+
+function emitXeroAnalysisQuery(
+  emit: Emit,
+  args: { purpose: string; status: 'ok' | 'error'; result?: unknown; error?: string },
+) {
+  emit({
+    event: 'analysis_query',
+    query: {
+      id: randomUUID(),
+      at: new Date().toISOString(),
+      tool_name: 'get_xero_financial_report',
+      purpose: args.purpose,
+      sql: null,
+      status: args.status,
+      row_count: null,
+      error: args.error ?? null,
+      result_preview: args.result != null ? formatObjectForDossierPreview(args.result) : null,
+    },
+  })
 }
 
 const XERO_NOT_CONNECTED_OUTPUT = {
@@ -130,6 +152,11 @@ export function buildXeroTools(userId: string, emit: Emit) {
                           ? await getXeroAgedPayables(userId, { contactId: args.contact_id!, date: args.date, fromDate: args.from_date, toDate: args.to_date })
                           : await getXeroAgedReceivables(userId, { contactId: args.contact_id!, date: args.date, fromDate: args.from_date, toDate: args.to_date })
           if (!report) return { error: 'Xero returned no report data for these parameters.' }
+          emitXeroAnalysisQuery(emit, {
+            purpose: `Xero ${args.report.replace(/_/g, ' ')}${args.from_date && args.to_date ? ` ${args.from_date} to ${args.to_date}` : args.date ? ` as at ${args.date}` : ''}`,
+            status: 'ok',
+            result: report,
+          })
           return { report }
         })
       },

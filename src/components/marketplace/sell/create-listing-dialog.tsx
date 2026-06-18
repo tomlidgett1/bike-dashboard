@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft } from '@/components/layout/app-sidebar/dashboard-icons';
 import { ListingCountBento } from "./listing-count-bento";
 import { ListingMethodBento } from "./listing-method-bento";
 import { ListingPhotosPanel, type ListingPhotoDraft } from "./listing-photos-panel";
@@ -70,7 +70,7 @@ export function CreateListingDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[min(calc(100vw-2rem),40rem)] gap-0 rounded-md bg-white p-0 animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out">
+      <DialogContent className="max-w-[min(calc(100vw-2rem),40rem)] gap-0 overflow-hidden rounded-[28px] bg-white p-0 animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out">
         <div className="px-6 pb-4 pt-6">
           <div className="flex items-center gap-2">
             {step !== "count" && (

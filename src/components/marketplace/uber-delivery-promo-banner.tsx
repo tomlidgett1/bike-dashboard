@@ -3,7 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { X, Zap, ChevronRight } from "lucide-react";
+import { X, Zap, ChevronRight } from '@/components/layout/app-sidebar/dashboard-icons';
 import { motion, AnimatePresence } from "framer-motion";
 
 // ============================================================

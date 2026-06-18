@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { XIcon } from "lucide-react";
+import { XIcon } from '@/components/layout/app-sidebar/dashboard-icons';
 import { AuthCard, type AuthCardHandle } from "@/components/auth/auth-card";
 import type { AuthModalMode } from "@/components/providers/auth-modal-provider";
 import {

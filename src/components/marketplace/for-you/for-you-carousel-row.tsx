@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, ChevronRight, MoreHorizontal, EyeOff, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, MoreHorizontal, EyeOff, X } from '@/components/layout/app-sidebar/dashboard-icons';
 import { ProductCard } from "@/components/marketplace/product-card";
 import {
   DropdownMenu,

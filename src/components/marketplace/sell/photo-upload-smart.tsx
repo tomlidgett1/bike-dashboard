@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, X, AlertCircle } from "lucide-react";
+import { Upload, X, AlertCircle } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 

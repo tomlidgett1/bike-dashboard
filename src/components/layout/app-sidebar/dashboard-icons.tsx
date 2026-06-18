@@ -69,6 +69,8 @@ import {
   GraphUp,
   HamburgerMenu,
   HandShake,
+  HeadphonesRound,
+  Heart,
   Hashtag,
   Help,
   History,
@@ -77,8 +79,11 @@ import {
   InboxIn,
   InfoCircle,
   KickScooter,
+  Laptop,
   Layers,
+  Leaf,
   Letter,
+  Lightbulb,
   LetterOpened,
   Like,
   Link,
@@ -92,6 +97,8 @@ import {
   Mailbox,
   MapPoint,
   Maximize,
+  MedalRibbon,
+  MedalStar,
   MenuDots,
   Minimize,
   MinusCircle,
@@ -110,15 +117,22 @@ import {
   Printer,
   Pulse,
   QuestionCircle,
+  Record,
   RecordCircle,
   Refresh,
   Restart,
+  RoundTransferHorizontal,
   Route,
   Scale,
   Scanner,
   SendSquare,
   Settings,
+  Share,
+  ShareCircle,
   Shield,
+  Sidebar,
+  SidebarMinimalistic,
+  StreetsNavigation,
   ShieldCheck,
   Shop,
   SkipNext,
@@ -138,6 +152,7 @@ import {
   Text,
   Ticket,
   TrashBinTrash,
+  TShirt,
   Tuning2,
   UndoLeft,
   Upload,
@@ -148,7 +163,15 @@ import {
   VerifiedCheck,
   VolumeLoud,
   Widget,
+  Widget2,
+  Widget3,
+  Widget4,
+  Widget5,
+  Widget6,
   WidgetAdd,
+  VideoFrame,
+  Cart,
+  Armchair,
 } from "@solar-icons/react";
 import { cn } from "@/lib/utils";
 
@@ -199,6 +222,58 @@ export function CheckIcon({ className, ...props }: IconProps) {
         strokeLinejoin="round"
       />
     </svg>
+  );
+}
+
+function BrandIcon({ children, className, ...props }: IconProps & { children: ReactNode }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={cn("size-4", className)}
+      aria-hidden
+      {...props}
+    >
+      {children}
+    </svg>
+  );
+}
+
+/** Lucide Apple equivalent — stroke-based for marketplace brand buttons. */
+export function Apple({ className, ...props }: IconProps) {
+  return (
+    <BrandIcon className={className} {...props}>
+      <path
+        d="M17 10.5c-.1-2.1 1.6-3.1 1.7-3.2-1-.1-2 .6-2.5.6-.5 0-1.3-.6-2.1-.6-1.1 0-2.1.6-2.7 1.6-1.1 2-0.3 4.9 0.8 6.5.5.8 1.1 1.6 1.9 1.6.8 0 1-.5 2-.5s1.2.5 2 .5c.8 0 1.3-.7 1.8-1.4.6-.8.8-1.6.8-1.7-.1 0-1.5-.6-1.5-2.3zM14.5 4.8c.4-.5.7-1.2.6-1.9-.6 0-1.3.4-1.7.9-.4.5-.7 1.2-.6 1.8.7.1 1.3-.3 1.7-.8z"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinejoin="round"
+      />
+    </BrandIcon>
+  );
+}
+
+export function Facebook({ className, ...props }: IconProps) {
+  return (
+    <BrandIcon className={className} {...props}>
+      <path
+        d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v9h4v-9h3l1-4h-4V7a1 1 0 0 1 1-1h3z"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </BrandIcon>
+  );
+}
+
+export function Instagram({ className, ...props }: IconProps) {
+  return (
+    <BrandIcon className={className} {...props}>
+      <rect x="3" y="3" width="18" height="18" rx="5" stroke="currentColor" strokeWidth={2} />
+      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth={2} />
+      <circle cx="17.5" cy="6.5" r="1" fill="currentColor" />
+    </BrandIcon>
   );
 }
 
@@ -392,6 +467,39 @@ export const X = CloseSquare;
 export const XCircle = CloseCircle;
 export const Zap = Bolt;
 export const ZoomIn = MagniferZoomIn;
+
+// Marketplace / product-page aliases
+export { Armchair, Heart, Laptop, Leaf, Lightbulb };
+export const Award = MedalStar;
+export const BadgeCheck = VerifiedCheck;
+export const Calendar = CalendarDate;
+export const Cog = Settings;
+export const Disc = Record;
+export const Disc3 = RecordCircle;
+export const Frame = VideoFrame;
+export const Gauge = Chart;
+export const Grid = Widget;
+export const Grid2x2 = Widget2;
+export const Grid3X3 = Widget3;
+export const Grid3x2 = Widget4;
+export const Grip = MenuDots;
+export const Hand = HandShake;
+export const Headset = HeadphonesRound;
+export const Info = InfoCircle;
+export const LayoutList = List;
+export const Link2 = Link;
+export const LogOut = Logout;
+export const Medal = MedalRibbon;
+export const Menu = HamburgerMenu;
+export const Merge = RoundTransferHorizontal;
+export const Navigation = StreetsNavigation;
+export const PanelLeft = Sidebar;
+export const PanelLeftClose = SidebarMinimalistic;
+export const Share2 = ShareCircle;
+export const Shirt = TShirt;
+export const ShoppingCart = Cart;
+export const TrendingUp = GraphUp;
+export const XIcon = X;
 
 // Additional named solar exports
 export {

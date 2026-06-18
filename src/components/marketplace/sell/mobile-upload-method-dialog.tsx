@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 import { SpringBottomSheet } from "@/components/ui/spring-bottom-sheet";
 import { ListingCountBento } from "./listing-count-bento";

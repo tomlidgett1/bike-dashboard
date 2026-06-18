@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { ChevronDown, Store } from "lucide-react";
+import { ChevronDown, Store } from '@/components/layout/app-sidebar/dashboard-icons';
 import {
   DropdownMenu,
   DropdownMenuContent,

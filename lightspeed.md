@@ -76,6 +76,32 @@ Inventory columns:
 
 The executor rejects mutation, comments, raw-table access, restricted columns, secrets, and multi-statement SQL.
 
+## SQL Dialect
+
+The reporting database is Supabase PostgreSQL 17. Always write PostgreSQL, not MySQL, SQLite, BigQuery, or T-SQL.
+
+Use PostgreSQL syntax:
+
+- Date/time grouping: `date_trunc('day', complete_time AT TIME ZONE 'Australia/Brisbane')`.
+- Formatting labels: `to_char(...)`.
+- Date parts: `extract(month from complete_time)`.
+- Null handling: `coalesce(...)`, `nullif(...)`.
+- Conditional aggregates: `sum(total) FILTER (WHERE total > 0)`.
+- Type casts: `value::numeric`, `'2026-06-18'::date`.
+- Intervals: `interval '1 day'`, `interval '1 month'`.
+
+Never use MySQL syntax:
+
+- No `DATE_FORMAT(...)`; use `to_char(...)` or `date_trunc(...)`.
+- No `STR_TO_DATE(...)`; use Postgres casts such as `'2026-06-18'::date`.
+- No `IFNULL(...)`; use `coalesce(...)`.
+- No `CURDATE()`; use `current_date`.
+- No `DATE_SUB(...)` / `DATE_ADD(...)`; use Postgres interval arithmetic.
+- No `TIMESTAMPDIFF(...)` / `DATEDIFF(...)`; subtract timestamps/dates or use `extract(epoch from ...)`.
+- No backtick identifiers. Use unquoted lower-case identifiers exactly as listed.
+- No `INTERVAL 1 DAY`; use `interval '1 day'`.
+- No `LIMIT offset,count`; use `LIMIT count OFFSET offset`.
+
 ## Supported Now
 
 The SQL executor can answer:

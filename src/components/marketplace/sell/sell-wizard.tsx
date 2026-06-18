@@ -4,7 +4,7 @@ import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
-import { LayoutList, Wand2 } from "lucide-react";
+import { LayoutList, Wand2 } from '@/components/layout/app-sidebar/dashboard-icons';
 import { useListingForm } from "@/lib/hooks/use-listing-form";
 import { UploadMethodChoice } from "./upload-method-choice";
 import { SmartUploadFlow } from "./smart-upload-flow";

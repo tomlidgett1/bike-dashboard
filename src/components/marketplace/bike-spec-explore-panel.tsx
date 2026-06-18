@@ -3,7 +3,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowUpRight, X } from "lucide-react";
+import { ArrowUpRight, X } from '@/components/layout/app-sidebar/dashboard-icons';
 import type { BikeSpecExploreResult } from "@/lib/ai/bike-spec-explore-schema";
 import {
   genieProgressShimmerClassName,

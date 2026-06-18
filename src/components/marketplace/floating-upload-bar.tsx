@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { X, CheckCircle2, AlertCircle } from "lucide-react";
+import { X, CheckCircle2, AlertCircle } from '@/components/layout/app-sidebar/dashboard-icons';
 import { motion, AnimatePresence } from "framer-motion";
 import { useUpload } from "@/components/providers/upload-provider";
 import { cn } from "@/lib/utils";

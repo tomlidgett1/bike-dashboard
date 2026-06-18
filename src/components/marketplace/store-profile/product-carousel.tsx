@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, ChevronRight, ArrowRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, ArrowRight } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Button } from "@/components/ui/button";
 import { ProductCard } from "@/components/marketplace/product-card";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";

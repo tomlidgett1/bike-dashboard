@@ -630,6 +630,8 @@ export interface GenieAnalysisQueryPayload {
   error?: string | null;
   visual?: GenieAnalysisQueryVisualArgs | null;
   limit?: number | null;
+  /** Compact JSON/text snapshot for synthesis dossiers — not shown in the queries UI. */
+  result_preview?: string | null;
 }
 
 /** One captured SSE / client debug event for the raw logs panel. */

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Package } from "lucide-react";
+import { Loader2, Package } from '@/components/layout/app-sidebar/dashboard-icons';
 import { ProductCard } from "./product-card";
 import { ListItemBannerSlot } from "./list-item-banner";
 import { Button } from "@/components/ui/button";

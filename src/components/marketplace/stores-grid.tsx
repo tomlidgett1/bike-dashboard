@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { Loader2, Store } from "lucide-react";
+import { Loader2, Store } from '@/components/layout/app-sidebar/dashboard-icons';
 import { StoreCard, StoreCardSkeleton } from "./store-card";
 
 // ============================================================

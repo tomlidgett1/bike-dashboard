@@ -16,7 +16,7 @@ import {
   Mail,
   Truck,
   BadgeCheck,
-} from "lucide-react";
+} from '@/components/layout/app-sidebar/dashboard-icons';
 import { Button } from "@/components/ui/button";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { useCart } from "@/components/providers/cart-provider";

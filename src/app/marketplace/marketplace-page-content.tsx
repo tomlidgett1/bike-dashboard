@@ -4,7 +4,7 @@ import * as React from "react";
 import { Suspense, startTransition } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Image from "next/image";
-import { TrendingUp, Package, X, Search, Store as StoreIcon, User, Clock, DollarSign, SlidersHorizontal, Loader2 } from "lucide-react";
+import { TrendingUp, Package, X, Search, Store as StoreIcon, User, Clock, DollarSign, SlidersHorizontal, Loader2 } from '@/components/layout/app-sidebar/dashboard-icons';
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
@@ -1209,7 +1209,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
 
         {/* Desktop filter chrome — sits directly under the sticky header */}
         <div className="hidden sm:block border-b border-gray-200 bg-gray-50">
-          <div className="space-y-1.5 px-4 py-3 sm:px-6">
+          <div className="space-y-3 px-4 pt-3 pb-0 sm:space-y-4 sm:px-6 sm:pb-0.5">
             {isStoresView && (
               <>
                 <UnifiedFilterBar

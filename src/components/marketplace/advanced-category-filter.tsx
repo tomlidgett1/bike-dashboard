@@ -19,7 +19,7 @@ import {
   ChevronLeft,
   Package,
   Loader2,
-} from "lucide-react";
+} from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 
 // ============================================================

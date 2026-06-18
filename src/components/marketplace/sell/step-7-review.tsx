@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { CheckCircle2, Edit, AlertCircle } from "lucide-react";
+import { CheckCircle2, Edit, AlertCircle } from '@/components/layout/app-sidebar/dashboard-icons';
 import { ListingFormData } from "@/lib/types/listing";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";

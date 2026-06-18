@@ -45,6 +45,25 @@ export function writeConversationHistory(conversations: HomeV2SavedConversation[
   window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(conversations.slice(0, 20)));
 }
 
+export function upsertHomeV2ConversationDraft(conversation: HomeV2SavedConversation) {
+  return upsertConversationHistory(conversation);
+}
+
+export function buildHomeV2ConversationSnapshot(args: {
+  id: string;
+  messages: HomeV2StoredMessage[];
+  composioSessionIds?: Record<string, string>;
+}): HomeV2SavedConversation {
+  const messages = sanitizeStoredMessages(args.messages);
+  return {
+    id: args.id,
+    title: homeConversationTitle(messages),
+    updatedAt: new Date().toISOString(),
+    messages,
+    composioSessionIds: args.composioSessionIds,
+  };
+}
+
 export function upsertConversationHistory(conversation: HomeV2SavedConversation) {
   const next = [
     conversation,

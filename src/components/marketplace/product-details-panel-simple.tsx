@@ -4,7 +4,9 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { MapPin, Pencil, Shield, Truck, Globe } from "lucide-react";
+import { MapPin, Pencil, Truck, Globe, ChevronRight } from '@/components/layout/app-sidebar/dashboard-icons';
+import { SolarProvider, DocumentText, ClipboardList } from "@solar-icons/react";
+import { BuyerProtectionSheet } from "./buyer-protection-sheet";
 import { UberDeliveryInlineBadge } from "./uber-delivery-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -199,6 +201,7 @@ export function ProductDetailsPanelSimple({
   const { user } = useAuth();
   const [product, setProduct] = React.useState(initialProduct);
   const [isEditOpen, setIsEditOpen] = React.useState(false);
+  const [buyerProtectionOpen, setBuyerProtectionOpen] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<'overview' | 'specs'>('overview');
 
   // Check if current user owns this product
@@ -229,22 +232,29 @@ export function ProductDetailsPanelSimple({
     onProductUpdate?.(updatedProduct);
   };
 
+  const displayBrand = (brandName ?? product.brand)?.trim() || null;
+
   return (
-    <div className="bg-transparent pb-4">
+    <div className="bg-transparent pb-2 lg:pb-0">
       {/* Header: Title, Price, Meta */}
       <div
         className={cn(
           "px-4 pb-4 sm:px-5 lg:px-0",
-          brandLogoUrl ? "pt-3 lg:pt-2" : "pt-4 lg:pt-3",
+          brandLogoUrl ? "pt-3 lg:pt-0" : "pt-2 sm:pt-4 lg:pt-0",
         )}
       >
         {brandLogoUrl ? (
-          <div className="mb-2">
+          <div className="mb-2 lg:hidden">
             <ProductBrandLogoBadge
               logoUrl={brandLogoUrl}
-              brandName={brandName ?? product.brand}
+              brandName={displayBrand}
             />
           </div>
+        ) : null}
+        {displayBrand ? (
+          <p className="mb-1.5 hidden text-[11px] font-medium uppercase tracking-[0.08em] text-gray-400 lg:block">
+            {displayBrand}
+          </p>
         ) : null}
         <h1 className="text-[22px] font-semibold leading-snug tracking-tight text-gray-900">
           {(product as any).display_name || product.description}
@@ -303,18 +313,17 @@ export function ProductDetailsPanelSimple({
               {(product as any).condition_rating}
             </span>
           )}
+          {(product as any).pickup_location && (
+            <span className="inline-flex items-center gap-1 text-xs text-gray-500">
+              <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+              {(product as any).pickup_location}
+            </span>
+          )}
           {!isSold && !isOwner && isUberDeliveryEligible && <UberDeliveryInlineBadge />}
         </div>
 
         {product.variants && product.variants.items.length > 1 && (
           <VariantSelector variants={product.variants} />
-        )}
-
-        {(product as any).pickup_location && (
-          <div className="mt-2.5 flex items-center gap-1.5">
-            <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-            <span className="text-xs text-gray-500">{(product as any).pickup_location}</span>
-          </div>
         )}
       </div>
 
@@ -363,25 +372,24 @@ export function ProductDetailsPanelSimple({
               className="h-11"
               showStripeBranding={true}
             />
-            <AddToCartButton
-              productId={product.id}
-              productName={(product as any).display_name || product.description}
-              productPrice={resolveLivePrice(product).price}
-              sellerId={product.user_id}
-              sellerName={product.store_name}
-              uberDeliveryEligible={isUberDeliveryEligible}
-              productImage={product.all_images?.[0] || product.primary_image_url || null}
-              maxQuantity={product.listing_type === "private_listing" ? 1 : Math.max(1, product.qoh ?? 1)}
-              variant="outline"
-              size="lg"
-              fullWidth
-              className="h-11 bg-white"
-            />
-            <div className="hidden sm:block">
-              <ProductAskGenieButton product={product} />
-            </div>
             <div className="flex gap-2">
-              <div className="flex-1">
+              <div className="min-w-0 flex-1">
+                <AddToCartButton
+                  productId={product.id}
+                  productName={(product as any).display_name || product.description}
+                  productPrice={resolveLivePrice(product).price}
+                  sellerId={product.user_id}
+                  sellerName={product.store_name}
+                  uberDeliveryEligible={isUberDeliveryEligible}
+                  productImage={product.all_images?.[0] || product.primary_image_url || null}
+                  maxQuantity={product.listing_type === "private_listing" ? 1 : Math.max(1, product.qoh ?? 1)}
+                  variant="outline"
+                  size="lg"
+                  fullWidth
+                  className="h-10 gap-1 px-2 text-xs font-medium rounded-md bg-white"
+                />
+              </div>
+              <div className="min-w-0 flex-1">
                 <MakeOfferButton
                   productId={product.id}
                   productName={(product as any).display_name || product.description}
@@ -391,10 +399,10 @@ export function ProductDetailsPanelSimple({
                   variant="outline"
                   size="lg"
                   fullWidth
-                  className="rounded-md h-10 text-sm font-medium"
+                  className="h-10 gap-1 px-2 text-xs font-medium rounded-md"
                 />
               </div>
-              <div className="flex-1">
+              <div className="min-w-0 flex-1">
                 <ProductInquiryButton
                   productId={product.id}
                   productName={(product as any).display_name || product.description}
@@ -405,10 +413,13 @@ export function ProductDetailsPanelSimple({
                   variant="outline"
                   size="lg"
                   fullWidth
-                  className="rounded-md h-10 text-sm font-medium bg-white"
+                  className="h-10 gap-1 px-2 text-xs font-medium rounded-md bg-white"
                   buttonLabel="Message"
                 />
               </div>
+            </div>
+            <div className="hidden sm:block">
+              <ProductAskGenieButton product={product} />
             </div>
           </>
         )}
@@ -416,53 +427,74 @@ export function ProductDetailsPanelSimple({
 
       {/* Buyer Protection — trust container */}
       {!isOwner && !isSold && (
-        <div className="flex items-center gap-3 border-t border-gray-200/80 px-4 py-3.5 sm:px-5 lg:px-0">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gray-100">
-            <Shield className="h-4 w-4 text-gray-500" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-xs font-medium text-gray-900">Buyer Protection included</p>
-            <p className="text-[11px] leading-snug text-gray-500">
-              Covered from secure payment through to delivery.
-            </p>
-          </div>
-        </div>
+        <>
+          <button
+            type="button"
+            onClick={() => setBuyerProtectionOpen(true)}
+            className="flex w-full items-center gap-3 border-t border-gray-200/80 px-4 py-3.5 text-left transition-colors hover:bg-gray-100/60 sm:px-5 lg:px-0"
+          >
+            <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-md">
+              <Image
+                src="/yjsmall.png"
+                alt="Yellow Jersey"
+                width={32}
+                height={32}
+                className="h-full w-full object-contain"
+              />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium text-gray-900">Buyer Protection included</p>
+              <p className="text-[11px] leading-snug text-gray-500">
+                Covered from secure payment through to delivery.
+              </p>
+            </div>
+            <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
+          </button>
+          <BuyerProtectionSheet
+            open={buyerProtectionOpen}
+            onOpenChange={setBuyerProtectionOpen}
+          />
+        </>
       )}
 
       {/* Tabs */}
       {showSpecsTab && (
         <>
           <div className="px-4 pb-4 pt-1 sm:hidden sm:px-5 lg:px-0" role="tablist" aria-label="Product details">
-            <div className="flex items-center rounded-md bg-gray-100 p-0.5 w-fit">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === "overview"}
-                onClick={() => setActiveTab("overview")}
-                className={cn(
-                  "px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
-                  activeTab === "overview"
-                    ? "bg-white text-gray-800 shadow-sm"
-                    : "text-gray-600 hover:bg-gray-200/70",
-                )}
-              >
-                Overview
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === "specs"}
-                onClick={() => setActiveTab("specs")}
-                className={cn(
-                  "px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
-                  activeTab === "specs"
-                    ? "bg-white text-gray-800 shadow-sm"
-                    : "text-gray-600 hover:bg-gray-200/70",
-                )}
-              >
-                Specifications
-              </button>
-            </div>
+            <SolarProvider value={{ weight: "Linear", color: "currentColor" }} svgProps={{ strokeWidth: 2 }}>
+              <div className="flex items-center rounded-md bg-gray-100 p-0.5 w-fit">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === "overview"}
+                  onClick={() => setActiveTab("overview")}
+                  className={cn(
+                    "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+                    activeTab === "overview"
+                      ? "bg-white text-gray-800 shadow-sm"
+                      : "text-gray-600 hover:bg-gray-200/70",
+                  )}
+                >
+                  <DocumentText className="h-3 w-3 shrink-0" />
+                  Overview
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === "specs"}
+                  onClick={() => setActiveTab("specs")}
+                  className={cn(
+                    "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+                    activeTab === "specs"
+                      ? "bg-white text-gray-800 shadow-sm"
+                      : "text-gray-600 hover:bg-gray-200/70",
+                  )}
+                >
+                  <ClipboardList className="h-3 w-3 shrink-0" />
+                  Specifications
+                </button>
+              </div>
+            </SolarProvider>
           </div>
 
           <div
@@ -470,36 +502,40 @@ export function ProductDetailsPanelSimple({
             role="tablist"
             aria-label="Product details"
           >
-            <div className="flex gap-8">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === "overview"}
-                onClick={() => setActiveTab("overview")}
-                className={cn(
-                  "-mb-px border-b-2 pb-3 pt-1 text-sm font-medium transition-colors",
-                  activeTab === "overview"
-                    ? "border-gray-900 text-gray-900"
-                    : "border-transparent text-gray-500 hover:text-gray-700",
-                )}
-              >
-                Overview
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === "specs"}
-                onClick={() => setActiveTab("specs")}
-                className={cn(
-                  "-mb-px border-b-2 pb-3 pt-1 text-sm font-medium transition-colors",
-                  activeTab === "specs"
-                    ? "border-gray-900 text-gray-900"
-                    : "border-transparent text-gray-500 hover:text-gray-700",
-                )}
-              >
-                Specifications
-              </button>
-            </div>
+            <SolarProvider value={{ weight: "Linear", color: "currentColor" }} svgProps={{ strokeWidth: 2 }}>
+              <div className="flex gap-8">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === "overview"}
+                  onClick={() => setActiveTab("overview")}
+                  className={cn(
+                    "flex items-center gap-1.5 -mb-px border-b-2 pb-3 pt-1 text-sm font-medium transition-colors",
+                    activeTab === "overview"
+                      ? "border-gray-900 text-gray-900"
+                      : "border-transparent text-gray-500 hover:text-gray-700",
+                  )}
+                >
+                  <DocumentText className="h-3.5 w-3.5 shrink-0" />
+                  Overview
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === "specs"}
+                  onClick={() => setActiveTab("specs")}
+                  className={cn(
+                    "flex items-center gap-1.5 -mb-px border-b-2 pb-3 pt-1 text-sm font-medium transition-colors",
+                    activeTab === "specs"
+                      ? "border-gray-900 text-gray-900"
+                      : "border-transparent text-gray-500 hover:text-gray-700",
+                  )}
+                >
+                  <ClipboardList className="h-3.5 w-3.5 shrink-0" />
+                  Specifications
+                </button>
+              </div>
+            </SolarProvider>
           </div>
         </>
       )}
@@ -507,8 +543,8 @@ export function ProductDetailsPanelSimple({
       {/* Tab Content */}
       <div
         className={cn(
-          "px-4 py-5 sm:px-5 lg:px-0",
-          !showSpecsTab && "border-t border-gray-100",
+          "px-4 pb-2.5 sm:px-5 lg:px-0",
+          !showSpecsTab && "border-t border-gray-100 pt-5",
           showSpecsTab && "pt-4 sm:pt-5",
         )}
       >
@@ -540,10 +576,15 @@ export function ProductDetailsPanelSimple({
               {((product as any).shipping_available || (product as any).pickup_location) && (
                 <div className="pt-3 border-t border-gray-100">
                   <h3 className="text-sm font-semibold text-gray-900 mb-3">Delivery Options</h3>
-                  <div className="space-y-2">
+                  <div className="overflow-hidden rounded-md bg-gray-50">
                     {/* Shipping Option */}
                     {(product as any).shipping_available && (
-                      <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-md">
+                      <div
+                        className={cn(
+                          "flex items-center gap-3 py-3 px-3",
+                          (product as any).pickup_location && "border-b border-gray-200/80",
+                        )}
+                      >
                         <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white border border-gray-200">
                           <Truck className="h-4 w-4 text-gray-600" />
                         </div>
@@ -557,11 +598,11 @@ export function ProductDetailsPanelSimple({
                         </div>
                       </div>
                     )}
-                    
+
                     {/* Pickup Option */}
                     {(product as any).pickup_location && (
-                      <div className="bg-gray-50 rounded-md overflow-hidden">
-                        <div className="flex items-center gap-3 p-3">
+                      <>
+                        <div className="flex items-center gap-3 py-3 px-3">
                           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white border border-gray-200">
                             <MapPin className="h-4 w-4 text-gray-600" />
                           </div>
@@ -570,19 +611,20 @@ export function ProductDetailsPanelSimple({
                             <p className="text-xs text-gray-500">{(product as any).pickup_location}</p>
                           </div>
                         </div>
-                        {/* Map with privacy circle */}
-                        <PickupLocationMap 
-                          location={(product as any).pickup_location} 
+                        <PickupLocationMap
+                          location={(product as any).pickup_location}
                           className="h-36 w-full"
                         />
-                      </div>
-                    )}
-                    
-                    {/* Pickup Only Badge */}
-                    {(product as any).pickup_only && !(product as any).shipping_available && (
-                      <p className="text-xs text-gray-500 mt-1">This item is available for local pickup only</p>
+                      </>
                     )}
                   </div>
+
+                  {/* Pickup Only Badge */}
+                  {(product as any).pickup_only && !(product as any).shipping_available && (
+                    <p className="mt-2 text-xs text-gray-500">
+                      This item is available for local pickup only
+                    </p>
+                  )}
                 </div>
               )}
           </div>

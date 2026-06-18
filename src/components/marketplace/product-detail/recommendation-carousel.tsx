@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from '@/components/layout/app-sidebar/dashboard-icons';
 import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { cn } from "@/lib/utils";

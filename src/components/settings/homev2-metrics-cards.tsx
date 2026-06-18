@@ -33,6 +33,7 @@ function MetricCell({
   periodLabel,
   tooltip,
   onClick,
+  compact = false,
 }: {
   value: number;
   previousValue: number | null;
@@ -41,6 +42,7 @@ function MetricCell({
   periodLabel?: string;
   tooltip: string;
   onClick?: () => void;
+  compact?: boolean;
 }) {
   const Wrapper = onClick ? "button" : "div";
   const wrapperProps = onClick
@@ -57,25 +59,38 @@ function MetricCell({
         <Wrapper
           {...wrapperProps}
           className={cn(
-            "flex min-w-0 w-full flex-col items-center justify-center px-4 py-3.5 text-center sm:px-5 sm:py-4",
+            "flex min-w-0 w-full flex-col items-center justify-center text-center",
+            compact ? "px-2 py-1.5 sm:px-2.5 sm:py-2" : "px-4 py-3.5 sm:px-5 sm:py-4",
             onClick
               ? "cursor-pointer transition-colors hover:bg-gray-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-200"
               : "cursor-default",
           )}
         >
-          <p className="text-xl font-semibold tabular-nums tracking-tight text-foreground sm:text-2xl">
+          <p
+            className={cn(
+              "font-semibold tabular-nums tracking-tight text-foreground",
+              compact ? "text-sm sm:text-base" : "text-xl sm:text-2xl",
+            )}
+          >
             <HomeV2RollingMetricValue
               value={value}
               previousValue={previousValue}
               animate={animate}
             />
           </p>
-          <p className="mt-1 max-w-full whitespace-nowrap text-[11px] font-medium leading-snug text-muted-foreground sm:text-xs">
+          <p
+            className={cn(
+              "mt-0.5 max-w-full whitespace-nowrap font-medium leading-snug",
+              compact
+                ? "text-[10px] text-gray-400 sm:text-[11px]"
+                : "mt-1 text-[11px] text-muted-foreground sm:text-xs",
+            )}
+          >
             {label}
             {periodLabel ? (
               <>
                 <span className="text-gray-300"> · </span>
-                <span className="text-gray-500">{periodLabel}</span>
+                <span className={compact ? "text-gray-400" : "text-gray-500"}>{periodLabel}</span>
               </>
             ) : null}
           </p>
@@ -88,14 +103,42 @@ function MetricCell({
   );
 }
 
-function MetricsSkeleton() {
+function MetricsSkeleton({ compact = false }: { compact?: boolean }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-gray-200/70 bg-white/80 shadow-sm">
-      <div className="grid grid-cols-3 divide-x divide-gray-200/70">
+    <div
+      className={cn(
+        "overflow-hidden backdrop-blur-sm",
+        compact
+          ? "rounded-md border border-gray-200/60 bg-white/50 shadow-none"
+          : "rounded-2xl border border-gray-200/70 bg-white/80 shadow-sm",
+      )}
+    >
+      <div
+        className={cn(
+          "grid grid-cols-3 divide-x",
+          compact ? "divide-gray-200/60" : "divide-gray-200/70",
+        )}
+      >
         {Array.from({ length: 3 }).map((_, index) => (
-          <div key={index} className="flex flex-col items-center gap-2 px-3 py-4">
-            <div className="h-7 w-12 animate-pulse rounded-md bg-gray-100" />
-            <div className="h-3 w-16 animate-pulse rounded-md bg-gray-100" />
+          <div
+            key={index}
+            className={cn(
+              "flex flex-col items-center",
+              compact ? "gap-1 px-2 py-2" : "gap-2 px-3 py-4",
+            )}
+          >
+            <div
+              className={cn(
+                "animate-pulse rounded-md bg-gray-100",
+                compact ? "h-4 w-8" : "h-7 w-12",
+              )}
+            />
+            <div
+              className={cn(
+                "animate-pulse rounded-md bg-gray-100",
+                compact ? "h-2.5 w-12" : "h-3 w-16",
+              )}
+            />
           </div>
         ))}
       </div>
@@ -196,21 +239,35 @@ export function HomeV2MetricsCards({
       : `Distinct viewers in the last 7 days · ${formatTrackingRange(metrics.rolling7Days.startDate, metrics.rolling7Days.endDate)} · ${analyticsTimezoneLabel}. Tap to show today.`
     : "";
 
+  const isCompact = tone === "subtle";
+
   return (
-    <div className={cn("mx-auto w-full max-w-2xl", className)}>
+    <div
+      className={cn(
+        "mx-auto w-full",
+        isCompact ? "max-w-md" : "max-w-2xl",
+        className,
+      )}
+    >
       {loading && !metrics ? (
-        <MetricsSkeleton />
+        <MetricsSkeleton compact={isCompact} />
       ) : metrics ? (
         <div
           className={cn(
             "overflow-hidden backdrop-blur-sm",
-            tone === "subtle"
-              ? "rounded-md border border-gray-200/50 bg-white/70 shadow-none"
+            isCompact
+              ? "rounded-md border border-gray-200/60 bg-white/50 shadow-none"
               : "rounded-2xl border border-gray-200/70 bg-white/90 shadow-[0_1px_2px_rgba(0,0,0,0.04),0_10px_28px_rgba(15,23,42,0.06)]",
           )}
         >
-          <div className="grid grid-cols-3 divide-x divide-gray-200/70">
+          <div
+            className={cn(
+              "grid grid-cols-3 divide-x",
+              isCompact ? "divide-gray-200/60" : "divide-gray-200/70",
+            )}
+          >
             <MetricCell
+              compact={isCompact}
               value={viewsValue}
               previousValue={viewsPreviousValue}
               animate={animateValues}
@@ -222,6 +279,7 @@ export function HomeV2MetricsCards({
               }}
             />
             <MetricCell
+              compact={isCompact}
               value={metrics.inventory.marketplaceLive}
               previousValue={previousMetrics?.inventory.marketplaceLive ?? null}
               animate={animateValues}
@@ -229,6 +287,7 @@ export function HomeV2MetricsCards({
               tooltip="Approved and listed on the marketplace"
             />
             <MetricCell
+              compact={isCompact}
               value={metrics.inventory.notYetLive}
               previousValue={previousMetrics?.inventory.notYetLive ?? null}
               animate={animateValues}

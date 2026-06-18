@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2 } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 
 // ============================================================

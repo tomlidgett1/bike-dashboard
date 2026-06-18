@@ -19,7 +19,7 @@ import {
   SheetContent,
 } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
-import { MessageCircle, Send, CheckCircle2, Package, Loader2 } from 'lucide-react';
+import { MessageCircle, Send, CheckCircle2, Package, Loader2 } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from '@/lib/utils';
 import type { CreateConversationRequest } from '@/lib/types/message';
 
@@ -431,7 +431,7 @@ export function ProductInquiryButton({
           className={className}
           style={fullWidth ? { width: '100%' } : undefined}
         >
-          <MessageCircle className="mr-2 h-4 w-4" />
+          <MessageCircle className="h-4 w-4" />
           {buttonLabel}
         </Button>
         {inquiryDialog}
@@ -448,7 +448,7 @@ export function ProductInquiryButton({
         className={className}
         style={fullWidth ? { width: '100%' } : undefined}
       >
-        <MessageCircle className="mr-2 h-4 w-4" />
+        <MessageCircle className="h-4 w-4" />
         {buttonLabel}
       </Button>
       {inquirySheet}

@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Loader2, CheckCircle2, XCircle, Sparkles, Star, Download } from 'lucide-react';
+import { X, Loader2, CheckCircle2, XCircle, Sparkles, Star, Download } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';

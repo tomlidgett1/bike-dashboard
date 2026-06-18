@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Calendar, MapPin, Package, Truck, Mail, Phone, MessageCircle, CheckCircle2, XCircle } from "lucide-react";
+import { Calendar, MapPin, Package, Truck, Mail, Phone, MessageCircle, CheckCircle2, XCircle } from '@/components/layout/app-sidebar/dashboard-icons';
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { ExpandableSection } from "./expandable-section";
 import { SpecGrid, SpecGroup } from "./spec-grid";

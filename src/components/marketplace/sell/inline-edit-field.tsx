@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Edit2, Check, X } from "lucide-react";
+import { Edit2, Check, X } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ConfidenceBadge } from "./confidence-badge";

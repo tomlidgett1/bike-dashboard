@@ -11,9 +11,24 @@ import {
   shouldExposeHostedWebSearch,
   toolNameSetForRoute,
 } from '../src/lib/genie/agent-runtime-policy'
-import { compactGenieProgressText, liveGenieProgressPreview } from '../src/lib/genie/progress-text'
+import { userRequestsWebImages } from '../src/lib/genie/web-research-policy'
+import { compactGenieProgressText, liveGenieDisplayStep, liveGenieProgressPreview, liveGenieSubCommentary } from '../src/lib/genie/progress-text'
+import { appendGenieProgressStep } from '../src/lib/genie/genie-progress-steps'
+import {
+  buildBusinessAnalysisFallbackAnswer,
+  buildBusinessAnalysisDossier,
+  businessAnalysisDossierHasEvidence,
+  businessAnalysisDossierHasSufficientEvidence,
+} from '../src/lib/genie/agent/business-analysis-synthesis'
+import { businessAnalysisPresentationContract } from '../src/lib/genie/agent/prompts'
 import { renderGenieMarkdown } from '../src/lib/genie/render-markdown'
 import { summarizeGenieAgentRuns } from '../src/lib/genie/telemetry'
+import {
+  buildDeepResearchFramingMessage,
+  buildRoutingFramingMessage,
+} from '../src/lib/genie/routing-framing'
+import { mergeGenieJobSnapshots, ensureAssistantMessageForJob } from '../src/lib/genie/sync-genie-job-message'
+import type { GenieJob } from '../src/lib/genie/genie-job-types'
 
 const root = process.cwd()
 // The agent was split from one 12.7k-line route file into lib modules; the
@@ -123,10 +138,15 @@ assert.equal(
   false,
   'agent route must not use the removed broad deterministic orchestration helper',
 )
+assert.doesNotMatch(
+  executeModuleSource,
+  /resolveObviousLightspeedDirectPath|directPathOverride|orchestrationSource = 'deterministic'/,
+  'executor must not bypass the model router with deterministic routing',
+)
 assert.match(
-  agentRouteSource,
-  /const directPathOverride = resolveObviousLightspeedDirectPath\(latestUserMessage, messages\)[\s\S]*?if \(directPathOverride\)[\s\S]*?routerInvoked = false[\s\S]*?orchestrationSource = 'deterministic'[\s\S]*?else[\s\S]*?routerInvoked = true[\s\S]*?orchestrationSource = 'model'[\s\S]*?await createGenieOrchestrationDecision/,
-  'agent route must use deterministic direct-path bypasses only before falling back to the model router',
+  executeModuleSource,
+  /await createGenieOrchestrationDecision\(/,
+  'every turn must go through the LLM router',
 )
 assert.equal(
   /applyGmailPlanningPolicy/.test(agentRouteSource),
@@ -160,8 +180,13 @@ assert.match(
 )
 assert.match(
   agentRouteSource,
-  /This is the model routing gate after any obvious deterministic fast-path bypass/,
-  'router instructions must accurately describe the deterministic fast-path bypass',
+  /You are the only hidden router for the Yellow Jersey Store Agent/,
+  'router instructions must describe a model-only routing gate',
+)
+assert.doesNotMatch(
+  agentRouteSource,
+  /deterministic fast-path bypass/i,
+  'router instructions must not describe deterministic pre-routing',
 )
 assert.match(
   agentRouteSource,
@@ -169,9 +194,29 @@ assert.match(
   'router/planner/executor instructions must include the SQL-vs-live Lightspeed data-source doctrine',
 )
 assert.match(
+  agentRouteSource,
+  /Supabase PostgreSQL 17/,
+  'agent SQL instructions must identify Supabase as PostgreSQL 17',
+)
+assert.match(
+  agentRouteSource,
+  /DATE_FORMAT\(\)|STR_TO_DATE\(\)|IFNULL\(\)|CURDATE\(\)|DATE_SUB\(\)/,
+  'agent SQL instructions must explicitly reject common MySQL functions',
+)
+assert.match(
   lightspeedInstructionsSource,
   /SQL vs Live API Decision Rule/,
   'loaded Lightspeed instructions must include the SQL-vs-live API decision rule',
+)
+assert.match(
+  lightspeedInstructionsSource,
+  /The reporting database is Supabase PostgreSQL 17/,
+  'loaded Lightspeed instructions must specify the PostgreSQL dialect',
+)
+assert.match(
+  agentRouteSource,
+  /Use PostgreSQL SQL, not MySQL functions/,
+  'SQL validator must reject MySQL-only functions with a PostgreSQL-specific error',
 )
 assert.match(
   agentRouteSource,
@@ -310,8 +355,53 @@ assert.match(
 )
 assert.match(
   agentRouteSource,
-  /buildSystemPrompt\(storeName, executionPlan, orchestration\.route, runtime\.fastAnswerPrompt, learnedPlaybook\)/,
-  'executor prompt must receive the route, LLM plan, fast-mode flag, and learned playbook for route-specific prompt pruning',
+  /buildSystemPrompt\(\s*storeName,\s*executionPlan,\s*orchestration\.route,\s*runtime\.fastAnswerPrompt,\s*learnedPlaybook,\s*useBusinessAnalysisSynthesis/,
+  'executor prompt must receive synthesis mode for business analysis formatting',
+)
+assert.match(
+  executeModuleSource,
+  /runBusinessAnalysisSynthesis/,
+  'business analysis must run a dedicated synthesis pass after investigation',
+)
+assert.match(
+  promptsModuleSource,
+  /BUSINESS ANALYSIS INVESTIGATION MODE/,
+  'business analysis investigator prompt must defer final formatting to synthesis',
+)
+assert.match(
+  promptsModuleSource,
+  /MANDATORY: call the planned data tools/,
+  'business analysis investigator contract must require tool execution before synthesis',
+)
+assert.match(
+  promptsModuleSource,
+  /category_path ILIKE '%light%' matches the broad parent "Electronics & Lights"/,
+  'planner and executor prompts must warn that bike-light analysis cannot use broad parent category_path matching',
+)
+assert.match(
+  promptsModuleSource,
+  /Do not include verify_question_answered because business_analysis runs in investigation\/synthesis mode/,
+  'business analysis plans must not ask the investigator to verify an answer it is not meant to write',
+)
+assert.match(
+  promptsModuleSource,
+  /WEB RESEARCH QUALITY BAR/,
+  'web research work rules must require iterative hosted web_search for live facts',
+)
+assert.match(
+  executeModuleSource,
+  /businessAnalysisDossierHasEvidence/,
+  'business analysis must retry investigation when the dossier has no evidence',
+)
+assert.match(
+  executeModuleSource,
+  /runBusinessAnalysisRecoveryPasses/,
+  'business analysis must have deterministic recovery passes when model investigation stops early',
+)
+assert.match(
+  agentRouteSource,
+  /business_analysis_recovery_passes/,
+  'deterministic recovery passes should emit debug telemetry',
 )
 assert.match(
   agentRouteSource,
@@ -340,8 +430,38 @@ assert.equal(
 )
 assert.match(
   agentRouteSource,
-  /searchContextSize: 'low'/,
-  'web search should use low context by default for latency-sensitive Genie execution',
+  /webSearchContextSizeForRoute/,
+  'web search context size must vary by route for quality on web_research',
+)
+assert.equal(
+  userRequestsWebImages('What does a Trek Madone Gen 8 look like?'),
+  true,
+  'visual web questions should allow image search tools',
+)
+assert.equal(
+  userRequestsWebImages('Who leads the points classification in the Tour de Suisse?'),
+  false,
+  'race standings questions must not trigger image search tools',
+)
+assert.match(
+  executeModuleSource,
+  /function executorToolChoice/,
+  'executor tool choice must be centralised for forced first-tool runs',
+)
+assert.match(
+  executeModuleSource,
+  /if \(route === 'web_research'\) return 'web_search'/,
+  'web_research must force OpenAI hosted web_search before answering',
+)
+assert.match(
+  executeModuleSource,
+  /if \(route === 'business_analysis' && planned\)/,
+  'planned business analysis must force an initial data-tool call',
+)
+assert.match(
+  executeModuleSource,
+  /run_lightspeed_sql_query'\)\) return 'run_lightspeed_sql_query'/,
+  'planned business analysis should start with Lightspeed SQL when available',
 )
 assert.match(
   agentRouteSource,
@@ -614,6 +734,21 @@ assert.doesNotMatch(
   agentRouteSource,
   /extractCustomerProfileQuery|resolveCustomerBikeOwnershipLookup|extractCustomerBikeOwnershipQuery/,
   'regex direct-path extractors must not exist — routing is 100% LLM',
+)
+assert.match(
+  executeModuleSource,
+  /buildRoutingFramingMessage\(/,
+  'executor must build routing framing for the routing_done status line',
+)
+assert.match(
+  executeModuleSource,
+  /phase: 'routing_done',\s*\n\s*text: routingFraming/,
+  'routing framing must be emitted as routing_done status for the progress shimmer',
+)
+assert.doesNotMatch(
+  executeModuleSource,
+  /routing_framing/,
+  'routing framing must not use a separate SSE event',
 )
 assert.match(
   executeModuleSource,
@@ -1096,6 +1231,12 @@ const routerPromptFixtures: Array<{
     needs_plan: false,
   },
   {
+    name: 'pro race standings',
+    message: 'Who leads the points classification in the Tour de Suisse?',
+    route: 'web_research',
+    needs_plan: false,
+  },
+  {
     name: 'business analysis',
     message: 'How can we make more money this quarter?',
     route: 'business_analysis',
@@ -1157,6 +1298,9 @@ function assertToolPolicy(args: {
   concurrency: number
 }) {
   const toolNames = toolNameSetForRoute(args.route, args.plannedTools ?? [])
+  if (userRequestsWebImages(args.message) && (args.route === 'web_research' || args.route === 'mixed')) {
+    toolNames.add('search_web_images')
+  }
   for (const toolName of args.includes) {
     assert.equal(toolNames.has(toolName), true, `${args.name}: should include ${toolName}`)
   }
@@ -1215,8 +1359,28 @@ const toolPolicyFixtures: Array<Parameters<typeof assertToolPolicy>[0]> = [
     name: 'web research',
     route: 'web_research',
     message: 'What bottom bracket does a Trek Madone Gen 8 need?',
+    includes: ['web_search', 'verify_question_answered', 'consult_cycling_compatibility_specialist'],
+    excludes: ['search_web_images', 'run_lightspeed_sql_query', 'get_store_carousels', 'search_gmail'],
+    hostedWeb: true,
+    parallel: true,
+    concurrency: 4,
+  },
+  {
+    name: 'web research visual',
+    route: 'web_research',
+    message: 'What does a Trek Madone Gen 8 look like?',
     includes: ['search_web_images', 'verify_question_answered', 'consult_cycling_compatibility_specialist'],
-    excludes: ['run_lightspeed_sql_query', 'get_store_carousels', 'search_gmail'],
+    excludes: ['run_lightspeed_sql_query', 'search_gmail'],
+    hostedWeb: true,
+    parallel: true,
+    concurrency: 4,
+  },
+  {
+    name: 'web research race standings',
+    route: 'web_research',
+    message: 'Who leads the points classification in the Tour de Suisse?',
+    includes: ['web_search', 'verify_question_answered', 'consult_cycling_compatibility_specialist'],
+    excludes: ['search_web_images', 'run_lightspeed_sql_query', 'search_gmail'],
     hostedWeb: true,
     parallel: true,
     concurrency: 4,
@@ -1269,7 +1433,7 @@ const toolPolicyFixtures: Array<Parameters<typeof assertToolPolicy>[0]> = [
     route: 'business_analysis',
     message: 'How can we make more money?',
     includes: ['record_lightspeed_plan', 'run_lightspeed_sql_query', 'get_lightspeed_stale_inventory_cash', 'consult_bike_store_analyst'],
-    excludes: ['search_gmail', 'propose_discount', 'search_web_images'],
+    excludes: ['verify_question_answered', 'search_gmail', 'propose_discount', 'search_web_images'],
     hostedWeb: false,
     parallel: true,
     concurrency: 6,
@@ -1362,6 +1526,69 @@ assert.equal(
   'Markdown tables should avoid oversized card-like rounding',
 )
 
+const renderedTakeaway = renderGenieMarkdown(
+  '> Biggest opportunity: $207.2k of Lightspeed stock at cost is stale/no sale in 180+ days — most heavily in bikes.',
+)
+assert.match(
+  renderedTakeaway,
+  /rounded-md border border-gray-200 bg-white/,
+  'Takeaway blockquotes should use a clean white card without accent borders',
+)
+assert.equal(
+  renderedTakeaway.includes('border-primary'),
+  false,
+  'Takeaway blockquotes should not use primary accent borders',
+)
+assert.match(
+  renderedTakeaway,
+  /<span class="font-semibold text-gray-900">Biggest opportunity:<\/span>/,
+  'Takeaway blockquotes should emphasise the label before the colon',
+)
+
+const renderedOrderedList = renderGenieMarkdown([
+  '## Recommended Actions',
+  '1. First action',
+  '',
+  '1. Second action',
+  '',
+  '1. Third action',
+].join('\n'))
+assert.equal(
+  (renderedOrderedList.match(/<ol/g) ?? []).length,
+  1,
+  'Ordered lists should stay open across blank lines between items',
+)
+assert.equal(
+  (renderedOrderedList.match(/<li/g) ?? []).length,
+  3,
+  'Ordered lists should render every item inside one list',
+)
+
+const renderedOrderedListWithContinuations = renderGenieMarkdown([
+  '## Next actions, ranked',
+  '1. **Stop discounting by default.**',
+  '',
+  'It sold 41 units and made $1,232.64 GP, but carried a 39.16% discount rate.',
+  '',
+  '1. **Investigate June margin immediately.**',
+  '',
+  'June sold $883.52, 12 units, but only 14.19% margin with $0 discount.',
+  '',
+  '1. **Clear no-sale stock first.**',
+  '',
+  'MagicShine SEEMEE DV CAM and KNOG BIG Cobber Twinpack are the biggest idle-cost lines.',
+].join('\n'))
+assert.equal(
+  (renderedOrderedListWithContinuations.match(/<ol/g) ?? []).length,
+  1,
+  'Ordered lists with continuation paragraphs should stay in one list',
+)
+assert.equal(
+  (renderedOrderedListWithContinuations.match(/<li/g) ?? []).length,
+  3,
+  'Ordered lists with continuation paragraphs should render every ranked item',
+)
+
 const progressFixtures: Array<{ phase: string; input: string; compact: string; live: string }> = [
   {
     phase: 'context',
@@ -1448,6 +1675,473 @@ for (const fixture of progressFixtures) {
   assert.equal(liveGenieProgressPreview(fixture.input, fixture.phase), fixture.live, `${fixture.phase}: live progress`)
 }
 
+assert.equal(
+  buildRoutingFramingMessage({
+    orchestration: {
+      route: 'business_analysis',
+      needs_plan: true,
+      direct_path: 'none',
+      entity_query: null,
+      reason: 'Broad commercial review across multiple lenses.',
+    },
+    userMessage: 'How can we make more money this quarter?',
+  }),
+  "I'll treat this as a business performance question — I'll analyse your store data and rank what matters most.",
+  'business analysis framing should stay user-facing and omit router internals',
+)
+
+assert.equal(
+  buildRoutingFramingMessage({
+    orchestration: {
+      route: 'lightspeed_sql',
+      needs_plan: false,
+      direct_path: 'sales_summary',
+      entity_query: 'last month',
+      reason: 'Deterministic fast path for a simple sales summary period.',
+    },
+    userMessage: 'Any sales last month?',
+  }),
+  "I'll treat this as a sales summary question for last month.",
+  'direct sales summary framing should name the period',
+)
+
+assert.equal(
+  buildRoutingFramingMessage({
+    orchestration: {
+      route: 'casual_chat',
+      needs_plan: false,
+      direct_path: 'none',
+      entity_query: null,
+      reason: 'Short acknowledgement.',
+    },
+    userMessage: 'Thanks',
+  }),
+  null,
+  'casual chat should not show routing framing',
+)
+
+assert.equal(
+  buildDeepResearchFramingMessage(),
+  "I'll treat this as a full Deep Business Review — a forensic pass across finance, sales, inventory, customers, staffing, suppliers, and market trends.",
+  'deep research framing should describe the long-running review',
+)
+
+assert.equal(
+  liveGenieProgressPreview(
+    "I'll treat this as a store lookup question.",
+    'routing_done',
+  ),
+  "I'll treat this as a store lookup question.",
+  'routing framing should appear in the live progress shimmer',
+)
+
+const framingSteps = [
+  { phase: 'routing', text: 'Choosing workflow' },
+  {
+    phase: 'routing_done',
+    text: "I'll treat this as a store lookup question.",
+    sourceText: "I'll treat this as a store lookup question.",
+  },
+  { phase: 'setup', text: 'Preparing tools' },
+]
+assert.equal(
+  liveGenieDisplayStep(framingSteps)?.text,
+  'Preparing tools',
+  'live shimmer should always show the latest progress step',
+)
+assert.equal(
+  liveGenieDisplayStep([
+    ...framingSteps,
+    { phase: 'lightspeed_sales', text: 'SQL: Compare gross sales Jun 1-18 vs prior year' },
+  ])?.text,
+  'SQL: Compare gross sales Jun 1-18 vs prior year',
+  'live shimmer should advance to the newest tool status',
+)
+
+assert.equal(
+  liveGenieSubCommentary(
+    {
+      phase: 'lightspeed_sales',
+      text: 'Running SQL',
+      sourceText: 'Running SQL report: Compare gross sales Jun 1-18 vs prior year',
+      kind: 'status',
+    },
+    { mainLabel: 'Running SQL' },
+  ),
+  'Compare gross sales Jun 1-18 vs prior year',
+  'sub commentary should surface SQL report purpose',
+)
+
+assert.equal(
+  liveGenieSubCommentary(
+    {
+      phase: 'routing_done',
+      text: "I'll treat this as a business analysis question.",
+      sourceText: "I'll treat this as a business analysis question.",
+      kind: 'status',
+    },
+    {
+      mainLabel: "I'll treat this as a business analysis question.",
+      analysisPlan: { user_intent: 'Compare light category performance year to date' },
+    },
+  ),
+  'Compare light category performance year to date',
+  'sub commentary should show planner intent after routing framing',
+)
+
+assert.equal(
+  liveGenieSubCommentary(undefined, {
+    analysisQueries: [
+      {
+        purpose: 'Classify active inventory into light-related vs non-light categories',
+        status: 'running',
+      },
+    ],
+  }),
+  'Classify active inventory into light-related vs non-light categories',
+  'sub commentary should prefer the active analysis query purpose',
+)
+
+assert.equal(
+  liveGenieSubCommentary(
+    {
+      phase: 'routing_done',
+      text: "I'll treat this as a store lookup question.",
+      sourceText: "I'll treat this as a store lookup question.",
+      kind: 'status',
+    },
+    { mainLabel: "I'll treat this as a store lookup question." },
+  ),
+  null,
+  'sub commentary should stay hidden when there is no extra detail',
+)
+
+const appended = appendGenieProgressStep(undefined, 'routing_done', "I'll treat this as a sales summary question.")
+assert.equal(appended.length, 1)
+assert.equal(
+  appendGenieProgressStep(appended, 'routing_done', "I'll treat this as a sales summary question.").length,
+  1,
+  'duplicate routing status lines should not be appended twice',
+)
+
+const businessDossier = buildBusinessAnalysisDossier({
+  storeName: 'Yellow Jersey',
+  userQuestion: 'How is the business performing vs last year?',
+  analysisQueries: [
+    {
+      id: 'q1',
+      tool_name: 'run_lightspeed_sql_query',
+      purpose: 'Compare gross sales Jun 1-18 vs prior year',
+      sql: 'select 1',
+      status: 'ok',
+      at: new Date().toISOString(),
+      row_count: 2,
+    },
+  ],
+  tables: [
+    {
+      title: 'Period comparison',
+      columns: [{ key: 'metric', label: 'Metric' }, { key: 'current', label: 'Current' }],
+      rows: [{ metric: 'Gross sales', current: '$15,779.89' }],
+    },
+  ],
+})
+assert.match(
+  businessDossier,
+  /Compare gross sales Jun 1-18 vs prior year/,
+  'business analysis dossier must include executed query purposes',
+)
+assert.doesNotMatch(
+  businessDossier,
+  /sql: select 1/,
+  'successful query SQL should not be included in the synthesis dossier',
+)
+assert.match(
+  businessAnalysisPresentationContract(),
+  /not bound to a fixed section template/,
+  'business analysis presentation contract should let the synthesiser choose format',
+)
+assert.match(
+  businessAnalysisPresentationContract(),
+  /commercial answer/,
+  'business analysis presentation contract should still require a clear commercial answer',
+)
+assert.equal(
+  businessAnalysisDossierHasEvidence({
+    storeName: 'Test Store',
+    userQuestion: 'How are we tracking?',
+    analysisQueries: [{ id: '1', tool_name: 'run_lightspeed_sql_query', purpose: 'Sales', sql: 'select 1', status: 'ok', at: new Date().toISOString(), row_count: 3 }],
+  }),
+  true,
+  'business analysis dossier must count successful SQL queries as evidence',
+)
+
+const businessFallbackAnswer = buildBusinessAnalysisFallbackAnswer({
+  storeName: 'Yellow Jersey',
+  userQuestion: 'Analyse bike light sales',
+  analysisPlan: {
+    source: 'planner',
+    user_intent: 'Deep Lightspeed analysis of bike light sales performance',
+    execution_steps: ['Run SQL pass 1', 'Run SQL pass 2', 'Run SQL pass 3'],
+    answer_success_criteria: ['Summarise sales', 'Identify top products', 'Warn about data quality'],
+  },
+  analysisQueries: [
+    {
+      id: 'overall',
+      tool_name: 'run_lightspeed_sql_query',
+      purpose: 'Overall bike light sales performance',
+      sql: 'select * from sales',
+      status: 'ok',
+      at: new Date().toISOString(),
+      row_count: 1,
+      result_preview: JSON.stringify([
+        {
+          period: '2025-06-18 to 2026-06-18',
+          net_sales: 27905.48,
+          units_sold: 287,
+          gross_profit: 11553.58,
+          gross_margin_pct: 41.4,
+          discount_dollars: 2338.97,
+          discount_rate_pct: 7.73,
+          current_sellable_units: 324,
+          current_stock_value_at_cost: 11441.45,
+        },
+      ]),
+    },
+    {
+      id: 'products',
+      tool_name: 'run_lightspeed_sql_query',
+      purpose: 'Top-selling bike light products',
+      sql: 'select * from products',
+      status: 'ok',
+      at: new Date().toISOString(),
+      row_count: 2,
+      result_preview: JSON.stringify([
+        {
+          product: 'F24 IZALCO MAX 9.8 - Large 56 White/LightGrey',
+          net_sales: 6818.17,
+          units_sold: 1,
+          gross_margin_pct: 23.09,
+        },
+        {
+          product: 'LUNAR Supernova Twinpack',
+          net_sales: 1553.18,
+          units_sold: 41,
+          gross_margin_pct: 79.36,
+          sellable: 29,
+        },
+      ]),
+    },
+  ],
+})
+assert.match(
+  businessFallbackAnswer,
+  /\$27,905 net sales/,
+  'fallback answer should summarise collected sales evidence',
+)
+assert.match(
+  businessFallbackAnswer,
+  /Data quality warning/,
+  'fallback answer should warn when broad light matching catches false positives',
+)
+assert.match(
+  readFileSync(join(root, 'src/lib/genie/agent/business-analysis-synthesis.ts'), 'utf8'),
+  /retrying settled synthesis from collected evidence/,
+  'business analysis synthesis should retry non-streamed before deterministic fallback',
+)
+assert.equal(
+  businessAnalysisDossierHasEvidence({
+    storeName: 'Test Store',
+    userQuestion: 'How are we tracking?',
+    analysisPlan: {
+      user_intent: 'Compare periods',
+      date_range_label: 'YTD',
+      sql_strategy_summary: 'Compare sales',
+      execution_steps: ['Run SQL'],
+      answer_success_criteria: ['Show sales'],
+      primary_tools: ['run_lightspeed_sql_query'],
+    },
+  }),
+  false,
+  'business analysis dossier must not treat plan-only input as evidence',
+)
+assert.equal(
+  businessAnalysisDossierHasSufficientEvidence({
+    storeName: 'Test Store',
+    userQuestion: 'Analyse lights performance',
+    analysisPlan: {
+      user_intent: 'Deep analysis of lights sales performance and margin opportunities',
+      date_range_label: '2025-06-18 -> 2026-06-18',
+      sql_strategy_summary: 'Classify lights, then analyse sales, ranking, discount, margin, and inventory opportunities',
+      execution_steps: [
+        'Identify light-related sales and inventory universe',
+        'Run sales trend query',
+        'Run item ranking query',
+        'Run weak-performer query',
+      ],
+      answer_success_criteria: [
+        'Quantify sales and units',
+        'Name best sellers',
+        'Recommend discount candidates',
+      ],
+      primary_tools: ['run_lightspeed_sql_query'],
+    },
+    analysisQueries: [
+      {
+        id: 'setup-only',
+        tool_name: 'run_lightspeed_sql_query',
+        purpose: 'Identify light-related sales and inventory universe',
+        sql: 'select 1',
+        status: 'ok',
+        at: new Date().toISOString(),
+        row_count: 80,
+      },
+    ],
+  }),
+  false,
+  'broad business analysis must not treat a single setup/classification query as sufficient evidence',
+)
+assert.equal(
+  businessAnalysisDossierHasSufficientEvidence({
+    storeName: 'Test Store',
+    userQuestion: 'Analyse lights performance',
+    analysisPlan: {
+      user_intent: 'Deep analysis of lights sales performance and margin opportunities',
+      date_range_label: '2025-06-18 -> 2026-06-18',
+      sql_strategy_summary: 'Classify lights, then analyse sales, ranking, discount, margin, and inventory opportunities',
+      execution_steps: [
+        'Identify light-related sales and inventory universe',
+        'Run current inventory universe query',
+        'Run weak-performer query',
+      ],
+      answer_success_criteria: [
+        'Quantify sales and units',
+        'Name best sellers',
+        'Recommend discount candidates',
+      ],
+      primary_tools: ['run_lightspeed_sql_query'],
+    },
+    analysisQueries: [
+      {
+        id: 'setup',
+        tool_name: 'run_lightspeed_sql_query',
+        purpose: 'Identify light-related sales and inventory universe',
+        sql: 'select 1',
+        status: 'ok',
+        at: new Date().toISOString(),
+        row_count: 80,
+      },
+      {
+        id: 'weak-inventory',
+        tool_name: 'run_lightspeed_sql_query',
+        purpose: 'Current bike light inventory universe and stock snapshot',
+        sql: 'select 1',
+        status: 'ok',
+        at: new Date().toISOString(),
+        row_count: 80,
+      },
+    ],
+  }),
+  false,
+  'broad business analysis must not treat setup plus weak inventory-only evidence as sufficient',
+)
+assert.equal(
+  businessAnalysisDossierHasSufficientEvidence({
+    storeName: 'Test Store',
+    userQuestion: 'Analyse lights performance',
+    analysisPlan: {
+      user_intent: 'Deep analysis of lights sales performance and margin opportunities',
+      date_range_label: '2025-06-18 -> 2026-06-18',
+      sql_strategy_summary: 'Analyse sales, ranking, discount, margin, and inventory opportunities',
+      execution_steps: ['Run sales trend query', 'Run item ranking query', 'Run weak-performer query'],
+      answer_success_criteria: ['Quantify sales and units', 'Name best sellers', 'Recommend discount candidates'],
+      primary_tools: ['run_lightspeed_sql_query'],
+    },
+    analysisQueries: [
+      {
+        id: 'sales',
+        tool_name: 'run_lightspeed_sql_query',
+        purpose: 'Sales trend for light products',
+        sql: 'select 1',
+        status: 'ok',
+        at: new Date().toISOString(),
+        row_count: 12,
+      },
+      {
+        id: 'ranking',
+        tool_name: 'run_lightspeed_sql_query',
+        purpose: 'Item ranking for light products',
+        sql: 'select 1',
+        status: 'ok',
+        at: new Date().toISOString(),
+        row_count: 20,
+      },
+    ],
+  }),
+  true,
+  'broad business analysis can synthesize after multiple successful evidence passes',
+)
+
+const resumeJob: GenieJob = {
+  id: 'job-resume-1',
+  status: 'running',
+  prompt: 'Run a business analysis',
+  message: 'Checking sales',
+  progressPhase: 'lightspeed_sales',
+  errorMessage: null,
+  conversationId: 'conv-resume-1',
+  metadata: { client_assistant_id: 'assistant-resume-1', source: 'homev2' },
+  result: { assistantMessage: { role: 'assistant', content: 'Partial answer' } },
+  updatedAt: new Date().toISOString(),
+  completedAt: null,
+}
+const resumedMessages = ensureAssistantMessageForJob(
+  [{ id: 'user-1', role: 'user', content: 'Run a business analysis' }],
+  resumeJob,
+)
+assert.equal(
+  resumedMessages.length,
+  2,
+  'resuming a running job should insert the assistant placeholder when missing',
+)
+assert.equal(
+  resumedMessages[1]?.id,
+  'assistant-resume-1',
+  'resumed assistant placeholder must keep the background job assistant id',
+)
+
+const streamFinishedJob: GenieJob = {
+  id: 'job-1',
+  status: 'completed',
+  prompt: 'sales',
+  message: 'Complete',
+  progressPhase: 'done',
+  errorMessage: null,
+  conversationId: null,
+  metadata: {},
+  result: { assistantMessage: { role: 'assistant', content: 'Full sales comparison answer.' } },
+  updatedAt: new Date().toISOString(),
+  completedAt: new Date().toISOString(),
+}
+const staleRunningPoll: GenieJob = {
+  ...streamFinishedJob,
+  status: 'running',
+  message: 'SQL result ready',
+  progressPhase: 'tool_done',
+  completedAt: null,
+  result: { assistantMessage: { role: 'assistant', content: 'Yep' } },
+}
+assert.equal(
+  mergeGenieJobSnapshots(streamFinishedJob, staleRunningPoll).status,
+  'completed',
+  'polled running snapshots must not downgrade a locally finished stream job',
+)
+assert.equal(
+  mergeGenieJobSnapshots(streamFinishedJob, staleRunningPoll).result?.assistantMessage?.content,
+  'Full sales comparison answer.',
+  'polled running snapshots must not replace richer streamed answer text',
+)
+
 const telemetrySummary = summarizeGenieAgentRuns([
   { status: 'completed', first_text_ms: 900, total_ms: 4_000 },
   { status: 'completed', first_text_ms: 1_100, total_ms: 5_000 },
@@ -1475,6 +2169,8 @@ console.log(JSON.stringify({
   tool_policy_fixtures: toolPolicyFixtures.length,
   markdown_renderer_checks: 13,
   progress_status_checks: progressFixtures.length * 2,
+  routing_framing_checks: 4,
+  job_snapshot_merge_checks: 2,
   telemetry_summary_checks: 1,
   schema_fixtures: decisionFixtures.length,
   planner_cases: decisionFixtures.filter(fixture => fixture.decision.needs_plan).length,

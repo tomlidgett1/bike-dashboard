@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Info, X } from "lucide-react";
+import { Info, X } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";

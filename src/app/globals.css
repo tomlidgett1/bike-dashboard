@@ -290,6 +290,10 @@
     stroke-width: 2 !important;
   }
 
+  .marketplace-light-surface svg [stroke] {
+    stroke-width: 2 !important;
+  }
+
   .dashboard-header :is(button, a) svg.lucide {
     color: var(--dashboard-header-control-fg, #171717);
     stroke-width: 2;
@@ -432,6 +436,36 @@
   100% { background-position: -200% center; }
 }
 
+@keyframes for-you-carousel-reveal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -1.35rem, 0) scale(0.985);
+    filter: blur(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes for-you-feed-settle {
+  from {
+    transform: translate3d(0, -0.65rem, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.for-you-carousel-reveal {
+  animation: for-you-carousel-reveal 0.58s cubic-bezier(0.04, 0.62, 0.23, 0.98) both;
+}
+
+.for-you-feed-settle {
+  animation: for-you-feed-settle 0.58s cubic-bezier(0.04, 0.62, 0.23, 0.98) both;
+}
+
 .group:hover .genie-header-search-placeholder {
   background-image: linear-gradient(
     90deg,
@@ -562,6 +596,24 @@
 
   .dark ::selection {
     background-color: rgba(255, 255, 255, 0.16);
+  }
+
+  .genie-chat-selectable,
+  .genie-chat-selectable * {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  .genie-chat-bubble-user::selection,
+  .genie-chat-bubble-user *::selection {
+    background-color: rgba(17, 24, 39, 0.22);
+    color: inherit;
+  }
+
+  .genie-chat-prose::selection,
+  .genie-chat-prose *::selection {
+    background-color: rgba(55, 53, 47, 0.18);
+    color: inherit;
   }
 
   /* Smooth transitions for theme switching */
@@ -791,12 +843,20 @@
 
   /* Mobile app-like behavior */
   @media (max-width: 768px) {
-    /* Prevent text selection on UI elements */
+    /* Prevent text selection on UI chrome — not chat message bodies */
     button, a, nav {
       -webkit-user-select: none;
       user-select: none;
       -webkit-tap-highlight-color: transparent;
       -webkit-touch-callout: none;
+    }
+
+    .genie-chat-selectable,
+    .genie-chat-selectable * {
+      -webkit-user-select: text !important;
+      user-select: text !important;
+      -webkit-touch-callout: default !important;
+      touch-action: auto !important;
     }
 
     /* Prevent pull-to-refresh on mobile */

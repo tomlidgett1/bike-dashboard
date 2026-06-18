@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CheckCircle2, AlertCircle, HelpCircle } from "lucide-react";
+import { CheckCircle2, AlertCircle, HelpCircle } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 
 // ============================================================

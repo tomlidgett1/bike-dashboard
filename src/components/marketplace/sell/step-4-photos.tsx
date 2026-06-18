@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, X, Image as ImageIcon, CheckCircle2, RotateCw } from "lucide-react";
+import { Upload, X, Image as ImageIcon, CheckCircle2, RotateCw } from '@/components/layout/app-sidebar/dashboard-icons';
 import { PhotosFormData, ListingImage } from "@/lib/types/listing";
 import { InfoBox } from "./form-elements";
 import { ValidationError, getFieldError } from "@/lib/validation/listing-validation";

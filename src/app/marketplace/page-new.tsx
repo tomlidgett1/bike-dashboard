@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { TrendingUp, Package } from "lucide-react";
+import { TrendingUp, Package } from '@/components/layout/app-sidebar/dashboard-icons';
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductGrid } from "@/components/marketplace/product-grid";

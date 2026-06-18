@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Link2, Loader2, AlertCircle, CheckCircle2, ArrowRight } from "lucide-react";
+import { Link2, Loader2, AlertCircle, CheckCircle2, ArrowRight } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";

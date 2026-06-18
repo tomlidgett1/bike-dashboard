@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { ShoppingBag, Store } from "lucide-react";
+import { ShoppingBag, Store } from '@/components/layout/app-sidebar/dashboard-icons';
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import type { MarketplaceSpace } from "@/lib/types/marketplace";

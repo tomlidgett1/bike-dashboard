@@ -3,7 +3,7 @@
 import * as React from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Smartphone, Clock, Check, Loader2, RefreshCw, X, ImageIcon } from "lucide-react";
+import { Smartphone, Clock, Check, Loader2, RefreshCw, X, ImageIcon } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import Image from "next/image";

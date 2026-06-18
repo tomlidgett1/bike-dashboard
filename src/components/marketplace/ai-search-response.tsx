@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { Sparkles, ExternalLink, ChevronDown } from "lucide-react";
+import { Sparkles, ExternalLink, ChevronDown } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 import type { AISearchResponse } from "@/types/ai-search";
 

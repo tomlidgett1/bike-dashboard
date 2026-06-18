@@ -1,7 +1,9 @@
 "use client";
 
 import * as React from "react";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
+import { NestLogo } from "@/components/genie/nest-logo";
 import { isStoreDashboardPath } from "@/lib/routes/store-dashboard";
 import { cn } from "@/lib/utils";
 
@@ -55,6 +57,31 @@ export function StoreHeaderDropdownBody({
 
 export function StoreHeaderDropdownFooter({ children }: { children: React.ReactNode }) {
   return <div className="border-t border-gray-100 px-5 py-3">{children}</div>;
+}
+
+export function MessageSourceAvatar({
+  source,
+  compact = false,
+}: {
+  source: "nest" | "marketplace";
+  compact?: boolean;
+}) {
+  const sizeClass = compact ? "h-7 w-7 sm:h-8 sm:w-8" : "h-8 w-8";
+
+  if (source === "nest") {
+    return <NestLogo className={cn("shrink-0 object-cover", sizeClass)} />;
+  }
+
+  return (
+    <Image
+      src="/yjsmall.png"
+      alt="Yellow Jersey"
+      width={32}
+      height={32}
+      className={cn("shrink-0 rounded-full object-cover", sizeClass)}
+      unoptimized
+    />
+  );
 }
 
 export function StoreHeaderDropdownItem({

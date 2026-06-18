@@ -17,7 +17,7 @@ import {
   Loader2,
   Save,
   ChevronLeft,
-} from "lucide-react";
+} from '@/components/layout/app-sidebar/dashboard-icons';
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";

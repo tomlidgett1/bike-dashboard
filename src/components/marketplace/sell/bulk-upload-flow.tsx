@@ -8,7 +8,7 @@ import { BulkPhotoGroupingStep } from "./bulk-photo-grouping-step";
 import { BulkProductCarousel } from "./bulk-product-carousel";
 import { BulkProductCard } from "./bulk-product-card";
 import { BulkReviewStep } from "./bulk-review-step";
-import { Loader2, CheckCircle, ExternalLink } from "lucide-react";
+import { Loader2, CheckCircle, ExternalLink } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 

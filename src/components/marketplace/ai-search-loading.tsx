@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles } from "lucide-react";
+import { Sparkles } from '@/components/layout/app-sidebar/dashboard-icons';
 
 // ============================================================
 // AI Search Animated Loading Component

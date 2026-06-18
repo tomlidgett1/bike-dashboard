@@ -1,5 +1,5 @@
-import type { LucideIcon } from "lucide-react";
-import { ShoppingBag, Store, Settings } from "lucide-react";
+import type { LucideIcon } from '@/components/layout/app-sidebar/dashboard-icons';
+import { ShoppingBag, Store, Settings } from '@/components/layout/app-sidebar/dashboard-icons';
 
 export interface MarketplaceNavItem {
   type: "item" | "separator";

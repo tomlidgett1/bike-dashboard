@@ -14,7 +14,7 @@ import {
   Truck,
   AlertCircle,
   Sparkles,
-} from "lucide-react";
+} from '@/components/layout/app-sidebar/dashboard-icons';
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";

@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { motion } from "framer-motion";
-import { User, Package, MapPin } from "lucide-react";
+import { User, Package, MapPin } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Card, CardContent } from "@/components/ui/card";
 import type { IndividualSeller } from "@/app/api/marketplace/sellers/route";
 

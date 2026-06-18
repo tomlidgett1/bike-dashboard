@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, LayoutList } from "lucide-react";
+import { Camera, LayoutList } from '@/components/layout/app-sidebar/dashboard-icons';
 import { ListingBentoTile } from "./listing-bento-tile";
 
 interface ListingLayoutBentoProps {

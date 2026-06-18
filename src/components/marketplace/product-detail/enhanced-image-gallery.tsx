@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, X } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 
 // ============================================================
@@ -39,6 +39,7 @@ export function EnhancedImageGallery({
   const [heroHeight, setHeroHeight] = React.useState<number | undefined>();
   const touchStartXRef = React.useRef<number | null>(null);
   const heroRef = React.useRef<HTMLDivElement>(null);
+  const thumbnailStripRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     if (!sidePanel) return;
@@ -88,6 +89,14 @@ export function EnhancedImageGallery({
     setIsFullscreen(true);
   };
 
+  React.useEffect(() => {
+    if (images.length <= 1) return;
+    const strip = thumbnailStripRef.current;
+    if (!strip) return;
+    const active = strip.querySelector<HTMLElement>('[aria-current="true"]');
+    active?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+  }, [currentIndex, images.length]);
+
   // Keyboard navigation for fullscreen
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -108,6 +117,8 @@ export function EnhancedImageGallery({
       </div>
     );
   }
+
+  const heroFrameClassName = "rounded-md border border-gray-200";
 
   // Reusable grid image component
   const GridImage = ({ 
@@ -169,6 +180,9 @@ export function EnhancedImageGallery({
     }
   };
 
+  const heroFloatingControlClassName =
+    "border border-black/5 bg-white/80 text-gray-800 shadow-sm backdrop-blur-md";
+
   const renderImageCarousel = ({
     mobileSquare = false,
   }: {
@@ -177,7 +191,7 @@ export function EnhancedImageGallery({
     <div
       className={cn(
         "relative bg-gray-100 overflow-hidden",
-        mobileSquare ? "aspect-square sm:aspect-[4/3]" : "aspect-[4/3]",
+        mobileSquare ? "aspect-square rounded-md" : cn("aspect-[4/3]", heroFrameClassName),
       )}
     >
       <div
@@ -207,7 +221,7 @@ export function EnhancedImageGallery({
           event.stopPropagation();
           goToPrevImage();
         }}
-        className="absolute left-2 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-gray-100 bg-white/70 text-gray-400 transition-colors hover:bg-gray-50 hover:text-gray-600 sm:left-3"
+        className="absolute left-2 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-gray-100 bg-white/70 text-gray-400 transition-colors hover:bg-gray-50 hover:text-gray-600 sm:hidden"
         aria-label="Previous image"
       >
         <ChevronLeft className="h-3.5 w-3.5" />
@@ -218,16 +232,49 @@ export function EnhancedImageGallery({
           event.stopPropagation();
           goToNextImage();
         }}
-        className="absolute right-2 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-gray-100 bg-white/70 text-gray-400 transition-colors hover:bg-gray-50 hover:text-gray-600 sm:right-3"
+        className="absolute right-2 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-gray-100 bg-white/70 text-gray-400 transition-colors hover:bg-gray-50 hover:text-gray-600 sm:hidden"
         aria-label="Next image"
       >
         <ChevronRight className="h-3.5 w-3.5" />
       </button>
 
-      <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-2">
-        <span className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium tabular-nums text-gray-800 shadow-sm">
+      <span
+        className={cn(
+          "absolute top-3 left-3 z-10 flex h-8 items-center rounded-full px-2.5 text-xs font-medium tabular-nums sm:hidden",
+          heroFloatingControlClassName,
+        )}
+      >
+        {currentIndex + 1} / {images.length}
+      </span>
+
+      <div className="absolute top-3 left-3 z-10 hidden items-center gap-2 sm:flex">
+        <span
+          className={cn(
+            "flex h-8 items-center rounded-full px-2.5 text-xs font-medium tabular-nums",
+            heroFloatingControlClassName,
+          )}
+        >
           {currentIndex + 1} / {images.length}
         </span>
+        {images.length > 1 ? (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              goToNextImage();
+            }}
+            className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-white",
+              heroFloatingControlClassName,
+            )}
+            aria-label="Next image"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        ) : null}
+      </div>
+
+      <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 sm:hidden">
         <div className="flex items-center gap-1.5">
           {images.map((_, index) => (
             <button
@@ -252,36 +299,59 @@ export function EnhancedImageGallery({
     </div>
   );
 
+  const scrollThumbnailStrip = (direction: "left" | "right") => {
+    const strip = thumbnailStripRef.current;
+    if (!strip) return;
+    const amount = direction === "right" ? 240 : -240;
+    strip.scrollBy({ left: amount, behavior: "smooth" });
+  };
+
   const renderThumbnailStrip = () => {
     if (images.length <= 1) return null;
 
     return (
-      <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin]">
-        {images.map((image, index) => (
+      <div className="relative mt-3 hidden sm:block">
+        <div
+          ref={thumbnailStripRef}
+          className="flex gap-2 overflow-x-auto scroll-smooth pb-1 pr-11 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {images.map((image, index) => (
+            <button
+              key={index}
+              type="button"
+              onClick={() => onIndexChange(index)}
+              className={cn(
+                "relative h-[72px] w-[72px] shrink-0 overflow-hidden rounded-md transition-all",
+                index === currentIndex
+                  ? "border-2 border-gray-900"
+                  : "border-2 border-transparent",
+              )}
+              aria-label={`View image ${index + 1}`}
+              aria-current={index === currentIndex}
+            >
+              <Image
+                src={image}
+                alt={`${productName} thumbnail ${index + 1}`}
+                fill
+                unoptimized={!isOptimizableHost(image)}
+                className="object-cover"
+                sizes="72px"
+                quality={60}
+              />
+            </button>
+          ))}
+        </div>
+
+        {images.length > 4 ? (
           <button
-            key={index}
             type="button"
-            onClick={() => onIndexChange(index)}
-            className={cn(
-              "relative h-16 w-16 shrink-0 overflow-hidden rounded-md border-2 transition-all sm:h-[72px] sm:w-[72px]",
-              index === currentIndex
-                ? "border-gray-900"
-                : "border-gray-200 opacity-75 hover:opacity-100",
-            )}
-            aria-label={`View image ${index + 1}`}
-            aria-current={index === currentIndex}
+            onClick={() => scrollThumbnailStrip("right")}
+            className="absolute right-0 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+            aria-label="Scroll thumbnails right"
           >
-            <Image
-              src={image}
-              alt={`${productName} thumbnail ${index + 1}`}
-              fill
-              unoptimized={!isOptimizableHost(image)}
-              className="object-cover"
-              sizes="72px"
-              quality={60}
-            />
+            <ChevronRight className="h-4 w-4" />
           </button>
-        ))}
+        ) : null}
       </div>
     );
   };
@@ -295,15 +365,22 @@ export function EnhancedImageGallery({
     showThumbnails?: boolean;
     mobileSquare?: boolean;
   }) => (
-    <div className="relative">
+    <div className={cn("relative", mobileSquare && "px-4 pt-4")}>
       <div ref={heroRefProp} className="relative">
         {images.length === 1 ? (
           <div
             className={cn(
-              mobileSquare ? "aspect-square sm:aspect-[4/3]" : "aspect-[4/3]",
+              mobileSquare ? "aspect-square" : "aspect-[4/3]",
             )}
           >
-            <GridImage src={images[0]} index={0} className="h-full w-full" />
+            <GridImage
+              src={images[0]}
+              index={0}
+              className={cn(
+                "h-full w-full",
+                mobileSquare ? "rounded-md" : heroFrameClassName,
+              )}
+            />
           </div>
         ) : (
           renderImageCarousel({ mobileSquare })
@@ -424,6 +501,11 @@ export function EnhancedImageGallery({
           <div className="hidden sm:block">
             {renderHeroBlock({ showThumbnails: images.length > 1 })}
           </div>
+
+          <div
+            className="h-4 bg-gradient-to-b from-white to-gray-50"
+            aria-hidden="true"
+          />
 
           {sidePanel}
         </div>

@@ -11,7 +11,7 @@ import { SectionHeader } from "./form-elements";
 import { Textarea } from "@/components/ui/textarea";
 import { ValidationError, getFieldError } from "@/lib/validation/listing-validation";
 import { cn } from "@/lib/utils";
-import { Sparkles, Star, Heart, ThumbsUp, Wrench, AlertTriangle } from "lucide-react";
+import { Sparkles, Star, Heart, ThumbsUp, Wrench, AlertTriangle } from '@/components/layout/app-sidebar/dashboard-icons';
 import { FormField } from "./form-elements";
 
 // ============================================================

@@ -1,4 +1,4 @@
-// Genie agent core runner: router → direct paths → planner → executor, emitting SSE-shaped
+// Genie agent core runner: LLM router → direct paths → planner → executor, emitting SSE-shaped
 // events through an injected emit callback. Shared by the SSE route and background jobs —
 // callers own transport (HTTP stream vs job-row persistence); this module owns the run.
 import { Agent, user as userMessage } from '@openai/agents'
@@ -42,6 +42,7 @@ import {
   emitAnalysisPlan,
   emitCustomerProfile,
   executorModelForRoute,
+  runBusinessAnalysisRecoveryPasses,
   toAnalysisPlanPayload,
   visualPrefsForMessages,
   type Supa,
@@ -61,6 +62,17 @@ import {
   statusForRoute,
   statusForTool,
 } from './status'
+import {
+  buildDeepResearchFramingMessage,
+  buildRoutingFramingMessage,
+} from '@/lib/genie/routing-framing'
+import {
+  accumulateBusinessAnalysisSynthesisEvent,
+  businessAnalysisDossierHasEvidence,
+  businessAnalysisDossierHasSufficientEvidence,
+  runBusinessAnalysisSynthesis,
+  type BusinessAnalysisSynthesisInput,
+} from '@/lib/genie/agent/business-analysis-synthesis'
 
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.max(1, Math.floor(ms / 1000))
@@ -75,90 +87,78 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
-function cleanDirectEntityQuery(value: string | undefined): string | null {
-  const cleaned = (value ?? '')
-    .replace(/\s+/g, ' ')
-    .replace(/[?.!]+$/g, '')
-    .replace(/\bplease\b$/i, '')
-    .trim()
-  if (cleaned.length < 2 || cleaned.length > 120) return null
-  return cleaned
+function cleanProgressFragment(value: string, max = 82): string {
+  const compact = value.replace(/\s+/g, ' ').trim()
+  if (compact.length <= max) return compact
+  return `${compact.slice(0, Math.max(0, max - 1)).trimEnd()}…`
 }
 
-function resolveObviousLightspeedDirectPath(
-  latestUserMessage: string,
-  messages: Message[],
-): Pick<GenieOrchestrationDecision, 'direct_path' | 'entity_query' | 'reason'> | null {
-  const text = latestUserMessage.trim()
-  const normalised = text.toLowerCase().replace(/\s+/g, ' ')
-  if (!normalised) return null
-
-  const salesLookup = resolveDirectSalesSummaryLookup(text)
-  const salesPeriodLookup = resolveDirectSalesSummaryPeriod(text)
-  const hasSimpleSalesIntent = /\b(any sales|sales?|takings?|revenue|turnover|gross sales|net sales|gross profit|profit|margin|made|took)\b/i.test(text)
-  const hasSalesBreakdownIntent = /\b(top|best|rank|ranking|list|every|each|transaction|transactions|receipt|receipts|orders?|line items?|products?|items?|services?|customers?|category|categories|breakdown|trend|chart|graph|compare|comparison|vs|versus|between|from .+ to)\b/i.test(text)
-  if (hasSimpleSalesIntent && salesPeriodLookup && !hasSalesBreakdownIntent) {
-    return {
-      direct_path: 'sales_summary',
-      entity_query: salesPeriodLookup.label,
-      reason: 'Deterministic fast path for a simple sales summary period.',
-    }
+function hostnameFromUrl(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null
+  try {
+    const hostname = new URL(value).hostname.replace(/^www\./, '')
+    return hostname || null
+  } catch {
+    return null
   }
-  if (salesLookup) {
-    return {
-      direct_path: 'sales_summary',
-      entity_query: salesLookup.label,
-      reason: 'Deterministic fast path for a simple sales summary period.',
-    }
+}
+
+function uniqueStrings(values: Array<string | null | undefined>, limit = 3): string[] {
+  const seen = new Set<string>()
+  const output: string[] = []
+  for (const value of values) {
+    const cleaned = value?.trim()
+    if (!cleaned || seen.has(cleaned)) continue
+    seen.add(cleaned)
+    output.push(cleaned)
+    if (output.length >= limit) break
   }
+  return output
+}
 
-  const fitmentIntent = /\b(bottom bracket|bb|brake|pad|rotor|headset|seatpost|axle|bearing|freehub|cassette|chain|tyre|tire|drivetrain|compatib|standard|need)\b/i
-  if (fitmentIntent.test(text)) return null
-
-  const priorCustomer = latestCustomerReferenceFromMessages(messages)
-  const pronounBikeLookup = /\bwhat\s+bikes?\s+(?:does|do)\s+(?:she|he|they|this customer|that customer)\s+(?:have|own|ride|use)\b/i
-  if (pronounBikeLookup.test(text) && priorCustomer?.query) {
-    return {
-      direct_path: 'customer_bikes',
-      entity_query: priorCustomer.query,
-      reason: 'Deterministic fast path for a customer bike follow-up.',
-    }
+function webSearchActionStatus(action: Record<string, unknown>, completed = false): string | null {
+  const type = typeof action.type === 'string' ? action.type : ''
+  if (type === 'open_page') {
+    const host = hostnameFromUrl(action.url)
+    return host ? `Opening ${host}` : 'Opening web page'
   }
 
-  const bikePatterns = [
-    /\bwhat\s+bikes?\s+does\s+(.+?)\s+(?:have|own|ride|use)\b/i,
-    /\bwhat\s+bikes?\s+do\s+(.+?)\s+(?:have|own|ride|use)\b/i,
-    /\bwhich\s+bikes?\s+does\s+(.+?)\s+(?:have|own|ride|use)\b/i,
-    /\b(?:show|list)\s+(?:me\s+)?(?:the\s+)?bikes?\s+(?:for|owned by)\s+(.+?)$/i,
-    /\bcustomer\s+bikes?\s+(?:for\s+)?(.+?)$/i,
-    /^(.+?)'s\s+bikes?$/i,
-  ]
-  for (const pattern of bikePatterns) {
-    const entity = cleanDirectEntityQuery(text.match(pattern)?.[1])
-    if (entity) {
-      return {
-        direct_path: 'customer_bikes',
-        entity_query: entity,
-        reason: 'Deterministic fast path for a customer bike lookup.',
-      }
-    }
+  if (type === 'find_in_page') {
+    const host = hostnameFromUrl(action.url)
+    const pattern = typeof action.pattern === 'string' ? cleanProgressFragment(action.pattern, 38) : ''
+    if (host && pattern) return `Checking ${host} for "${pattern}"`
+    return host ? `Checking ${host}` : 'Searching within page'
   }
 
-  const profilePatterns = [
-    /^(?:customer|customer profile|profile for)\s+(.+?)$/i,
-    /^(?:tell me about|show me|show|pull up|history for|what do we know about)\s+customer\s+(.+?)$/i,
-  ]
-  for (const pattern of profilePatterns) {
-    const entity = cleanDirectEntityQuery(text.match(pattern)?.[1])
-    if (entity) {
-      return {
-        direct_path: 'customer_profile',
-        entity_query: entity,
-        reason: 'Deterministic fast path for a customer profile lookup.',
-      }
+  if (type === 'search') {
+    const sources = Array.isArray(action.sources)
+      ? action.sources
+          .map((source) => (isRecord(source) ? hostnameFromUrl(source.url) : null))
+      : []
+    const sourceHosts = uniqueStrings(sources)
+    if (sourceHosts.length > 0) {
+      return `${completed ? 'Checked' : 'Searching'} ${sourceHosts.join(', ')}`
     }
+
+    const queries = Array.isArray(action.queries)
+      ? action.queries.filter((query): query is string => typeof query === 'string')
+      : typeof action.query === 'string'
+        ? [action.query]
+        : []
+    const [query] = uniqueStrings(queries, 1)
+    if (query) return `Searching: ${cleanProgressFragment(query)}`
   }
 
+  return null
+}
+
+function webSearchStatusFromRecords(records: Array<Record<string, unknown> | null>, completed = false): string | null {
+  for (const record of records) {
+    const action = record && isRecord(record.action) ? record.action : null
+    if (!action) continue
+    const status = webSearchActionStatus(action, completed)
+    if (status) return status
+  }
   return null
 }
 
@@ -172,6 +172,30 @@ const RUN_TIME_BUDGET_MS = 600_000
 // 3-min stale-job sweeper never reclaims a hung stream — this is the real guard.
 const STREAM_IDLE_TIMEOUT_MS = Number(process.env.GENIE_STREAM_IDLE_TIMEOUT_MS) || 120_000
 const RUN_TIME_BUDGET_WARN_RATIO = 0.6
+
+function debugErrorPayload(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack?.split('\n').slice(0, 8).join('\n'),
+    }
+  }
+  return { message: String(error) }
+}
+
+function executorToolChoice(
+  route: GenieOrchestrationDecision['route'],
+  planned: boolean,
+  toolNames: string[],
+): string | undefined {
+  if (route === 'web_research') return 'web_search'
+  if (route === 'business_analysis' && planned) {
+    if (toolNames.includes('run_lightspeed_sql_query')) return 'run_lightspeed_sql_query'
+    return toolNames.length > 0 ? 'required' : undefined
+  }
+  return undefined
+}
 
 function applyTimeBudgetToTools(
   tools: unknown[],
@@ -222,7 +246,11 @@ async function streamGroundedDirectAnswer(args: {
     const directAgent = new Agent({
       name: 'Yellow Jersey Direct Answer Agent',
       model: args.models.executor,
-      instructions: buildDirectAnswerInstructions(args.storeName, args.groundingLabel, args.grounding),
+      instructions: buildDirectAnswerInstructions(
+        args.storeName,
+        args.groundingLabel,
+        args.grounding,
+      ),
       tools: [],
       modelSettings: {
         parallelToolCalls: false,
@@ -310,7 +338,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
   let lastStatusText = 'Working'
   let finalRoute: GenieOrchestrationDecision['route'] | null = null
   let plannerUsed = false
-  let orchestrationSource: 'model' | 'deterministic' | null = null
+  let orchestrationSource: 'model' | null = null
   let routerInvoked = false
   let executorModel: string | null = null
   let firstTextAt: number | null = null
@@ -330,6 +358,69 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
   // event. No-op outside that loop; heartbeats bypass `emit` so they never
   // count as activity (a hung stream must not keep its own watchdog alive).
   let bumpIdle: () => void = () => {}
+  let useBusinessAnalysisSynthesis = false
+  let businessAnalysisSynthesis: BusinessAnalysisSynthesisInput | null = null
+
+  const finishBusinessAnalysisFromDossier = async (): Promise<boolean> => {
+    if (!useBusinessAnalysisSynthesis || !businessAnalysisSynthesis || signal.aborted) return false
+
+    if (businessAnalysisDossierHasSufficientEvidence(businessAnalysisSynthesis)) {
+      emit({
+        event: 'status',
+        phase: 'responding',
+        text: compactGenieProgressText('Synthesising executive summary', 'responding'),
+      })
+      const synthesisResult = await runBusinessAnalysisSynthesis({
+        input: businessAnalysisSynthesis,
+        models,
+        emit,
+        signal,
+        requestId,
+        userId,
+        storeName,
+        onFirstText: () => {
+          if (firstTextAt != null) return
+          firstTextAt = Date.now()
+          console.info('[Genie Agent] first_text', {
+            requestId,
+            route: finalRoute,
+            ms: firstTextAt - requestStartedAt,
+            stage: 'business_analysis_synthesis',
+          })
+        },
+      })
+      if (!synthesisResult.emittedAnswer && businessAnalysisSynthesis.investigatorDraft?.trim()) {
+        emit({ event: 'text_delta', text: businessAnalysisSynthesis.investigatorDraft })
+        if (firstTextAt == null) firstTextAt = Date.now()
+      }
+      return true
+    }
+
+    if (businessAnalysisDossierHasEvidence(businessAnalysisSynthesis)) {
+      emit({ event: 'status', phase: 'responding', text: 'Could not complete planned analysis' })
+      emit({
+        event: 'text_delta',
+        text: 'I could not complete enough of the planned data passes to answer this properly. The run collected some setup evidence, but not enough sales, margin, ranking, discount, inventory, or opportunity data to make supported recommendations. Please run it again; if it repeats, the executor is stopping early and needs investigation.',
+      })
+      if (firstTextAt == null) firstTextAt = Date.now()
+      return true
+    }
+
+    if (businessAnalysisSynthesis.investigatorDraft?.trim()) {
+      emit({ event: 'status', phase: 'responding', text: 'Writing answer from available notes' })
+      emit({ event: 'text_delta', text: businessAnalysisSynthesis.investigatorDraft })
+      if (firstTextAt == null) firstTextAt = Date.now()
+      return true
+    }
+
+    emit({ event: 'status', phase: 'responding', text: 'Could not fetch store data' })
+    emit({
+      event: 'text_delta',
+      text: 'I could not pull the store data needed for a YTD comparison — the investigation pass finished without running the planned SQL or Xero lookups. Please send the question again; if it keeps happening, check that Lightspeed and Xero are connected for this store.',
+    })
+    if (firstTextAt == null) firstTextAt = Date.now()
+    return true
+  }
 
   const emit = (data: object) => {
     // Any real event (token, tool call/result, status, chart…) is proof of life
@@ -339,7 +430,8 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
     if ('event' in data && (data as { event?: unknown }).event === 'status') {
       const status = data as { phase?: unknown; text?: unknown }
       const phase = String(status.phase ?? '')
-      const text = compactGenieProgressText(String(status.text ?? ''), phase)
+      const text = String(status.text ?? '').trim()
+      if (!text) return
       const key = `${phase}:${text}`
       if (key === lastStatusKey) return
       lastStatusKey = key
@@ -377,6 +469,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
     // the full tool pipeline, but bypasses the router/planner/executor entirely.
     if (options.deepResearch) {
       finalRoute = 'business_analysis'
+      emit({ event: 'status', phase: 'routing_done', text: buildDeepResearchFramingMessage() })
       await runDeepResearchInvestigation({
         supabase,
         userId,
@@ -397,39 +490,27 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
     const latestUserMessage = latestUserText(messages)
     const inputMessages = toAgentInputMessages(messages)
     const orchestrationStartedAt = Date.now()
-    const directPathOverride = resolveObviousLightspeedDirectPath(latestUserMessage, messages)
-    let orchestration: GenieOrchestrationDecision
-
-    if (directPathOverride) {
-      routerInvoked = false
-      orchestrationSource = 'deterministic'
-      orchestration = {
-        route: 'lightspeed_sql',
-        needs_plan: false,
-        direct_path: directPathOverride.direct_path,
-        entity_query: directPathOverride.entity_query,
-        reason: directPathOverride.reason,
-      }
-      emit({ event: 'status', phase: 'routing_done', text: 'Using fast lookup path' })
-    } else {
-      routerInvoked = true
-      orchestrationSource = 'model'
-      emit({ event: 'status', phase: 'routing', text: 'Choosing the best workflow' })
-      orchestration = await createGenieOrchestrationDecision({
-        storeName,
-        userId,
-        requestId,
-        messages,
-        signal,
-        models,
-      })
-      emit({
-        event: 'status',
-        phase: 'routing_done',
-        text: statusForRoute(orchestration.route, undefined, latestUserMessage),
-      })
-    }
+    routerInvoked = true
+    orchestrationSource = 'model'
+    emit({ event: 'status', phase: 'routing', text: 'Choosing the best workflow' })
+    const orchestration = await createGenieOrchestrationDecision({
+      storeName,
+      userId,
+      requestId,
+      messages,
+      signal,
+      models,
+    })
     finalRoute = orchestration.route
+    const routingFraming = buildRoutingFramingMessage({
+      orchestration,
+      userMessage: latestUserMessage,
+    })
+    emit({
+      event: 'status',
+      phase: 'routing_done',
+      text: routingFraming ?? statusForRoute(orchestration.route, undefined, latestUserMessage),
+    })
     console.info('[Genie Agent] orchestration', {
       requestId,
       conversation_id: conversationId,
@@ -526,12 +607,6 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
       return
     }
 
-    // Direct paths come from either a conservative deterministic pre-router
-    // shortcut or the structured LLM router decision. Data is prefetched
-    // deterministically, then a fast model streams an answer grounded in it.
-    const directPath = orchestration.route === 'lightspeed_sql' ? orchestration.direct_path : 'none'
-    const entityQuery = orchestration.entity_query?.trim() || null
-
     const markDirectFirstText = (path: string) => () => {
       if (firstTextAt != null) return
       firstTextAt = Date.now()
@@ -542,6 +617,11 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
         direct_path: path,
       })
     }
+
+    // LLM router may nominate a direct_path for simple Lightspeed lookups. Data
+    // is prefetched, then a fast model streams an answer grounded in it.
+    const directPath = orchestration.route === 'lightspeed_sql' ? orchestration.direct_path : 'none'
+    const entityQuery = orchestration.entity_query?.trim() || null
 
     if ((directPath === 'customer_profile' || directPath === 'customer_bikes') && entityQuery) {
       executorModel = 'direct_customer_profile'
@@ -623,6 +703,21 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
 
     let executionPlan: GenieExecutionPlan | null = null
     const shouldPlan = orchestration.needs_plan && !runtime.skipPlanner
+    useBusinessAnalysisSynthesis =
+      orchestration.route === 'business_analysis' && !runtime.fastAnswerPrompt
+    businessAnalysisSynthesis = useBusinessAnalysisSynthesis
+      ? { storeName, userQuestion: latestUserMessage }
+      : null
+    const pipelineEmit: typeof emit = useBusinessAnalysisSynthesis
+      ? (data: object) => {
+          businessAnalysisSynthesis = accumulateBusinessAnalysisSynthesisEvent(
+            businessAnalysisSynthesis!,
+            data as Record<string, unknown>,
+          )
+          if ((data as { event?: string }).event === 'text_delta') return
+          emit(data)
+        }
+      : emit
 
     if (shouldPlan) {
       plannerUsed = true
@@ -636,10 +731,10 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
         route: orchestration.route,
         signal,
         models,
-        emit,
+        emit: pipelineEmit,
       })
       if (executionPlan) {
-        emitAnalysisPlan(emit, toAnalysisPlanPayload(executionPlan))
+        emitAnalysisPlan(pipelineEmit, toAnalysisPlanPayload(executionPlan))
         emit({
           event: 'status',
           phase: 'planning_done',
@@ -670,7 +765,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
     const agentTools = buildAgentTools(
       supabase,
       userId,
-      emit,
+      pipelineEmit,
       visualPrefs,
       latestUserMessage,
       orchestration.route,
@@ -689,6 +784,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
       phase: 'setup',
       text: `Preparing ${agentTools.length} route tool${agentTools.length === 1 ? '' : 's'}`,
     })
+    const initialToolChoice = executorToolChoice(orchestration.route, planned, agentToolNames)
     console.info('[Genie Agent] executor', {
       requestId,
       conversation_id: conversationId,
@@ -696,12 +792,26 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
       model: executorModel,
       tool_count: agentTools.length,
       tool_names: agentToolNames,
+      initial_tool_choice: initialToolChoice,
       parallel_tool_calls: canRunParallelTools(orchestration.route, modelProfile),
       max_tool_concurrency: maxToolConcurrencyForRoute(orchestration.route, modelProfile),
       model_profile: modelProfile,
     })
+    emit({
+      event: '_debug',
+      stage: 'executor_config',
+      route: orchestration.route,
+      planned,
+      model: executorModel,
+      tool_count: agentTools.length,
+      tool_names: agentToolNames,
+      initial_tool_choice: initialToolChoice,
+      max_turns: runtime.maxTurnsForRoute(orchestration.route, planned),
+      max_tool_concurrency: maxToolConcurrencyForRoute(orchestration.route, modelProfile),
+    })
 
     const reasoningEffort = runtime.executorReasoningEffort(orchestration.route, planned)
+    let executorInputMessages = inputMessages
     // Inject the store's learned playbook (self-improvement) into the dynamic
     // tail of the prompt. Defensive: returns '' if the table/migration is absent.
     const learnedLessons = await getActiveLessonsForUser(supabase, userId, { route: orchestration.route })
@@ -709,11 +819,22 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
     const agent = new Agent({
       name: 'Yellow Jersey Store Agent',
       model: executorModel,
-      instructions: buildSystemPrompt(storeName, executionPlan, orchestration.route, runtime.fastAnswerPrompt, learnedPlaybook),
+      instructions: buildSystemPrompt(
+        storeName,
+        executionPlan,
+        orchestration.route,
+        runtime.fastAnswerPrompt,
+        learnedPlaybook,
+        useBusinessAnalysisSynthesis,
+      ),
       tools: agentTools,
       modelSettings: {
         parallelToolCalls: canRunParallelTools(orchestration.route, modelProfile),
+        toolChoice: initialToolChoice,
         store: false,
+        providerData: orchestration.route === 'web_research'
+          ? { include: ['web_search_call.action.sources'] }
+          : undefined,
         reasoning: reasoningEffort === 'medium'
           ? { effort: 'medium', summary: 'concise' }
           : reasoningEffort === 'none'
@@ -732,6 +853,8 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
       workflowName: 'Yellow Jersey Genie Executor',
     })
     const runExecutorStream = async () => {
+      const streamEmit = pipelineEmit
+      let hasDetailedWebSearchStatus = false
       // Stall watchdog (see STREAM_IDLE_TIMEOUT_MS). resetIdle() runs on every
       // real emit; if the timer ever fires, the stream has gone silent and we
       // abort it so the run can finalize/retry instead of hanging forever.
@@ -752,7 +875,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
       resetIdle()
 
       try {
-      const agentStream = await executorRunner.run(agent, inputMessages, {
+      const agentStream = await executorRunner.run(agent, executorInputMessages, {
         stream: true,
         maxTurns: runtime.maxTurnsForRoute(orchestration.route, planned),
         signal: idleController.signal,
@@ -767,7 +890,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
         },
       })
 
-      emit({
+      streamEmit({
         event: 'status',
         phase: 'thinking',
         text: statusForExecutionStart(
@@ -783,7 +906,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
           const item = event.item as StreamToolItem
           const toolName = item.rawItem?.name || item.rawItem?.toolName || item.name
           if (event.name === 'reasoning_item_created' && lastStatusKey === '') {
-            emit({ event: 'status', phase: 'thinking', text: compactGenieProgressText('Thinking', 'thinking') })
+            streamEmit({ event: 'status', phase: 'thinking', text: compactGenieProgressText('Thinking', 'thinking') })
           }
           if (event.name === 'tool_called' && toolName) {
             // The model really did go back for more after a not-ready verdict —
@@ -791,7 +914,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
             // usually supersedes this, but it makes the intent explicit.)
             if (verifyGate.awaitingContinuation) {
               verifyGate.awaitingContinuation = false
-              emit({ event: 'status', phase: 'rechecking', text: 'Answer incomplete — continuing lookup' })
+              streamEmit({ event: 'status', phase: 'rechecking', text: 'Answer incomplete — continuing lookup' })
             }
             toolCallCount += 1
             toolCallNames[toolName] = (toolCallNames[toolName] ?? 0) + 1
@@ -804,13 +927,13 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
                 if (isRecord(parsed)) toolArgs = parsed
               } catch { /* malformed args — fall back to the static status text */ }
             }
-            emit({ event: 'status', ...statusForTool(toolName, toolArgs) })
+            streamEmit({ event: 'status', ...statusForTool(toolName, toolArgs) })
           }
           if (event.name === 'tool_output') {
             // verify_question_answered emits its own result-aware status; a generic
             // override here would mislabel the not-ready path.
             if (activeToolName && activeToolName !== 'verify_question_answered') {
-              emit({ event: 'status', ...statusAfterTool(activeToolName) })
+              streamEmit({ event: 'status', ...statusAfterTool(activeToolName) })
             }
             activeToolName = null
           }
@@ -847,19 +970,71 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
                     : ''
 
           if (rawType === 'response.reasoning_summary_text.delta' && delta) {
-            emit({ event: 'reasoning_delta', text: delta })
+            streamEmit({ event: 'reasoning_delta', text: delta })
           }
 
-          if (rawType === 'response.web_search_call.in_progress' || rawItemType === 'web_search_call') {
-            emit({ event: 'status', phase: 'web_search', text: compactGenieProgressText('Searching web', 'web_search') })
+          const webActionStatus = webSearchStatusFromRecords([
+            rawRecord,
+            rawItem,
+            rawEvent,
+            rawEventItem,
+          ])
+          const completedWebActionStatus = webSearchStatusFromRecords([
+            rawRecord,
+            rawItem,
+            rawEvent,
+            rawEventItem,
+          ], true)
+
+          if (rawType === 'response.web_search_call.in_progress') {
+            if (webActionStatus) {
+              hasDetailedWebSearchStatus = true
+              streamEmit({
+                event: 'status',
+                phase: 'web_search',
+                text: webActionStatus,
+              })
+            } else if (!hasDetailedWebSearchStatus) {
+              streamEmit({
+                event: 'status',
+                phase: 'web_search',
+                text: 'Searching web',
+              })
+            }
+          }
+
+          if (rawItemType === 'web_search_call' && webActionStatus) {
+            hasDetailedWebSearchStatus = true
+            streamEmit({
+              event: 'status',
+              phase: 'web_search',
+              text: webActionStatus,
+            })
           }
 
           if (rawType === 'response.web_search_call.searching') {
-            emit({ event: 'status', phase: 'web_search', text: compactGenieProgressText('Searching web', 'web_search') })
+            if (webActionStatus) {
+              hasDetailedWebSearchStatus = true
+              streamEmit({
+                event: 'status',
+                phase: 'web_search',
+                text: webActionStatus,
+              })
+            } else if (!hasDetailedWebSearchStatus) {
+              streamEmit({
+                event: 'status',
+                phase: 'web_search',
+                text: 'Searching web',
+              })
+            }
           }
 
           if (rawType === 'response.web_search_call.completed') {
-            emit({ event: 'status', phase: 'web_search_done', text: compactGenieProgressText('Web search done', 'web_search_done') })
+            streamEmit({
+              event: 'status',
+              phase: 'web_search_done',
+              text: completedWebActionStatus ?? 'Web search done',
+            })
           }
 
           if (
@@ -867,17 +1042,17 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
               rawType === 'response.reasoning_summary_part.done') &&
             reasoningText
           ) {
-            emit({ event: 'reasoning_done', text: reasoningText })
+            streamEmit({ event: 'reasoning_done', text: reasoningText })
           }
 
           if (rawType === 'output_text_delta' || rawType === 'response.output_text.delta') {
-            if (firstTextAt == null && delta) {
+            if (!useBusinessAnalysisSynthesis && firstTextAt == null && delta) {
               firstTextAt = Date.now()
               // The model judged it had enough after a not-ready verdict and is
               // answering now — so show that, not a stale "continuing lookup".
               if (verifyGate.awaitingContinuation) {
                 verifyGate.awaitingContinuation = false
-                emit({ event: 'status', phase: 'responding', text: 'Writing the answer' })
+                streamEmit({ event: 'status', phase: 'responding', text: 'Writing the answer' })
               }
               console.info('[Genie Agent] first_text', {
                 requestId,
@@ -885,7 +1060,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
                 ms: firstTextAt - requestStartedAt,
               })
             }
-            emit({ event: 'text_delta', text: delta })
+            streamEmit({ event: 'text_delta', text: delta })
           }
         }
       }
@@ -896,6 +1071,13 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
         // retry harness below treats it like any transient "no final response"
         // failure (retry if no text yet, else surface a clean error) instead of
         // leaving the job hung on a dead stream with a ticking heartbeat.
+        streamEmit({
+          event: '_debug',
+          stage: 'executor_stream_error',
+          stalled,
+          error: debugErrorPayload(streamError),
+          elapsed_ms: Date.now() - requestStartedAt,
+        })
         if (stalled) throw new Error('model stream stalled — did not produce a final response')
         throw streamError
       } finally {
@@ -915,13 +1097,17 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
     // the same failure — better to surface the error immediately in that case.
     const RETRY_MAX_ELAPSED_MS = 45_000
     let executorAttempt = 0
+    let investigationRetried = false
+    let executorError: unknown = null
     while (true) {
       executorAttempt += 1
       try {
         await runExecutorStream()
+        executorError = null
         break
-      } catch (executorError) {
-        const message = executorError instanceof Error ? executorError.message : String(executorError)
+      } catch (err) {
+        executorError = err
+        const message = err instanceof Error ? err.message : String(err)
         const elapsedMs = Date.now() - requestStartedAt
         const retryable =
           executorAttempt < 2 &&
@@ -929,7 +1115,15 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
           firstTextAt == null &&
           elapsedMs < RETRY_MAX_ELAPSED_MS &&
           EXECUTOR_TRANSIENT_ERROR.test(message)
-        if (!retryable) throw executorError
+        emit({
+          event: '_debug',
+          stage: 'executor_attempt_failed',
+          attempt: executorAttempt,
+          retryable,
+          elapsed_ms: elapsedMs,
+          error: debugErrorPayload(err),
+        })
+        if (!retryable) break
         console.warn('[Genie Agent] transient executor failure, retrying', {
           requestId,
           attempt: executorAttempt,
@@ -940,12 +1134,164 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
       }
     }
 
+    const needsInvestigationRetry =
+      useBusinessAnalysisSynthesis &&
+      businessAnalysisSynthesis &&
+      !businessAnalysisDossierHasSufficientEvidence(businessAnalysisSynthesis) &&
+      !investigationRetried &&
+      !signal.aborted
+
+    if (needsInvestigationRetry) {
+      const synthesisForRetry = businessAnalysisSynthesis
+      if (!synthesisForRetry) throw new Error('Business analysis synthesis state missing during retry')
+      investigationRetried = true
+      emit({
+        event: '_debug',
+        stage: 'business_analysis_investigation_retry',
+        reason: 'insufficient_evidence',
+        successful_queries: synthesisForRetry.analysisQueries?.filter((query) => query.status === 'ok').length ?? 0,
+        total_queries: synthesisForRetry.analysisQueries?.length ?? 0,
+        has_evidence: businessAnalysisDossierHasEvidence(synthesisForRetry),
+        has_sufficient_evidence: businessAnalysisDossierHasSufficientEvidence(synthesisForRetry),
+      })
+      console.warn('[Genie Agent] business analysis investigation produced no evidence, retrying', {
+        requestId,
+        tool_call_count: toolCallCount,
+        prior_executor_error: executorError instanceof Error ? executorError.message : executorError,
+      })
+      emit({
+        event: 'status',
+        phase: 'rechecking',
+        text: 'Running planned data passes',
+      })
+      const completedEvidence = synthesisForRetry.analysisQueries
+        ?.filter((query) => query.status === 'ok')
+        .map((query) => `- ${query.purpose}`)
+        .join('\n') || '- none'
+      executorInputMessages = [
+        ...inputMessages,
+        userMessage(
+          `Investigation incomplete: the dossier does not yet contain enough evidence for the planned business analysis.
+
+Completed evidence so far:
+${completedEvidence}
+
+Continue the hidden execution plan NOW using run_lightspeed_sql_query, get_xero_financial_report, find_discount_candidates, and any other planned tools. Do not stop after setup/classification queries. Do not repeat completed setup work unless it must be refined. Gather the actual sales, margin, ranking, discount, inventory, and opportunity evidence needed by the success criteria. Call independent reads in parallel where possible. Do not write an executive report — only tool results matter for the synthesis pass.`,
+        ),
+      ]
+      try {
+        await runExecutorStream()
+        executorError = null
+      } catch (investigationError) {
+        const message = investigationError instanceof Error ? investigationError.message : String(investigationError)
+        const latestSynthesis = businessAnalysisSynthesis ?? synthesisForRetry
+        console.warn('[Genie Agent] investigation retry stream failed', {
+          requestId,
+          error: message,
+          has_evidence: businessAnalysisDossierHasEvidence(latestSynthesis),
+          has_sufficient_evidence: businessAnalysisDossierHasSufficientEvidence(latestSynthesis),
+        })
+        emit({
+          event: '_debug',
+          stage: 'business_analysis_investigation_retry_failed',
+          elapsed_ms: Date.now() - requestStartedAt,
+          has_evidence: businessAnalysisDossierHasEvidence(latestSynthesis),
+          has_sufficient_evidence: businessAnalysisDossierHasSufficientEvidence(latestSynthesis),
+          successful_queries: latestSynthesis.analysisQueries?.filter((query) => query.status === 'ok').length ?? 0,
+          total_queries: latestSynthesis.analysisQueries?.length ?? 0,
+          error: debugErrorPayload(investigationError),
+        })
+        if (!businessAnalysisDossierHasSufficientEvidence(latestSynthesis)) {
+          executorError = investigationError
+        } else {
+          executorError = null
+        }
+      }
+    }
+
+    if (
+      useBusinessAnalysisSynthesis &&
+      businessAnalysisSynthesis &&
+      !businessAnalysisDossierHasSufficientEvidence(businessAnalysisSynthesis) &&
+      !signal.aborted
+    ) {
+      const beforeRecovery = businessAnalysisSynthesis
+      const recovery = await runBusinessAnalysisRecoveryPasses({
+        userId,
+        latestUserMessage,
+        executionPlan,
+        emit: pipelineEmit,
+        visualPrefs,
+        signal,
+      })
+      if (recovery.attempted) {
+        emit({
+          event: '_debug',
+          stage: 'business_analysis_recovery_complete',
+          successful_queries: businessAnalysisSynthesis?.analysisQueries?.filter((query) => query.status === 'ok').length ?? 0,
+          total_queries: businessAnalysisSynthesis?.analysisQueries?.length ?? 0,
+          recovery_successful_queries: recovery.successful,
+          had_sufficient_evidence_before: businessAnalysisDossierHasSufficientEvidence(beforeRecovery),
+          has_sufficient_evidence_after: businessAnalysisSynthesis
+            ? businessAnalysisDossierHasSufficientEvidence(businessAnalysisSynthesis)
+            : false,
+        })
+        if (businessAnalysisSynthesis && businessAnalysisDossierHasSufficientEvidence(businessAnalysisSynthesis)) {
+          executorError = null
+        }
+      }
+    }
+
+    if (executorError) {
+      throw executorError
+    }
+
+    if (useBusinessAnalysisSynthesis && businessAnalysisSynthesis && !signal.aborted) {
+      await finishBusinessAnalysisFromDossier()
+    }
+
     emit({ event: 'done' })
   } catch (err) {
+    if (
+      useBusinessAnalysisSynthesis &&
+      businessAnalysisSynthesis &&
+      businessAnalysisDossierHasSufficientEvidence(businessAnalysisSynthesis) &&
+      !signal.aborted
+    ) {
+      try {
+        await finishBusinessAnalysisFromDossier()
+        runStatus = 'completed'
+        runErrorMessage = null
+        emit({ event: 'done' })
+        return
+      } catch (recoveryError) {
+        console.warn('[Genie Agent] synthesis recovery failed', {
+          requestId,
+          error: recoveryError instanceof Error ? recoveryError.message : String(recoveryError),
+        })
+      }
+    }
+
     runStatus = signal.aborted ? 'cancelled' : 'error'
     runErrorMessage = err instanceof Error ? err.message : 'Unknown error'
     try {
       // The raw error goes to telemetry/logs only — users get a human message.
+      emit({
+        event: '_debug',
+        stage: 'execute_final_error',
+        run_status: runStatus,
+        elapsed_ms: Date.now() - requestStartedAt,
+        route: finalRoute,
+        tool_call_count: toolCallCount,
+        tool_call_names: toolCallNames,
+        has_business_analysis_evidence: businessAnalysisSynthesis
+          ? businessAnalysisDossierHasEvidence(businessAnalysisSynthesis)
+          : false,
+        has_business_analysis_sufficient_evidence: businessAnalysisSynthesis
+          ? businessAnalysisDossierHasSufficientEvidence(businessAnalysisSynthesis)
+          : false,
+        error: debugErrorPayload(err),
+      })
       emit({
         event: 'error',
         message: 'I hit a technical snag and could not finish that answer. Please send the question again — it usually works on a retry.',

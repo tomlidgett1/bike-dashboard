@@ -26,6 +26,7 @@ import {
   StoreHeaderDropdownFooterAction,
   StoreHeaderDropdownHeader,
   StoreHeaderDropdownItem,
+  MessageSourceAvatar,
   storeHeaderDropdownContentClass,
   useStoreHeaderDropdownStyle,
 } from '@/components/layout/store-header-dropdown-panel';
@@ -62,7 +63,7 @@ export function MessagesDropdown() {
   const useStoreStyle = useStoreHeaderDropdownStyle();
   const { counts, refresh: refreshCount } = useCombinedUnreadCount();
   const { notifications, markAsRead } = useNotifications(5, true, open);
-  const { open: openPanel, openConversation } = useMessages();
+  const { openConversation } = useMessages();
   const {
     configured: nestConfigured,
     chats: nestChats,
@@ -148,14 +149,9 @@ export function MessagesDropdown() {
     handleNestClick(item.chatId);
   };
 
-  const handleOpenMarketplaceInbox = () => {
+  const handleOpenCustomerEnquiries = () => {
     setOpen(false);
-    openPanel();
-  };
-
-  const handleOpenNestInbox = () => {
-    setOpen(false);
-    router.push('/settings/store/nest');
+    router.push('/settings/store/customer-inquiries');
   };
 
   const renderInboxItemContent = (item: UnifiedInboxItem, compact = false) => {
@@ -164,17 +160,7 @@ export function MessagesDropdown() {
 
     return (
       <div className="flex items-start gap-3">
-        <div
-          className={cn(
-            'flex shrink-0 items-center justify-center rounded-full text-xs font-medium',
-            compact ? 'h-7 w-7 sm:h-8 sm:w-8' : 'h-8 w-8',
-            useStoreStyle || compact
-              ? 'bg-gray-100 text-gray-700'
-              : 'bg-blue-500 text-white',
-          )}
-        >
-          {item.displayName.slice(0, 1).toUpperCase()}
-        </div>
+        <MessageSourceAvatar source={item.source} compact={compact} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <p
@@ -318,41 +304,21 @@ export function MessagesDropdown() {
 
         {useStoreStyle ? (
           <StoreHeaderDropdownFooter>
-            {nestConfigured ? (
-              <div className="space-y-2">
-                <StoreHeaderDropdownFooterAction onClick={handleOpenMarketplaceInbox}>
-                  Open marketplace inbox
-                </StoreHeaderDropdownFooterAction>
-                <StoreHeaderDropdownFooterAction onClick={handleOpenNestInbox}>
-                  Open Nest inbox
-                </StoreHeaderDropdownFooterAction>
-              </div>
-            ) : (
-              <StoreHeaderDropdownFooterAction onClick={handleOpenMarketplaceInbox}>
-                Open inbox
-              </StoreHeaderDropdownFooterAction>
-            )}
+            <StoreHeaderDropdownFooterAction onClick={handleOpenCustomerEnquiries}>
+              View customer enquiries
+            </StoreHeaderDropdownFooterAction>
           </StoreHeaderDropdownFooter>
         ) : (
           <>
             <DropdownMenuSeparator />
-            <div className="space-y-1 p-1.5 sm:p-2">
+            <div className="p-1.5 sm:p-2">
               <Button
                 variant="ghost"
                 className="w-full rounded-md text-xs sm:text-sm"
-                onClick={handleOpenMarketplaceInbox}
+                onClick={handleOpenCustomerEnquiries}
               >
-                Open marketplace inbox
+                View customer enquiries
               </Button>
-              {nestConfigured ? (
-                <Button
-                  variant="ghost"
-                  className="w-full rounded-md text-xs sm:text-sm"
-                  onClick={handleOpenNestInbox}
-                >
-                  Open Nest inbox
-                </Button>
-              ) : null}
             </div>
           </>
         )}

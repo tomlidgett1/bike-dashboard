@@ -12,7 +12,7 @@ import { useAuth } from '@/components/providers/auth-provider';
 import { useAuthModal } from '@/components/providers/auth-modal-provider';
 import { useCart } from '@/components/providers/cart-provider';
 import { Button } from '@/components/ui/button';
-import { ShoppingBag } from 'lucide-react';
+import { ShoppingBag } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 

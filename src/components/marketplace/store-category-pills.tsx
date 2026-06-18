@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Package } from "lucide-react";
+import { Package } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 
 // ============================================================

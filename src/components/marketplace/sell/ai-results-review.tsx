@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { RefreshCw, FileText, ChevronDown, DollarSign, Package, AlertCircle, Shirt, Wrench, RotateCw } from "lucide-react";
+import { RefreshCw, FileText, ChevronDown, DollarSign, Package, AlertCircle, Shirt, Wrench, RotateCw } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";

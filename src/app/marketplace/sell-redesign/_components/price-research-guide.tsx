@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ExternalLink, Hand, RefreshCw, Search } from "lucide-react";
+import { ExternalLink, Hand, RefreshCw, Search } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 import { BRAND, formatAUD, resolvedBikeType, type BikeDraft } from "./data";
 import { Spinner, ShimmerText } from "./ui";

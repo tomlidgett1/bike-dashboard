@@ -20,10 +20,10 @@ import {
   MapPin,
   Award,
   ThumbsUp,
-  type LucideIcon,
-} from 'lucide-react';
+} from '@/components/layout/app-sidebar/dashboard-icons';
+import type { DashboardIcon } from '@/components/layout/app-sidebar/dashboard-icons';
 
-export const HOMEPAGE_ICONS: Record<string, LucideIcon> = {
+export const HOMEPAGE_ICONS: Record<string, DashboardIcon> = {
   wrench: Wrench,
   medal: Medal,
   bike: Bike,
@@ -45,6 +45,6 @@ export const HOMEPAGE_ICONS: Record<string, LucideIcon> = {
 /** Ordered list for the icon picker in settings. */
 export const HOMEPAGE_ICON_KEYS = Object.keys(HOMEPAGE_ICONS);
 
-export function getHomepageIcon(key: string): LucideIcon {
+export function getHomepageIcon(key: string): DashboardIcon {
   return HOMEPAGE_ICONS[key] ?? Sparkles;
 }

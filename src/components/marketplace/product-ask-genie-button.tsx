@@ -1,6 +1,6 @@
 "use client";
 
-import { Sparkles } from "lucide-react";
+import { Sparkles } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Button } from "@/components/ui/button";
 import { useGenie } from "@/components/providers/genie-provider";
 import { buildProductGenieContext } from "@/lib/genie/product-context";

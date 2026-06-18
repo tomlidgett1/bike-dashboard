@@ -8,6 +8,12 @@ export type GenieModelProfile = "default" | "nano";
  * Deep Business Review (autonomous ~20-25 min investigation → board-memo report). */
 export type GenieRunMode = "deep_research";
 
+export type GenieProgressStepRecord = {
+  phase: string;
+  text: string;
+  at: string;
+};
+
 export type GenieJobMetadata = {
   composio_session_ids?: Record<string, string>;
   client_assistant_id?: string;
@@ -16,6 +22,8 @@ export type GenieJobMetadata = {
   /** Set for special long-running modes; absent for normal chat turns. */
   mode?: GenieRunMode;
   step_index?: number;
+  /** Ordered status lines from the live SSE stream for timeline + shimmer. */
+  progress_steps?: GenieProgressStepRecord[];
   raw_debug_logs?: GenieRawDebugLogEntry[];
 };
 

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bike, Wrench, ShoppingBag, Zap, ChevronDown, ImageIcon, DollarSign, Loader2, MapPin, Upload, X, Save, Camera, Package, Shirt, Star, Truck, Sparkles, RotateCw } from "lucide-react";
+import { Bike, Wrench, ShoppingBag, Zap, ChevronDown, ImageIcon, DollarSign, Loader2, MapPin, Upload, X, Save, Camera, Package, Shirt, Star, Truck, Sparkles, RotateCw } from '@/components/layout/app-sidebar/dashboard-icons';
 import { ItemType, ListingImage, ConditionRating } from "@/lib/types/listing";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";

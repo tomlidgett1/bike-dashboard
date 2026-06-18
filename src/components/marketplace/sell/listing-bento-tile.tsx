@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import type { LucideIcon } from "lucide-react";
+import type { DashboardIcon } from '@/components/layout/app-sidebar/dashboard-icons';
 
 export function ListingBentoTile({
   icon: Icon,
@@ -10,7 +10,7 @@ export function ListingBentoTile({
   line,
   onClick,
 }: {
-  icon?: LucideIcon;
+  icon?: DashboardIcon;
   imageSrc?: string;
   label: string;
   line: string;
@@ -23,7 +23,7 @@ export function ListingBentoTile({
       className="flex min-h-[120px] flex-col gap-3 rounded-md border border-gray-200 bg-white p-4 text-left transition-all hover:border-gray-300 hover:bg-gray-50 active:scale-[0.98]"
     >
       {Icon ? (
-        <Icon className="h-[20px] w-[20px] text-gray-700" strokeWidth={1.75} />
+        <Icon className="h-[20px] w-[20px] text-gray-700" />
       ) : imageSrc ? (
         <Image src={imageSrc} alt="" width={20} height={20} className="h-5 w-5" />
       ) : null}

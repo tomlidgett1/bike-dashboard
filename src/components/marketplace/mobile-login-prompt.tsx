@@ -8,7 +8,7 @@ import {
   getCurrentReturnPath,
 } from "@/lib/auth/oauth-site-url";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from '@/components/layout/app-sidebar/dashboard-icons';
 import { useAuth } from "@/components/providers/auth-provider";
 import { motion, AnimatePresence } from "framer-motion";
 

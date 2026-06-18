@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { User, Upload, Loader2, X } from "lucide-react";
+import { User, Upload, Loader2, X } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";

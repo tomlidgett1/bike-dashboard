@@ -12,7 +12,7 @@ import {
   Camera,
   Info,
   RefreshCw,
-} from "lucide-react";
+} from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 import {
   AI_FIELDS,

@@ -19,6 +19,7 @@ import {
   StoreHeaderDropdownFooterAction,
   StoreHeaderDropdownHeader,
   StoreHeaderDropdownItem,
+  MessageSourceAvatar,
   storeHeaderDropdownContentClass,
 } from "@/components/layout/store-header-dropdown-panel";
 
@@ -125,9 +126,7 @@ export function NestMessagesDropdown() {
                 onClick={() => handleNotificationClick(notification.chatId)}
               >
                 <div className="flex items-start gap-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xs font-medium text-gray-700">
-                    {notification.displayName.slice(0, 1).toUpperCase()}
-                  </div>
+                  <MessageSourceAvatar source="nest" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-gray-800">
                       {notification.displayName}

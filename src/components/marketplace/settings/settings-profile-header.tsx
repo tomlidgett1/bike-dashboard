@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { MapPin, Edit2 } from "lucide-react";
+import { MapPin, Edit2 } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 

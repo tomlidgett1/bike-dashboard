@@ -6,7 +6,7 @@ import * as React from "react";
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowLeft, ShoppingBag, Loader2, ShieldCheck, Tag, RotateCcw, X } from "lucide-react";
+import { ArrowLeft, ShoppingBag, Loader2, ShieldCheck, Tag, RotateCcw, X } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Button } from "@/components/ui/button";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import Image from "next/image";

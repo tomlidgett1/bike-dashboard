@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight, Lock } from "lucide-react";
+import { ChevronRight, Lock } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 

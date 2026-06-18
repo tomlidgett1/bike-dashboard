@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2 } from '@/components/layout/app-sidebar/dashboard-icons';
 import {
   StoreProfileChrome,
   STORE_PAGE_CONTENT_SHELL,

@@ -15,7 +15,7 @@ import {
   TrendingUp,
   Search,
   type LucideIcon,
-} from "lucide-react";
+} from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";

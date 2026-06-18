@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Suspense } from "react";
 import { useSearchParams, usePathname, useRouter } from "next/navigation";
-import { Package, Store, User, Clock, Settings, ShoppingBag, PanelLeftClose, PanelLeft, HelpCircle, LogOut } from "lucide-react";
+import { Package, Store, User, Clock, Settings, ShoppingBag, PanelLeftClose, PanelLeft, HelpCircle, LogOut } from '@/components/layout/app-sidebar/dashboard-icons';
 import {
   bicycleStoreNavLabels,
   getMarketplaceListingsRoute,

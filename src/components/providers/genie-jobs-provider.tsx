@@ -17,6 +17,8 @@ import { appendRawDebugLog } from "@/lib/genie/analysis-events";
 import type { GenieRawDebugLogEntry } from "@/lib/genie/genie-job-types";
 import { readSSE } from "@/lib/optimize/read-sse";
 import { persistCompletedHomeV2Job } from "@/lib/genie/homev2-conversation-storage";
+import { mergeGenieJobSnapshots } from "@/lib/genie/sync-genie-job-message";
+import { appendGenieProgressStep } from "@/lib/genie/genie-progress-steps";
 import {
   loadGenieDismissedIds,
   loadGenieVisitedConversationIds,
@@ -125,6 +127,7 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
   // Jobs currently fed by a live SSE stream — polling must not clobber their
   // streaming state with the (throttled, staler) job-row snapshots.
   const liveJobIdsRef = React.useRef(new Set<string>());
+  const cancelledJobIdsRef = React.useRef(new Set<string>());
 
   const dismissedRef = React.useRef(dismissedIds);
   dismissedRef.current = dismissedIds;
@@ -179,7 +182,8 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
       );
       for (const job of incoming) {
         if (dismissed.has(job.id)) continue;
-        byId.set(job.id, job);
+        const prev = byId.get(job.id);
+        byId.set(job.id, prev ? mergeGenieJobSnapshots(prev, job) : job);
       }
       return [...byId.values()].sort(
         (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
@@ -290,10 +294,14 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
       let message: string | null = null;
       let phase: string | null = null;
       let rawDebugLogs: GenieRawDebugLogEntry[] = [];
+      let progressSteps = [] as NonNullable<GenieJobMetadata["progress_steps"]>;
       let terminal: { status: GenieJobStatus; errorMessage: string | null } | null = null;
       let flushTimer: number | null = null;
 
       const flush = () => {
+        if (jobId != null && cancelledJobIdsRef.current.has(jobId)) {
+          return;
+        }
         const completedAt = terminal ? new Date().toISOString() : null;
         setJobs((prev) =>
           prev.map((job) => {
@@ -308,6 +316,7 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
               metadata: {
                 ...job.metadata,
                 raw_debug_logs: rawDebugLogs,
+                progress_steps: progressSteps,
               },
               updatedAt: new Date().toISOString(),
               completedAt: completedAt ?? job.completedAt,
@@ -321,11 +330,21 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
       };
 
       const scheduleFlush = () => {
-        if (flushTimer != null) return;
+        if (flushTimer != null) {
+          window.clearTimeout(flushTimer);
+        }
         flushTimer = window.setTimeout(() => {
           flushTimer = null;
           flush();
-        }, 100);
+        }, 32);
+      };
+
+      const flushStatusNow = () => {
+        if (flushTimer != null) {
+          window.clearTimeout(flushTimer);
+          flushTimer = null;
+        }
+        flush();
       };
 
       try {
@@ -343,12 +362,33 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
           if (event.event !== "heartbeat") {
             rawDebugLogs = appendRawDebugLog(rawDebugLogs, event as Record<string, unknown>);
           }
-          if (event.event === "heartbeat") return;
+          if (event.event === "heartbeat") {
+            const heartbeatText = String(event.text ?? "").trim();
+            const heartbeatPhase = typeof event.phase === "string" ? event.phase : phase ?? "thinking";
+            if (heartbeatText) {
+              message = heartbeatText.slice(0, 240);
+              phase = heartbeatPhase;
+              const last = progressSteps[progressSteps.length - 1];
+              if (last && /^still /i.test(heartbeatText)) {
+                progressSteps = [
+                  ...progressSteps.slice(0, -1),
+                  { ...last, phase: heartbeatPhase, text: heartbeatText, at: new Date().toISOString() },
+                ];
+              } else {
+                progressSteps = appendGenieProgressStep(progressSteps, heartbeatPhase, heartbeatText);
+              }
+            }
+            scheduleFlush();
+            return;
+          }
           if (event.event === "status") {
             const text = String(event.text ?? "").trim();
             if (text) message = text.slice(0, 240);
             if (typeof event.phase === "string") phase = event.phase;
-            scheduleFlush();
+            if (text && typeof event.phase === "string") {
+              progressSteps = appendGenieProgressStep(progressSteps, event.phase, text);
+            }
+            flushStatusNow();
             return;
           }
           if (event.event === "done") {
@@ -442,8 +482,27 @@ export function GenieJobsProvider({ children }: { children: React.ReactNode }) {
 
   const cancelJob = React.useCallback(
     async (jobId: string) => {
-      await fetch(`/api/genie/background/${jobId}`, { method: "DELETE" });
-      await refreshJobs();
+      cancelledJobIdsRef.current.add(jobId);
+      liveJobIdsRef.current.delete(jobId);
+      const now = new Date().toISOString();
+      setJobs((prev) =>
+        prev.map((job) =>
+          job.id === jobId
+            ? {
+                ...job,
+                status: "cancelled",
+                completedAt: now,
+                updatedAt: now,
+              }
+            : job,
+        ),
+      );
+
+      try {
+        await fetch(`/api/genie/background/${jobId}`, { method: "DELETE" });
+      } finally {
+        await refreshJobs();
+      }
     },
     [refreshJobs],
   );

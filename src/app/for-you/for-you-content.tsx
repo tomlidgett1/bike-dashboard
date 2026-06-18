@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Sparkles } from "lucide-react";
+import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
+import { Sparkles } from '@/components/layout/app-sidebar/dashboard-icons';
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCardSkeleton } from "@/components/marketplace/product-card";
@@ -12,7 +12,7 @@ import { getOrCreateAnonymousId } from "@/lib/tracking/interaction-tracker";
 import { ForYouCarouselRow } from "@/components/marketplace/for-you/for-you-carousel-row";
 import { ForYouMoreProductsSection } from "@/components/marketplace/for-you/for-you-more-products-section";
 import { FOR_YOU_CAROUSEL_CARD_WIDTH } from "@/components/marketplace/for-you/carousel-card-width";
-import type { ForYouFeedPayload } from "@/lib/for-you/types";
+import type { ForYouFeedPayload, ForYouCarousel } from "@/lib/for-you/types";
 import {
   genieProgressShimmerClassName,
   genieProgressShimmerStyle,
@@ -20,6 +20,9 @@ import {
 import { cn } from "@/lib/utils";
 
 const ENHANCE_EASE = [0.04, 0.62, 0.23, 0.98] as const;
+const ENHANCE_LAYOUT_TRANSITION = { duration: 0.58, ease: ENHANCE_EASE } as const;
+const ENHANCE_STAGGER_S = 0.075;
+const ENHANCE_REVEAL_CLEAR_MS = 900;
 
 const ENHANCE_MESSAGES = [
   "Personalising your picks…",
@@ -41,6 +44,27 @@ interface ForYouContentProps {
   hadIdentity: boolean;
   /** Inside marketplace tab shell — inherits px-2/sm:px-6 from the page content area. */
   embedded?: boolean;
+}
+
+/** Personalised carousels slot in at the top; anything the LLM dropped stays below. */
+function mergeEnhancedCarousels(
+  baseline: ForYouCarousel[],
+  enhanced: ForYouCarousel[],
+): { merged: ForYouCarousel[]; enteringKeys: Set<string> } {
+  const enhancedKeys = new Set(enhanced.map((c) => c.key));
+  const baselineKeys = new Set(baseline.map((c) => c.key));
+  const enteringKeys = new Set<string>();
+
+  for (const carousel of enhanced) {
+    if (!baselineKeys.has(carousel.key) || carousel.source === "llm") {
+      enteringKeys.add(carousel.key);
+    }
+  }
+
+  return {
+    merged: [...enhanced, ...baseline.filter((c) => !enhancedKeys.has(c.key))],
+    enteringKeys,
+  };
 }
 
 /**
@@ -69,6 +93,9 @@ export function ForYouFeedView({ initialFeed, hadIdentity, embedded = false }: F
   const [feed, setFeed] = React.useState<ForYouFeedPayload>(initialFeed);
   const [isEnhancing, setIsEnhancing] = React.useState(() => initialFeed.enhanceable);
   const [enhanceMessageIndex, setEnhanceMessageIndex] = React.useState(0);
+  const [enteringCarouselKeys, setEnteringCarouselKeys] = React.useState<Set<string>>(
+    () => new Set(),
+  );
   const enhanceRequestedRef = React.useRef(false);
 
   // Establish the persistent anonymous identity cookie. If the server built
@@ -103,6 +130,12 @@ export function ForYouFeedView({ initialFeed, hadIdentity, embedded = false }: F
     return () => window.clearInterval(interval);
   }, [isEnhancing]);
 
+  React.useEffect(() => {
+    if (enteringCarouselKeys.size === 0) return;
+    const timer = window.setTimeout(() => setEnteringCarouselKeys(new Set()), ENHANCE_REVEAL_CLEAR_MS);
+    return () => window.clearTimeout(timer);
+  }, [enteringCarouselKeys]);
+
   // Background LLM enhancement — never blocks, never degrades.
   React.useEffect(() => {
     if (!feed.enhanceable || enhanceRequestedRef.current) return;
@@ -120,7 +153,21 @@ export function ForYouFeedView({ initialFeed, hadIdentity, embedded = false }: F
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.success && data.feed?.carousels?.length >= 3) {
-          setFeed(data.feed);
+          const enhanced = data.feed as ForYouFeedPayload;
+          let keysToEnter = new Set<string>();
+          setFeed((prev) => {
+            const { merged, enteringKeys } = mergeEnhancedCarousels(
+              prev.carousels,
+              enhanced.carousels,
+            );
+            keysToEnter = enteringKeys;
+            return {
+              ...enhanced,
+              carousels: merged,
+              moreProducts: enhanced.moreProducts ?? prev.moreProducts,
+            };
+          });
+          setEnteringCarouselKeys(keysToEnter);
         }
       })
       .catch(() => {})
@@ -173,6 +220,7 @@ export function ForYouFeedView({ initialFeed, hadIdentity, embedded = false }: F
   }, []);
 
   const moreProducts = feed.moreProducts || [];
+  let personalisedStaggerIndex = 0;
 
   return (
     <div
@@ -183,36 +231,70 @@ export function ForYouFeedView({ initialFeed, hadIdentity, embedded = false }: F
       }
     >
       {feed.carousels.length > 0 ? (
-        <div className="space-y-1">
-          {isEnhancing && (
-            <ForYouEnhanceLoadingText messageIndex={enhanceMessageIndex} />
-          )}
-          <AnimatePresence initial={false}>
-            {feed.carousels.map((carousel) => (
-              <motion.div
-                key={carousel.key}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
-              >
-                <ForYouCarouselRow
-                  carousel={carousel}
-                  userId={user?.id}
-                  onDismissProduct={handleDismissProduct}
-                  onHideCarousel={handleHideCarousel}
-                  embedded={embedded}
-                />
-              </motion.div>
-            ))}
-          </AnimatePresence>
-          <ForYouMoreProductsSection
-            products={moreProducts}
-            userId={user?.id}
-            embedded={embedded}
-            onDismissProduct={handleDismissMoreProduct}
-          />
-        </div>
+        <LayoutGroup id="for-you-feed">
+          <motion.div layout className="space-y-1">
+            <AnimatePresence initial={false} mode="popLayout">
+              {isEnhancing && (
+                <motion.div
+                  key="for-you-enhance-loading"
+                  layout
+                  initial={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                  transition={{ duration: 0.38, ease: ENHANCE_EASE }}
+                  className="overflow-hidden"
+                >
+                  <ForYouEnhanceLoadingText messageIndex={enhanceMessageIndex} />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence initial={false} mode="popLayout">
+              {feed.carousels.map((carousel) => {
+                const isEntering = enteringCarouselKeys.has(carousel.key);
+                const staggerDelay = isEntering
+                  ? personalisedStaggerIndex++ * ENHANCE_STAGGER_S
+                  : 0;
+
+                return (
+                  <motion.div
+                    key={carousel.key}
+                    layout
+                    initial={false}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{
+                      layout: ENHANCE_LAYOUT_TRANSITION,
+                      opacity: { duration: 0.25 },
+                      height: { duration: 0.35, ease: ENHANCE_EASE },
+                    }}
+                    className={isEntering ? "for-you-carousel-reveal" : undefined}
+                    style={
+                      isEntering
+                        ? ({ animationDelay: `${staggerDelay}s` } as React.CSSProperties)
+                        : undefined
+                    }
+                  >
+                    <ForYouCarouselRow
+                      carousel={carousel}
+                      userId={user?.id}
+                      onDismissProduct={handleDismissProduct}
+                      onHideCarousel={handleHideCarousel}
+                      embedded={embedded}
+                    />
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+
+            <motion.div layout transition={{ layout: ENHANCE_LAYOUT_TRANSITION }}>
+              <ForYouMoreProductsSection
+                products={moreProducts}
+                userId={user?.id}
+                embedded={embedded}
+                onDismissProduct={handleDismissMoreProduct}
+              />
+            </motion.div>
+          </motion.div>
+        </LayoutGroup>
       ) : isEnhancing ? (
         <div className="space-y-1">
           <ForYouEnhanceLoadingText messageIndex={enhanceMessageIndex} />

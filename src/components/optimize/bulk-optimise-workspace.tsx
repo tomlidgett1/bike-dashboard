@@ -9,7 +9,6 @@ import {
   CheckIcon,
   ChevronDown,
   Dot,
-  ImageIcon,
   Loader2,
   Package,
   PenLine,
@@ -464,7 +463,9 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
   const [searchResults, setSearchResults] = React.useState<BulkProduct[]>([]);
   const [pickerSelected, setPickerSelected] = React.useState<Set<string>>(new Set());
   const [searching, setSearching] = React.useState(false);
+  const [addPickerOpen, setAddPickerOpen] = React.useState(false);
   const searchAbortRef = React.useRef<AbortController | null>(null);
+  const addPickerRef = React.useRef<HTMLDivElement>(null);
 
   const imageRunsRef = React.useRef(imageRuns);
   React.useEffect(() => {
@@ -1331,6 +1332,24 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
     addCategoryFilter !== "" ||
     addBrandFilter !== "" ||
     addReadinessFilter === "needs-optimisation";
+  const showAddPicker = hasAddPickerQuery && addPickerOpen;
+
+  React.useEffect(() => {
+    if (!showAddPicker) return;
+    function handlePointerDown(event: MouseEvent) {
+      if (addPickerRef.current?.contains(event.target as Node)) return;
+      setAddPickerOpen(false);
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setAddPickerOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showAddPicker]);
 
   React.useEffect(() => {
     void (async () => {
@@ -1398,6 +1417,20 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
   const photosBusy = photoProgress !== null;
   const brandRunning = brandBusy.size > 0;
   const optimiseBusy = copyRunning || photosBusy || brandRunning;
+
+  const overallProgress = React.useMemo(() => {
+    const parts: { done: number; total: number }[] = [];
+    if (copyProgress) parts.push(copyProgress);
+    if (photoProgress) parts.push(photoProgress);
+    if (parts.length === 0) return null;
+    const done = parts.reduce((sum, part) => sum + part.done, 0);
+    const total = parts.reduce((sum, part) => sum + part.total, 0);
+    return {
+      done,
+      total,
+      percent: total > 0 ? Math.round((done / total) * 100) : 0,
+    };
+  }, [copyProgress, photoProgress]);
 
   const masterFieldState = React.useMemo(() => {
     const state: Record<FieldKey, boolean> = {
@@ -1566,20 +1599,27 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
     setSearchQuery("");
     setAddCategoryFilter("");
     setAddBrandFilter("");
+    setAddPickerOpen(false);
   };
 
   const toolbar = (
     <div className={cn("space-y-3", isProductsCard ? "" : "rounded-md border border-border bg-background p-4")}>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           {/* Add products */}
-          <div className="relative w-full min-w-0 lg:max-w-2xl">
+          <div ref={addPickerRef} className="relative w-full min-w-0 lg:max-w-2xl">
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
               <div className="relative min-w-0 flex-1 sm:max-w-[280px]">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   placeholder="Search name, SKU, brand or category..."
                   value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
+                  onChange={(event) => {
+                    setSearchQuery(event.target.value);
+                    if (event.target.value.trim().length >= 2) setAddPickerOpen(true);
+                  }}
+                  onFocus={() => {
+                    if (hasAddPickerQuery) setAddPickerOpen(true);
+                  }}
                   className={cn(
                     "rounded-md pl-8 text-sm",
                     isProductsCard ? "h-9 bg-white shadow-none" : "h-8 text-xs",
@@ -1604,7 +1644,10 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
                 <DropdownMenuContent align="start" className="max-h-72 w-56 overflow-y-auto rounded-md">
                   <DropdownMenuRadioGroup
                     value={addCategoryFilter || "all"}
-                    onValueChange={(value) => setAddCategoryFilter(value === "all" ? "" : value)}
+                    onValueChange={(value) => {
+                      setAddCategoryFilter(value === "all" ? "" : value);
+                      setAddPickerOpen(true);
+                    }}
                   >
                     <DropdownMenuRadioItem value="all" className="gap-2">
                       <Layers className="size-3.5 shrink-0 text-muted-foreground" />
@@ -1637,7 +1680,10 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
                 <DropdownMenuContent align="start" className="max-h-72 w-56 overflow-y-auto rounded-md">
                   <DropdownMenuRadioGroup
                     value={addBrandFilter || "all"}
-                    onValueChange={(value) => setAddBrandFilter(value === "all" ? "" : value)}
+                    onValueChange={(value) => {
+                      setAddBrandFilter(value === "all" ? "" : value);
+                      setAddPickerOpen(true);
+                    }}
                   >
                     <DropdownMenuRadioItem value="all">All brands</DropdownMenuRadioItem>
                     <DropdownMenuRadioItem value="__none__">No brand</DropdownMenuRadioItem>
@@ -1652,7 +1698,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
             </div>
 
             <AnimatePresence>
-              {hasAddPickerQuery ? (
+              {showAddPicker ? (
                 <motion.div
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: "auto", opacity: 1 }}
@@ -1686,9 +1732,10 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
                           <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-muted-foreground">
                             <Switch
                               checked={addReadinessFilter === "needs-optimisation"}
-                              onCheckedChange={(checked) =>
-                                setAddReadinessFilter(checked ? "needs-optimisation" : "all")
-                              }
+                              onCheckedChange={(checked) => {
+                                setAddReadinessFilter(checked ? "needs-optimisation" : "all");
+                                setAddPickerOpen(true);
+                              }}
                             />
                             Needs optimisation only
                           </label>
@@ -1779,13 +1826,17 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
               disabled={!someSelected || optimiseBusy}
               onClick={() => void startOptimise()}
             >
-              {optimiseBusy ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Wand2 className="size-4" />
-              )}
+              <Wand2 className="size-4" />
               Optimise selected ({rowSelected.size})
             </Button>
+            {overallProgress ? (
+              <OptimiseProgressRing
+                percent={overallProgress.percent}
+                label={`${overallProgress.done}/${overallProgress.total}`}
+              />
+            ) : optimiseBusy ? (
+              <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden />
+            ) : null}
           </div>
         </div>
 
@@ -1818,37 +1869,6 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
           ))}
         </div>
 
-        {/* Progress */}
-        <AnimatePresence>
-          {(copyProgress || photoProgress) ? (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={DROPDOWN_TRANSITION}
-              className="overflow-hidden"
-            >
-              <div className="space-y-2 border-t border-border/60 pt-3">
-                {copyProgress ? (
-                  <ProgressLine
-                    icon={<PenLine className="h-3 w-3" />}
-                    label="Writing copy with AI"
-                    done={copyProgress.done}
-                    total={copyProgress.total}
-                  />
-                ) : null}
-                {photoProgress ? (
-                  <ProgressLine
-                    icon={<ImageIcon className="h-3 w-3" />}
-                    label="Finding photos"
-                    done={photoProgress.done}
-                    total={photoProgress.total}
-                  />
-                ) : null}
-              </div>
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
     </div>
   );
 
@@ -1964,39 +1984,48 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
   );
 }
 
-// ── Progress line ───────────────────────────────────────────────────────────
+// ── Optimise progress ring ──────────────────────────────────────────────────
 
-function ProgressLine({
-  icon,
-  label,
-  done,
-  total,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  done: number;
-  total: number;
-}) {
-  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+function OptimiseProgressRing({ percent, label }: { percent: number; label: string }) {
+  const size = 20;
+  const strokeWidth = 2.5;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (percent / 100) * circumference;
+
   return (
-    <div>
-      <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-        <span className="flex items-center gap-1.5">
-          {icon}
-          {label}
-        </span>
-        <span className="font-mono tabular-nums">
-          {done}/{total}
-        </span>
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-md bg-muted">
-        <motion.div
-          className="h-full rounded-md bg-foreground"
-          initial={{ width: 0 }}
-          animate={{ width: `${pct}%` }}
+    <div
+      className="flex items-center gap-1.5 text-muted-foreground"
+      title={label}
+      aria-label={`Optimising: ${label}`}
+      role="status"
+    >
+      <svg width={size} height={size} className="shrink-0 -rotate-90" aria-hidden>
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={strokeWidth}
+          className="opacity-25"
+        />
+        <motion.circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={strokeWidth}
+          className="text-foreground"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          initial={{ strokeDashoffset: circumference }}
+          animate={{ strokeDashoffset: offset }}
           transition={{ duration: 0.4, ease: "easeOut" }}
         />
-      </div>
+      </svg>
+      <span className="font-mono text-[11px] tabular-nums">{label}</span>
     </div>
   );
 }

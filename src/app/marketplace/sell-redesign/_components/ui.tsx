@@ -5,13 +5,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   X,
   Loader2,
   Camera,
   Images,
   Pencil,
   type LucideIcon,
-} from "lucide-react";
+} from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 import { BRAND, BRAND_SOFT, BIKE_TYPES, bikeTypeSubtypes, type Confidence, confidenceMeta } from "./data";
 
@@ -576,6 +578,91 @@ export function Chevron({ open }: { open: boolean }) {
 
 // ---- Photo grid + uploader ---------------------------------
 
+function PhotoPreviewLightbox({
+  images,
+  index,
+  onClose,
+  onChangeIndex,
+}: {
+  images: string[];
+  index: number;
+  onClose: () => void;
+  onChangeIndex: (index: number) => void;
+}) {
+  const url = images[index];
+  const hasPrev = index > 0;
+  const hasNext = index < images.length - 1;
+
+  React.useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+      if (event.key === "ArrowLeft" && hasPrev) onChangeIndex(index - 1);
+      if (event.key === "ArrowRight" && hasNext) onChangeIndex(index + 1);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [hasNext, hasPrev, index, onChangeIndex, onClose]);
+
+  if (!url) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Photo preview"
+    >
+      <div
+        className="relative flex max-h-full max-w-full animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={url}
+          alt=""
+          className="max-h-[min(90dvh,900px)] max-w-[min(92vw,900px)] rounded-md object-contain"
+        />
+
+        <button
+          type="button"
+          aria-label="Close preview"
+          onClick={onClose}
+          className="absolute -right-2 -top-2 flex h-9 w-9 items-center justify-center rounded-full bg-white text-gray-800 shadow-md transition-colors hover:bg-gray-100 sm:right-2 sm:top-2"
+        >
+          <X className="h-4 w-4" />
+        </button>
+
+        {images.length > 1 ? (
+          <>
+            <button
+              type="button"
+              aria-label="Previous photo"
+              disabled={!hasPrev}
+              onClick={() => onChangeIndex(index - 1)}
+              className="absolute left-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/95 text-gray-800 shadow-md transition-colors hover:bg-white disabled:pointer-events-none disabled:opacity-40 sm:left-3"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              aria-label="Next photo"
+              disabled={!hasNext}
+              onClick={() => onChangeIndex(index + 1)}
+              className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/95 text-gray-800 shadow-md transition-colors hover:bg-white disabled:pointer-events-none disabled:opacity-40 sm:right-3"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+            <p className="absolute -bottom-8 left-1/2 -translate-x-1/2 text-xs font-medium text-white/90">
+              {index + 1} / {images.length}
+            </p>
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function PhotoUploader({
   images,
   onAdd,
@@ -591,6 +678,7 @@ export function PhotoUploader({
   uploading?: boolean;
   compact?: boolean;
 }) {
+  const [previewIndex, setPreviewIndex] = React.useState<number | null>(null);
   const cameraInputRef = React.useRef<HTMLInputElement>(null);
   const libraryInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -665,39 +753,66 @@ export function PhotoUploader({
     );
   }
   return (
-    <div className="grid grid-cols-3 gap-2">
-      {hiddenInputs}
-      {images.map((url, i) => (
-        <div key={`${url}-${i}`} className="relative aspect-square overflow-hidden rounded-md bg-gray-100">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={url} alt="" className="h-full w-full object-cover" />
-          {i === 0 && (
-            <span className="absolute left-1 top-1 rounded-md bg-black/65 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-              Cover
-            </span>
-          )}
-          {onRemove && (
+    <>
+      <div className="grid grid-cols-3 gap-2">
+        {hiddenInputs}
+        {images.map((url, i) => (
+          <div key={`${url}-${i}`} className="relative aspect-square overflow-hidden rounded-md bg-gray-100">
             <button
               type="button"
-              onClick={() => onRemove(i)}
-              className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-black/55 text-white"
-              aria-label="Remove photo"
+              onClick={() => setPreviewIndex(i)}
+              className="block h-full w-full cursor-zoom-in"
+              aria-label={`View photo ${i + 1}`}
             >
-              <X className="h-3.5 w-3.5" />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={url} alt="" className="h-full w-full object-cover" />
             </button>
-          )}
-        </div>
-      ))}
-      <button
-        type="button"
-        onClick={triggerLibrary}
-        disabled={uploading}
-        className="flex aspect-square flex-col items-center justify-center gap-1 rounded-md border border-dashed border-gray-300 text-gray-500 hover:bg-gray-50 disabled:opacity-50"
-      >
-        {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
-        <span className="text-[11px] font-medium">{uploading ? "…" : "Add"}</span>
-      </button>
-    </div>
+            {i === 0 && (
+              <span className="pointer-events-none absolute left-1 top-1 rounded-md bg-black/65 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                Cover
+              </span>
+            )}
+            {onRemove && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRemove(i);
+                  setPreviewIndex((current) => {
+                    if (current === null) return null;
+                    if (current === i) return null;
+                    if (current > i) return current - 1;
+                    return current;
+                  });
+                }}
+                className="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-full bg-black/55 text-white"
+                aria-label="Remove photo"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={triggerLibrary}
+          disabled={uploading}
+          className="flex aspect-square flex-col items-center justify-center gap-1 rounded-md border border-dashed border-gray-300 text-gray-500 hover:bg-gray-50 disabled:opacity-50"
+        >
+          {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
+          <span className="text-[11px] font-medium">{uploading ? "…" : "Add"}</span>
+        </button>
+      </div>
+
+      {previewIndex !== null && images[previewIndex] ? (
+        <PhotoPreviewLightbox
+          images={images}
+          index={previewIndex}
+          onClose={() => setPreviewIndex(null)}
+          onChangeIndex={setPreviewIndex}
+        />
+      ) : null}
+    </>
   );
 }
 

@@ -7,7 +7,7 @@
 // Used in both the mobile and desktop header clusters.
 
 import * as React from "react";
-import { ShoppingCart } from "lucide-react";
+import { ShoppingCart } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 import { useCart } from "@/components/providers/cart-provider";
 
@@ -30,7 +30,7 @@ export function CartButton({ className }: { className?: string }) {
         className
       )}
     >
-      <ShoppingCart className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
+      <ShoppingCart className="h-[22px] w-[22px] text-gray-700" />
       {showBadge && (
         <span className="absolute -top-1.5 -right-1.5 h-5 min-w-[20px] px-1 rounded-full bg-red-500 text-white text-[11px] flex items-center justify-center font-bold shadow-sm z-10">
           {totalQuantity > 99 ? "99+" : totalQuantity}

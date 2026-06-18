@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { LayoutList, SlidersHorizontal } from "lucide-react";
+import { LayoutList, SlidersHorizontal } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 import { ListCtaShowcase } from "./_components/list-cta-options";
 import { FILTER_VARIANTS } from "./_components/filter-panel-options";

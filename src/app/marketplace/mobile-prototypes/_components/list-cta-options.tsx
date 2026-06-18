@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { ArrowRight, ArrowUpRight, ChevronRight, Plus, Tag } from "lucide-react";
+import { ArrowRight, ArrowUpRight, ChevronRight, Plus, Tag } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 
 // ============================================================

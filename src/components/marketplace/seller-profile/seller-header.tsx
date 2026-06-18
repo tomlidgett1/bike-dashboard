@@ -14,7 +14,7 @@ import {
   MessageCircle,
   CheckCircle,
   Settings
-} from "lucide-react";
+} from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { SellerProfile } from "@/app/api/marketplace/seller/[sellerId]/route";

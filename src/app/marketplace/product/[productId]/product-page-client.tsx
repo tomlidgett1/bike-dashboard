@@ -24,7 +24,6 @@ import {
   type BikeSpecSelection,
 } from "@/components/marketplace/bike-spec-explore-panel";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
-import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useProductView, trackGalleryView } from "@/lib/tracking/interaction-tracker";
 import { useStoreProductView } from "@/lib/tracking/store-analytics";
@@ -245,13 +244,15 @@ export function ProductPageClient({
         
         <div>
           {/* Desktop: photos (white) + info (gray); white wrapper avoids gray dead space beside thumbnails */}
-          <div className="hidden bg-white lg:block">
+          <div className="hidden bg-white lg:block lg:pb-0">
+            <div className="mx-auto max-w-[1536px] pl-3 pr-4 xl:pl-4 xl:pr-6">
+              <div className="pt-6 pb-6">{productBreadcrumbs}</div>
+            </div>
             <div className="mx-auto flex max-w-[1536px] items-start">
-              <div className="min-w-0 w-[62%] pl-3 pr-4 xl:pl-4 xl:pr-6">
-                <div className="pt-4 sm:pt-6 pb-4 sm:pb-6">{productBreadcrumbs}</div>
+              <div className="min-w-0 w-[62%] bg-white pl-3 pr-4 xl:pl-4 xl:pr-6">
                 <EnhancedImageGallery {...galleryProps} />
               </div>
-              <div className="sticky top-0 min-w-0 w-[38%] shrink-0 self-start bg-gray-50 px-4 max-h-screen overflow-y-auto overscroll-contain [scrollbar-width:thin] xl:px-5">
+              <div className="sticky top-0 min-w-0 w-[38%] shrink-0 self-start bg-white px-4 max-h-screen overflow-y-auto overscroll-contain [scrollbar-width:thin] xl:px-5">
                 {infoPanelContent}
               </div>
             </div>
@@ -265,7 +266,7 @@ export function ProductPageClient({
             <EnhancedImageGallery
               {...galleryProps}
               sidePanel={
-                <div className="border-t border-gray-200/80 bg-gray-50">
+                <div className="bg-gray-50">
                   {infoPanelContent}
                 </div>
               }
@@ -299,12 +300,7 @@ export function ProductPageClient({
           />
 
           {/* Recommendation Carousels */}
-          <div
-            className={cn(
-              "mx-auto min-w-0 max-w-[1536px] space-y-2 overflow-x-hidden border-t border-gray-200 bg-gray-50 px-4 pt-3 pb-4 sm:px-4 sm:py-5 lg:px-4 xl:px-5",
-              showFullWidthBikeSpecs || featuredBrandAbout ? "mt-0" : "mt-0 lg:mt-8"
-            )}
-          >
+          <div className="mx-auto min-w-0 max-w-[1536px] space-y-2 overflow-x-hidden border-t border-gray-200 bg-gray-50 px-4 pt-4 pb-4 sm:px-4 sm:pb-5 lg:px-4 lg:pt-5 lg:pb-6 xl:px-5">
             {/* Similar Items Carousel — LLM-ranked in real time */}
             <SimilarProductsCarousel
               productId={product.id}

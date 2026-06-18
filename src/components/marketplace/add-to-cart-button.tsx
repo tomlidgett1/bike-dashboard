@@ -10,7 +10,7 @@
 
 import * as React from "react";
 import { Button } from "@/components/ui/button";
-import { ShoppingCart, Check } from "lucide-react";
+import { ShoppingCart, Check } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 import { useCart, MAX_CART_ITEMS } from "@/components/providers/cart-provider";
 
@@ -88,12 +88,12 @@ export function AddToCartButton({
       >
         {inCart ? (
           <>
-            <Check className="h-4 w-4 mr-2" />
+            <Check className="h-4 w-4" />
             In Cart
           </>
         ) : (
           <>
-            <ShoppingCart className="h-4 w-4 mr-2" />
+            <ShoppingCart className="h-4 w-4" />
             Add to Cart
           </>
         )}

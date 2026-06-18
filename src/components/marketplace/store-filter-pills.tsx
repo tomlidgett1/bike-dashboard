@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { Store, Check } from "lucide-react";
+import { Store, Check } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 
 // ============================================================

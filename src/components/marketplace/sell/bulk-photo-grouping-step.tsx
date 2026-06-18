@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion, Reorder, AnimatePresence } from "framer-motion";
-import { Grip, X, Plus, Merge, Loader2, Edit2, Check } from "lucide-react";
+import { Grip, X, Plus, Merge, Loader2, Edit2, Check } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";

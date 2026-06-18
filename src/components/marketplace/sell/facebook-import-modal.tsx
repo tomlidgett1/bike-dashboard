@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, X, CheckCircle2, XCircle } from "lucide-react";
+import { Loader2, X, CheckCircle2, XCircle } from '@/components/layout/app-sidebar/dashboard-icons';
 import Image from "next/image";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";

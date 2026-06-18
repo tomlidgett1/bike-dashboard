@@ -1,5 +1,6 @@
 const MAX_DETAIL_CHARS = 72
-const LIVE_COMFORTABLE_CHARS = 52
+/** ~2 lines in the home chat shimmer at 15px / relaxed leading. */
+const LIVE_COMFORTABLE_CHARS = 112
 
 function quoteFragment(value: string, maxWords = 4): string {
   const cleaned = value.replace(/["']/g, '').trim()
@@ -237,6 +238,13 @@ export function compactGenieProgressText(text: string, phase?: string): string {
   const trimmed = text.trim()
   if (!trimmed) return phaseFallback(phase)
 
+  if (/^i'll treat this as /i.test(trimmed)) {
+    if (trimmed.length <= MAX_DETAIL_CHARS) return trimmed
+    const slice = trimmed.slice(0, MAX_DETAIL_CHARS)
+    const lastSpace = slice.lastIndexOf(' ')
+    return `${(lastSpace > 24 ? slice.slice(0, lastSpace) : slice).trim()}…`
+  }
+
   const compact = applyPatternRules(trimmed)
   if (!compact) return phaseFallback(phase)
   if (shouldUsePhaseFallback(compact, trimmed, MAX_DETAIL_CHARS)) {
@@ -245,15 +253,189 @@ export function compactGenieProgressText(text: string, phase?: string): string {
   return compact
 }
 
+export type GenieProgressStepLike = {
+  phase: string
+  text: string
+  sourceText?: string
+}
+
+export function isRoutingFramingText(text: string): boolean {
+  return /^i'll treat this as /i.test(text.trim())
+}
+
+/** Latest progress step for the live shimmer — always follow the most recent activity. */
+export function liveGenieDisplayStep<T extends GenieProgressStepLike>(steps: T[]): T | undefined {
+  if (!steps.length) return undefined
+  return steps[steps.length - 1]
+}
+
+export type GenieSubCommentaryContext = {
+  mainLabel?: string
+  analysisQueries?: Array<{ purpose: string; status: string }>
+  analysisPlan?: {
+    execution_steps?: string[]
+    sql_strategy_summary?: string | null
+    user_intent?: string | null
+    date_range_label?: string | null
+  }
+}
+
+const LIVE_SUB_CHARS = 140
+
+function normalizeProgressCompare(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, ' ').trim()
+}
+
+function clipSubCommentary(value: string, max = LIVE_SUB_CHARS): string {
+  const trimmed = value.trim()
+  if (trimmed.length <= max) return trimmed
+  const slice = trimmed.slice(0, max)
+  const lastSpace = slice.lastIndexOf(' ')
+  return `${(lastSpace > 48 ? slice.slice(0, lastSpace) : slice).trimEnd()}…`
+}
+
+function extractExplicitSubDetail(raw: string): string | null {
+  const patterns: Array<[RegExp, (match: RegExpMatchArray) => string]> = [
+    [/^running sql report:\s*(.+)/i, (match) => match[1]],
+    [/^planning \d+ steps?:\s*(.+)/i, (match) => match[1]],
+    [/^rechecking:\s*(.+)/i, (match) => match[1]],
+    [/^finding images for "(.+?)"/i, (match) => `Image search: ${match[1]}`],
+    [/^opening web search:\s*(.+)/i, (match) => match[1]],
+    [/^searching (?:the )?web(?:\s+for)?\s*[:"]?\s*(.+)/i, (match) => match[1]],
+    [/^browsing cycling resources:\s*(.+)/i, (match) => match[1]],
+    [/^sql:\s*(.+)/i, (match) => match[1]],
+    [/^workflow selected:\s*(.+)/i, (match) => match[1]],
+    [/^querying sql .+ for (.+)/i, (match) => match[1]],
+    [/^rendering .+ for "(.+?)"/i, (match) => match[1]],
+    [/^searching (?:the )?lightspeed inventory mirror for "(.+?)"/i, (match) => `Stock lookup: ${match[1]}`],
+    [/^resolving live lightspeed products for "(.+?)"/i, (match) => `Product lookup: ${match[1]}`],
+    [/^finding customer context for "(.+?)"/i, (match) => `Customer: ${match[1]}`],
+    [/^building customer profile for (.+)/i, (match) => `Profile: ${match[1]}`],
+  ]
+
+  for (const [pattern, pick] of patterns) {
+    const match = raw.match(pattern)
+    if (!match) continue
+    const detail = pick(match).trim()
+    if (detail) return detail
+  }
+
+  return null
+}
+
+/** Secondary line under the live shimmer — concrete detail about the current action. */
+export function liveGenieSubCommentary(
+  step: (GenieProgressStepLike & { kind?: 'status' | 'reasoning' }) | undefined,
+  context?: GenieSubCommentaryContext,
+): string | null {
+  const runningQuery = context?.analysisQueries
+    ?.filter((query) => query.status === 'running')
+    .slice(-1)[0]
+  if (runningQuery?.purpose?.trim()) {
+    return clipSubCommentary(runningQuery.purpose)
+  }
+
+  if (!step) {
+    const planSummary = context?.analysisPlan?.sql_strategy_summary?.trim()
+    if (planSummary) return clipSubCommentary(planSummary)
+    return null
+  }
+
+  const raw = (step.sourceText ?? step.text).trim()
+  if (!raw) return null
+
+  const mainLabel = context?.mainLabel?.trim()
+    || (step.kind === 'reasoning'
+      ? 'Thinking it through'
+      : liveGenieProgressPreview(raw, step.phase))
+
+  if (step.kind === 'reasoning') {
+    const lines = raw
+      .split('\n')
+      .map((line) => line.replace(/^[-*]\s*/, '').trim())
+      .filter((line) => line.length > 0)
+    if (lines.length <= 1) return null
+    const rest = lines.slice(1).join(' · ')
+    if (!rest || normalizeProgressCompare(rest) === normalizeProgressCompare(mainLabel)) return null
+    return clipSubCommentary(rest)
+  }
+
+  if (/^i'll treat this as /i.test(raw)) {
+    const intent = context?.analysisPlan?.user_intent?.trim()
+    if (intent && normalizeProgressCompare(intent) !== normalizeProgressCompare(mainLabel)) {
+      return clipSubCommentary(intent)
+    }
+    return null
+  }
+
+  const explicit = extractExplicitSubDetail(raw)
+  if (explicit && normalizeProgressCompare(explicit) !== normalizeProgressCompare(mainLabel)) {
+    return clipSubCommentary(explicit)
+  }
+
+  if (step.sourceText?.trim() && step.sourceText.trim() !== step.text.trim()) {
+    const source = step.sourceText.trim()
+    const compactSource = compactGenieProgressText(source, step.phase)
+    if (
+      normalizeProgressCompare(source) !== normalizeProgressCompare(mainLabel)
+      && normalizeProgressCompare(compactSource) !== normalizeProgressCompare(mainLabel)
+    ) {
+      return clipSubCommentary(source)
+    }
+  }
+
+  const compact = compactGenieProgressText(raw, step.phase)
+  if (
+    compact
+    && normalizeProgressCompare(compact) !== normalizeProgressCompare(mainLabel)
+    && !shouldUsePhaseFallback(compact, raw, MAX_DETAIL_CHARS)
+  ) {
+    return clipSubCommentary(compact)
+  }
+
+  if (step.phase === 'planning' || step.phase === 'planning_done') {
+    const planSummary = context?.analysisPlan?.sql_strategy_summary?.trim()
+    if (planSummary && normalizeProgressCompare(planSummary) !== normalizeProgressCompare(mainLabel)) {
+      return clipSubCommentary(planSummary)
+    }
+    const steps = context?.analysisPlan?.execution_steps?.filter(Boolean) ?? []
+    if (steps.length) {
+      const joined = steps.slice(0, 3).join(' → ')
+      if (normalizeProgressCompare(joined) !== normalizeProgressCompare(mainLabel)) {
+        return clipSubCommentary(joined)
+      }
+    }
+  }
+
+  if (step.phase === 'lightspeed_sales' || step.phase === 'lightspeed_inventory') {
+    const dateRange = context?.analysisPlan?.date_range_label?.trim()
+    if (dateRange && normalizeProgressCompare(dateRange) !== normalizeProgressCompare(mainLabel)) {
+      return clipSubCommentary(dateRange)
+    }
+  }
+
+  return null
+}
+
 /** User-facing line shown while Genie is still working — never ends with an ellipsis. */
 export function liveGenieProgressPreview(text: string, phase?: string): string {
   const trimmed = text.trim()
   if (!trimmed) return phaseFallback(phase)
 
+  if (/^i'll treat this as /i.test(trimmed)) {
+    if (trimmed.length <= LIVE_COMFORTABLE_CHARS) return trimmed
+    const slice = trimmed.slice(0, LIVE_COMFORTABLE_CHARS)
+    const lastSpace = slice.lastIndexOf(' ')
+    return (lastSpace > 24 ? slice.slice(0, lastSpace) : slice).trim()
+  }
+
   const compact = applyPatternRules(trimmed)
   if (!compact) return phaseFallback(phase)
+  if (compact.length <= LIVE_COMFORTABLE_CHARS) return compact
   if (shouldUsePhaseFallback(compact, trimmed, LIVE_COMFORTABLE_CHARS)) {
     return phaseFallback(phase)
   }
-  return compact
+  const slice = compact.slice(0, LIVE_COMFORTABLE_CHARS)
+  const lastSpace = slice.lastIndexOf(' ')
+  return (lastSpace > 40 ? slice.slice(0, lastSpace) : slice).trim()
 }

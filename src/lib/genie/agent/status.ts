@@ -9,7 +9,7 @@ import {
 
 import { SMART_AGENT_MAX_TURNS, STRATEGIC_AGENT_MAX_TURNS } from './runtime'
 
-/** Clip a detail fragment so the whole status stays under the 52-char live preview budget. */
+/** Clip a detail fragment so the whole status fits the two-line live shimmer. */
 function clipDetail(value: string, max: number): string {
   const cleaned = value.replace(/\s+/g, ' ').trim()
   if (cleaned.length <= max) return cleaned
@@ -40,12 +40,12 @@ const XERO_REPORT_LABELS: Record<string, string> = {
 function detailedStatusForTool(toolName: string, args?: Record<string, unknown>): { phase: string; text: string } | null {
   if (toolName === 'run_lightspeed_sql_query') {
     const purpose = argText(args, 'purpose')
-    if (purpose) return { phase: 'lightspeed_sales', text: `SQL: ${clipDetail(purpose, 44)}` }
+    if (purpose) return { phase: 'lightspeed_sales', text: `SQL: ${clipDetail(purpose, 96)}` }
   }
   if (toolName === 'get_xero_financial_report') {
     const report = argText(args, 'report')
     const label = report ? XERO_REPORT_LABELS[report] ?? report.replaceAll('_', ' ') : null
-    if (label) return { phase: 'xero', text: `Xero: pulling ${clipDetail(label, 34)}` }
+    if (label) return { phase: 'xero', text: `Xero: pulling ${clipDetail(label, 88)}` }
   }
   if (toolName === 'list_xero_invoices') {
     const type = argText(args, 'invoice_type')
@@ -54,35 +54,35 @@ function detailedStatusForTool(toolName: string, args?: Record<string, unknown>)
   }
   if (toolName === 'search_xero_contacts') {
     const query = argText(args, 'query', 'search')
-    if (query) return { phase: 'xero', text: `Xero: contact "${clipDetail(query, 26)}"` }
+    if (query) return { phase: 'xero', text: `Xero: contact "${clipDetail(query, 80)}"` }
   }
   if (toolName === 'search_lightspeed_inventory' || toolName === 'search_lightspeed_products') {
     const query = argText(args, 'query', 'search', 'product_query')
-    if (query) return { phase: 'lightspeed_inventory', text: `Stock: ${clipDetail(query, 40)}` }
+    if (query) return { phase: 'lightspeed_inventory', text: `Stock: ${clipDetail(query, 92)}` }
   }
   if (toolName === 'search_lightspeed_customers') {
     const query = argText(args, 'query', 'search', 'customer_query', 'name')
-    if (query) return { phase: 'lightspeed_customers', text: `Customers: ${clipDetail(query, 36)}` }
+    if (query) return { phase: 'lightspeed_customers', text: `Customers: ${clipDetail(query, 88)}` }
   }
   if (toolName === 'get_lightspeed_product_purchasers') {
     const query = argText(args, 'product_query', 'query', 'product')
-    if (query) return { phase: 'lightspeed_customers', text: `Buyers: ${clipDetail(query, 40)}` }
+    if (query) return { phase: 'lightspeed_customers', text: `Buyers: ${clipDetail(query, 92)}` }
   }
   if (toolName === 'get_lightspeed_customer_profile') {
     const who = argText(args, 'customer_query', 'query', 'name', 'customer_name')
-    if (who) return { phase: 'lightspeed_customers', text: `Profile: ${clipDetail(who, 38)}` }
+    if (who) return { phase: 'lightspeed_customers', text: `Profile: ${clipDetail(who, 90)}` }
   }
   if (toolName === 'get_deputy_timesheets') {
     const who = argText(args, 'employee_name')
-    if (who) return { phase: 'deputy', text: `Deputy: hours for ${clipDetail(who, 30)}` }
+    if (who) return { phase: 'deputy', text: `Deputy: hours for ${clipDetail(who, 84)}` }
   }
   if (toolName === 'get_deputy_rosters') {
     const who = argText(args, 'employee_name')
-    if (who) return { phase: 'deputy', text: `Deputy: roster for ${clipDetail(who, 30)}` }
+    if (who) return { phase: 'deputy', text: `Deputy: roster for ${clipDetail(who, 84)}` }
   }
   if (toolName === 'search_gmail') {
     const query = argText(args, 'query', 'search')
-    if (query) return { phase: 'gmail', text: `Gmail: "${clipDetail(query, 38)}"` }
+    if (query) return { phase: 'gmail', text: `Gmail: "${clipDetail(query, 90)}"` }
   }
   return null
 }
@@ -260,10 +260,17 @@ function statusForExecutionStart(
 function maxTurnsForRoute(route: GenieOrchestrationDecision['route'], planned: boolean): number {
   if (route === 'business_analysis') return STRATEGIC_AGENT_MAX_TURNS
   if (planned) return SMART_AGENT_MAX_TURNS
-  if (route === 'web_research') return 8
+  if (route === 'web_research') return 12
   if (route === 'lightspeed_sql' || route === 'storefront_action') return 16
   if (route === 'mixed') return 24
   return 8
 }
 
-export { statusForTool, statusAfterTool, statusForRoute, statusForExecutionStart, maxTurnsForRoute }
+export {
+  inferStoreWorkflowLabel,
+  statusForTool,
+  statusAfterTool,
+  statusForRoute,
+  statusForExecutionStart,
+  maxTurnsForRoute,
+}

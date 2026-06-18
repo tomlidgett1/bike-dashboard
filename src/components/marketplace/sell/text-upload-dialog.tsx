@@ -7,7 +7,7 @@ import {
   Loader2,
   MessageCircle,
   X,
-} from "lucide-react";
+} from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 
 const CLOSE_MS = 220;

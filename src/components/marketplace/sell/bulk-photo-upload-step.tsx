@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { Upload, X, Loader2, Camera, Image as ImageIcon } from "lucide-react";
+import { Upload, X, Loader2, Camera, Image as ImageIcon } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import Image from "next/image";

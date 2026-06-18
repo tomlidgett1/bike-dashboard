@@ -3,7 +3,7 @@
 import * as React from "react";
 import { motion } from "framer-motion";
 import { format, parseISO } from "date-fns";
-import { Bike, Clock, Loader2, Tag } from "lucide-react";
+import { Bike, Clock, Loader2, Tag } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

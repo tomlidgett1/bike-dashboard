@@ -5,7 +5,7 @@
 // ============================================================
 
 import React, { useCallback, useState } from 'react';
-import { Upload, X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Upload, X, CheckCircle, AlertCircle, Loader2 } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { validateImageFile } from '@/lib/services/image-processing/optimizer';

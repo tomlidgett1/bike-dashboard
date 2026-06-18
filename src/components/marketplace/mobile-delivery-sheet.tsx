@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
-import { X, MapPin, Truck, Loader2, Check, Package, ChevronRight, ChevronLeft, AlertCircle } from "lucide-react";
+import { X, MapPin, Truck, Loader2, Check, Package, ChevronRight, ChevronLeft, AlertCircle } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";

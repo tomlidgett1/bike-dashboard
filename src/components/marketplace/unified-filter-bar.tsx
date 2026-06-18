@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Package, ChevronRight, X, Store, Sparkles } from "lucide-react";
+import { ChevronRight, X } from '@/components/layout/app-sidebar/dashboard-icons';
 import { SolarProvider, MagicStick3, Bag, Shop } from "@solar-icons/react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -189,7 +189,7 @@ export function UnifiedFilterBar({
   const activeFilterCount = countActiveFilters(browseFilters);
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-3 sm:space-y-4">
       {/* ════════════════════════════════════════
           ROW 1 — space tabs.
           Category pills are NOT here; they live in Row 2.
@@ -252,53 +252,55 @@ export function UnifiedFilterBar({
       </div>
 
       {/* Desktop — filters always visible, no toggle button */}
-      <div className="hidden sm:flex items-center gap-2.5">
-        <div className="h-11 rounded-full bg-white border border-gray-200 shadow-sm p-1 inline-flex flex-shrink-0">
-          <button
-            type="button"
-            onClick={goForYou}
-            className={cn(
-              "flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
-              isForYouActive ? "bg-gray-100 text-gray-900" : "text-gray-500 hover:text-gray-700",
-            )}
-          >
-            <Sparkles className="h-4 w-4" />
-            For You
-          </button>
-          <button
-            type="button"
-            onClick={() => { setOptimisticTab("marketplace"); onViewModeChange("all"); }}
-            className={cn(
-              "flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
-              isBrowseActive ? "bg-gray-100 text-gray-900" : "text-gray-500 hover:text-gray-700",
-            )}
-          >
-            <Package className="h-4 w-4" />
-            Marketplace
-          </button>
-          <button
-            type="button"
-            onClick={() => { setOptimisticTab("stores"); onNavigateToStores?.(); }}
-            className={cn(
-              "flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
-              isStoresActive ? "bg-gray-100 text-gray-900" : "text-gray-500 hover:text-gray-700",
-            )}
-          >
-            <Store className="h-4 w-4" />
-            Bike Stores
-          </button>
-          <button
-            type="button"
-            onClick={() => { setOptimisticTab("uber"); onNavigateToUber?.(); }}
-            className={cn(
-              "flex h-9 min-w-16 cursor-pointer items-center justify-center rounded-full px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
-              isUberActive ? "bg-[#0eb462] text-white shadow-[0_0_10px_rgba(17,24,39,0.16)]" : "text-gray-500 hover:text-gray-700",
-            )}
-            aria-label="Uber delivery"
-          >
-            <UberLogo active={isUberActive} className="h-3.5" />
-          </button>
-        </div>
+      <div className="hidden sm:flex items-center gap-4">
+        <SolarProvider value={{ weight: "Linear", color: "currentColor" }} svgProps={{ strokeWidth: 2 }}>
+          <div className="h-11 rounded-full bg-white border border-gray-200 shadow-sm p-1 inline-flex flex-shrink-0">
+            <button
+              type="button"
+              onClick={goForYou}
+              className={cn(
+                "flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+                isForYouActive ? "bg-gray-100 text-gray-900" : "text-gray-500 hover:text-gray-700",
+              )}
+            >
+              <MagicStick3 className="h-4 w-4 flex-shrink-0" />
+              For You
+            </button>
+            <button
+              type="button"
+              onClick={() => { setOptimisticTab("marketplace"); onViewModeChange("all"); }}
+              className={cn(
+                "flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+                isBrowseActive ? "bg-gray-100 text-gray-900" : "text-gray-500 hover:text-gray-700",
+              )}
+            >
+              <Bag className="h-4 w-4 flex-shrink-0" />
+              Marketplace
+            </button>
+            <button
+              type="button"
+              onClick={() => { setOptimisticTab("stores"); onNavigateToStores?.(); }}
+              className={cn(
+                "flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full px-3.5 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+                isStoresActive ? "bg-gray-100 text-gray-900" : "text-gray-500 hover:text-gray-700",
+              )}
+            >
+              <Shop className="h-4 w-4 flex-shrink-0" />
+              Bike Stores
+            </button>
+            <button
+              type="button"
+              onClick={() => { setOptimisticTab("uber"); onNavigateToUber?.(); }}
+              className={cn(
+                "flex h-9 min-w-16 cursor-pointer items-center justify-center rounded-full px-2 text-sm font-medium whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20",
+                isUberActive ? "bg-[#0eb462] text-white shadow-[0_0_10px_rgba(17,24,39,0.16)]" : "text-gray-500 hover:text-gray-700",
+              )}
+              aria-label="Uber delivery"
+            >
+              <UberLogo active={isUberActive} className="h-3.5" />
+            </button>
+          </div>
+        </SolarProvider>
 
         {/* Stores-only picker */}
         {onStoreSelect && isStoresMode && (
@@ -333,47 +335,48 @@ export function UnifiedFilterBar({
           ROW 2 — category pills (always on desktop, collapsible on mobile)
           ════════════════════════════════════════ */}
 
-      {/* Desktop: always shown */}
+      {/* Desktop: category breadcrumbs sit centred between row 1 and pills */}
+      {showBrowseChrome && !suppressCategoryBrowse && breadcrumbs.length > 0 && (
+        <div className="hidden sm:flex items-center gap-1 overflow-x-auto scrollbar-hide">
+          <button
+            type="button"
+            onClick={clearAllCategories}
+            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-gray-500 transition-colors whitespace-nowrap hover:bg-gray-100 hover:text-gray-700"
+          >
+            All categories
+          </button>
+          {breadcrumbs.map((crumb, index) => (
+            <React.Fragment key={crumb.label}>
+              <ChevronRight className="h-3 w-3 flex-shrink-0 text-gray-300" />
+              <button
+                type="button"
+                onClick={crumb.onClick}
+                disabled={index === breadcrumbs.length - 1}
+                className={cn(
+                  "flex items-center rounded-lg px-2 py-1 text-xs font-medium whitespace-nowrap transition-colors",
+                  index === breadcrumbs.length - 1
+                    ? "cursor-default bg-gray-100 text-gray-900"
+                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-800",
+                )}
+              >
+                {crumb.label}
+              </button>
+            </React.Fragment>
+          ))}
+          <button
+            type="button"
+            onClick={clearAllCategories}
+            className="ml-1 rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+            aria-label="Clear category filters"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Desktop: category pills */}
       {showBrowseChrome && !suppressCategoryBrowse && (
         <div className="hidden sm:block">
-          {breadcrumbs.length > 0 && (
-            <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide mb-1.5">
-              <button
-                type="button"
-                onClick={clearAllCategories}
-                className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-gray-500 transition-colors whitespace-nowrap hover:bg-gray-100 hover:text-gray-700"
-              >
-                All categories
-              </button>
-              {breadcrumbs.map((crumb, index) => (
-                <React.Fragment key={crumb.label}>
-                  <ChevronRight className="h-3 w-3 flex-shrink-0 text-gray-300" />
-                  <button
-                    type="button"
-                    onClick={crumb.onClick}
-                    disabled={index === breadcrumbs.length - 1}
-                    className={cn(
-                      "flex items-center rounded-lg px-2 py-1 text-xs font-medium whitespace-nowrap transition-colors",
-                      index === breadcrumbs.length - 1
-                        ? "cursor-default bg-gray-100 text-gray-900"
-                        : "text-gray-600 hover:bg-gray-100 hover:text-gray-800",
-                    )}
-                  >
-                    {crumb.label}
-                  </button>
-                </React.Fragment>
-              ))}
-              <button
-                type="button"
-                onClick={clearAllCategories}
-                className="ml-1 rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-                aria-label="Clear category filters"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          )}
-
           <BrowseFiltersToolbar
             categoryPillsRowOnly
             selectedLevel1={selectedLevel1}

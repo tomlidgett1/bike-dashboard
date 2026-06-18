@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Star } from "lucide-react";
+import { Star } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 
 // ============================================================

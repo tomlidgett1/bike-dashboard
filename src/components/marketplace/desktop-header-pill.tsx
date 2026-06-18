@@ -13,7 +13,7 @@ import {
   ShoppingBag,
   Home,
   HelpCircle,
-} from "lucide-react";
+} from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/ui/user-avatar";
@@ -164,7 +164,7 @@ function DesktopHeaderPillContent() {
 
         {mounted && user ? (
           <>
-            <NotificationsDropdown />
+            <NotificationsDropdown plain />
 
             <button
               type="button"

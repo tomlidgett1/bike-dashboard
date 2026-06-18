@@ -20,7 +20,7 @@ import {
   Sheet,
   SheetContent,
 } from '@/components/ui/sheet';
-import { Tag, Send, Check, CheckCircle2, ChevronDown, Loader2 } from 'lucide-react';
+import { Tag, Send, Check, CheckCircle2, ChevronDown, Loader2 } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from '@/lib/utils';
 import { OFFER_PRESETS, calculateOfferPercentage } from '@/lib/types/offer';
 import type { MakeOfferButtonProps } from '@/lib/types/offer';
@@ -657,8 +657,8 @@ export function MakeOfferButton({
         className={className}
         style={fullWidth ? { width: '100%' } : undefined}
       >
-        <Tag className="h-4 w-4 mr-2" />
-        Make an Offer
+        <Tag className="h-4 w-4" />
+        Make offer
       </Button>
 
       {isMobile ? (

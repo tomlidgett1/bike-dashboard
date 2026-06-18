@@ -5,7 +5,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Heart, Share2, ChevronLeft, ShieldCheck, BadgeCheck, Lock, Store, MapPin, Truck, ArrowRight } from "lucide-react";
+import { Heart, Share2, ChevronLeft, ShieldCheck, BadgeCheck, Lock, Store, MapPin, Truck, ArrowRight } from '@/components/layout/app-sidebar/dashboard-icons';
 import { BuyNowButton } from "@/components/marketplace/buy-now-button";
 import { AddToCartButton } from "@/components/marketplace/add-to-cart-button";
 import { MakeOfferButton } from "@/components/marketplace/make-offer-button";

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Plus, X } from "lucide-react";
+import { Plus, X } from '@/components/layout/app-sidebar/dashboard-icons';
 import { HistoryFormData, ServiceRecord } from "@/lib/types/listing";
 import { FormField, SectionHeader, InfoBox } from "./form-elements";
 import { Input } from "@/components/ui/input";

@@ -8,6 +8,7 @@ import { executeGenieAgent } from "@/lib/genie/agent/execute";
 import type { ComposioSessionIds, Message } from "@/lib/genie/agent/context";
 import type { Supa } from "@/lib/genie/agent/tools";
 import type { GenieAssistantJobResult, GenieJobMetadata, GenieModelProfile } from "@/lib/genie/genie-job-types";
+import { appendGenieProgressStep } from "@/lib/genie/genie-progress-steps";
 import { normalizeGenieModelProfile } from "@/lib/genie/agent/model-profiles";
 import { appendRawDebugLog } from "@/lib/genie/analysis-events";
 import type { GenieRawDebugLogEntry } from "@/lib/genie/genie-job-types";
@@ -183,6 +184,11 @@ export async function runGenieAgentJob(params: RunGenieAgentJobParams) {
 
     assistant = applyGenieSseEvent(event, assistant);
 
+    if (event.event === "done") {
+      const result: GenieAssistantJobResult = { assistantMessage: assistant };
+      queueJobUpdate({ result, metadata });
+    }
+
     if (PARTIAL_RESULT_EVENTS.has(String(event.event))) {
       const ts = Date.now();
       if (ts - lastResultPersistAt >= RESULT_PERSIST_INTERVAL_MS) {
@@ -194,7 +200,17 @@ export async function runGenieAgentJob(params: RunGenieAgentJobParams) {
 
     if (event.event === "status" || event.event === "heartbeat") {
       stepIndex += 1;
-      metadata = { ...metadata, step_index: stepIndex };
+      if (event.event === "status") {
+        const phase = typeof event.phase === "string" ? event.phase : "thinking";
+        const text = progressMessage(event);
+        metadata = {
+          ...metadata,
+          step_index: stepIndex,
+          progress_steps: appendGenieProgressStep(metadata.progress_steps, phase, text),
+        };
+      } else {
+        metadata = { ...metadata, step_index: stepIndex };
+      }
       const ts = Date.now();
       if (ts - lastPersistAt >= PROGRESS_PERSIST_INTERVAL_MS) {
         lastPersistAt = ts;
@@ -301,12 +317,30 @@ export async function runGenieAgentJob(params: RunGenieAgentJobParams) {
 
     if (cancelled) return;
 
+    metadata = {
+      ...metadata,
+      raw_debug_logs: appendRawDebugLog(metadata.raw_debug_logs, {
+        event: "_debug",
+        stage: "background_job_failed",
+        error: error instanceof Error
+          ? {
+              name: error.name,
+              message: error.message,
+              stack: error.stack?.split("\n").slice(0, 8).join("\n"),
+            }
+          : { message: String(error) },
+      }) as GenieRawDebugLogEntry[],
+    };
+    const result: GenieAssistantJobResult = { assistantMessage: assistant };
+
     await updateJob(params.jobId, {
       status: "failed",
       error_message: error instanceof Error ? error.message : "Background Genie job failed",
+      result,
       completed_at: new Date().toISOString(),
       message: "Failed",
       progress_phase: "error",
+      metadata,
     });
   }
 }

@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, Settings, LogOut, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus, Mail, Loader2, SlidersHorizontal, Sparkles } from "lucide-react";
+import { Menu, X, Settings, LogOut, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus, Mail, Loader2, SlidersHorizontal, Sparkles } from '@/components/layout/app-sidebar/dashboard-icons';
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { InstantSearch } from "./instant-search";
@@ -453,18 +453,18 @@ export function MarketplaceHeader({
                 className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
                 aria-label="Open search"
               >
-                <Search className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
+                <Search className="h-[22px] w-[22px] text-gray-700" />
               </button>
               {mobileBrowseSort}
               {mounted && user && (
                 <>
-                  <NotificationsDropdown plainMobile />
+                  <NotificationsDropdown plain />
                   <button
                     onClick={() => compactSearchOnMobile ? router.push('/messages') : setMessagesSheetOpen(true)}
                     className="relative h-9 w-9 hover:bg-gray-100 rounded-md transition-colors flex items-center justify-center overflow-visible"
                     aria-label="Messages"
                   >
-                    <Mail className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
+                    <Mail className="h-[22px] w-[22px] text-gray-700" />
                     {unreadCount > 0 && (
                       <span className="absolute -top-1.5 -right-1.5 h-5 min-w-[20px] px-1 rounded-full bg-red-500 text-white text-[11px] flex items-center justify-center font-bold shadow-sm z-10">
                         {unreadCount > 99 ? '99+' : unreadCount}
@@ -479,7 +479,7 @@ export function MarketplaceHeader({
                 className="h-9 w-9 rounded-md hover:bg-gray-100 transition-colors flex items-center justify-center"
                 aria-label="Open menu"
               >
-                <Menu className="h-[22px] w-[22px] text-gray-700 stroke-[2]" />
+                <Menu className="h-[22px] w-[22px] text-gray-700" />
               </button>
             </div>
 
@@ -495,12 +495,11 @@ export function MarketplaceHeader({
 
               {mounted && (
                 <Button
+                  variant="ghost"
                   onClick={() => setCreateListingDialogOpen(true)}
-                  className="group rounded-md bg-[#ffde59] hover:bg-[#f5cf3f] text-gray-900 font-semibold h-9 pl-1.5 pr-3.5 text-sm shadow-sm hover:shadow-md hover:-translate-y-px transition-all duration-200"
+                  className="h-9 gap-1.5 rounded-full border-0 bg-[#ffde59] px-4 text-sm font-medium tracking-tight text-gray-900 shadow-none transition-[background-color,transform] duration-200 hover:bg-[#f5cf3f] active:scale-[0.98]"
                 >
-                  <span className="flex items-center justify-center h-6 w-6 rounded-full bg-gray-900 mr-2">
-                    <Plus className="h-3.5 w-3.5 text-white" strokeWidth={2.75} />
-                  </span>
+                  <Plus className="h-3.5 w-3.5" strokeWidth={2.25} />
                   Create Listing
                 </Button>
               )}
@@ -531,7 +530,7 @@ export function MarketplaceHeader({
               className="flex min-w-0 flex-1 items-center justify-center gap-2.5 rounded-full bg-[#ffde59] px-5 py-3.5 text-[15px] font-semibold tracking-tight text-gray-900 shadow-[0_12px_40px_rgba(255,222,89,0.55),0_8px_24px_rgba(17,17,17,0.18)] ring-1 ring-black/[0.06] transition-colors hover:bg-[#f0cf45] active:scale-[0.97]"
             >
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-900">
-                <Plus className="h-3.5 w-3.5 text-white" strokeWidth={2.75} />
+                <Plus className="h-3.5 w-3.5 text-white" />
               </span>
               <span className="truncate whitespace-nowrap">
                 {user ? "List item" : "Sell"}
@@ -552,7 +551,7 @@ export function MarketplaceHeader({
                   className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-gray-700 shadow-[0_8px_28px_rgba(17,17,17,0.14),0_2px_8px_rgba(17,17,17,0.08)] ring-1 ring-black/[0.05] transition-colors hover:bg-gray-50 active:scale-95"
                   aria-label="Filters"
                 >
-                  <SlidersHorizontal className="h-[18px] w-[18px]" strokeWidth={2} />
+                  <SlidersHorizontal className="h-[18px] w-[18px]" />
                   {mobileBrowseFiltersBadge > 0 && (
                     <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-gray-900 px-1 text-[10px] font-semibold leading-none text-white ring-2 ring-white">
                       {mobileBrowseFiltersBadge > 9 ? "9+" : mobileBrowseFiltersBadge}
@@ -574,7 +573,7 @@ export function MarketplaceHeader({
                   className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-gray-700 shadow-[0_8px_28px_rgba(17,17,17,0.14),0_2px_8px_rgba(17,17,17,0.08)] ring-1 ring-black/[0.05] transition-colors hover:bg-gray-50 active:scale-95"
                   aria-label="Search"
                 >
-                  <Search className="h-[18px] w-[18px]" strokeWidth={2} />
+                  <Search className="h-[18px] w-[18px]" />
                 </motion.button>
               )}
             </AnimatePresence>
@@ -603,7 +602,7 @@ export function MarketplaceHeader({
                   onClick={() => setMobileMenuOpen(false)}
                   className="p-2 -mr-2 rounded-md hover:bg-gray-100 transition-colors"
                 >
-                  <X className="h-5 w-5 text-gray-700 stroke-[1.5]" />
+                  <X className="h-5 w-5 text-gray-700" />
                 </button>
               </div>
 
@@ -649,7 +648,7 @@ export function MarketplaceHeader({
                   className="w-full flex items-center justify-center gap-2 rounded-md bg-[#ffde59] hover:bg-[#f0cf45] px-4 py-2.5 text-sm font-semibold text-gray-900 transition-colors"
                 >
                   <span className="flex items-center justify-center h-5 w-5 rounded-full bg-gray-900">
-                    <Plus className="h-3 w-3 text-white" strokeWidth={2.75} />
+                    <Plus className="h-3 w-3 text-white" />
                   </span>
                   Create Listing
                 </button>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Layers, Package } from "lucide-react";
+import { Layers, Package } from '@/components/layout/app-sidebar/dashboard-icons';
 import { ListingBentoTile } from "./listing-bento-tile";
 
 interface ListingCountBentoProps {

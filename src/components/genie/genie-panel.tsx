@@ -46,7 +46,7 @@ import {
   mergeAnalysisPlan,
   upsertAnalysisQuery,
 } from '@/lib/genie/analysis-events';
-import { compactGenieProgressText, liveGenieProgressPreview } from '@/lib/genie/progress-text';
+import { compactGenieProgressText, liveGenieProgressPreview, liveGenieSubCommentary } from '@/lib/genie/progress-text';
 import type { GenieWebImagePreview } from '@/lib/genie/web-image-search';
 import { GenieWebImageCards } from '@/components/genie/genie-web-image-cards';
 import { GenieProgressBrandIcon, resolveGenieProgressBrand } from '@/components/genie/genie-progress-brand';
@@ -91,11 +91,12 @@ type StatusPhase =
   | 'deputy_done'
   | 'verifying';
 
-interface StatusStep { phase: StatusPhase; text: string }
+interface StatusStep { phase: StatusPhase; text: string; sourceText?: string }
 interface ProcessStep {
   id: string;
   phase: string;
   text: string;
+  sourceText?: string;
   kind: 'status' | 'reasoning';
   at: string;
 }
@@ -251,10 +252,12 @@ function createProcessStep(
   text: string,
   kind: ProcessStep['kind'] = 'status',
 ): ProcessStep {
+  const trimmed = text.trim();
   return {
     id: processStepId(),
     phase,
-    text: kind === 'status' ? normalizeStartupStatusText(text.trim(), phase) : text.trim(),
+    text: kind === 'status' ? normalizeStartupStatusText(trimmed, phase) : trimmed,
+    sourceText: kind === 'status' ? trimmed : undefined,
     kind,
     at: processTimestamp(),
   };
@@ -278,27 +281,46 @@ function upsertLiveReasoningStep(steps: ProcessStep[] | undefined, step: Process
   return appendProcessStep(current, step);
 }
 
-function ShimmerStatus({ step }: { step: StatusStep }) {
+function ShimmerStatus({
+  step,
+  analysisQueries,
+  analysisPlan,
+}: {
+  step: StatusStep;
+  analysisQueries?: GenieAnalysisQueryPayload[];
+  analysisPlan?: GenieAnalysisPlanPayload;
+}) {
   const label = liveGenieProgressPreview(
-    step.text || PHASE_LABELS[step.phase] || 'Working',
+    step.sourceText || step.text || PHASE_LABELS[step.phase] || 'Working',
     step.phase,
   );
-  const brand = resolveGenieProgressBrand(step.phase, step.text);
+  const subCommentary = liveGenieSubCommentary(
+    { ...step, kind: 'status' },
+    { mainLabel: label, analysisQueries, analysisPlan },
+  );
+  const brand = resolveGenieProgressBrand(step.phase, step.sourceText || step.text);
   return (
-    <motion.div key={`${step.phase}:${label}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.25 }} className="flex items-center gap-2 py-1">
+    <motion.div key={`${step.phase}:${label}:${subCommentary ?? ''}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.25 }} className="flex items-start gap-2 py-1">
       {brand ? (
-        <GenieProgressBrandIcon phase={step.phase} text={step.text} />
+        <GenieProgressBrandIcon phase={step.phase} text={step.sourceText || step.text} />
       ) : null}
-      <span
-        className="text-xs font-medium text-transparent bg-clip-text animate-[agent-text-shimmer_2.2s_linear_infinite]"
-        style={{
-          backgroundImage: 'linear-gradient(90deg, var(--muted-foreground) 0%, var(--muted-foreground) 38%, var(--primary) 50%, var(--muted-foreground) 62%, var(--muted-foreground) 100%)',
-          backgroundSize: '220% 100%',
-        }}
-      >
-        {label}
-      </span>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span
+          className="text-xs font-medium text-transparent bg-clip-text animate-[agent-text-shimmer_2.2s_linear_infinite]"
+          style={{
+            backgroundImage: 'linear-gradient(90deg, var(--muted-foreground) 0%, var(--muted-foreground) 38%, var(--primary) 50%, var(--muted-foreground) 62%, var(--muted-foreground) 100%)',
+            backgroundSize: '220% 100%',
+          }}
+        >
+          {label}
+        </span>
+        {subCommentary ? (
+          <span className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+            {subCommentary}
+          </span>
+        ) : null}
+      </div>
     </motion.div>
   );
 }
@@ -531,7 +553,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   if (isUser) {
     return (
       <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="flex justify-end">
-        <div className="max-w-[82%] rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-xs">
+        <div className="genie-chat-selectable genie-chat-bubble-user max-w-[82%] cursor-text rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-xs">
           {message.content}
         </div>
       </motion.div>
@@ -561,7 +583,12 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       {/* 1. Shimmer / spinner — shown while waiting for first content */}
       <AnimatePresence mode="wait">
         {showShimmer && message.currentStatus && (
-          <ShimmerStatus key={`${message.currentStatus.phase}:${message.currentStatus.text}`} step={message.currentStatus} />
+          <ShimmerStatus
+            key={`${message.currentStatus.phase}:${message.currentStatus.text}`}
+            step={message.currentStatus}
+            analysisQueries={message.analysisQueries}
+            analysisPlan={message.analysisPlan}
+          />
         )}
         {showSpinner && (
           <motion.div key="spinner" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -1094,13 +1121,17 @@ export function GeniePanel() {
             recordStreamEvent(parsed as Record<string, unknown>);
             if (parsed.event === 'status') {
               const phase = String(parsed.phase ?? 'tool');
-              const text = normalizeStartupStatusText(String(parsed.text ?? 'Working'), phase);
-              const step = createProcessStep(phase, text);
+              const rawText = String(parsed.text ?? 'Working').trim();
+              const step = createProcessStep(phase, rawText);
               setMessages(prev => prev.map(m =>
                 m.id === assistantId
                   ? {
                       ...m,
-                      currentStatus: { phase: phase as StatusPhase, text },
+                      currentStatus: {
+                        phase: phase as StatusPhase,
+                        text: normalizeStartupStatusText(rawText, phase),
+                        sourceText: rawText,
+                      },
                       processSteps: appendProcessStep(m.processSteps, step),
                     }
                   : m

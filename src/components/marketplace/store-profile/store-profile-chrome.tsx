@@ -15,7 +15,7 @@ import {
   Info,
   CircleDot,
   type LucideIcon,
-} from "lucide-react";
+} from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 import {
   Dialog,

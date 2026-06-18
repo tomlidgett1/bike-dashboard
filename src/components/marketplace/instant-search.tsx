@@ -4,7 +4,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, X, Loader2, Package, Store, ArrowRight, Sparkles, Clock, Trash2 } from "lucide-react";
+import { Search, X, Loader2, Package, Store, ArrowRight, Sparkles, Clock, Trash2 } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import Image from "next/image";

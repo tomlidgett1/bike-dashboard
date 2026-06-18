@@ -3,7 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Heart, Share2, Shield, Package, Clock, Eye, ExternalLink } from "lucide-react";
+import { Heart, Share2, Shield, Package, Clock, Eye, ExternalLink } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Button } from "@/components/ui/button";
 import { ProductInquiryButton } from "./product-inquiry-button";
 import { MakeOfferButton } from "./make-offer-button";

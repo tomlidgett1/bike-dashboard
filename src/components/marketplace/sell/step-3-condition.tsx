@@ -16,7 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { ValidationError, getFieldError } from "@/lib/validation/listing-validation";
 import { cn } from "@/lib/utils";
-import { Sparkles, Star, Heart, ThumbsUp, Wrench, AlertTriangle } from "lucide-react";
+import { Sparkles, Star, Heart, ThumbsUp, Wrench, AlertTriangle } from '@/components/layout/app-sidebar/dashboard-icons';
 
 // ============================================================
 // Step 3: Condition Assessment

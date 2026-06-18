@@ -4,7 +4,7 @@ import * as React from "react";
 import { usePathname } from "next/navigation";
 import { MarketplaceSidebar } from "./marketplace-sidebar";
 import { MobileLoginPrompt } from "@/components/marketplace/mobile-login-prompt";
-import { Store } from "lucide-react";
+import { Store } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Button } from "@/components/ui/button";
 import { useSidebarState, SidebarStateProvider } from "@/lib/hooks/use-sidebar-state";
 import { shouldShowMarketplaceSidebar } from "@/lib/marketplace-nav";

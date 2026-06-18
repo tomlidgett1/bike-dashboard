@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { X, Check, ChevronRight } from "lucide-react";
+import { X, Check, ChevronRight } from '@/components/layout/app-sidebar/dashboard-icons';
 import { motion, AnimatePresence } from "framer-motion";
 
 // ============================================================

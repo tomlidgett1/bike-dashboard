@@ -4,7 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Package, Plus, Check, Sparkles, Store, BadgeCheck, ShoppingBag, Loader2, Wand2 } from "lucide-react";
+import { Package, Plus, Check, Sparkles, Store, BadgeCheck, ShoppingBag, Loader2, Wand2 } from '@/components/layout/app-sidebar/dashboard-icons';
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { trackInteraction } from "@/lib/tracking/interaction-tracker";
 import { useAuth } from "@/components/providers/auth-provider";

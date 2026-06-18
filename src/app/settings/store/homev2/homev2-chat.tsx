@@ -47,13 +47,15 @@ import {
   HOMEV2_CONVERSATION_QUERY,
   HOMEV2_PROMPT_EVENT,
   consumeHomeV2PendingPrompt,
+  homeConversationUrl,
 } from "@/lib/genie/homev2-navigation";
 import {
   type HomeV2SavedConversation,
+  type HomeV2StoredMessage,
+  buildHomeV2ConversationSnapshot,
   buildMinimalHomeV2Conversation,
   conversationHasAssistantBody,
   fetchConversationListFromApi,
-  homeConversationTitle,
   mapApiConversationToSaved,
   mergeCompletedJobIntoConversation,
   mergeConversationLists,
@@ -62,10 +64,11 @@ import {
   sanitizeStoredMessages,
   saveConversationToApi,
   syncLocalConversationsToApi,
+  upsertHomeV2ConversationDraft,
   writeConversationHistory,
 } from "@/lib/genie/homev2-conversation-storage";
 import type { GenieJob } from "@/lib/genie/genie-job-types";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   GenieProgressBrandIcon,
   resolveGenieProgressBrand,
@@ -73,10 +76,13 @@ import {
 import { renderGenieMarkdown } from "@/lib/genie/render-markdown";
 import {
   compactGenieProgressText,
+  liveGenieDisplayStep,
   liveGenieProgressPreview,
+  liveGenieSubCommentary,
 } from "@/lib/genie/progress-text";
 import { useGenieJobs } from "@/components/providers/genie-jobs-provider";
 import {
+  ensureAssistantMessageForJob,
   isGenieJobRunning,
   mergeGenieJobIntoAssistantMessage,
 } from "@/lib/genie/sync-genie-job-message";
@@ -152,6 +158,19 @@ function buildChatTurns(messages: ChatMessage[]): ChatTurn[] {
   return turns;
 }
 
+function processStepsFromJobProgress(job: GenieJob): ProcessStep[] | null {
+  const records = job.metadata.progress_steps;
+  if (!records?.length) return null;
+  return records.map((record, index) => ({
+    id: `job-${job.id}-step-${index}`,
+    phase: record.phase,
+    text: normalizeStartupStatusText(record.text, record.phase),
+    sourceText: record.text,
+    kind: "status" as const,
+    at: record.at,
+  }));
+}
+
 function enrichAssistantFromJob(target: ChatMessage, merged: ChatMessage, job: GenieJob): ChatMessage {
   let next: ChatMessage = { ...merged };
 
@@ -160,7 +179,10 @@ function enrichAssistantFromJob(target: ChatMessage, merged: ChatMessage, job: G
     next = { ...next, rawDebugLogs: jobLogs };
   }
 
-  if (isGenieJobRunning(job) && job.message) {
+  const fromProgress = processStepsFromJobProgress(job);
+  if (fromProgress?.length) {
+    next = { ...next, processSteps: fromProgress };
+  } else if (isGenieJobRunning(job) && job.message) {
     const step = createProcessStep(job.progressPhase ?? "thinking", job.message);
     next = {
       ...next,
@@ -181,6 +203,80 @@ function enrichAssistantFromJob(target: ChatMessage, merged: ChatMessage, job: G
   }
 
   return next;
+}
+
+function chatMessagesToStored(messages: ChatMessage[]): HomeV2StoredMessage[] {
+  return sanitizeStoredMessages(
+    messages.map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      charts: message.charts,
+      tables: message.tables,
+      pivotTables: message.pivotTables,
+      proposals: message.proposals,
+      products: message.products,
+      webImages: message.webImages,
+      workorders: message.workorders,
+      customerProfile: message.customerProfile,
+      gmailEmails: message.gmailEmails,
+      analysisPlan: message.analysisPlan,
+      analysisQueries: message.analysisQueries,
+      isStreaming: message.isStreaming,
+      error: message.error,
+    })),
+  );
+}
+
+function storedMessagesToChatMessage(message: HomeV2StoredMessage): ChatMessage {
+  return {
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    charts: message.charts as ChatMessage["charts"],
+    tables: message.tables as ChatMessage["tables"],
+    pivotTables: message.pivotTables as ChatMessage["pivotTables"],
+    proposals: message.proposals as ChatMessage["proposals"],
+    products: message.products as ChatMessage["products"],
+    webImages: message.webImages as ChatMessage["webImages"],
+    workorders: message.workorders as ChatMessage["workorders"],
+    customerProfile: message.customerProfile as ChatMessage["customerProfile"],
+    gmailEmails: message.gmailEmails as ChatMessage["gmailEmails"],
+    analysisPlan: message.analysisPlan as ChatMessage["analysisPlan"],
+    analysisQueries: message.analysisQueries as ChatMessage["analysisQueries"],
+    isStreaming: false,
+    error: message.error,
+  };
+}
+
+function hydrateChatMessagesForConversation(
+  messages: HomeV2StoredMessage[],
+  conversationJobs: GenieJob[],
+): ChatMessage[] {
+  const runningJob =
+    conversationJobs.find((job) => isGenieJobRunning(job)) ??
+    [...conversationJobs].sort(
+      (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+    )[0];
+
+  let base = sanitizeStoredMessages(messages);
+  if (runningJob) {
+    base = ensureAssistantMessageForJob(base, runningJob);
+  }
+
+  return base.map((message) => {
+    const chatMessage = storedMessagesToChatMessage(message);
+    if (!runningJob) return chatMessage;
+
+    const assistantId = runningJob.metadata.client_assistant_id;
+    if (!assistantId || message.id !== assistantId) return chatMessage;
+
+    return enrichAssistantFromJob(
+      chatMessage,
+      mergeGenieJobIntoAssistantMessage(chatMessage, runningJob) as ChatMessage,
+      runningJob,
+    );
+  });
 }
 
 function firstMarkdownHeading(content: string): string | null {
@@ -222,7 +318,7 @@ function AssistantResponseBody({
     showFollowups && onAsk && question && answerSettled && answerText.trim().length > 24,
   );
   return (
-    <div className="w-full text-sm text-foreground">
+    <div className="genie-chat-selectable w-full text-sm text-foreground">
       <div className="space-y-4">
         {message.processSteps?.length
           || message.analysisPlan?.execution_steps.length
@@ -350,13 +446,13 @@ function ChatTurnView({
       className="space-y-4"
     >
       <div ref={lastUserMessageRef} className="flex justify-end">
-        <div className="max-w-[86%] rounded-[24px] bg-primary px-4 py-2 text-sm leading-snug text-primary-foreground shadow-sm sm:max-w-[78%]">
+        <div className="genie-chat-selectable genie-chat-bubble-user max-w-[86%] cursor-text rounded-[24px] bg-primary px-4 py-2 text-sm leading-snug text-primary-foreground shadow-sm sm:max-w-[78%]">
           <span className="whitespace-pre-wrap">{turn.user.content}</span>
         </div>
       </div>
 
       {assistant ? (
-        <div className="flex justify-start">
+        <div className="genie-chat-selectable flex justify-start">
           <AssistantResponseBody
             message={assistant}
             onGmailConnected={onGmailConnected}
@@ -441,7 +537,7 @@ function liveHeaderLabel(step: ProcessStep | undefined): string {
       .find((line) => line.length > 0);
     if (firstLine) {
       const clipped =
-        firstLine.length > 64 ? `${firstLine.slice(0, 63).trimEnd()}…` : firstLine;
+        firstLine.length > 112 ? `${firstLine.slice(0, 111).trimEnd()}…` : firstLine;
       return clipped;
     }
     return "Thinking it through";
@@ -578,9 +674,9 @@ function AssistantMessageContent({ content, streaming }: { content: string; stre
   }
 
   return (
-    <div className="max-w-3xl text-[15px] leading-relaxed" dir="ltr" style={{ unicodeBidi: "isolate" }}>
+    <div className="genie-chat-selectable genie-chat-prose max-w-3xl cursor-text text-[15px] leading-relaxed" dir="ltr" style={{ unicodeBidi: "isolate" }}>
       <div
-        className="[&>p+p]:mt-2 [&_strong]:font-semibold [&_.genie-caret]:ml-0.5 [&_.genie-caret]:inline-block [&_.genie-caret]:h-[1.05em] [&_.genie-caret]:w-[2px] [&_.genie-caret]:translate-y-[2px] [&_.genie-caret]:rounded-full [&_.genie-caret]:bg-foreground/60 [&_.genie-caret]:animate-pulse"
+        className="[&>p+p]:mt-1.5 [&_h2+p]:mt-1 [&_h3+p]:mt-1 [&_p+div]:mt-1.5 [&_div+h2]:mt-2.5 [&_strong]:font-semibold [&_.genie-caret]:ml-0.5 [&_.genie-caret]:inline-block [&_.genie-caret]:h-[1.05em] [&_.genie-caret]:w-[2px] [&_.genie-caret]:translate-y-[2px] [&_.genie-caret]:rounded-full [&_.genie-caret]:bg-foreground/60 [&_.genie-caret]:animate-pulse"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>
@@ -951,44 +1047,76 @@ function ProcessTimelineBox({
     }))
     .slice(-40);
   const latestStep = visibleSteps[visibleSteps.length - 1];
+  const shimmerStep = live ? (liveGenieDisplayStep(visibleSteps) ?? latestStep) : latestStep;
   const hasAnalysis = Boolean(analysisPlan?.execution_steps.length || analysisQueries?.length);
 
   if (visibleSteps.length === 0 && !hasAnalysis && !(rawDebugLogs?.length)) return null;
 
-  const phaseLabel = latestStep ? processStepLabel(latestStep) : analysisPlan ? "Planning" : "Working";
-  const liveBrand = latestStep
-    ? resolveGenieProgressBrand(latestStep.phase, progressBrandText(latestStep))
+  const phaseLabel = shimmerStep ? processStepLabel(shimmerStep) : analysisPlan ? "Planning" : "Working";
+  const liveBrand = shimmerStep
+    ? resolveGenieProgressBrand(shimmerStep.phase, progressBrandText(shimmerStep))
+    : null;
+  const mainShimmerLabel = live ? liveHeaderLabel(shimmerStep) : "View thought process";
+  const subCommentary = live
+    ? liveGenieSubCommentary(shimmerStep, {
+        mainLabel: mainShimmerLabel,
+        analysisQueries,
+        analysisPlan,
+      })
     : null;
 
   return (
     <>
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => setPanelOpen(true)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setPanelOpen(true);
+          }
+        }}
         className={cn(
-          "inline-flex max-w-3xl items-center gap-2 border-0 bg-transparent p-0 text-left",
+          "inline-flex max-w-3xl cursor-pointer select-none items-start gap-2 border-0 bg-transparent p-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-gray-300 focus-visible:ring-offset-2",
           !live && "text-gray-400 hover:text-gray-600",
         )}
         aria-label="Open thinking and progress details"
       >
         {live && liveBrand ? (
           <GenieProgressBrandIcon
-            phase={latestStep?.phase}
-            text={latestStep ? progressBrandText(latestStep) : undefined}
+            phase={shimmerStep?.phase}
+            text={shimmerStep ? progressBrandText(shimmerStep) : undefined}
           />
         ) : null}
-        <span
-          className={cn(
-            "whitespace-normal text-[15px] leading-relaxed",
-            live
-              ? "bg-clip-text animate-[agent-text-shimmer_2.2s_linear_infinite]"
-              : "text-gray-400",
-          )}
-          style={live ? THINKING_SHIMMER_STYLE : undefined}
-        >
-          {live ? liveHeaderLabel(latestStep) : "View thought process"}
-        </span>
-      </button>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span
+            className={cn(
+              "line-clamp-2 max-w-[min(100%,40rem)] text-[15px] leading-snug",
+              live
+                ? "bg-clip-text animate-[agent-text-shimmer_2.2s_linear_infinite]"
+                : "text-gray-400",
+            )}
+            style={live ? THINKING_SHIMMER_STYLE : undefined}
+          >
+            {mainShimmerLabel}
+          </span>
+          {subCommentary ? (
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={subCommentary}
+                initial={{ opacity: 0, y: 2 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -2 }}
+                transition={{ duration: 0.2, ease: [0.04, 0.62, 0.23, 0.98] }}
+                className="line-clamp-2 max-w-[min(100%,40rem)] text-xs leading-snug text-gray-500"
+              >
+                {subCommentary}
+              </motion.span>
+            </AnimatePresence>
+          ) : null}
+        </div>
+      </div>
 
       <ThinkingProgressPanel
         open={panelOpen}
@@ -1128,12 +1256,14 @@ function HomeV2OtherDropdown({
 function ConversationHistoryDropdown({
   conversations,
   activeConversationId,
+  runningConversationIds,
   onSelect,
   showNewChat = false,
   onNewChat,
 }: {
   conversations: HomeV2SavedConversation[];
   activeConversationId: string | null;
+  runningConversationIds: Set<string>;
   onSelect: (conversation: HomeV2SavedConversation) => void;
   showNewChat?: boolean;
   onNewChat?: () => void;
@@ -1223,7 +1353,9 @@ function ConversationHistoryDropdown({
                           {conversation.title}
                         </p>
                         <p className="mt-0.5 text-[10px] text-muted-foreground">
-                          {conversationTime(conversation.updatedAt)}
+                          {runningConversationIds.has(conversation.id)
+                            ? "Running…"
+                            : conversationTime(conversation.updatedAt)}
                         </p>
                       </button>
                     </li>
@@ -1337,6 +1469,7 @@ function PromptQueueList({
 }
 
 export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { jobs, startAgentBackgroundJob, cancelJob } = useGenieJobs();
   const appliedGenieJobsRef = React.useRef(new Set<string>());
@@ -1359,9 +1492,47 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
   const isLoadingRef = React.useRef(false);
   const jobsRef = React.useRef(jobs);
   const stopRequestedAssistantIdsRef = React.useRef(new Set<string>());
+  const queuedPromptsRef = React.useRef<QueuedPrompt[]>([]);
   const runSendRef = React.useRef<(text: string, clearInputField?: boolean, opts?: { mode?: "deep_research" }) => Promise<void>>(async () => {});
   const consumedPendingPromptRef = React.useRef(false);
   const hasStarted = messages.length > 0;
+  const runningConversationIds = React.useMemo(
+    () =>
+      new Set(
+        jobs
+          .filter((job) => isGenieJobRunning(job) && job.conversationId)
+          .map((job) => job.conversationId as string),
+      ),
+    [jobs],
+  );
+
+  const setConversationQuery = React.useCallback(
+    (conversationId: string | null) => {
+      router.replace(conversationId ? homeConversationUrl(conversationId) : "/settings/store/home");
+    },
+    [router],
+  );
+
+  const persistConversationSnapshot = React.useCallback(
+    (conversationId: string, nextMessages: ChatMessage[], sessionIds: Record<string, string>) => {
+      if (!nextMessages.some((message) => message.role === "user")) return;
+
+      const snapshot = buildHomeV2ConversationSnapshot({
+        id: conversationId,
+        messages: chatMessagesToStored(nextMessages),
+        composioSessionIds: sessionIds,
+      });
+
+      setConversations((current) => {
+        const next = [snapshot, ...current.filter((conversation) => conversation.id !== conversationId)].slice(0, 20);
+        writeConversationHistory(next);
+        return next;
+      });
+      upsertHomeV2ConversationDraft(snapshot);
+      void saveConversationToApi(snapshot);
+    },
+    [],
+  );
 
   React.useEffect(() => {
     messagesRef.current = messages;
@@ -1379,31 +1550,41 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     isLoadingRef.current = isLoading;
   }, [isLoading]);
 
+  React.useEffect(() => {
+    queuedPromptsRef.current = queuedPrompts;
+  }, [queuedPrompts]);
+
   const clearPromptQueue = React.useCallback(() => {
+    queuedPromptsRef.current = [];
     setQueuedPrompts([]);
   }, []);
 
   const updateQueuedPrompt = React.useCallback((id: string, text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
-    setQueuedPrompts((current) =>
-      current.map((item) => (item.id === id ? { ...item, text: trimmed } : item)),
-    );
+    setQueuedPrompts((current) => {
+      const next = current.map((item) => (item.id === id ? { ...item, text: trimmed } : item));
+      queuedPromptsRef.current = next;
+      return next;
+    });
   }, []);
 
   const deleteQueuedPrompt = React.useCallback((id: string) => {
-    setQueuedPrompts((current) => current.filter((item) => item.id !== id));
+    setQueuedPrompts((current) => {
+      const next = current.filter((item) => item.id !== id);
+      queuedPromptsRef.current = next;
+      return next;
+    });
   }, []);
 
   const processPromptQueue = React.useCallback(() => {
-    setQueuedPrompts((current) => {
-      if (current.length === 0) return current;
-      const [next, ...rest] = current;
-      queueMicrotask(() => {
-        void runSendRef.current(next.text, false);
-      });
-      return rest;
-    });
+    if (isLoadingRef.current) return;
+    const current = queuedPromptsRef.current;
+    if (current.length === 0) return;
+    const [next, ...rest] = current;
+    queuedPromptsRef.current = rest;
+    setQueuedPrompts(rest);
+    void runSendRef.current(next.text, false);
   }, []);
 
   React.useEffect(() => {
@@ -1458,51 +1639,26 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
   React.useEffect(() => () => abortRef.current?.abort(), []);
 
   React.useEffect(() => {
-    if (messages.length === 0 || messages.some((message) => message.isStreaming)) return;
+    if (messages.length === 0) return;
     if (!messages.some((message) => message.role === "user")) return;
 
-    const id = activeConversationId ?? crypto.randomUUID();
-    const persistedMessages = messages;
-    const nextConversation: HomeV2SavedConversation = {
-      id,
-      title: homeConversationTitle(persistedMessages),
-      updatedAt: new Date().toISOString(),
-      messages: sanitizeStoredMessages(
-        persistedMessages.map((message) => ({
-          id: message.id,
-          role: message.role,
-          content: message.content,
-          charts: message.charts,
-          tables: message.tables,
-          pivotTables: message.pivotTables,
-          proposals: message.proposals,
-          products: message.products,
-          webImages: message.webImages,
-          workorders: message.workorders,
-          customerProfile: message.customerProfile,
-          gmailEmails: message.gmailEmails,
-          analysisPlan: message.analysisPlan,
-          analysisQueries: message.analysisQueries,
-          isStreaming: message.isStreaming,
-          error: message.error,
-        })),
-      ),
-      composioSessionIds,
-    };
-
-    setActiveConversationId(id);
-    setConversations((current) => {
-      const next = [nextConversation, ...current.filter((conversation) => conversation.id !== id)].slice(0, 20);
-      writeConversationHistory(next);
-      void saveConversationToApi(nextConversation);
-      return next;
-    });
-  }, [activeConversationId, composioSessionIds, messages]);
+    const id = activeConversationId ?? activeConversationIdRef.current;
+    if (!id) return;
+    persistConversationSnapshot(id, messages, composioSessionIds);
+  }, [activeConversationId, composioSessionIds, messages, persistConversationSnapshot]);
 
   const startNewChat = React.useCallback(() => {
     abortRef.current?.abort();
+    stopRequestedAssistantIdsRef.current.clear();
     clearPromptQueue();
     setInput("");
+    if (activeConversationIdRef.current && messagesRef.current.length > 0) {
+      persistConversationSnapshot(
+        activeConversationIdRef.current,
+        messagesRef.current,
+        composioSessionIdsRef.current,
+      );
+    }
     setMessages([]);
     setLastMsgMinHeight(undefined);
     setComposioSessionIds({});
@@ -1511,10 +1667,12 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     activeConversationIdRef.current = null;
     isLoadingRef.current = false;
     setIsLoading(false);
-  }, [clearPromptQueue]);
+    setConversationQuery(null);
+  }, [clearPromptQueue, persistConversationSnapshot, setConversationQuery]);
 
   const loadConversation = React.useCallback(async (conversation: HomeV2SavedConversation) => {
     abortRef.current?.abort();
+    stopRequestedAssistantIdsRef.current.clear();
     clearPromptQueue();
     setInput("");
 
@@ -1537,34 +1695,23 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
       // Fall back to the cached conversation below.
     }
 
-    setMessages(
-      sanitizeStoredMessages(resolved.messages).map((message) => ({
-        id: message.id,
-        role: message.role,
-        content: message.content,
-        charts: message.charts as ChatMessage["charts"],
-        tables: message.tables as ChatMessage["tables"],
-        pivotTables: message.pivotTables as ChatMessage["pivotTables"],
-        proposals: message.proposals as ChatMessage["proposals"],
-        products: message.products as ChatMessage["products"],
-        webImages: message.webImages as ChatMessage["webImages"],
-        workorders: message.workorders as ChatMessage["workorders"],
-        customerProfile: message.customerProfile as ChatMessage["customerProfile"],
-        gmailEmails: message.gmailEmails as ChatMessage["gmailEmails"],
-        analysisPlan: message.analysisPlan as ChatMessage["analysisPlan"],
-        analysisQueries: message.analysisQueries as ChatMessage["analysisQueries"],
-        isStreaming: false,
-        error: message.error,
-      })),
+    const conversationJobs = jobsRef.current.filter(
+      (job) => job.conversationId === resolved.id && job.metadata.source === "homev2",
     );
+    const chatMessages = hydrateChatMessagesForConversation(resolved.messages, conversationJobs);
+
+    setMessages(chatMessages);
+    messagesRef.current = chatMessages;
     setComposioSessionIds(resolved.composioSessionIds ?? {});
     composioSessionIdsRef.current = resolved.composioSessionIds ?? {};
     setLastMsgMinHeight(undefined);
     setActiveConversationId(resolved.id);
     activeConversationIdRef.current = resolved.id;
-    isLoadingRef.current = false;
-    setIsLoading(false);
-  }, [clearPromptQueue]);
+    const stillStreaming = chatMessages.some((message) => message.isStreaming);
+    isLoadingRef.current = stillStreaming;
+    setIsLoading(stillStreaming);
+    setConversationQuery(resolved.id);
+  }, [clearPromptQueue, setConversationQuery]);
 
   React.useEffect(() => {
     const requestedId = searchParams.get(HOMEV2_CONVERSATION_QUERY)?.trim();
@@ -1667,6 +1814,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
 
   const collectCancellableJobIds = React.useCallback((currentMessages: ChatMessage[]) => {
     const jobIds = new Set<string>();
+    const stoppedAssistantIds = stopRequestedAssistantIdsRef.current;
     const streamingAssistantIds = new Set(
       currentMessages
         .filter((message) => message.role === "assistant" && message.isStreaming)
@@ -1674,14 +1822,20 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     );
 
     for (const message of currentMessages) {
-      if (message.backgroundJobId && message.isStreaming) {
+      if (
+        message.backgroundJobId &&
+        (message.isStreaming || stoppedAssistantIds.has(message.id))
+      ) {
         jobIds.add(message.backgroundJobId);
       }
     }
 
     for (const job of jobsRef.current) {
       const assistantId = job.metadata.client_assistant_id;
-      if (!assistantId || !streamingAssistantIds.has(assistantId)) continue;
+      if (!assistantId) continue;
+      if (!streamingAssistantIds.has(assistantId) && !stoppedAssistantIds.has(assistantId)) {
+        continue;
+      }
       if (isGenieJobRunning(job)) {
         jobIds.add(job.id);
       }
@@ -1721,7 +1875,9 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
       isLoadingRef.current = stillStreaming;
       setIsLoading(stillStreaming);
     });
-  }, [cancelJob, collectCancellableJobIds]);
+
+    processPromptQueue();
+  }, [cancelJob, collectCancellableJobIds, processPromptQueue]);
 
   React.useEffect(() => {
     if (stopRequestedAssistantIdsRef.current.size === 0) return;
@@ -1733,35 +1889,64 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
   React.useEffect(() => {
     for (const job of jobs) {
       const assistantId = job.metadata.client_assistant_id;
-      if (!assistantId) continue;
+      if (!assistantId || job.metadata.source !== "homev2") continue;
 
-      if (job.status === "completed" || job.status === "failed") {
+      if (job.status === "completed" || job.status === "failed" || job.status === "cancelled") {
         if (appliedGenieJobsRef.current.has(job.id)) continue;
         appliedGenieJobsRef.current.add(job.id);
       }
 
+      if (job.conversationId && job.conversationId !== activeConversationIdRef.current) {
+        continue;
+      }
+
       setMessages((current) => {
-        const target = current.find((message) => message.id === assistantId);
-        if (!target) return current;
+        let target = current.find((message) => message.id === assistantId);
+        const forceStopped = stopRequestedAssistantIdsRef.current.has(assistantId);
+
+        if (!target) {
+          if (!isGenieJobRunning(job) || forceStopped) return current;
+          const hydrated = hydrateChatMessagesForConversation(chatMessagesToStored(current), [job]);
+          messagesRef.current = hydrated;
+          return hydrated;
+        }
+
+        if (forceStopped && isGenieJobRunning(job)) {
+          return current;
+        }
+
         const merged = enrichAssistantFromJob(
           target,
           mergeGenieJobIntoAssistantMessage(target, job) as ChatMessage,
           job,
         );
+        const nextMessage = forceStopped
+          ? {
+              ...merged,
+              isStreaming: false,
+              status: undefined,
+              statusPhase: undefined,
+            }
+          : merged;
+
+        if (forceStopped && !isGenieJobRunning(job)) {
+          stopRequestedAssistantIdsRef.current.delete(assistantId);
+        }
+
         if (
-          target.status === merged.status &&
-          target.content === merged.content &&
-          target.isStreaming === merged.isStreaming &&
-          target.error === merged.error &&
-          target.processSteps?.length === merged.processSteps?.length &&
-          target.rawDebugLogs?.length === merged.rawDebugLogs?.length &&
-          target.reasoningSummary === merged.reasoningSummary &&
-          target.analysisPlan === merged.analysisPlan &&
-          target.analysisQueries?.length === merged.analysisQueries?.length
+          target.status === nextMessage.status &&
+          target.content === nextMessage.content &&
+          target.isStreaming === nextMessage.isStreaming &&
+          target.error === nextMessage.error &&
+          target.processSteps?.length === nextMessage.processSteps?.length &&
+          target.rawDebugLogs?.length === nextMessage.rawDebugLogs?.length &&
+          target.reasoningSummary === nextMessage.reasoningSummary &&
+          target.analysisPlan === nextMessage.analysisPlan &&
+          target.analysisQueries?.length === nextMessage.analysisQueries?.length
         ) {
           return current;
         }
-        const next = current.map((message) => (message.id === assistantId ? merged : message));
+        const next = current.map((message) => (message.id === assistantId ? nextMessage : message));
         messagesRef.current = next;
         return next;
       });
@@ -1793,8 +1978,6 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
   ) => {
     const trimmed = text.trim();
     if (!trimmed || isLoadingRef.current) return;
-
-    stopRequestedAssistantIdsRef.current.clear();
 
     const turnId = crypto.randomUUID();
     const userMessage: ChatMessage = {
@@ -1835,6 +2018,8 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     });
     isLoadingRef.current = true;
     setIsLoading(true);
+    setConversationQuery(conversationId);
+    persistConversationSnapshot(conversationId, messagesRef.current, composioSessionIdsRef.current);
 
     const snapLatestUserToTop = () => {
       const container = scrollRef.current;
@@ -1927,7 +2112,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
         });
       });
     }
-  }, [startAgentBackgroundJob, cancelJob]);
+  }, [startAgentBackgroundJob, cancelJob, persistConversationSnapshot, setConversationQuery]);
 
   React.useEffect(() => {
     runSendRef.current = runSend;
@@ -1968,7 +2153,11 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     if (!text) return;
 
     if (isLoadingRef.current) {
-      setQueuedPrompts((current) => [...current, { id: crypto.randomUUID(), text }]);
+      setQueuedPrompts((current) => {
+        const next = [...current, { id: crypto.randomUUID(), text }];
+        queuedPromptsRef.current = next;
+        return next;
+      });
       if (rawText === undefined) setInput("");
       return;
     }
@@ -2017,33 +2206,46 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
     }
   }, [isUploadingInvoice, submitPrompt]);
 
-  const dragHandlers = {
-    onDragEnter: (event: React.DragEvent) => {
-      if (!event.dataTransfer.types.includes("Files")) return;
+  React.useEffect(() => {
+    const hasFiles = (event: DragEvent) => event.dataTransfer?.types.includes("Files") ?? false;
+
+    const onDragEnter = (event: DragEvent) => {
+      if (!hasFiles(event)) return;
       event.preventDefault();
       dragDepthRef.current += 1;
       setIsDraggingPdf(true);
-    },
-    onDragOver: (event: React.DragEvent) => {
-      if (!event.dataTransfer.types.includes("Files")) return;
+    };
+    const onDragOver = (event: DragEvent) => {
+      if (!hasFiles(event)) return;
       event.preventDefault();
-    },
-    onDragLeave: (event: React.DragEvent) => {
-      if (!event.dataTransfer.types.includes("Files")) return;
+    };
+    const onDragLeave = (event: DragEvent) => {
+      if (!hasFiles(event)) return;
       dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
       if (dragDepthRef.current === 0) setIsDraggingPdf(false);
-    },
-    onDrop: (event: React.DragEvent) => {
-      if (!event.dataTransfer.types.includes("Files")) return;
+    };
+    const onDrop = (event: DragEvent) => {
+      if (!hasFiles(event)) return;
       event.preventDefault();
       dragDepthRef.current = 0;
       setIsDraggingPdf(false);
-      const file = Array.from(event.dataTransfer.files).find(
+      const file = Array.from(event.dataTransfer?.files ?? []).find(
         (candidate) => candidate.type === "application/pdf" || candidate.name.toLowerCase().endsWith(".pdf"),
       );
       if (file) void uploadInvoicePdf(file);
-    },
-  };
+    };
+
+    window.addEventListener("dragenter", onDragEnter);
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("dragleave", onDragLeave);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragenter", onDragEnter);
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("dragleave", onDragLeave);
+      window.removeEventListener("drop", onDrop);
+    };
+  }, [uploadInvoicePdf]);
 
   const gmailConnectAccessory = gmailConnectBanner ? (
     <GmailConnectCard
@@ -2055,7 +2257,6 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
 
   return (
     <div
-      {...dragHandlers}
       className="relative flex h-[calc(100svh-57px)] flex-col overflow-hidden bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.10),transparent_34%),linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)]"
     >
       {isDraggingPdf ? (
@@ -2077,6 +2278,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
         <ConversationHistoryDropdown
           conversations={conversations}
           activeConversationId={activeConversationId}
+          runningConversationIds={runningConversationIds}
           onSelect={loadConversation}
           showNewChat
           onNewChat={startNewChat}
@@ -2113,7 +2315,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
         />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
+          <div ref={scrollRef} className="genie-chat-selectable min-h-0 flex-1 overflow-y-auto px-5 py-6">
             <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
               {buildChatTurns(messages).map((turn, index, turns) => {
                 const isLatestTurn = index === turns.length - 1;

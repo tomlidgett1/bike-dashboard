@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Phone, MapPin, Clock } from "lucide-react";
+import { Phone, MapPin, Clock } from '@/components/layout/app-sidebar/dashboard-icons';
 import {
   Dialog,
   DialogContent,
