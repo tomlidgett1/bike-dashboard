@@ -82,7 +82,7 @@ export function ServiceCard({
   return (
     <Card className={cn("relative flex h-full w-full flex-col", className)}>
       <CardPattern />
-      <CardHeader className="relative z-10">
+      <CardHeader className="relative z-10 shrink-0">
         <div className="flex items-center justify-between gap-2">
           <CardTitle className="text-base font-semibold tracking-tight">
             {service.name}
@@ -126,7 +126,7 @@ export function ServiceCard({
         </div>
       </CardHeader>
 
-      {includes.length > 0 && (
+      {includes.length > 0 ? (
         <CardContent className="relative z-10 flex flex-1 flex-col gap-2.5">
           {includes.map((item, i) => (
             <div key={i} className="flex items-center gap-2 text-sm">
@@ -135,10 +135,12 @@ export function ServiceCard({
             </div>
           ))}
         </CardContent>
+      ) : (
+        <div className="relative z-10 min-h-0 flex-1" aria-hidden />
       )}
 
       {onBook && (
-        <CardFooter className="relative z-10">
+        <CardFooter className="relative z-10 mt-auto shrink-0">
           <Button
             type="button"
             className="w-full"

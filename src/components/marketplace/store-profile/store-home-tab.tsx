@@ -1228,7 +1228,7 @@ function ServicesTeaser({
       </Reveal>
 
       {/* Desktop / tablet grid */}
-      <div className="hidden sm:grid grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="hidden items-stretch sm:grid sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
         {services.map((svc) => (
           <ServiceCard
             key={svc.id}
@@ -1236,19 +1236,21 @@ function ServicesTeaser({
             accent={accent}
             accentText={accentText}
             onBook={handleBookService}
+            className="h-full"
           />
         ))}
       </div>
 
       {/* Mobile: horizontal carousel — wide cards (67vw) so the next one peeks */}
-      <StoreProductCarouselScroll bleed className="sm:hidden py-px">
+      <StoreProductCarouselScroll bleed itemsStretch className="sm:hidden py-px">
         {services.map((svc) => (
-          <div key={svc.id} className="w-[67vw] flex-shrink-0 snap-start">
+          <div key={svc.id} className="flex w-[67vw] flex-shrink-0 snap-start self-stretch">
             <ServiceCard
               service={svc}
               accent={accent}
               accentText={accentText}
               onBook={handleBookService}
+              className="h-full w-full"
             />
           </div>
         ))}

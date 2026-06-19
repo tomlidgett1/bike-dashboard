@@ -48,11 +48,16 @@ export function ServicesSection({ services, accent = "#ffde59", accentText = "#0
         variants={containerVariants}
         initial="hidden"
         animate="visible"
-        className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+        className="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3"
       >
         {sorted.map((s) => (
-          <motion.div key={s.id} variants={itemVariants} className="h-full">
-            <ServiceCard service={s} accent={accent} accentText={accentText} />
+          <motion.div key={s.id} variants={itemVariants} className="flex h-full min-h-0">
+            <ServiceCard
+              service={s}
+              accent={accent}
+              accentText={accentText}
+              className="h-full w-full"
+            />
           </motion.div>
         ))}
       </motion.div>

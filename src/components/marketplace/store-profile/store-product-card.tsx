@@ -358,15 +358,8 @@ export const StoreProductCard = React.memo<StoreProductCardProps>(function Store
                       inCarousel ? "h-2.5" : "h-3 sm:h-3.5",
                     )}
                   />
-                  <span className={cn(inCarousel && "sr-only sm:not-sr-only")}>
-                    {inCarousel ? (
-                      <>
-                        <span className="sm:hidden">Fast</span>
-                        <span className="hidden sm:inline">Fast Delivery</span>
-                      </>
-                    ) : (
-                      "Fast Delivery"
-                    )}
+                  <span className="sm:hidden">
+                    {inCarousel ? "Fast" : "Fast Delivery"}
                   </span>
                 </span>
               )}

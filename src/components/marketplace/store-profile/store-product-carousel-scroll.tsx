@@ -11,11 +11,14 @@ export function StoreProductCarouselScroll({
   children,
   scrollRef,
   bleed: _bleed = false,
+  itemsStretch = false,
   className,
 }: {
   children: React.ReactNode;
   scrollRef?: React.RefObject<HTMLDivElement | null>;
   bleed?: boolean;
+  /** Stretch row children to the tallest card (e.g. service cards). */
+  itemsStretch?: boolean;
   className?: string;
 }) {
   return (
@@ -37,7 +40,14 @@ export function StoreProductCarouselScroll({
           } as React.CSSProperties
         }
       >
-        <div className="inline-flex items-start gap-2 pr-4 sm:gap-2 sm:pr-0">{children}</div>
+        <div
+          className={cn(
+            "inline-flex gap-2 pr-4 sm:gap-2 sm:pr-0",
+            itemsStretch ? "items-stretch" : "items-start",
+          )}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );
