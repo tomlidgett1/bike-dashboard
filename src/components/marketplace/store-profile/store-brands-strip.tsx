@@ -17,7 +17,7 @@ export function StoreBrandsStrip({ brands }: StoreBrandsStripProps) {
         <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
           Brands We Stock
         </p>
-        <div className="relative -mx-3 sm:mx-0">
+        <div className="relative">
           {/* Fade gradient at right on mobile */}
           <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white to-transparent pointer-events-none z-10 sm:hidden" />
 

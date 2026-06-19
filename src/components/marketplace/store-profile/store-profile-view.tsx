@@ -34,7 +34,8 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ProductCard } from "@/components/marketplace/product-card";
+import { StoreProductCard } from "@/components/marketplace/store-profile/store-product-card";
+import { StoreProductCarouselScroll } from "@/components/marketplace/store-profile/store-product-carousel-scroll";
 import { ListItemBannerSlot } from "@/components/marketplace/list-item-banner";
 import { BikeIcon, getCategoryIconName } from "@/components/ui/bike-icon";
 import { StoreCarouselRowControls } from "@/components/marketplace/store-profile/store-carousel-row-controls";
@@ -49,6 +50,10 @@ import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-ca
 import type { StoreCategoryWithProducts, StoreProfile, OpeningHours, StoreSectionWithCategories } from "@/lib/types/store";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { resolveLivePrice, sortProductsSaleFirst } from "@/lib/marketplace/pricing";
+import {
+  buildStoreProductSearchContext,
+  filterAndRankStoreProductsBySearch,
+} from "@/lib/marketplace/store-product-search";
 import {
   trackStoreBehaviourEvent,
   useProductImpressions,
@@ -286,8 +291,11 @@ interface CategoryScrollRowProps {
   rowIndex: number;
   isExpanded: boolean;
   storeId: string;
+  storeName: string;
   trackAnalytics?: boolean;
   scrollRef: React.RefObject<HTMLDivElement | null>;
+  /** When true, carousel bleeds to screen edges on mobile (standalone rows). */
+  edgeBleed?: boolean;
   onBackgroundRemove?: (product: MarketplaceProduct) => void;
   backgroundRemovingIds?: Set<string>;
 }
@@ -298,8 +306,10 @@ function CategoryScrollRow({
   rowIndex,
   isExpanded,
   storeId,
+  storeName,
   trackAnalytics,
   scrollRef,
+  edgeBleed = false,
   onBackgroundRemove,
   backgroundRemovingIds,
 }: CategoryScrollRowProps) {
@@ -314,29 +324,26 @@ function CategoryScrollRow({
   );
 
   // Mobile: uniform card slots. sm+: widths follow carousel_size from settings.
-  const cardCompact = catSize === 'compact';
-  const cardFeatured = catSize === 'featured';
 
   // ── Grid (expanded) ───────────────────────────────────────────────────────
   if (isExpanded) {
     const gridCls = cn(
-      "grid grid-cols-2 gap-1.5",
-      catSize === 'compact' && "sm:gap-2 sm:[grid-template-columns:repeat(auto-fill,minmax(130px,1fr))]",
-      catSize === 'featured' && "sm:grid-cols-4 sm:gap-3",
-      catSize === 'normal' && "sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 sm:gap-2.5",
+      "grid grid-cols-2 gap-3",
+      catSize === 'compact' && "sm:gap-3 sm:[grid-template-columns:repeat(auto-fill,minmax(150px,1fr))]",
+      catSize === 'featured' && "sm:grid-cols-4 sm:gap-4",
+      catSize === 'normal' && "sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 sm:gap-4",
     );
     return (
       <div ref={impressionRef} className={gridCls}>
         {products.map((product, j) => (
           <React.Fragment key={product.id}>
             <div data-analytics-product-id={product.id}>
-              <ProductCard
+              <StoreProductCard
                 product={product}
                 priority={rowIndex === 0 && j < 6}
-                hideStoreMeta
-                compact={cardCompact}
-                featuredMobile={cardFeatured}
+                inCarousel={false}
                 storeId={storeId}
+                storeName={storeName}
                 onBackgroundRemove={onBackgroundRemove}
                 backgroundRemoveBusy={backgroundRemovingIds?.has(product.id) ?? false}
               />
@@ -353,50 +360,35 @@ function CategoryScrollRow({
 
   // ── Horizontal scroll (default) ───────────────────────────────────────────
   return (
-    <div ref={impressionRef}>
-      <div
-        ref={scrollRef}
-        className="overflow-x-auto overflow-y-hidden scrollbar-hide snap-x snap-mandatory sm:snap-none"
-        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', WebkitOverflowScrolling: 'touch', overflowY: 'hidden' } as React.CSSProperties}
-      >
-        {/* Single-row scroll track — fixed slots + inCarousel disable the 300px
-            content-visibility placeholder that otherwise pads the row bottom. */}
-        <div
-          className={cn(
-            "flex items-start gap-1.5",
-            catSize === 'compact' ? "sm:gap-1.5" : "sm:gap-2",
-          )}
-        >
-          {products.map((product, j) => (
-            <div
-              key={product.id}
-              data-analytics-product-id={product.id}
-              className={cn(
-                "snap-start flex-none min-h-0 overflow-hidden",
-                "w-[42vw] h-[calc(42vw+40px)] max-h-[calc(42vw+40px)]",
-                catSize === 'featured' &&
-                  "sm:w-[clamp(170px,18vw,260px)] sm:h-[calc(clamp(170px,18vw,260px)+40px)] sm:max-h-[calc(clamp(170px,18vw,260px)+40px)]",
-                catSize === 'compact' &&
-                  "sm:w-[clamp(118px,12vw,155px)] sm:h-[calc(clamp(118px,12vw,155px)+40px)] sm:max-h-[calc(clamp(118px,12vw,155px)+40px)]",
-                catSize === 'normal' &&
-                  "sm:w-[clamp(145px,15vw,205px)] sm:h-[calc(clamp(145px,15vw,205px)+40px)] sm:max-h-[calc(clamp(145px,15vw,205px)+40px)]",
-              )}
-            >
-              <ProductCard
-                product={product}
-                priority={rowIndex === 0 && j < 6}
-                hideStoreMeta
-                compact={cardCompact}
-                featuredMobile={cardFeatured}
-                inCarousel
-                storeId={storeId}
-                onBackgroundRemove={onBackgroundRemove}
-                backgroundRemoveBusy={backgroundRemovingIds?.has(product.id) ?? false}
-              />
-            </div>
-          ))}
-        </div>
-      </div>
+    <div ref={impressionRef} className="min-w-0 max-w-full">
+      <StoreProductCarouselScroll scrollRef={scrollRef} bleed={edgeBleed}>
+        {products.map((product, j) => (
+          <div
+            key={product.id}
+            data-analytics-product-id={product.id}
+            className={cn(
+              "snap-start flex-none min-h-0",
+              "w-[42vw]",
+              catSize === 'featured' &&
+                "sm:w-[clamp(170px,18vw,260px)]",
+              catSize === 'compact' &&
+                "sm:w-[clamp(118px,12vw,155px)]",
+              catSize === 'normal' &&
+                "sm:w-[clamp(145px,15vw,205px)]",
+            )}
+          >
+            <StoreProductCard
+              product={product}
+              priority={rowIndex === 0 && j < 6}
+              inCarousel
+              storeId={storeId}
+              storeName={storeName}
+              onBackgroundRemove={onBackgroundRemove}
+              backgroundRemoveBusy={backgroundRemovingIds?.has(product.id) ?? false}
+            />
+          </div>
+        ))}
+      </StoreProductCarouselScroll>
     </div>
   );
 }
@@ -478,7 +470,7 @@ function CarouselEditableTitle({
     <h3
       className={cn(
         "text-base font-semibold text-gray-900",
-        canEdit && "cursor-text rounded-md px-1 -mx-1 hover:bg-gray-100/80",
+        canEdit && "cursor-text rounded-md px-1 hover:bg-gray-100/80",
       )}
       onDoubleClick={() => {
         if (canEdit) setEditing(true);
@@ -499,10 +491,12 @@ function CarouselRow({
   compact,
   isOwnProfile,
   storeId,
+  storeName,
   trackAnalytics,
   onBackgroundRemove,
   backgroundRemovingIds,
   onCategoryRename,
+  edgeBleed = true,
 }: {
   cat: { id: string; name: string; products: MarketplaceProduct[]; carousel_size?: string; logo_url?: string | null; hide_title?: boolean; source?: string | null };
   rowIndex: number;
@@ -511,10 +505,12 @@ function CarouselRow({
   compact: boolean;
   isOwnProfile?: boolean;
   storeId?: string;
+  storeName: string;
   trackAnalytics?: boolean;
   onBackgroundRemove?: (product: MarketplaceProduct) => void;
   backgroundRemovingIds?: Set<string>;
   onCategoryRename?: (categoryId: string, name: string) => Promise<boolean>;
+  edgeBleed?: boolean;
 }) {
   const [logoUrl, setLogoUrl] = React.useState<string | null>(cat.logo_url ?? null);
   const [uploading, setUploading] = React.useState(false);
@@ -658,7 +654,7 @@ function CarouselRow({
       data-store-analytics-section={`carousel:${cat.id}`}
       data-store-analytics-label={cat.name}
     >
-      <div className="flex items-center justify-between gap-2 mb-1">
+      <div className={cn("mb-1 flex items-center justify-between gap-2", !edgeBleed && "px-4 sm:px-4 lg:px-4 xl:px-5")}>
         <div className="flex items-center gap-3">
           {logoUrl ? (
             <div className="group relative h-8 flex-shrink-0 inline-flex items-center">
@@ -730,8 +726,10 @@ function CarouselRow({
         rowIndex={rowIndex}
         isExpanded={isExpanded}
         storeId={storeId ?? ''}
+        storeName={storeName}
         trackAnalytics={trackAnalytics}
         scrollRef={scrollRef}
+        edgeBleed={edgeBleed}
         onBackgroundRemove={onBackgroundRemove}
         backgroundRemovingIds={backgroundRemovingIds}
       />
@@ -746,17 +744,19 @@ function applyStoreProductFilters(
     showSaleOnly: boolean;
     saleProductIds: Set<string>;
     sort: SortKey;
+    searchContext: ReturnType<typeof buildStoreProductSearchContext>;
   },
 ): MarketplaceProduct[] {
   let filtered = [...products];
   if (options.showSaleOnly) {
     filtered = filtered.filter((p) => options.saleProductIds.has(p.id));
   }
-  const query = normaliseStoreSearchText(options.searchQuery);
+
+  const query = options.searchQuery.trim();
   if (query) {
-    const queryTokens = query.split(" ").filter(Boolean);
-    filtered = filtered.filter((p) => matchesStoreProductSearch(p, query, queryTokens));
+    filtered = filterAndRankStoreProductsBySearch(filtered, query, options.searchContext);
   }
+
   switch (options.sort) {
     case "price-asc":
       filtered.sort((a, b) => (a.price ?? 0) - (b.price ?? 0));
@@ -773,41 +773,11 @@ function applyStoreProductFilters(
     default:
       break;
   }
-  if (options.showSaleOnly) {
+
+  if (options.showSaleOnly || query) {
     return filtered;
   }
   return sortProductsSaleFirst(filtered);
-}
-
-function normaliseStoreSearchText(value: string | null | undefined): string {
-  return (value ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .replace(/\s+/g, " ");
-}
-
-function matchesStoreProductSearch(
-  product: MarketplaceProduct,
-  query: string,
-  queryTokens: string[],
-): boolean {
-  const haystack = normaliseStoreSearchText(
-    [
-      product.display_name,
-      product.description,
-      product.brand,
-      product.marketplace_category,
-      product.marketplace_subcategory,
-      product.marketplace_level_3_category,
-      product.category_name,
-      product.model_year,
-    ]
-      .filter(Boolean)
-      .join(" "),
-  );
-
-  return haystack.includes(query) || queryTokens.every((token) => haystack.includes(token));
 }
 
 // ── Flat grid shown while the store product search box has a query ───────────
@@ -815,6 +785,7 @@ function ProductSearchResultsGrid({
   products,
   compact,
   storeId,
+  storeName,
   trackAnalytics,
   onBackgroundRemove,
   backgroundRemovingIds,
@@ -822,6 +793,7 @@ function ProductSearchResultsGrid({
   products: MarketplaceProduct[];
   compact: boolean;
   storeId: string;
+  storeName: string;
   trackAnalytics?: boolean;
   onBackgroundRemove?: (product: MarketplaceProduct) => void;
   backgroundRemovingIds?: Set<string>;
@@ -833,10 +805,10 @@ function ProductSearchResultsGrid({
   );
 
   const gridCls = cn(
-    "grid grid-cols-2 gap-1.5",
-    compact && "sm:gap-2 sm:[grid-template-columns:repeat(auto-fill,minmax(130px,1fr))]",
+    "grid grid-cols-2 gap-3",
+    compact && "sm:gap-3 sm:[grid-template-columns:repeat(auto-fill,minmax(150px,1fr))]",
     !compact &&
-      "sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 sm:gap-2.5 md:gap-3",
+      "sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 sm:gap-4",
   );
 
   return (
@@ -844,12 +816,11 @@ function ProductSearchResultsGrid({
       {products.map((product, index) => (
         <React.Fragment key={product.id}>
           <div data-analytics-product-id={product.id}>
-            <ProductCard
+            <StoreProductCard
               product={product}
               priority={index < 8}
-              hideStoreMeta
-              compact={compact}
               storeId={storeId}
+              storeName={storeName}
               onBackgroundRemove={onBackgroundRemove}
               backgroundRemoveBusy={backgroundRemovingIds?.has(product.id) ?? false}
             />
@@ -874,6 +845,7 @@ function ProductsTab({
   compact,
   isOwnProfile,
   storeId,
+  storeName,
   trackAnalytics,
   onBackgroundRemove,
   backgroundRemovingIds,
@@ -887,6 +859,7 @@ function ProductsTab({
   compact: boolean;
   isOwnProfile?: boolean;
   storeId?: string;
+  storeName: string;
   trackAnalytics?: boolean;
   onBackgroundRemove?: (product: MarketplaceProduct) => void;
   backgroundRemovingIds?: Set<string>;
@@ -924,8 +897,8 @@ function ProductsTab({
     const hasUberCarousel = section.categories.some((cat) => cat.source === "uber");
 
     return (
-      <div key={section.id} className="bg-gray-200/60 border-y border-gray-300 -mx-4 xl:-mx-5 px-4 sm:px-4 lg:px-4 xl:px-5 py-4 space-y-2">
-        <div>
+      <div key={section.id} className="overflow-x-hidden border-y border-gray-300 bg-gray-200/60 py-4">
+        <div className="mb-2 px-4 sm:px-4 lg:px-4 xl:px-5">
           <div className="flex items-center gap-3">
             {hasUberCarousel && <UberCarouselLogo className="h-7 px-2.5" />}
             <h2 className="text-base font-semibold tracking-tight text-gray-900 leading-snug">{section.name}</h2>
@@ -934,6 +907,7 @@ function ProductsTab({
             <p className="mt-0.5 text-sm text-gray-500 leading-snug">{section.description}</p>
           )}
         </div>
+        <div className="space-y-2">
         {section.categories.map((cat) => {
           const r = rowIndex++;
           return (
@@ -946,13 +920,16 @@ function ProductsTab({
               compact={compact}
               isOwnProfile={isOwnProfile}
               storeId={storeId}
+              storeName={storeName}
               trackAnalytics={trackAnalytics}
+              edgeBleed={false}
               onBackgroundRemove={onBackgroundRemove}
               backgroundRemovingIds={backgroundRemovingIds}
               onCategoryRename={onCategoryRename}
             />
           );
         })}
+        </div>
       </div>
     );
   };
@@ -969,6 +946,7 @@ function ProductsTab({
         compact={compact}
         isOwnProfile={isOwnProfile}
         storeId={storeId}
+        storeName={storeName}
         trackAnalytics={trackAnalytics}
         onBackgroundRemove={onBackgroundRemove}
         backgroundRemovingIds={backgroundRemovingIds}
@@ -1042,7 +1020,6 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
   const [showSaleOnly, setShowSaleOnly] = React.useState(false);
   const [previewMode, setPreviewMode] = React.useState(false);
   const [hoursOpen, setHoursOpen] = React.useState(false);
-  const [loadingFullProducts, setLoadingFullProducts] = React.useState(false);
   const [backgroundRemovingIds, setBackgroundRemovingIds] = React.useState<Set<string>>(new Set());
   const analyticsRootRef = React.useRef<HTMLDivElement | null>(null);
   const shouldTrackStoreAnalytics = !isOwnProfile;
@@ -1070,42 +1047,38 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
   // what a customer sees (no logo-upload overlays, no owner-only empty states, etc.)
   const viewAsOwner = isOwnProfile && !previewMode;
 
+  // Load the full product catalog in the background as soon as the (lean) store
+  // page mounts, so the Products/Bikes tabs are ready by the time they're opened
+  // — without bloating the Home payload with every category's products. Deferred
+  // slightly so it never competes with the Home tab's first paint.
   React.useEffect(() => {
-    if (
-      (activeTab !== "products" && activeTab !== "bikes") ||
-      store.product_feed_complete !== false
-    ) {
-      return;
-    }
+    if (store.product_feed_complete !== false) return;
 
     let cancelled = false;
-    setLoadingFullProducts(true);
 
-    fetch(`/api/marketplace/store/${store.id}`)
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`Store products request failed: ${response.status}`);
-        return response.json();
-      })
-      .then((data) => {
-        if (!cancelled && data.store) {
-          setStore(data.store);
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          console.error('[Store profile] Failed to load full product feed:', error);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoadingFullProducts(false);
-        }
-      });
+    const timer = window.setTimeout(() => {
+      fetch(`/api/marketplace/store/${store.id}`)
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`Store products request failed: ${response.status}`);
+          return response.json();
+        })
+        .then((data) => {
+          if (!cancelled && data.store) {
+            setStore(data.store);
+          }
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            console.error('[Store profile] Failed to load full product feed:', error);
+          }
+        });
+    }, 300);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [activeTab, store.id, store.product_feed_complete]);
+  }, [store.id, store.product_feed_complete]);
 
   // Flatten + dedupe products across categories
   const allProducts = React.useMemo(() => {
@@ -1122,6 +1095,11 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
     return out;
   }, [store.categories]);
 
+  const storeSearchContext = React.useMemo(
+    () => buildStoreProductSearchContext(store.categories, store.brands ?? []),
+    [store.categories, store.brands],
+  );
+
   // Sale product IDs — resolved with expiry awareness
   const saleProductIds = React.useMemo(
     () => new Set(allProducts.filter((p) => resolveLivePrice(p).onSale).map((p) => p.id)),
@@ -1129,6 +1107,8 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
   );
 
   const isProductSearchActive = storeSearch.trim().length > 0;
+  const isCategoryPillFilterActive = selectedCategory !== null || showSaleOnly;
+  const showProductGrid = isProductSearchActive || isCategoryPillFilterActive;
   const showHeaderSearch =
     (activeTab === "home" || activeTab === "products") && allProducts.length > 0;
   const mobileSearchMode = mobileSearchOpen && showHeaderSearch;
@@ -1139,16 +1119,9 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
     }
   }, [activeTab]);
 
-  // Typing in the header search on Home jumps to Products so results can render.
-  React.useEffect(() => {
-    if (activeTab === "home" && isProductSearchActive) {
-      setActiveTab("products");
-    }
-  }, [activeTab, isProductSearchActive]);
-
   const filterOptions = React.useMemo(
-    () => ({ searchQuery: storeSearch, showSaleOnly, saleProductIds, sort }),
-    [storeSearch, showSaleOnly, saleProductIds, sort],
+    () => ({ searchQuery: storeSearch, showSaleOnly, saleProductIds, sort, searchContext: storeSearchContext }),
+    [storeSearch, showSaleOnly, saleProductIds, sort, storeSearchContext],
   );
 
   const searchedProducts = React.useMemo(() => {
@@ -1223,7 +1196,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
     isOwnProfile ? null : store.id,
     storeSearch,
     visibleProductCount,
-    activeTab === "products" && isProductSearchActive,
+    (activeTab === "products" || activeTab === "home") && isProductSearchActive,
   );
 
   const directionsUrl = store.address
@@ -1239,16 +1212,28 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
   );
 
   const handleStoreSearchChange = React.useCallback(
-    (value: string) => {
+    (value: string, source: "store_header_search" | "home_floating_search" = "store_header_search") => {
       setStoreSearch((current) => {
         if (!current.trim() && value.trim()) {
-          trackBehaviour("search_focus", { tab: activeTab, source: "store_header_search" });
+          trackBehaviour("search_focus", { tab: activeTab, source });
         }
         if (current.trim() && !value.trim()) {
-          trackBehaviour("search_clear", { tab: activeTab, source: "store_header_search" });
+          trackBehaviour("search_clear", { tab: activeTab, source });
         }
         return value;
       });
+
+      // Header search on Home jumps to Products. The home floating search bar
+      // stays on Home and renders results inline so typing isn't interrupted.
+      if (source !== "home_floating_search" && value.trim().length > 0) {
+        setActiveTab((tab) => {
+          if (tab !== "home") return tab;
+          window.requestAnimationFrame(() => {
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          });
+          return "products";
+        });
+      }
     },
     [activeTab, trackBehaviour],
   );
@@ -1475,7 +1460,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
     : STORE_PAGE_CONTENT_SHELL;
 
   return (
-    <div ref={analyticsRootRef} className={cn("min-h-screen bg-gray-50", immersive && "pt-14")}>
+    <div ref={analyticsRootRef} className={cn("min-h-screen overflow-x-hidden bg-gray-50", immersive && "pt-14")}>
       <div>
       <div>
       <StoreProfileChrome
@@ -1598,8 +1583,9 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
           Home is full-bleed (it manages its own width + spacing); every other
           tab keeps the standard padded container. */}
       <div className={cn(
+        "overflow-x-hidden",
         activeTab === "home"
-          ? "" // full-bleed; inherits the page's gray-50 so white cards pop
+          ? ""
           : cn("pt-2 pb-5 sm:pt-3 sm:pb-7", storeContentShell)
       )}>
           <div
@@ -1620,30 +1606,65 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                 onTrackBehaviour={trackBehaviour}
                 storeSearch={storeSearch}
                 onStoreSearchChange={allProducts.length > 0 ? handleStoreSearchChange : undefined}
+                homeSearchResultsSlot={
+                  isProductSearchActive ? (
+                    searchedProducts.length > 0 ? (
+                      <ProductSearchResultsGrid
+                        products={searchedProducts}
+                        compact={compact}
+                        storeId={store.id}
+                        storeName={store.store_name}
+                        trackAnalytics={!isOwnProfile}
+                        onBackgroundRemove={viewAsOwner ? handleBackgroundRemove : undefined}
+                        backgroundRemovingIds={backgroundRemovingIds}
+                      />
+                    ) : (
+                      <EmptyState
+                        icon={Search}
+                        title="No matching products"
+                        body={`Nothing in this store matches “${storeSearch.trim()}”. Try a different term or clear the search.`}
+                      />
+                    )
+                  ) : null
+                }
               />
             )}
 
-            {/* PRODUCTS — render carousels immediately from the initial
-                (≈12/category) payload; the full feed hydrates in the background
-                (see effect) and upgrades the carousels in place. The spinner now
-                only shows when there is genuinely no data yet. */}
+            {/* PRODUCTS — the Home payload is lean (it carries only featured +
+                on-sale products), so the full catalog loads in the background on
+                mount. Show a brief loader until it's ready — it's usually already
+                loaded by the time this tab is opened. */}
             {activeTab === "products" &&
-              (allProducts.length > 0 ? (
-                isProductSearchActive ? (
+              (!store.product_feed_complete ? (
+                <div className="flex min-h-[320px] items-center justify-center gap-2 text-sm font-medium text-gray-500">
+                  <SpinnerIcon className="h-4 w-4 animate-spin" />
+                  Loading products...
+                </div>
+              ) : allProducts.length > 0 ? (
+                showProductGrid ? (
                   searchedProducts.length > 0 ? (
                     <ProductSearchResultsGrid
                       products={searchedProducts}
                       compact={compact}
                       storeId={store.id}
+                      storeName={store.store_name}
                       trackAnalytics={!isOwnProfile}
                       onBackgroundRemove={viewAsOwner ? handleBackgroundRemove : undefined}
                       backgroundRemovingIds={backgroundRemovingIds}
                     />
                   ) : (
                     <EmptyState
-                      icon={Search}
+                      icon={isProductSearchActive ? Search : Tag}
                       title="No matching products"
-                      body={`Nothing in this store matches “${storeSearch.trim()}”. Try a different term or clear the search.`}
+                      body={
+                        isProductSearchActive
+                          ? `Nothing in this store matches “${storeSearch.trim()}”. Try a different term or clear the search.`
+                          : showSaleOnly && selectedCategory
+                            ? `No sale items in “${selectedCategory}”. Try another category or clear the filters.`
+                            : showSaleOnly
+                              ? "Nothing on sale right now. Check back soon or browse all products."
+                              : `No products in “${selectedCategory}”. Try another category or clear the filter.`
+                      }
                     />
                   )
                 ) : (
@@ -1656,17 +1677,13 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                     compact={compact}
                     isOwnProfile={viewAsOwner}
                     storeId={store.id}
+                    storeName={store.store_name}
                     trackAnalytics={!isOwnProfile}
                     onBackgroundRemove={viewAsOwner ? handleBackgroundRemove : undefined}
                     backgroundRemovingIds={backgroundRemovingIds}
                     onCategoryRename={viewAsOwner ? handleCategoryRename : undefined}
                   />
                 )
-              ) : loadingFullProducts ? (
-                <div className="flex min-h-[320px] items-center justify-center gap-2 text-sm font-medium text-gray-500">
-                  <SpinnerIcon className="h-4 w-4 animate-spin" />
-                  Loading products...
-                </div>
               ) : (
                 <EmptyState
                   icon={Package}
@@ -1679,9 +1696,15 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                 />
               ))}
 
-            {/* BIKES — same instant-render-then-hydrate behaviour as Products. */}
+            {/* BIKES — same lean-home behaviour as Products: wait for the
+                background full-feed fetch before rendering the catalog. */}
             {activeTab === "bikes" &&
-              (bikesCarouselCount > 0 ? (
+              (!store.product_feed_complete ? (
+                <div className="flex min-h-[320px] items-center justify-center gap-2 text-sm font-medium text-gray-500">
+                  <SpinnerIcon className="h-4 w-4 animate-spin" />
+                  Loading bikes...
+                </div>
+              ) : bikesCarouselCount > 0 ? (
                 <ProductsTab
                   sortedCategories={sortedBikesCategories}
                   sections={[]}
@@ -1691,13 +1714,9 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                   compact={compact}
                   isOwnProfile={viewAsOwner}
                   storeId={store.id}
+                  storeName={store.store_name}
                   trackAnalytics={!isOwnProfile}
                 />
-              ) : loadingFullProducts ? (
-                <div className="flex min-h-[320px] items-center justify-center gap-2 text-sm font-medium text-gray-500">
-                  <SpinnerIcon className="h-4 w-4 animate-spin" />
-                  Loading bikes...
-                </div>
               ) : (
                 <EmptyState
                   icon={Bike}

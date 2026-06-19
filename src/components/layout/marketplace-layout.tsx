@@ -35,7 +35,7 @@ function MarketplaceLayoutContent({
     showSidebar ?? (pathname ? shouldShowMarketplaceSidebar(pathname) : false);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen overflow-x-hidden bg-gray-50">
       {sidebarVisible && <MarketplaceSidebar />}
 
       {/* Header is included in each marketplace page for more control */}

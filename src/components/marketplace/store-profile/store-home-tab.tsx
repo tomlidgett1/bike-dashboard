@@ -30,12 +30,12 @@ import { resolveHomepageConfig } from "@/lib/marketplace/homepage-config";
 import { sortProductsSaleFirst } from "@/lib/marketplace/pricing";
 import { getHomepageIcon } from "@/components/marketplace/store-profile/homepage-icons";
 import { ServiceCard } from "@/components/marketplace/store-profile/service-card";
-import { ProductCard } from "@/components/marketplace/product-card";
+import { StoreProductCard } from "@/components/marketplace/store-profile/store-product-card";
+import { StoreProductCarouselScroll } from "@/components/marketplace/store-profile/store-product-carousel-scroll";
 import { type StoreAnalyticsEventType, useProductImpressions } from "@/lib/tracking/store-analytics";
 import { STORE_PAGE_CONTENT_SHELL } from "@/components/marketplace/store-profile/store-profile-chrome";
 import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
 import { WeeklySpecials } from "@/components/marketplace/store-profile/weekly-specials";
-
 // ============================================================
 // Store Home Tab — the public landing page for a bicycle store.
 // Renders a polished default from the store's own data and layers
@@ -55,7 +55,9 @@ interface StoreHomeTabProps {
   onOpenHours?: () => void;
   onTrackBehaviour?: (eventType: StoreAnalyticsEventType, metadata?: Record<string, unknown>) => void;
   storeSearch?: string;
-  onStoreSearchChange?: (value: string) => void;
+  onStoreSearchChange?: (value: string, source?: "store_header_search" | "home_floating_search") => void;
+  /** Rendered below the mobile home search bar while a query is active. */
+  homeSearchResultsSlot?: React.ReactNode;
 }
 
 const DAY_KEYS: (keyof OpeningHours)[] = [
@@ -137,6 +139,7 @@ export function StoreHomeTab({
   onTrackBehaviour,
   storeSearch = "",
   onStoreSearchChange,
+  homeSearchResultsSlot,
 }: StoreHomeTabProps) {
   const [messageOpen, setMessageOpen] = React.useState(false);
   const handleCloseMessage = React.useCallback(() => setMessageOpen(false), []);
@@ -193,6 +196,7 @@ export function StoreHomeTab({
           onOpenCollection={onOpenCollection}
           storeSearch={storeSearch}
           onStoreSearchChange={onStoreSearchChange}
+          homeSearchResultsSlot={homeSearchResultsSlot}
           onTrackBehaviour={onTrackBehaviour}
         />
       ) : null,
@@ -230,7 +234,7 @@ export function StoreHomeTab({
 
   return (
     <StoreHomeShellContext.Provider value={contentShell}>
-      <div className="pb-2">
+      <div className="pb-2 overflow-x-hidden">
         {/* Announcement bar */}
         {config.announcement.enabled && config.announcement.text.trim() && (
           <div
@@ -1237,24 +1241,18 @@ function ServicesTeaser({
       </div>
 
       {/* Mobile: horizontal carousel — wide cards (67vw) so the next one peeks */}
-      <div className="sm:hidden -mx-5 overflow-x-auto scrollbar-hide snap-x snap-mandatory scroll-pl-5 py-px">
-        <div className="flex items-stretch gap-3.5" style={{ minWidth: "min-content" }}>
-          {/* Leading spacer */}
-          <div className="w-5 flex-shrink-0" aria-hidden />
-          {services.map((svc) => (
-            <div key={svc.id} className="w-[67vw] flex-shrink-0 snap-start">
-              <ServiceCard
-                service={svc}
-                accent={accent}
-                accentText={accentText}
-                onBook={handleBookService}
-              />
-            </div>
-          ))}
-          {/* Trailing spacer */}
-          <div className="w-5 flex-shrink-0" aria-hidden />
-        </div>
-      </div>
+      <StoreProductCarouselScroll bleed className="sm:hidden py-px">
+        {services.map((svc) => (
+          <div key={svc.id} className="w-[67vw] flex-shrink-0 snap-start">
+            <ServiceCard
+              service={svc}
+              accent={accent}
+              accentText={accentText}
+              onBook={handleBookService}
+            />
+          </div>
+        ))}
+      </StoreProductCarouselScroll>
     </section>
   );
 }
@@ -1310,13 +1308,20 @@ function HomeFloatingSearchBar({
   onTrackBehaviour,
 }: {
   storeSearch: string;
-  onStoreSearchChange: (value: string) => void;
+  onStoreSearchChange: (value: string, source?: "store_header_search" | "home_floating_search") => void;
   onTrackBehaviour?: (eventType: StoreAnalyticsEventType, metadata?: Record<string, unknown>) => void;
 }) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const hasTrackedFocus = React.useRef(false);
   const [focused, setFocused] = React.useState(false);
   const showHint = !storeSearch.trim() && !focused;
+
+  const handleChange = React.useCallback(
+    (value: string) => {
+      onStoreSearchChange(value, "home_floating_search");
+    },
+    [onStoreSearchChange],
+  );
 
   return (
     <div className="mt-6 sm:hidden">
@@ -1343,7 +1348,7 @@ function HomeFloatingSearchBar({
             type="search"
             enterKeyHint="search"
             value={storeSearch}
-            onChange={(event) => onStoreSearchChange(event.target.value)}
+            onChange={(event) => handleChange(event.target.value)}
             onFocus={() => {
               setFocused(true);
               if (hasTrackedFocus.current) return;
@@ -1371,6 +1376,7 @@ function FeaturedCarouselsSection({
   onOpenCollection,
   storeSearch = "",
   onStoreSearchChange,
+  homeSearchResultsSlot,
   onTrackBehaviour,
 }: {
   store: StoreProfile;
@@ -1378,7 +1384,8 @@ function FeaturedCarouselsSection({
   trackAnalytics?: boolean;
   onOpenCollection: (categoryName: string) => void;
   storeSearch?: string;
-  onStoreSearchChange?: (value: string) => void;
+  onStoreSearchChange?: (value: string, source?: "store_header_search" | "home_floating_search") => void;
+  homeSearchResultsSlot?: React.ReactNode;
   onTrackBehaviour?: (eventType: StoreAnalyticsEventType, metadata?: Record<string, unknown>) => void;
 }) {
   const shell = useStoreHomeShell();
@@ -1410,6 +1417,7 @@ function FeaturedCarouselsSection({
             products={shown}
             gridCols={gridCols}
             storeId={store.id}
+            storeName={store.store_name}
             perRow={perRow}
             trackAnalytics={trackAnalytics}
             onOpenCollection={onOpenCollection}
@@ -1422,11 +1430,14 @@ function FeaturedCarouselsSection({
         );
       })}
       {onStoreSearchChange && (
-        <HomeFloatingSearchBar
-          storeSearch={storeSearch}
-          onStoreSearchChange={onStoreSearchChange}
-          onTrackBehaviour={onTrackBehaviour}
-        />
+        <>
+          <HomeFloatingSearchBar
+            storeSearch={storeSearch}
+            onStoreSearchChange={onStoreSearchChange}
+            onTrackBehaviour={onTrackBehaviour}
+          />
+          {storeSearch.trim() && homeSearchResultsSlot}
+        </>
       )}
     </section>
   );
@@ -1437,6 +1448,7 @@ function FeaturedCarouselBlock({
   products,
   gridCols,
   storeId,
+  storeName,
   perRow,
   trackAnalytics,
   onOpenCollection,
@@ -1446,6 +1458,7 @@ function FeaturedCarouselBlock({
   products: StoreProfile["categories"][number]["products"];
   gridCols: string;
   storeId: string;
+  storeName: string;
   perRow: number;
   trackAnalytics?: boolean;
   onOpenCollection: (categoryName: string) => void;
@@ -1541,11 +1554,11 @@ function FeaturedCarouselBlock({
         <div className={cn("hidden sm:grid gap-3 sm:gap-4", gridCols)}>
           {products.map((product, i) => (
             <div key={product.id} data-analytics-product-id={product.id}>
-              <ProductCard
+              <StoreProductCard
                 product={product}
                 priority={i < 4}
-                hideStoreMeta
                 storeId={storeId}
+                storeName={storeName}
               />
             </div>
           ))}
@@ -1554,34 +1567,25 @@ function FeaturedCarouselBlock({
         {/* Mobile: two independently-scrolling rows (~2 cards visible, all products).
             items-start + hideStoreMeta keep every card the same height so no card
             leaves dead space when its neighbours are still loading. */}
-        <div className="sm:hidden space-y-3">
+        <div className="space-y-3 sm:hidden">
           {mobileRows.map((row, ri) => (
-            <div
-              key={ri}
-              className="-mx-5 overflow-x-auto scrollbar-hide snap-x snap-mandatory scroll-pl-5"
-            >
-              <div className="flex items-start gap-2" style={{ minWidth: "min-content" }}>
-                <div className="w-5 flex-shrink-0" aria-hidden />
-                {row.map((product, i) => (
-                  // Fixed slot height (square image + info row) so off-screen cards
-                  // that are still lazy-loading can't stretch the row and leave gaps.
-                  <div
-                    key={product.id}
-                    data-analytics-product-id={product.id}
-                    className="w-[42vw] h-[calc(42vw_+_40px)] max-h-[calc(42vw_+_40px)] min-h-0 overflow-hidden flex-shrink-0 snap-start"
-                  >
-                    <ProductCard
-                      product={product}
-                      priority={ri === 0 && i < 2}
-                      hideStoreMeta
-                      inCarousel
-                      storeId={storeId}
-                    />
-                  </div>
-                ))}
-                <div className="w-5 flex-shrink-0" aria-hidden />
-              </div>
-            </div>
+            <StoreProductCarouselScroll key={ri} bleed>
+              {row.map((product, i) => (
+                <div
+                  key={product.id}
+                  data-analytics-product-id={product.id}
+                  className="w-[42vw] min-h-0 flex-shrink-0 snap-start"
+                >
+                  <StoreProductCard
+                    product={product}
+                    priority={ri === 0 && i < 2}
+                    inCarousel
+                    storeId={storeId}
+                    storeName={storeName}
+                  />
+                </div>
+              ))}
+            </StoreProductCarouselScroll>
           ))}
         </div>
       </div>

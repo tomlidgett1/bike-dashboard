@@ -78,7 +78,7 @@ export function StoreHeader({
           <div className="relative">
             <div
               ref={scrollContainerRef}
-              className="overflow-x-auto scrollbar-hide -mx-2 px-2"
+              className="overflow-x-auto scrollbar-hide px-2"
               style={{
                 scrollbarWidth: 'none',
                 msOverflowStyle: 'none',

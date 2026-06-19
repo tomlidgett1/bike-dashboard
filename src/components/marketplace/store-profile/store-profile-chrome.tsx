@@ -334,12 +334,12 @@ export function StoreProfileChrome({
               mobileSearchMode ? "hidden md:flex" : "flex",
             )}
           >
-            <Link
-              href={homeHref}
-              className="flex min-w-0 items-center gap-2.5 sm:gap-3"
-              aria-label={`${store.store_name} store home`}
-            >
-              <div className="h-9 w-9 flex-shrink-0 overflow-hidden rounded-full bg-white ring-1 ring-gray-200 sm:h-11 sm:w-11">
+            <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+              <Link
+                href={homeHref}
+                className="h-9 w-9 flex-shrink-0 overflow-hidden rounded-full bg-white ring-1 ring-gray-200 sm:h-11 sm:w-11"
+                aria-label={`${store.store_name} store home`}
+              >
                 {store.logo_url ? (
                   <Image
                     src={store.logo_url}
@@ -355,10 +355,12 @@ export function StoreProfileChrome({
                     <Store className="h-4 w-4 text-gray-400 sm:h-5 sm:w-5" />
                   </div>
                 )}
-              </div>
+              </Link>
               <div className="flex min-w-0 flex-col items-start text-left">
                 <h1 className="truncate text-[15px] font-bold leading-tight tracking-tight text-gray-900 sm:text-lg">
-                  {store.store_name}
+                  <Link href={homeHref} className="block truncate hover:text-gray-700">
+                    {store.store_name}
+                  </Link>
                 </h1>
                 {showHeaderHoursBadge && openStatus && (
                   <button
@@ -479,7 +481,7 @@ export function StoreProfileChrome({
                   </div>
                 )}
               </div>
-            </Link>
+            </div>
 
             <div className="flex flex-shrink-0 items-center gap-2">
               {showHeaderSearch && (

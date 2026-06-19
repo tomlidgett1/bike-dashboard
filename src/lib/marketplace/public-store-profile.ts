@@ -3,6 +3,7 @@
 import { unstable_cache } from 'next/cache'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { resolveProductImage } from '@/lib/services/image-resolver'
+import { resolveLivePrice } from '@/lib/marketplace/pricing'
 import { toCurrentHeroPublicId } from '@/lib/utils/cloudinary-transforms'
 import type {
   StoreCategoryWithProducts,
@@ -13,11 +14,19 @@ import type {
 import { createPublicSupabaseClient } from '@/lib/marketplace/public-card-feed'
 
 export const PUBLIC_STORE_PROFILE_CACHE_CONTROL = 'public, s-maxage=60, stale-while-revalidate=300'
-const HOMEPAGE_PRODUCT_LIMIT_PER_CATEGORY = 12
 
 interface FetchPublicStoreProfileOptions {
   searchQuery?: string | null
   productLimitPerCategory?: number | null
+  /**
+   * Lean storefront-home payload: include products only for what the Home tab
+   * actually renders — the configured featured carousels and on-sale items (for
+   * Weekly Specials) — while keeping full category metadata + counts. The heavy
+   * full catalog (every category's products) is loaded separately for the
+   * Products/Bikes tabs. This keeps the initial store page payload small on
+   * shops with many categories instead of shipping 12×N products up front.
+   */
+  homeContentOnly?: boolean
 }
 
 const STORE_COLUMNS_FULL =
@@ -64,6 +73,7 @@ export async function fetchPublicStoreProfile(
   const supabase = createPublicSupabaseClient()
   const searchQuery = options.searchQuery ?? null
   const productLimitPerCategory = options.productLimitPerCategory ?? null
+  const homeContentOnly = options.homeContentOnly === true
 
   let { data: storeUser, error: storeError } = await supabase
     .from('users')
@@ -276,7 +286,9 @@ export async function fetchPublicStoreProfile(
       store_account_type: 'bicycle_store',
       store_bicycle_store: true,
       store_id: storeId,
+      category_name: product.category_name || null,
       category: product.category_name,
+      brand: product.manufacturer_name || null,
       qoh: product.qoh,
       model_year: product.model_year,
       created_at: product.created_at,
@@ -292,7 +304,45 @@ export async function fetchPublicStoreProfile(
   // store with thousands of SKUs now transforms ~12×categories instead of all.
   const limit = productLimitPerCategory
   type BuiltProduct = NonNullable<ReturnType<typeof toMarketplaceProduct>>
-  const buildCategoryProducts = (raw: any[]): { products: BuiltProduct[]; count: number } => {
+
+  // Lean-home mode: only the configured featured carousels need full products,
+  // and Weekly Specials needs on-sale items. Everything else ships as metadata
+  // only (count preserved) and is hydrated later by the full-feed fetch.
+  const featuredCarousels = (storeUser as any).homepage_config?.featured_carousels
+  const featuredSlotIds = new Set<string>(
+    [featuredCarousels?.slot1, featuredCarousels?.slot2].filter(
+      (id): id is string => typeof id === 'string' && id.length > 0,
+    ),
+  )
+  const featuredPerRow = featuredCarousels?.per_row === 8 ? 8 : 6
+
+  const buildCategoryProducts = (
+    raw: any[],
+    categoryId?: string,
+  ): { products: BuiltProduct[]; count: number } => {
+    if (homeContentOnly) {
+      const picked: any[] = []
+      const seen = new Set<string>()
+      if (categoryId && featuredSlotIds.has(categoryId)) {
+        for (const product of raw.slice(0, featuredPerRow)) {
+          if (!seen.has(product.id)) {
+            seen.add(product.id)
+            picked.push(product)
+          }
+        }
+      }
+      for (const product of raw) {
+        if (seen.has(product.id)) continue
+        if (resolveLivePrice(product).onSale) {
+          seen.add(product.id)
+          picked.push(product)
+        }
+      }
+      const products = picked
+        .map(toMarketplaceProduct)
+        .filter((p): p is BuiltProduct => Boolean(p))
+      return { products, count: raw.length }
+    }
     if (limit == null) {
       const products = raw
         .map(toMarketplaceProduct)
@@ -337,7 +387,7 @@ export async function fetchPublicStoreProfile(
       }
 
       categoryProducts.forEach((product) => matchedIds.add(product.id))
-      const { products: marketplaceProducts, count } = buildCategoryProducts(categoryProducts)
+      const { products: marketplaceProducts, count } = buildCategoryProducts(categoryProducts, category.id)
 
       if (marketplaceProducts.length > 0) {
         const displayName =
@@ -462,7 +512,7 @@ export async function fetchPublicStoreProfile(
     website: storeUser.website || null,
     social_links: storeUser.social_links || null,
     homepage_config: storeUser.homepage_config || null,
-    product_feed_complete: productLimitPerCategory == null,
+    product_feed_complete: !homeContentOnly && productLimitPerCategory == null,
   }
 }
 
@@ -475,10 +525,8 @@ export const fetchCachedPublicStoreProfile = unstable_cache(
 
 export const fetchCachedPublicStoreHomepageProfile = unstable_cache(
   async (storeId: string) =>
-    fetchPublicStoreProfile(storeId, {
-      productLimitPerCategory: HOMEPAGE_PRODUCT_LIMIT_PER_CATEGORY,
-    }),
-  ['public-store-homepage-profile-v1'],
+    fetchPublicStoreProfile(storeId, { homeContentOnly: true }),
+  ['public-store-homepage-profile-v2'],
   { revalidate: 60 },
 )
 
