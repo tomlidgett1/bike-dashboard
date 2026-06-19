@@ -1623,14 +1623,12 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
               />
             )}
 
-            {/* PRODUCTS */}
+            {/* PRODUCTS — render carousels immediately from the initial
+                (≈12/category) payload; the full feed hydrates in the background
+                (see effect) and upgrades the carousels in place. The spinner now
+                only shows when there is genuinely no data yet. */}
             {activeTab === "products" &&
-              (loadingFullProducts ? (
-                <div className="flex min-h-[320px] items-center justify-center gap-2 text-sm font-medium text-gray-500">
-                  <SpinnerIcon className="h-4 w-4 animate-spin" />
-                  Loading products...
-                </div>
-              ) : allProducts.length > 0 ? (
+              (allProducts.length > 0 ? (
                 isProductSearchActive ? (
                   searchedProducts.length > 0 ? (
                     <ProductSearchResultsGrid
@@ -1664,6 +1662,11 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                     onCategoryRename={viewAsOwner ? handleCategoryRename : undefined}
                   />
                 )
+              ) : loadingFullProducts ? (
+                <div className="flex min-h-[320px] items-center justify-center gap-2 text-sm font-medium text-gray-500">
+                  <SpinnerIcon className="h-4 w-4 animate-spin" />
+                  Loading products...
+                </div>
               ) : (
                 <EmptyState
                   icon={Package}
@@ -1676,14 +1679,9 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                 />
               ))}
 
-            {/* BIKES */}
+            {/* BIKES — same instant-render-then-hydrate behaviour as Products. */}
             {activeTab === "bikes" &&
-              (loadingFullProducts ? (
-                <div className="flex min-h-[320px] items-center justify-center gap-2 text-sm font-medium text-gray-500">
-                  <SpinnerIcon className="h-4 w-4 animate-spin" />
-                  Loading bikes...
-                </div>
-              ) : bikesCarouselCount > 0 ? (
+              (bikesCarouselCount > 0 ? (
                 <ProductsTab
                   sortedCategories={sortedBikesCategories}
                   sections={[]}
@@ -1695,6 +1693,11 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                   storeId={store.id}
                   trackAnalytics={!isOwnProfile}
                 />
+              ) : loadingFullProducts ? (
+                <div className="flex min-h-[320px] items-center justify-center gap-2 text-sm font-medium text-gray-500">
+                  <SpinnerIcon className="h-4 w-4 animate-spin" />
+                  Loading bikes...
+                </div>
               ) : (
                 <EmptyState
                   icon={Bike}

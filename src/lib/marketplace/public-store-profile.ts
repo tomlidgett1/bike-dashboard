@@ -286,6 +286,28 @@ export async function fetchPublicStoreProfile(
     }
   }
 
+  // Transform only the products we'll actually return. On the homepage we keep
+  // up to `productLimitPerCategory` per category, so image-resolving the entire
+  // catalog just to slice it away afterwards is the main cost we cut here: a
+  // store with thousands of SKUs now transforms ~12×categories instead of all.
+  const limit = productLimitPerCategory
+  type BuiltProduct = NonNullable<ReturnType<typeof toMarketplaceProduct>>
+  const buildCategoryProducts = (raw: any[]): { products: BuiltProduct[]; count: number } => {
+    if (limit == null) {
+      const products = raw
+        .map(toMarketplaceProduct)
+        .filter((p): p is BuiltProduct => Boolean(p))
+      return { products, count: products.length }
+    }
+    const products: BuiltProduct[] = []
+    for (const product of raw) {
+      if (products.length >= limit) break
+      const mp = toMarketplaceProduct(product)
+      if (mp) products.push(mp)
+    }
+    return { products, count: raw.length }
+  }
+
   const categoriesWithProducts: StoreCategoryWithProducts[] = []
 
   if (customCategories && customCategories.length > 0 && sortedProducts.length > 0) {
@@ -315,9 +337,7 @@ export async function fetchPublicStoreProfile(
       }
 
       categoryProducts.forEach((product) => matchedIds.add(product.id))
-      const marketplaceProducts = categoryProducts
-        .map(toMarketplaceProduct)
-        .filter((product): product is NonNullable<typeof product> => Boolean(product))
+      const { products: marketplaceProducts, count } = buildCategoryProducts(categoryProducts)
 
       if (marketplaceProducts.length > 0) {
         const displayName =
@@ -333,15 +353,13 @@ export async function fetchPublicStoreProfile(
           hide_title: category.hide_title ?? false,
           store_page: category.store_page === 'bikes' ? 'bikes' : 'products',
           products: marketplaceProducts,
-          product_count: marketplaceProducts.length,
+          product_count: count,
         })
       }
     }
 
-    const otherProducts = sortedProducts
-      .filter((product) => !matchedIds.has(product.id))
-      .map(toMarketplaceProduct)
-      .filter((product): product is NonNullable<typeof product> => Boolean(product))
+    const otherRaw = sortedProducts.filter((product) => !matchedIds.has(product.id))
+    const { products: otherProducts, count: otherCount } = buildCategoryProducts(otherRaw)
 
     if (otherProducts.length > 0) {
       categoriesWithProducts.push({
@@ -349,7 +367,7 @@ export async function fetchPublicStoreProfile(
         name: 'Other',
         display_order: 9999,
         products: otherProducts,
-        product_count: otherProducts.length,
+        product_count: otherCount,
       })
     }
   } else if (sortedProducts.length > 0) {
@@ -363,9 +381,7 @@ export async function fetchPublicStoreProfile(
     Array.from(productsByCategory.entries())
       .sort((a, b) => b[1].length - a[1].length)
       .forEach(([categoryName, products], index) => {
-        const marketplaceProducts = products
-          .map(toMarketplaceProduct)
-          .filter((product): product is NonNullable<typeof product> => Boolean(product))
+        const { products: marketplaceProducts, count } = buildCategoryProducts(products)
 
         if (marketplaceProducts.length > 0) {
           categoriesWithProducts.push({
@@ -373,19 +389,15 @@ export async function fetchPublicStoreProfile(
             name: displayNamesMap.get(categoryName) || categoryName,
             display_order: index,
             products: marketplaceProducts,
-            product_count: marketplaceProducts.length,
+            product_count: count,
           })
         }
       })
   }
 
-  const categoriesForResponse =
-    productLimitPerCategory != null
-      ? categoriesWithProducts.map((category) => ({
-          ...category,
-          products: category.products.slice(0, productLimitPerCategory),
-        }))
-      : categoriesWithProducts
+  // Per-category limiting already happened in buildCategoryProducts
+  // (transform-before-slice), so no second pass is needed here.
+  const categoriesForResponse = categoriesWithProducts
 
   const sectionsWithCategories: StoreSectionWithCategories[] = (storeSections ?? [])
     .map((section: any) => ({
