@@ -1228,8 +1228,8 @@ function ServicesTeaser({
         </div>
       </Reveal>
 
-      {/* Desktop / tablet grid */}
-      <div className="hidden items-stretch sm:grid sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+      {/* Desktop grid */}
+      <div className="hidden items-stretch lg:grid lg:grid-cols-2 lg:gap-4 xl:grid-cols-3">
         {services.map((svc) => (
           <ServiceCard
             key={svc.id}
@@ -1242,8 +1242,8 @@ function ServicesTeaser({
         ))}
       </div>
 
-      {/* Mobile: horizontal carousel — wide cards (67vw) so the next one peeks */}
-      <StoreProductCarouselScroll bleed itemsStretch className="sm:hidden py-px">
+      {/* Mobile / tablet: horizontal carousel — wide cards (67vw) so the next one peeks */}
+      <StoreProductCarouselScroll bleed itemsStretch className="lg:hidden py-px">
         {services.map((svc) => (
           <div key={svc.id} className="flex w-[67vw] flex-shrink-0 snap-start self-stretch">
             <ServiceCard

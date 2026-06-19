@@ -28,7 +28,7 @@ export function StoreProductCarouselScroll({
         className={cn(
           "overflow-x-auto overflow-y-hidden scrollbar-hide snap-x snap-mandatory",
           "overscroll-x-contain carousel-scroll-track",
-          "max-sm:scroll-pl-4 sm:snap-none",
+          "max-lg:scroll-pl-4 lg:snap-none",
           className,
         )}
         style={
