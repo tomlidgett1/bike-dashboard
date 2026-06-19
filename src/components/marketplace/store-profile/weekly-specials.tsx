@@ -255,7 +255,7 @@ export function StoreBanners({
 
   return (
     <>
-      <section className={cn(contentShell, "mt-4")}>
+      <section className={cn(contentShell, "mt-4 sm:mt-3")}>
         <div className="sm:hidden -mr-4 min-w-0 overflow-hidden">
           <BannerCarousel slides={slides} onBannerClick={handleBannerClick} />
         </div>
@@ -355,9 +355,14 @@ function BannerCarousel({
   }, [count]);
 
   const scrollToIndex = React.useCallback((targetIndex: number, behavior: ScrollBehavior = "smooth") => {
-    const track = scrollRef.current?.firstElementChild;
+    const el = scrollRef.current;
+    const track = el?.firstElementChild as HTMLElement | undefined;
     const slide = track?.children[targetIndex] as HTMLElement | undefined;
-    slide?.scrollIntoView({ behavior, inline: "start", block: "nearest" });
+    if (!el || !slide) return;
+
+    // Scroll the carousel track only — never scrollIntoView (jumps the page on mobile).
+    const left = slide.getBoundingClientRect().left - el.getBoundingClientRect().left + el.scrollLeft;
+    el.scrollTo({ left, behavior });
   }, []);
 
   const navigate = React.useCallback(

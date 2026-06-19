@@ -286,7 +286,7 @@ export function StoreHomeTab({
         />
 
         {/* Ordered sections */}
-        <div className="space-y-10 sm:space-y-14 pt-4 pb-8 sm:py-12">
+        <div className="space-y-8 sm:space-y-10 pt-3 pb-8 sm:pt-4 sm:pb-10">
           {config.section_order.map((key) => sectionRenderers[key]?.())}
         </div>
 
