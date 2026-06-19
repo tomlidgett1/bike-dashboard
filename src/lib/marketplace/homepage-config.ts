@@ -17,9 +17,21 @@ import type {
   HomeHighlight,
   HomeCollection,
   HomeSectionKey,
+  HomeBanner,
 } from '@/lib/types/store';
 
 export const BRAND_YELLOW = '#ffde59';
+
+export const DEFAULT_WEEKLY_SPECIALS_BANNER: HomeBanner = {
+  id: 'banner-weekly-specials',
+  enabled: true,
+  kind: 'weekly_specials',
+  title: 'Weekly specials',
+  subtitle: '',
+  footer_text: 'Changes weekly',
+  image_url: null,
+  href: 'weekly_specials',
+};
 
 export const HOME_SECTION_ORDER: HomeSectionKey[] = [
   'highlights',
@@ -144,6 +156,13 @@ export function resolveHomepageConfig(
     text: rawAnn.text ?? '',
   };
 
+  // ── Banners ───────────────────────────────────────────────────────────
+  const rawBanners = (r.banners ?? {}) as Partial<StoreHomepageConfig['banners']>;
+  const banners: StoreHomepageConfig['banners'] = {
+    enabled: rawBanners.enabled ?? true,
+    items: sanitizeBanners(rawBanners.items),
+  };
+
   // ── Highlights ────────────────────────────────────────────────────────
   const rawHi = (r.highlights ?? {}) as Partial<StoreHomepageConfig['highlights']>;
   const highlights: StoreHomepageConfig['highlights'] = {
@@ -224,6 +243,7 @@ export function resolveHomepageConfig(
     enabled: r.enabled ?? true,
     theme: { accent: r.theme?.accent || BRAND_YELLOW },
     announcement,
+    banners,
     hero,
     highlights,
     collections,
@@ -234,6 +254,54 @@ export function resolveHomepageConfig(
     featured_carousels,
     section_order,
     badges,
+  };
+}
+
+function sanitizeBanners(raw: unknown): HomeBanner[] {
+  const out: HomeBanner[] = [];
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      const banner = sanitizeBannerItem(item);
+      if (banner) out.push(banner);
+    }
+  }
+  if (!out.some((b) => b.kind === 'weekly_specials')) {
+    out.unshift({ ...DEFAULT_WEEKLY_SPECIALS_BANNER });
+  }
+  return out.slice(0, 8);
+}
+
+function sanitizeBannerItem(raw: unknown): HomeBanner | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Partial<HomeBanner>;
+  if (!o.id || typeof o.id !== 'string') return null;
+
+  const kind: HomeBanner['kind'] = o.kind === 'weekly_specials' ? 'weekly_specials' : 'custom';
+
+  return {
+    id: o.id,
+    enabled: o.enabled !== false,
+    kind,
+    title:
+      typeof o.title === 'string' && o.title.trim()
+        ? o.title
+        : kind === 'weekly_specials'
+          ? 'Weekly specials'
+          : 'New banner',
+    subtitle: typeof o.subtitle === 'string' ? o.subtitle : '',
+    footer_text:
+      typeof o.footer_text === 'string'
+        ? o.footer_text
+        : kind === 'weekly_specials'
+          ? 'Changes weekly'
+          : '',
+    image_url: typeof o.image_url === 'string' && o.image_url.trim() ? o.image_url : null,
+    href:
+      typeof o.href === 'string' && o.href.trim()
+        ? o.href
+        : kind === 'weekly_specials'
+          ? 'weekly_specials'
+          : 'products',
   };
 }
 
@@ -289,6 +357,10 @@ export function blankHomepageConfig(): StoreHomepageConfig {
     enabled: true,
     theme: { accent: BRAND_YELLOW },
     announcement: { enabled: false, text: '' },
+    banners: {
+      enabled: true,
+      items: [{ ...DEFAULT_WEEKLY_SPECIALS_BANNER }],
+    },
     hero: {
       variant: 'spotlight',
       eyebrow: '',

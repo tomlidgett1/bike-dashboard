@@ -35,7 +35,7 @@ import { StoreProductCarouselScroll } from "@/components/marketplace/store-profi
 import { type StoreAnalyticsEventType, useProductImpressions } from "@/lib/tracking/store-analytics";
 import { STORE_PAGE_CONTENT_SHELL } from "@/components/marketplace/store-profile/store-profile-chrome";
 import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
-import { WeeklySpecials } from "@/components/marketplace/store-profile/weekly-specials";
+import { StoreBanners } from "@/components/marketplace/store-profile/weekly-specials";
 // ============================================================
 // Store Home Tab — the public landing page for a bicycle store.
 // Renders a polished default from the store's own data and layers
@@ -277,11 +277,12 @@ export function StoreHomeTab({
           onTrackBehaviour={onTrackBehaviour}
         />
 
-        {/* Weekly specials — mobile-only "swipe the sale" concept */}
-        <WeeklySpecials
+        <StoreBanners
           store={store}
+          bannersConfig={config.banners}
           accent={accent}
           contentShell={contentShell}
+          onNavigate={onNavigate}
         />
 
         {/* Ordered sections */}

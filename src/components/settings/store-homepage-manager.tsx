@@ -38,6 +38,7 @@ import {
   Images,
   MapPin,
   ListOrdered,
+  LayoutList,
   GalleryHorizontal,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
@@ -62,6 +63,7 @@ import { StoreHomeTab } from "@/components/marketplace/store-profile/store-home-
 import {
   resolveHomepageConfig,
   BRAND_YELLOW,
+  DEFAULT_WEEKLY_SPECIALS_BANNER,
 } from "@/lib/marketplace/homepage-config";
 import {
   HOMEPAGE_ICON_KEYS,
@@ -75,6 +77,7 @@ import type {
   HomeGalleryImage,
   HomeSectionKey,
   HomeCta,
+  HomeBanner,
   HeroVariant,
 } from "@/lib/types/store";
 
@@ -93,6 +96,7 @@ type EditorTabId =
   | "theme"
   | "hero"
   | "announcement"
+  | "banners"
   | "highlights"
   | "collections"
   | "story"
@@ -110,6 +114,7 @@ const EDITOR_TABS: {
   { id: "theme", label: "Theme", icon: Palette },
   { id: "hero", label: "Hero", icon: ImageIcon },
   { id: "announcement", label: "Announcement", icon: Megaphone },
+  { id: "banners", label: "Banners", icon: LayoutList },
   { id: "highlights", label: "Highlights", icon: Sparkles },
   { id: "collections", label: "Collections", icon: LayoutGrid },
   { id: "story", label: "Story", icon: BookOpen },
@@ -128,6 +133,12 @@ const CTA_OPTIONS: { value: string; label: string }[] = [
   { value: "about", label: "Open About tab" },
   { value: "call", label: "Call the store" },
   { value: "directions", label: "Get directions" },
+  { value: "custom", label: "Custom link…" },
+];
+const BANNER_HREF_KNOWN = ["weekly_specials", ...CTA_KNOWN];
+const BANNER_HREF_OPTIONS: { value: string; label: string }[] = [
+  { value: "weekly_specials", label: "Open weekly specials swipe" },
+  ...CTA_OPTIONS.filter((o) => o.value !== "custom"),
   { value: "custom", label: "Custom link…" },
 ];
 
@@ -285,6 +296,8 @@ export function StoreHomepageManager() {
     setConfig((c) => (c ? { ...c, hero: { ...c.hero, ...p } } : c));
   const patchAnn = (p: Partial<C["announcement"]>) =>
     setConfig((c) => (c ? { ...c, announcement: { ...c.announcement, ...p } } : c));
+  const patchBanners = (p: Partial<C["banners"]>) =>
+    setConfig((c) => (c ? { ...c, banners: { ...c.banners, ...p } } : c));
   const patchHi = (p: Partial<C["highlights"]>) =>
     setConfig((c) => (c ? { ...c, highlights: { ...c.highlights, ...p } } : c));
   const patchCol = (p: Partial<C["collections"]>) =>
@@ -520,6 +533,74 @@ export function StoreHomepageManager() {
           onChange={(v) => patchAnn({ text: v })}
           placeholder="Free local delivery on orders over $100"
         />
+      </EditorSection>
+      )}
+
+      {activeTab === "banners" && (
+      <EditorSection
+        title="Banners"
+        description="Promotional cards below the hero — weekly specials plus any custom banners you add."
+        enabled={config.banners.enabled}
+        onEnabledChange={(v) => patchBanners({ enabled: v })}
+      >
+        <Reorder.Group
+          axis="y"
+          values={config.banners.items}
+          onReorder={(items) => patchBanners({ items })}
+          className="divide-y divide-gray-100 rounded-md border border-gray-200 bg-white"
+        >
+          {config.banners.items.map((banner) => (
+            <Reorder.Item key={banner.id} value={banner}>
+              <BannerEditorRow
+                banner={banner}
+                onChange={(next) =>
+                  patchBanners({
+                    items: config.banners.items.map((b) => (b.id === banner.id ? next : b)),
+                  })
+                }
+                onRemove={
+                  banner.kind === "weekly_specials"
+                    ? undefined
+                    : () => patchBanners({ items: config.banners.items.filter((b) => b.id !== banner.id) })
+                }
+              />
+            </Reorder.Item>
+          ))}
+        </Reorder.Group>
+
+        {config.banners.items.length < 8 && (
+          <AddButton
+            label="Add banner"
+            onClick={() =>
+              patchBanners({
+                items: [
+                  ...config.banners.items,
+                  {
+                    id: uid(),
+                    enabled: true,
+                    kind: "custom",
+                    title: "New banner",
+                    subtitle: "",
+                    footer_text: "",
+                    image_url: null,
+                    href: "products",
+                  } satisfies HomeBanner,
+                ],
+              })
+            }
+          />
+        )}
+
+        {!config.banners.items.some((b) => b.kind === "weekly_specials") && (
+          <AddButton
+            label="Restore weekly specials banner"
+            onClick={() =>
+              patchBanners({
+                items: [{ ...DEFAULT_WEEKLY_SPECIALS_BANNER, id: uid() }, ...config.banners.items],
+              })
+            }
+          />
+        )}
       </EditorSection>
       )}
 
@@ -1005,6 +1086,116 @@ function Segmented<T extends string>({
           {o.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+function BannerEditorRow({
+  banner,
+  onChange,
+  onRemove,
+}: {
+  banner: HomeBanner;
+  onChange: (next: HomeBanner) => void;
+  onRemove?: () => void;
+}) {
+  const isWeekly = banner.kind === "weekly_specials";
+  const hrefIsCustom = !BANNER_HREF_KNOWN.includes(banner.href);
+
+  return (
+    <div className="space-y-3 px-3 py-3 transition-colors hover:bg-gray-50">
+      <div className="flex items-start gap-2">
+        <GripVertical className="mt-2 h-4 w-4 flex-shrink-0 cursor-grab text-gray-400 active:cursor-grabbing" />
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-md bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
+              {isWeekly ? "Weekly specials" : "Custom banner"}
+            </span>
+            <label className="ml-auto flex cursor-pointer items-center gap-2">
+              <Switch
+                checked={banner.enabled}
+                onCheckedChange={(enabled) => onChange({ ...banner, enabled })}
+              />
+              <span className="text-xs text-muted-foreground">Shown</span>
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextField
+              label="Title"
+              value={banner.title}
+              onChange={(title) => onChange({ ...banner, title })}
+              placeholder={isWeekly ? "Weekly specials" : "Summer sale"}
+            />
+            <TextField
+              label={isWeekly ? "Subtitle (leave blank for live deal count)" : "Subtitle"}
+              value={banner.subtitle}
+              onChange={(subtitle) => onChange({ ...banner, subtitle })}
+              placeholder={isWeekly ? "Auto from sale items" : "Up to 50% off selected gear"}
+            />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextField
+              label="Footer text"
+              value={banner.footer_text}
+              onChange={(footer_text) => onChange({ ...banner, footer_text })}
+              placeholder={isWeekly ? "Changes weekly" : "Tap to explore"}
+            />
+            {!isWeekly && (
+              <Field label="When tapped">
+                <Select
+                  value={hrefIsCustom ? "custom" : banner.href}
+                  onValueChange={(v) =>
+                    onChange({
+                      ...banner,
+                      href: v === "custom" ? (hrefIsCustom ? banner.href : "https://") : v,
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {BANNER_HREF_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
+          </div>
+
+          {!isWeekly && hrefIsCustom && (
+            <Input
+              value={banner.href}
+              onChange={(e) => onChange({ ...banner, href: e.target.value })}
+              placeholder="https://example.com"
+            />
+          )}
+
+          <ImageField
+            label={isWeekly ? "Thumbnail (optional — defaults to first deal)" : "Thumbnail"}
+            slot={`banner-${banner.id}`}
+            value={banner.image_url}
+            onChange={(image_url) => onChange({ ...banner, image_url })}
+            compact
+          />
+        </div>
+
+        {onRemove ? (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="cursor-pointer p-1 text-muted-foreground hover:text-destructive"
+            aria-label="Remove banner"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

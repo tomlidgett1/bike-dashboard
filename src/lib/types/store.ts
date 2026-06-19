@@ -179,6 +179,22 @@ export interface HomeGalleryImage {
   caption?: string;
 }
 
+/** Promotional row card on the home tab — weekly specials or a custom link. */
+export type HomeBannerKind = 'weekly_specials' | 'custom';
+
+export interface HomeBanner {
+  id: string;
+  enabled: boolean;
+  kind: HomeBannerKind;
+  title: string;
+  /** Empty subtitle on weekly specials banners auto-fills from live deal counts. */
+  subtitle: string;
+  footer_text: string;
+  image_url: string | null;
+  /** Tab key, `weekly_specials`, `call`, `directions`, or an absolute URL. */
+  href: string;
+}
+
 export type HomeSectionKey =
   | 'highlights'
   | 'collections'
@@ -200,6 +216,10 @@ export interface StoreHomepageConfig {
   announcement: {
     enabled: boolean;
     text: string;
+  };
+  banners: {
+    enabled: boolean;
+    items: HomeBanner[];
   };
   hero: {
     variant: HeroVariant;
