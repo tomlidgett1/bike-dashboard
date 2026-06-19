@@ -305,7 +305,7 @@ export const StoreProductCard = React.memo<StoreProductCardProps>(function Store
               "font-bold leading-snug tracking-tight text-gray-900",
               inCarousel
                 ? "line-clamp-1 text-[11px] leading-tight"
-                : "line-clamp-2 text-sm sm:text-base",
+                : "line-clamp-2 text-sm",
             )}
           >
             {title}
