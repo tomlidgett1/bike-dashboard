@@ -238,6 +238,15 @@
   html.dark:has(.marketplace-light-surface) body {
     background-color: #ffffff !important;
     color-scheme: light;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+    overscroll-behavior-x: none;
+    width: 100%;
+  }
+
+  html:has(.marketplace-light-surface) body,
+  html.dark:has(.marketplace-light-surface) body {
+    position: relative;
   }
 
   @media (min-width: 640px) {
