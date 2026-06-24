@@ -146,6 +146,7 @@ interface BehaviourAnalytics {
   tabEngagement: BehaviourAnalyticsRow[];
   sectionEngagement: BehaviourAnalyticsRow[];
   ctaClicks: BehaviourAnalyticsRow[];
+  serviceBookClicks: BehaviourAnalyticsRow[];
   carouselEngagement: BehaviourAnalyticsRow[];
   scrollDepth: Array<{ depth: number; sessions: number; percent: number }>;
   journeyPaths: Array<{ path: string; count: number; percent: number }>;
@@ -1186,6 +1187,13 @@ export function StoreAnalyticsManager() {
                 />
               </div>
 
+              <RankedInsightList
+                title="Service bookings"
+                description="Which services customers try to book from the homepage and services tab."
+                rows={behaviourAnalytics?.serviceBookClicks ?? []}
+                emptyLabel="No service booking clicks recorded yet."
+              />
+
               <div className="grid gap-4 lg:grid-cols-2">
                 <Card className="rounded-md border-border">
                   <CardHeader className="border-b border-border/60 pb-3">
@@ -1376,6 +1384,15 @@ export function StoreAnalyticsManager() {
                     rows={behaviourAnalytics.ctaClicks}
                     emptyLabel="No high-intent CTA clicks recorded yet."
                   />
+                  <BehaviourList
+                    title="Service bookings"
+                    description="Book service clicks from the homepage cards and services tab, broken down by service."
+                    rows={behaviourAnalytics.serviceBookClicks}
+                    emptyLabel="No service booking clicks recorded yet."
+                  />
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-2">
                   <BehaviourList
                     title="Carousel intent"
                     description="Which storefront rows customers explore beyond the first visible products."

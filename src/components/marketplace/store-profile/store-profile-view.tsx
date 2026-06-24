@@ -8,7 +8,6 @@ import { createClient } from "@/lib/supabase/client";
 import {
   Phone,
   MapPin,
-  Clock,
   Settings,
   Package,
   Bike,
@@ -337,7 +336,7 @@ function CategoryScrollRow({
       <div ref={impressionRef} className={gridCls}>
         {products.map((product, j) => (
           <React.Fragment key={product.id}>
-            <div data-analytics-product-id={product.id}>
+            <div className="h-full" data-analytics-product-id={product.id}>
               <StoreProductCard
                 product={product}
                 priority={rowIndex === 0 && j < 6}
@@ -815,7 +814,7 @@ function ProductSearchResultsGrid({
     <div ref={impressionRef} className={gridCls}>
       {products.map((product, index) => (
         <React.Fragment key={product.id}>
-          <div data-analytics-product-id={product.id}>
+          <div className="h-full" data-analytics-product-id={product.id}>
             <StoreProductCard
               product={product}
               priority={index < 8}
@@ -1792,6 +1791,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                             trackBehaviour("service_book_click", {
                               action: "call_to_book",
                               label: "Call to book",
+                              serviceName: "Call to book",
                               tab: "service",
                               source: "services_banner",
                             })
@@ -1819,7 +1819,9 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
 
             {/* ABOUT */}
             {activeTab === "about" && (
-              <AboutTab store={store} />
+              <div className="pt-2 sm:pt-4">
+                <AboutTab store={store} />
+              </div>
             )}
 
             {/* REVIEWS */}
@@ -1875,118 +1877,180 @@ function HeroAction({
 }
 
 // ── About tab ──────────────────────────────────────────────
+function normaliseStoreDescription(description: string | null | undefined): string | null {
+  if (!description) return null;
+  const trimmed = description.trim();
+  if (!trimmed || /^n\/?a$/i.test(trimmed)) return null;
+  return trimmed;
+}
+
 function AboutTab({
   store,
 }: {
   store: StoreProfile;
 }) {
   const todayKey = DAY_KEYS[new Date().getDay()];
+  const description =
+    normaliseStoreDescription(store.description) ??
+    `${store.store_name}${store.store_type ? ` — ${store.store_type}` : ""}. Visit us in store or get in touch for products, rentals and servicing.`;
+
+  const directionsUrl = store.address
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(store.address)}`
+    : null;
+
+  const hasContact = Boolean(store.address || store.phone);
+  const hasHours = Boolean(store.opening_hours);
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-5xl">
-      {/* Left: about + contact */}
-      <div className="lg:col-span-2 space-y-6">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">About {store.store_name}</h2>
-          <p className="text-sm text-gray-600 leading-relaxed">
-            {store.description ||
-              `${store.store_name}${store.store_type ? ` — ${store.store_type}` : ""}. Visit us in store or get in touch for products, rentals and servicing.`}
+    <div className="mx-auto max-w-2xl space-y-10 sm:space-y-12">
+      {/* Intro */}
+      <section className="space-y-3">
+        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-gray-400">
+          About
+        </p>
+        <h2 className="text-[28px] font-semibold tracking-tight text-gray-900 sm:text-[32px]">
+          {store.store_name}
+        </h2>
+        <p className="text-[15px] leading-[1.65] text-gray-500 sm:text-base">
+          {description}
+        </p>
+      </section>
+
+      {/* Contact */}
+      {hasContact && (
+        <section className="space-y-2.5">
+          <p className="px-1 text-[11px] font-medium uppercase tracking-[0.14em] text-gray-400">
+            Contact
           </p>
-        </div>
-
-        <div className="grid sm:grid-cols-2 gap-4">
-          {store.address && (
-            <InfoTile icon={MapPin} label="Address" value={store.address} />
-          )}
-          {store.phone && (
-            <InfoTile icon={Phone} label="Phone" value={store.phone} href={`tel:${store.phone}`} />
-          )}
-        </div>
-
-        {store.brands.length > 0 && (
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Brands we stock</h3>
-            <div className="flex items-center gap-5 flex-wrap">
-              {store.brands.map((brand) => (
-                <div key={brand.id}>
-                  {brand.logo_url ? (
-                    <div className="relative h-7 w-20 grayscale opacity-70 hover:grayscale-0 hover:opacity-100 transition-all">
-                      <Image src={brand.logo_url} alt={brand.name} fill className="object-contain" sizes="80px" />
-                    </div>
-                  ) : (
-                    <span className="text-sm text-gray-500 font-medium">{brand.name}</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Right: opening hours */}
-      <div className="rounded-2xl border border-gray-200 p-5 h-fit">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-            <Clock className="h-4 w-4 text-gray-400" />
-            Opening hours
-          </h3>
-        </div>
-        <div className="space-y-2">
-          {WEEK_ORDER.map((day) => {
-            const h = store.opening_hours?.[day];
-            const isToday = day === todayKey;
-            return (
-              <div
-                key={day}
+          <div className="overflow-hidden rounded-md bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.04]">
+            {store.address && (
+              <a
+                href={directionsUrl ?? undefined}
+                target={directionsUrl ? "_blank" : undefined}
+                rel={directionsUrl ? "noopener noreferrer" : undefined}
                 className={cn(
-                  "flex items-center justify-between text-sm",
-                  isToday ? "font-semibold text-gray-900" : "text-gray-600"
+                  "group flex items-center gap-3.5 px-4 py-3.5 transition-colors",
+                  directionsUrl && "cursor-pointer hover:bg-gray-50/80",
+                  store.phone && "border-b border-gray-100",
                 )}
               >
-                <span className="capitalize">{day}</span>
-                <span>
-                  {!h || h.closed ? (
-                    <span className="text-gray-400">Closed</span>
-                  ) : (
-                    `${h.open} – ${h.close}`
-                  )}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gray-50">
+                  <MapPin className="h-[17px] w-[17px] text-gray-500" strokeWidth={1.75} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-medium text-gray-400">Address</p>
+                  <p className="mt-0.5 text-[15px] leading-snug text-gray-900">{store.address}</p>
+                </div>
+                {directionsUrl && (
+                  <ChevronRight className="h-4 w-4 shrink-0 text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-gray-400" />
+                )}
+              </a>
+            )}
+            {store.phone && (
+              <a
+                href={`tel:${store.phone.replace(/\s/g, "")}`}
+                className="group flex items-center gap-3.5 px-4 py-3.5 transition-colors hover:bg-gray-50/80 cursor-pointer"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gray-50">
+                  <Phone className="h-[17px] w-[17px] text-gray-500" strokeWidth={1.75} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-medium text-gray-400">Phone</p>
+                  <p className="mt-0.5 text-[15px] leading-snug text-gray-900">{store.phone}</p>
+                </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-gray-300 transition-transform group-hover:translate-x-0.5 group-hover:text-gray-400" />
+              </a>
+            )}
+          </div>
+        </section>
+      )}
 
-function InfoTile({
-  icon: Icon,
-  label,
-  value,
-  href,
-}: {
-  icon: typeof Package;
-  label: string;
-  value: string;
-  href?: string;
-}) {
-  const content = (
-    <div className="flex items-start gap-3 rounded-xl border border-gray-200 p-4">
-      <div className="flex-shrink-0 w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center">
-        <Icon className="h-4 w-4 text-gray-600" />
-      </div>
-      <div className="min-w-0">
-        <p className="text-xs font-medium text-gray-500">{label}</p>
-        <p className="text-sm text-gray-900 mt-0.5 break-words">{value}</p>
-      </div>
+      {/* Opening hours */}
+      {hasHours && (
+        <section className="space-y-2.5">
+          <p className="px-1 text-[11px] font-medium uppercase tracking-[0.14em] text-gray-400">
+            Opening hours
+          </p>
+          <div className="overflow-hidden rounded-md bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.04]">
+            {WEEK_ORDER.map((day, index) => {
+              const h = store.opening_hours?.[day];
+              const isToday = day === todayKey;
+              const hoursLabel =
+                !h || h.closed ? "Closed" : `${h.open} – ${h.close}`;
+
+              return (
+                <div
+                  key={day}
+                  className={cn(
+                    "flex items-center justify-between px-4 py-3",
+                    index < WEEK_ORDER.length - 1 && "border-b border-gray-100",
+                    isToday && "bg-gray-50/60",
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "text-[15px] capitalize",
+                        isToday ? "font-semibold text-gray-900" : "text-gray-600",
+                      )}
+                    >
+                      {day}
+                    </span>
+                    {isToday && (
+                      <span className="rounded-md bg-gray-900 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                        Today
+                      </span>
+                    )}
+                  </div>
+                  <span
+                    className={cn(
+                      "text-[15px] tabular-nums",
+                      isToday ? "font-medium text-gray-900" : "text-gray-500",
+                      (!h || h.closed) && "text-gray-400",
+                    )}
+                  >
+                    {hoursLabel}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Brands */}
+      {store.brands.length > 0 && (
+        <section className="space-y-3">
+          <p className="px-1 text-[11px] font-medium uppercase tracking-[0.14em] text-gray-400">
+            Brands we stock
+          </p>
+          <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 sm:gap-3">
+            {store.brands.map((brand) => (
+              <div
+                key={brand.id}
+                className="flex aspect-[5/3] items-center justify-center rounded-md bg-white p-3 shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-black/[0.04] transition-shadow hover:shadow-[0_2px_8px_rgba(0,0,0,0.06)]"
+              >
+                {brand.logo_url ? (
+                  <div className="relative h-full w-full">
+                    <Image
+                      src={brand.logo_url}
+                      alt={brand.name}
+                      fill
+                      className="object-contain opacity-70 grayscale transition-all duration-300 hover:opacity-100 hover:grayscale-0"
+                      sizes="(max-width: 640px) 28vw, 120px"
+                    />
+                  </div>
+                ) : (
+                  <span className="text-center text-xs font-medium leading-tight text-gray-500">
+                    {brand.name}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
-  );
-  return href ? (
-    <a href={href} className="block hover:bg-gray-50 rounded-xl transition-colors cursor-pointer">
-      {content}
-    </a>
-  ) : (
-    content
   );
 }
 

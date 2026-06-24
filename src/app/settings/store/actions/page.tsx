@@ -93,28 +93,12 @@ function BentoActionsView() {
 }
 
 function SimpleActionsView() {
-  return (
-    <div className="mt-4 flex flex-col gap-6 lg:flex-row lg:items-stretch lg:gap-6">
-      <div className="min-w-0 flex-1">
-        <ActionsSimpleBentoTable className="h-full" />
-      </div>
-
-      <div className="w-full shrink-0 space-y-3 lg:w-[min(340px,calc(100vw-2rem))]">
-        <div className="px-0.5">
-          <h2 className="text-lg font-semibold tracking-tight text-gray-950">Roster</h2>
-          <p className="mt-1 text-sm text-gray-600">Today’s shift coverage from Deputy.</p>
-        </div>
-        <DeputyRosterBento
-          variant="light-beige-floating"
-          className="aspect-auto h-full min-h-[calc(100vh-7rem)] w-full max-w-none"
-        />
-      </div>
-    </div>
-  );
+  return <ActionsSimpleBentoTable className="min-h-0 flex-1" />;
 }
 
 export default function StoreActionsPage() {
-  const [view, setView] = React.useState<ActionsViewMode>("bento");
+  const [view, setView] = React.useState<ActionsViewMode>("simple");
+  const isSimple = view === "simple";
 
   return (
     <DashboardFloatingPage
@@ -122,16 +106,20 @@ export default function StoreActionsPage() {
       icon={Widget}
       flush
       actions={<ActionsViewToggle view={view} onViewChange={setView} />}
-      cardClassName="border-0 bg-transparent shadow-none"
+      cardClassName={isSimple ? undefined : "border-0 bg-transparent shadow-none"}
     >
-      <div
-        className={cn(
-          "mx-auto flex w-full max-w-[1400px] flex-col px-2 sm:px-3 lg:px-4",
-          storeSettingsPageChromeClass,
-        )}
-      >
-        {view === "bento" ? <BentoActionsView /> : <SimpleActionsView />}
-      </div>
+      {isSimple ? (
+        <SimpleActionsView />
+      ) : (
+        <div
+          className={cn(
+            "mx-auto flex w-full max-w-[1400px] flex-col",
+            storeSettingsPageChromeClass,
+          )}
+        >
+          <BentoActionsView />
+        </div>
+      )}
     </DashboardFloatingPage>
   );
 }

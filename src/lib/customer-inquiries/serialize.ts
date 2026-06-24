@@ -2,6 +2,7 @@ import type {
   CustomerInquiryListItem,
   CustomerInquiryRow,
 } from '@/lib/customer-inquiries/types'
+import { inquiryNeedsReplyFromRow } from '@/lib/customer-inquiries/thread'
 
 export function serializeInquiryListItem(row: CustomerInquiryRow): CustomerInquiryListItem {
   return {
@@ -20,6 +21,7 @@ export function serializeInquiryListItem(row: CustomerInquiryRow): CustomerInqui
     thread_message_count: row.thread_message_count,
     last_customer_at: row.last_customer_at,
     updated_at: row.updated_at,
+    needs_action: inquiryNeedsReplyFromRow(row),
   }
 }
 

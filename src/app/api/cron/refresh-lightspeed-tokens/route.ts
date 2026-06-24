@@ -74,7 +74,9 @@ async function handleRefresh(request: NextRequest) {
     for (const conn of connections) {
       try {
         // Single serialised refresh path (handles rotation, locking and race recovery).
-        const result = await refreshAccessToken(conn.user_id)
+        const result = await refreshAccessToken(conn.user_id, {
+          source: 'cron_refresh_lightspeed_tokens',
+        })
         if (result) {
           successCount++
         } else {

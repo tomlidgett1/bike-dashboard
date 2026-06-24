@@ -126,7 +126,10 @@ export type CustomerInquiryListItem = Pick<
   | 'thread_message_count'
   | 'last_customer_at'
   | 'updated_at'
->
+> & {
+  /** Precomputed from the full thread row — do not re-derive from list fields alone. */
+  needs_action: boolean
+}
 
 export type CustomerInquiryEventType =
   | 'synced'

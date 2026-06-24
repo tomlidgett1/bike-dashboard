@@ -17,6 +17,7 @@ import {
   LIGHTSPEED_CONFIG,
 } from '@/lib/services/lightspeed'
 import type { LightspeedTokenResponse } from '@/lib/services/lightspeed'
+import { logLightspeedConnectionEvent } from '@/lib/services/lightspeed/connection-events'
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url)
@@ -72,6 +73,12 @@ export async function GET(request: NextRequest) {
     const isValidState = await validateOAuthState(user.id, state)
     
     if (!isValidState) {
+      await logLightspeedConnectionEvent({
+        userId: user.id,
+        eventType: 'oauth_callback_failed',
+        source: 'oauth_callback',
+        errorMessage: 'Invalid or expired OAuth state',
+      })
       return NextResponse.redirect(
         `${errorRedirectBase}?error=${encodeURIComponent('Invalid or expired state token. Please try again.')}`
       )
@@ -97,8 +104,19 @@ export async function GET(request: NextRequest) {
     if (!tokenResponse.ok) {
       const errorData = await tokenResponse.json().catch(() => ({}))
       console.error('Token exchange failed:', errorData)
-      
-      await updateConnectionStatus(user.id, 'error', 'Token exchange failed')
+
+      await logLightspeedConnectionEvent({
+        userId: user.id,
+        eventType: 'oauth_callback_failed',
+        source: 'oauth_callback',
+        errorCode: errorData.error,
+        errorMessage: 'Token exchange failed',
+      })
+
+      await updateConnectionStatus(user.id, 'error', 'Token exchange failed', {
+        source: 'oauth_callback',
+        incrementGeneration: false,
+      })
       
       return NextResponse.redirect(
         `${errorRedirectBase}?error=${encodeURIComponent('Failed to exchange authorization code. Please try again.')}`
@@ -114,7 +132,10 @@ export async function GET(request: NextRequest) {
       user.id,
       tokenData.access_token,
       tokenData.refresh_token,
-      tokenData.expires_in
+      tokenData.expires_in,
+      undefined,
+      undefined,
+      { source: 'oauth_callback' },
     )
 
     console.log('[Lightspeed Callback] Tokens stored successfully:', {
@@ -190,8 +211,23 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${baseUrl}/connect-lightspeed?success=true`)
   } catch (error) {
     console.error('OAuth callback error:', error)
-    
+
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+
+    try {
+      const supabase = await createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        await logLightspeedConnectionEvent({
+          userId: user.id,
+          eventType: 'oauth_callback_failed',
+          source: 'oauth_callback',
+          errorMessage,
+        })
+      }
+    } catch {
+      // Best-effort audit logging only
+    }
     
     return NextResponse.redirect(
       `${errorRedirectBase}?error=${encodeURIComponent(errorMessage)}`

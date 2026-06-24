@@ -36,7 +36,8 @@ export const DEFAULT_WEEKLY_SPECIALS_BANNER: HomeBanner = {
 export const HOME_SECTION_ORDER: HomeSectionKey[] = [
   'highlights',
   'collections',
-  'carousels',
+  'carousel_1',
+  'carousel_2',
   'story',
   'services',
   'gallery',
@@ -147,6 +148,7 @@ export function resolveHomepageConfig(
           : store.phone
             ? { label: 'Get directions', href: 'directions' }
             : null,
+    contact: sanitizeHeroContact(rawHero.contact, store),
   };
 
   // ── Announcement ──────────────────────────────────────────────────────
@@ -257,6 +259,19 @@ export function resolveHomepageConfig(
   };
 }
 
+function sanitizeHeroContact(
+  raw: unknown,
+  _store: StoreProfile,
+): StoreHomepageConfig['hero']['contact'] {
+  const o = (raw && typeof raw === 'object' ? raw : {}) as Partial<StoreHomepageConfig['hero']['contact']>;
+  return {
+    show_address: o.show_address === true,
+    address: typeof o.address === 'string' ? o.address : '',
+    show_email: o.show_email === true,
+    email: typeof o.email === 'string' ? o.email.trim() : '',
+  };
+}
+
 function sanitizeBanners(raw: unknown): HomeBanner[] {
   const out: HomeBanner[] = [];
   if (Array.isArray(raw)) {
@@ -307,20 +322,33 @@ function sanitizeBannerItem(raw: unknown): HomeBanner | null {
 
 /** Ensure the section order contains each known section exactly once. */
 function sanitizeSectionOrder(raw: unknown): HomeSectionKey[] {
-  const known = new Set(HOME_SECTION_ORDER);
+  const known = new Set<HomeSectionKey>(HOME_SECTION_ORDER);
   const seen = new Set<HomeSectionKey>();
   const out: HomeSectionKey[] = [];
+
+  const push = (key: HomeSectionKey) => {
+    if (!known.has(key) || seen.has(key)) return;
+    out.push(key);
+    seen.add(key);
+  };
+
   if (Array.isArray(raw)) {
-    for (const k of raw) {
-      if (known.has(k as HomeSectionKey) && !seen.has(k as HomeSectionKey)) {
-        out.push(k as HomeSectionKey);
-        seen.add(k as HomeSectionKey);
+    for (const entry of raw) {
+      if (entry === 'carousels') {
+        push('carousel_1');
+        push('carousel_2');
+        continue;
+      }
+      if (typeof entry === 'string') {
+        push(entry as HomeSectionKey);
       }
     }
   }
-  for (const k of HOME_SECTION_ORDER) {
-    if (!seen.has(k)) out.push(k);
+
+  for (const key of HOME_SECTION_ORDER) {
+    if (!seen.has(key)) out.push(key);
   }
+
   return out;
 }
 
@@ -372,6 +400,12 @@ export function blankHomepageConfig(): StoreHomepageConfig {
       align: 'left',
       primary_cta: { label: 'Shop the range', href: 'products' },
       secondary_cta: { label: 'Book a service', href: 'service' },
+      contact: {
+        show_address: false,
+        address: '',
+        show_email: false,
+        email: '',
+      },
     },
     highlights: { enabled: true, items: DEFAULT_HIGHLIGHTS },
     collections: {

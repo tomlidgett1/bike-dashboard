@@ -59,6 +59,8 @@ export function DashboardHeader() {
       className={cn(
         "dashboard-header z-40 flex h-14 shrink-0 items-center gap-3 text-[color:var(--dashboard-header-fg)]",
         dashboardHorizontalPadding,
+        showStoreActions &&
+          "xl:grid xl:grid-cols-[calc(var(--sidebar-width)_-_1.25rem)_minmax(0,1fr)_auto] xl:gap-0",
       )}
     >
       <div className="flex min-w-0 items-center gap-2">
@@ -82,7 +84,7 @@ export function DashboardHeader() {
       </div>
 
       {showStoreActions ? (
-        <div className="flex min-w-0 flex-1 justify-center px-1.5 sm:px-2">
+        <div className="flex min-w-0 flex-1 justify-center px-1.5 sm:px-2 xl:justify-start xl:px-0">
           <StoreSettingsGenieSearch className="max-w-[min(100%,52rem)]" />
         </div>
       ) : null}
@@ -90,7 +92,7 @@ export function DashboardHeader() {
       <div
         className={cn(
           "flex items-center gap-1.5 sm:gap-2",
-          showStoreActions ? "shrink-0" : "ml-auto",
+          showStoreActions ? "shrink-0 xl:pl-3" : "ml-auto",
         )}
       >
         {showStoreActions ? <FloatingTomFeedbackButton placement="header" /> : null}

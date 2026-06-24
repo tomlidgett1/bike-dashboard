@@ -35,7 +35,7 @@ export async function POST() {
     }
 
     // Disconnect the user (clears tokens and updates status)
-    await disconnectUser(user.id)
+    await disconnectUser(user.id, { source: 'api_disconnect' })
 
     // Delete sync settings
     await supabase

@@ -198,7 +198,8 @@ export interface HomeBanner {
 export type HomeSectionKey =
   | 'highlights'
   | 'collections'
-  | 'carousels'
+  | 'carousel_1'
+  | 'carousel_2'
   | 'story'
   | 'gallery'
   | 'services'
@@ -234,6 +235,13 @@ export interface StoreHomepageConfig {
     align: 'left' | 'center';
     primary_cta: HomeCta;
     secondary_cta: HomeCta | null;
+    contact: {
+      show_address: boolean;
+      /** When empty, falls back to the store profile address. */
+      address: string;
+      show_email: boolean;
+      email: string;
+    };
   };
   highlights: {
     enabled: boolean;

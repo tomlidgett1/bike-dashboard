@@ -49,7 +49,8 @@ import {
   loadUnifiedInboxFromStorage,
   saveUnifiedInboxToStorage,
 } from "@/lib/customer-inquiries/unified-inbox-cache";
-import { inquiryNeedsReplyFromRow } from "@/lib/customer-inquiries/thread";
+import { inquiryListItemNeedsAction } from "@/lib/customer-inquiries/unified-inbox-needs-action";
+import { notifyInboxNeedsActionChanged } from "@/lib/customer-inquiries/inbox-needs-action-events";
 import type { CustomerInquiryListItem, CustomerInquiryStatus } from "@/lib/customer-inquiries/types";
 import { nestConversationNeedsAction } from "@/lib/nest/types";
 import { useInquiriesController, type LightspeedContext } from "./use-inquiries-controller";
@@ -227,7 +228,7 @@ export async function fetchNestThreadDetail(chatId: string): Promise<NestConvers
 
 function gmailRow(item: CustomerInquiryListItem): UnifiedInboxRow {
   const meta = gmailStatusMeta(item.status);
-  const needsAction = inquiryNeedsReplyFromRow(item);
+  const needsAction = inquiryListItemNeedsAction(item);
   const name = senderName(item);
   return {
     key: `gmail:${item.id}`,
@@ -365,6 +366,7 @@ export function useUnifiedInboxController() {
     setNestCloseMapFromServer(cached.nestCloseMap ?? {});
     setNestLoading(false);
     setInboxBootstrapped(true);
+    notifyInboxNeedsActionChanged();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time local cache hydrate
   }, []);
 
@@ -388,6 +390,7 @@ export function useUnifiedInboxController() {
         nestConfigured: data.nestConfigured,
         fetchedAt: new Date().toISOString(),
       });
+      notifyInboxNeedsActionChanged();
     },
     [hydrateInboxList],
   );

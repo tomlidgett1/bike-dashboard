@@ -55,6 +55,7 @@ const MARKETING_PREVIEW_ENQUIRIES: CustomerInquiryListItem[] = [
     thread_message_count: 1,
     last_customer_at: null,
     updated_at: new Date().toISOString(),
+    needs_action: true,
   },
   {
     id: "mk-enq-2",
@@ -73,6 +74,7 @@ const MARKETING_PREVIEW_ENQUIRIES: CustomerInquiryListItem[] = [
     thread_message_count: 1,
     last_customer_at: null,
     updated_at: new Date().toISOString(),
+    needs_action: true,
   },
   {
     id: "mk-enq-3",
@@ -91,6 +93,7 @@ const MARKETING_PREVIEW_ENQUIRIES: CustomerInquiryListItem[] = [
     thread_message_count: 1,
     last_customer_at: null,
     updated_at: new Date().toISOString(),
+    needs_action: true,
   },
 ];
 

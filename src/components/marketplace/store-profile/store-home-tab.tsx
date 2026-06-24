@@ -25,6 +25,7 @@ import type {
   StoreHomepageConfig,
   HomeCta,
   OpeningHours,
+  StoreService,
 } from "@/lib/types/store";
 import { resolveHomepageConfig } from "@/lib/marketplace/homepage-config";
 import { sortProductsSaleFirst } from "@/lib/marketplace/pricing";
@@ -172,6 +173,22 @@ export function StoreHomeTab({
     onNavigate("products");
   }, [onNavigate, onOpenCollection, onTrackBehaviour, store.categories]);
 
+  const lastCarouselSlot = React.useMemo((): 1 | 2 | null => {
+    if (!config.featured_carousels.enabled) return null;
+    let last: 1 | 2 | null = null;
+    for (const key of config.section_order) {
+      if (key === "carousel_1" && config.featured_carousels.slot1) {
+        const cat = store.categories.find((c) => c.id === config.featured_carousels.slot1);
+        if (cat && cat.products.length > 0) last = 1;
+      }
+      if (key === "carousel_2" && config.featured_carousels.slot2) {
+        const cat = store.categories.find((c) => c.id === config.featured_carousels.slot2);
+        if (cat && cat.products.length > 0) last = 2;
+      }
+    }
+    return last;
+  }, [config.section_order, config.featured_carousels, store.categories]);
+
   const sectionRenderers: Record<string, () => React.ReactNode> = {
     highlights: () =>
       config.highlights.enabled && config.highlights.items.length > 0 ? (
@@ -185,15 +202,32 @@ export function StoreHomeTab({
           onOpenCollection={onOpenCollection}
         />
       ) : null,
-    carousels: () =>
-      config.featured_carousels.enabled &&
-      (config.featured_carousels.slot1 || config.featured_carousels.slot2) ? (
-        <FeaturedCarouselsSection
-          key="carousels"
+    carousel_1: () =>
+      config.featured_carousels.enabled && config.featured_carousels.slot1 ? (
+        <FeaturedCarouselSlotSection
+          key="carousel_1"
+          slot={1}
           store={store}
           config={config}
           trackAnalytics={trackAnalytics}
           onOpenCollection={onOpenCollection}
+          showHomeSearch={lastCarouselSlot === 1}
+          storeSearch={storeSearch}
+          onStoreSearchChange={onStoreSearchChange}
+          homeSearchResultsSlot={homeSearchResultsSlot}
+          onTrackBehaviour={onTrackBehaviour}
+        />
+      ) : null,
+    carousel_2: () =>
+      config.featured_carousels.enabled && config.featured_carousels.slot2 ? (
+        <FeaturedCarouselSlotSection
+          key="carousel_2"
+          slot={2}
+          store={store}
+          config={config}
+          trackAnalytics={trackAnalytics}
+          onOpenCollection={onOpenCollection}
+          showHomeSearch={lastCarouselSlot === 2}
           storeSearch={storeSearch}
           onStoreSearchChange={onStoreSearchChange}
           homeSearchResultsSlot={homeSearchResultsSlot}
@@ -213,6 +247,7 @@ export function StoreHomeTab({
           accent={accent}
           accentText={accentText}
           onNavigate={onNavigate}
+          onTrackBehaviour={onTrackBehaviour}
         />
       ) : null,
     gallery: () =>
@@ -342,6 +377,66 @@ function HeroUberDeliveryBanner({
 }
 
 // ── Hero ───────────────────────────────────────────────────
+function resolveHeroContactLines(
+  contact: StoreHomepageConfig['hero']['contact'],
+  store: StoreProfile,
+) {
+  const address =
+    contact.show_address && (contact.address.trim() || store.address?.trim())
+      ? contact.address.trim() || store.address.trim()
+      : '';
+  const email = contact.show_email && contact.email ? contact.email : '';
+  return { address, email };
+}
+
+function HeroContactLines({
+  address,
+  email,
+  tone,
+  centered,
+  hasSubheadline,
+}: {
+  address: string;
+  email: string;
+  tone: 'on-dark' | 'on-light';
+  centered?: boolean;
+  hasSubheadline: boolean;
+}) {
+  if (!address && !email) return null;
+
+  const lineClass =
+    tone === 'on-dark'
+      ? 'text-base leading-snug text-white/85 drop-shadow-sm sm:text-xl sm:leading-relaxed'
+      : 'text-lg leading-relaxed text-gray-600 sm:text-xl';
+
+  const linkClass =
+    tone === 'on-dark'
+      ? 'text-white/85 transition-colors hover:text-white underline-offset-2 hover:underline'
+      : 'text-gray-600 transition-colors hover:text-gray-900 underline-offset-2 hover:underline';
+
+  return (
+    <div
+      className={cn(
+        'space-y-0.5',
+        tone === 'on-dark' && 'sm:max-w-xl',
+        tone === 'on-light' && 'max-w-xl',
+        centered && tone === 'on-light' && 'mx-auto',
+        hasSubheadline ? 'mt-1 sm:mt-2' : tone === 'on-dark' ? 'mt-2 sm:mt-5' : 'mt-5',
+      )}
+      style={centered ? { marginLeft: 'auto', marginRight: 'auto' } : undefined}
+    >
+      {address ? <p className={lineClass}>{address}</p> : null}
+      {email ? (
+        <p className={lineClass}>
+          <a href={`mailto:${email}`} className={linkClass}>
+            {email}
+          </a>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function EditButton() {
   return (
     <a
@@ -379,6 +474,11 @@ function Hero({
 }) {
   const shell = useStoreHomeShell();
   const { hero } = config;
+  const heroContact = React.useMemo(
+    () => resolveHeroContactLines(hero.contact, store),
+    [hero.contact, store],
+  );
+  const hasSubheadline = hero.subheadline.trim().length > 0;
   const status = openStatusFor(store.opening_hours);
   const heroImages = React.useMemo(() => {
     const urls = Array.isArray(hero.image_urls) ? hero.image_urls : [];
@@ -453,9 +553,17 @@ function Hero({
             <h1 className="mt-4 text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-gray-900 leading-[1.05]">
               {hero.headline}
             </h1>
-            <p className="mt-5 text-lg text-gray-600 leading-relaxed max-w-xl">
-              {hero.subheadline}
-            </p>
+            {hasSubheadline ? (
+              <p className="mt-5 text-lg text-gray-600 leading-relaxed max-w-xl">
+                {hero.subheadline}
+              </p>
+            ) : null}
+            <HeroContactLines
+              address={heroContact.address}
+              email={heroContact.email}
+              tone="on-light"
+              hasSubheadline={hasSubheadline}
+            />
             <div className="mt-8 flex flex-wrap items-center gap-3">
               {PrimaryBtn}
               {LightMessageBtn}
@@ -504,9 +612,18 @@ function Hero({
             <h1 className="mt-5 text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-gray-900 leading-[1.04]">
               {hero.headline}
             </h1>
-            <p className="mt-6 text-lg sm:text-xl text-gray-600 leading-relaxed mx-auto max-w-2xl">
-              {hero.subheadline}
-            </p>
+            {hasSubheadline ? (
+              <p className="mt-6 text-lg sm:text-xl text-gray-600 leading-relaxed mx-auto max-w-2xl">
+                {hero.subheadline}
+              </p>
+            ) : null}
+            <HeroContactLines
+              address={heroContact.address}
+              email={heroContact.email}
+              tone="on-light"
+              centered
+              hasSubheadline={hasSubheadline}
+            />
             <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
               {PrimaryBtn}
               {LightMessageBtn}
@@ -565,12 +682,21 @@ function Hero({
               <h1 className="text-3xl font-bold tracking-tight text-white leading-[1.08] drop-shadow-sm sm:mt-4 sm:text-6xl lg:text-7xl sm:leading-[1.04]">
                 {hero.headline}
               </h1>
-              <p
-                className="mt-2 text-base leading-snug text-white/85 drop-shadow-sm sm:mt-5 sm:max-w-xl sm:text-xl sm:leading-relaxed"
-                style={alignCenter ? { marginLeft: "auto", marginRight: "auto" } : undefined}
-              >
-                {hero.subheadline}
-              </p>
+              {hasSubheadline ? (
+                <p
+                  className="mt-2 text-base leading-snug text-white/85 drop-shadow-sm sm:mt-5 sm:max-w-xl sm:text-xl sm:leading-relaxed"
+                  style={alignCenter ? { marginLeft: "auto", marginRight: "auto" } : undefined}
+                >
+                  {hero.subheadline}
+                </p>
+              ) : null}
+              <HeroContactLines
+                address={heroContact.address}
+                email={heroContact.email}
+                tone="on-dark"
+                centered={alignCenter}
+                hasSubheadline={hasSubheadline}
+              />
             </div>
             <div className="sm:contents">
               <div className={cn("flex flex-wrap items-center gap-3 sm:mt-8", alignCenter && "justify-center")}>
@@ -1176,27 +1302,72 @@ function StorySection({
 }
 
 // ── Services section — "Clean Checklist" cards ─────────────
+function serviceGridColsClass(count: number): string {
+  if (count <= 1) return "lg:grid-cols-1";
+  if (count === 2) return "lg:grid-cols-2";
+  if (count === 3) return "lg:grid-cols-3";
+  if (count === 4) return "lg:grid-cols-2 xl:grid-cols-4";
+  return "lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5";
+}
+
 function ServicesTeaser({
   store,
   config,
   accent,
   accentText,
   onNavigate,
+  onTrackBehaviour,
 }: {
   store: StoreProfile;
   config: StoreHomepageConfig;
   accent: string;
   accentText: string;
   onNavigate: (href: string) => void;
+  onTrackBehaviour?: (eventType: StoreAnalyticsEventType, metadata?: Record<string, unknown>) => void;
 }) {
   const services = React.useMemo(
     () => [...store.services].sort((a, b) => Number(b.highlight) - Number(a.highlight)),
     [store.services],
   );
   const shell = useStoreHomeShell();
-  const handleBookService = React.useCallback(() => {
-    onNavigate(store.phone ? "call" : "service");
-  }, [onNavigate, store.phone]);
+  const trackServiceBookClick = React.useCallback(
+    (metadata: Record<string, unknown>) => {
+      onTrackBehaviour?.("service_book_click", {
+        tab: "home",
+        section: "home:services",
+        ...metadata,
+      });
+    },
+    [onTrackBehaviour],
+  );
+  const handleBookService = React.useCallback(
+    (svc: StoreService) => {
+      trackServiceBookClick({
+        action: store.phone ? "call_to_book" : "open_service_tab",
+        label: svc.name,
+        serviceId: svc.id,
+        serviceName: svc.name,
+        price: svc.price ?? null,
+        source: "home_service_card",
+      });
+      if (store.phone) {
+        window.location.href = `tel:${store.phone}`;
+        return;
+      }
+      onNavigate("service");
+    },
+    [onNavigate, store.phone, trackServiceBookClick],
+  );
+  const handleCallToBook = React.useCallback(() => {
+    trackServiceBookClick({
+      action: "call_to_book",
+      label: "Call to book",
+      source: "home_services_header",
+    });
+    if (store.phone) {
+      window.location.href = `tel:${store.phone}`;
+    }
+  }, [store.phone, trackServiceBookClick]);
 
   return (
     <section
@@ -1218,7 +1389,7 @@ function ServicesTeaser({
           {store.phone && (
             <button
               type="button"
-              onClick={() => onNavigate("call")}
+              onClick={handleCallToBook}
               className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-5 py-2.5 text-sm font-semibold text-gray-900 shadow-sm transition-colors hover:bg-gray-50 cursor-pointer"
             >
               <Phone className="h-4 w-4" />
@@ -1228,15 +1399,21 @@ function ServicesTeaser({
         </div>
       </Reveal>
 
-      {/* Desktop grid */}
-      <div className="hidden items-stretch lg:grid lg:grid-cols-2 lg:gap-4 xl:grid-cols-3">
-        {services.map((svc) => (
+      {/* Desktop grid — up to 5 per row on wide screens */}
+      <div
+        className={cn(
+          "hidden items-stretch gap-4 lg:grid",
+          serviceGridColsClass(services.length),
+        )}
+      >
+        {services.map((svc, index) => (
           <ServiceCard
             key={svc.id}
             service={svc}
             accent={accent}
             accentText={accentText}
             onBook={handleBookService}
+            backgroundIndex={index}
             className="h-full"
           />
         ))}
@@ -1244,13 +1421,14 @@ function ServicesTeaser({
 
       {/* Mobile / tablet: horizontal carousel — wide cards (67vw) so the next one peeks */}
       <StoreProductCarouselScroll bleed itemsStretch className="lg:hidden py-px">
-        {services.map((svc) => (
+        {services.map((svc, index) => (
           <div key={svc.id} className="flex w-[67vw] flex-shrink-0 snap-start self-stretch">
             <ServiceCard
               service={svc}
               accent={accent}
               accentText={accentText}
               onBook={handleBookService}
+              backgroundIndex={index}
               className="h-full w-full"
             />
           </div>
@@ -1372,67 +1550,63 @@ function HomeFloatingSearchBar({
   );
 }
 
-function FeaturedCarouselsSection({
+function FeaturedCarouselSlotSection({
+  slot,
   store,
   config,
   trackAnalytics,
   onOpenCollection,
+  showHomeSearch,
   storeSearch = "",
   onStoreSearchChange,
   homeSearchResultsSlot,
   onTrackBehaviour,
 }: {
+  slot: 1 | 2;
   store: StoreProfile;
   config: StoreHomepageConfig;
   trackAnalytics?: boolean;
   onOpenCollection: (categoryName: string) => void;
+  showHomeSearch: boolean;
   storeSearch?: string;
   onStoreSearchChange?: (value: string, source?: "store_header_search" | "home_floating_search") => void;
   homeSearchResultsSlot?: React.ReactNode;
   onTrackBehaviour?: (eventType: StoreAnalyticsEventType, metadata?: Record<string, unknown>) => void;
 }) {
   const shell = useStoreHomeShell();
-  const slots = [config.featured_carousels.slot1, config.featured_carousels.slot2]
-    .filter((id): id is string => Boolean(id))
-    .map((id) => store.categories.find((c) => c.id === id))
-    .filter((c) => c !== undefined && c.products.length > 0);
-
-  if (slots.length === 0) return null;
+  const slotId = slot === 1 ? config.featured_carousels.slot1 : config.featured_carousels.slot2;
+  const category = slotId ? store.categories.find((c) => c.id === slotId) : undefined;
+  if (!category || category.products.length === 0) return null;
 
   const perRow = config.featured_carousels.per_row;
   const gridCols =
     perRow === 8
       ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8"
       : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
+  const shown = sortProductsSaleFirst(category.products).slice(0, perRow);
 
   return (
     <section
-      className={cn(shell, "space-y-8")}
-      data-store-analytics-section="home:featured_carousels"
-      data-store-analytics-label="Home featured carousels"
+      className={shell}
+      data-store-analytics-section={`home:featured_carousel_${slot}`}
+      data-store-analytics-label={`Home featured carousel ${slot}`}
     >
-      {slots.map((cat) => {
-        const shown = sortProductsSaleFirst(cat!.products).slice(0, perRow);
-        return (
-          <FeaturedCarouselBlock
-            key={cat!.id}
-            category={cat!}
-            products={shown}
-            gridCols={gridCols}
-            storeId={store.id}
-            storeName={store.store_name}
-            perRow={perRow}
-            trackAnalytics={trackAnalytics}
-            onOpenCollection={onOpenCollection}
-            subtitle={
-              cat!.section_id
-                ? store.sections.find((s) => s.id === cat!.section_id)?.description ?? null
-                : null
-            }
-          />
-        );
-      })}
-      {onStoreSearchChange && (
+      <FeaturedCarouselBlock
+        category={category}
+        products={shown}
+        gridCols={gridCols}
+        storeId={store.id}
+        storeName={store.store_name}
+        perRow={perRow}
+        trackAnalytics={trackAnalytics}
+        onOpenCollection={onOpenCollection}
+        subtitle={
+          category.section_id
+            ? store.sections.find((s) => s.id === category.section_id)?.description ?? null
+            : null
+        }
+      />
+      {showHomeSearch && onStoreSearchChange && (
         <>
           <HomeFloatingSearchBar
             storeSearch={storeSearch}
@@ -1556,7 +1730,7 @@ function FeaturedCarouselBlock({
         {/* Desktop / tablet grid */}
         <div className={cn("hidden sm:grid gap-3 sm:gap-4", gridCols)}>
           {products.map((product, i) => (
-            <div key={product.id} data-analytics-product-id={product.id}>
+            <div key={product.id} className="h-full" data-analytics-product-id={product.id}>
               <StoreProductCard
                 product={product}
                 priority={i < 4}

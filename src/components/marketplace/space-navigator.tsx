@@ -10,10 +10,13 @@ import type { MarketplaceSpace } from "@/lib/types/marketplace";
 
 // ============================================================
 // Space Navigator
-// Navigation between the two marketplace "spaces":
-// - Marketplace (default): Private listings from individuals
-// - Bike Stores: Products from bike stores
+// Navigation between marketplace "spaces":
+// - Bike Stores (default): Products from verified bike stores
+// - Marketplace: Private listings from individuals
 // ============================================================
+
+/** Default tab when visiting /marketplace with no ?space= param */
+export const DEFAULT_MARKETPLACE_SPACE: MarketplaceSpace = 'stores';
 
 interface SpaceConfig {
   id: MarketplaceSpace;
@@ -207,16 +210,17 @@ export function FixedMobileSpaceNavigator({
 export function useMarketplaceSpace() {
   const searchParams = useSearchParams();
   
-  // Get current space from URL, default to 'marketplace'
+  // Get current space from URL, default to Bike Stores
   const spaceParam = searchParams.get('space');
   const viewParam = searchParams.get('view');
   
   // Support legacy 'view' param for backwards compatibility
   const currentSpace: MarketplaceSpace = React.useMemo(() => {
     if (spaceParam === 'for-you' || viewParam === 'for-you') return 'for-you';
+    if (spaceParam === 'marketplace' || viewParam === 'marketplace') return 'marketplace';
     if (spaceParam === 'stores' || viewParam === 'stores') return 'stores';
     if (spaceParam === 'uber' || viewParam === 'uber') return 'uber';
-    return 'marketplace';
+    return DEFAULT_MARKETPLACE_SPACE;
   }, [spaceParam, viewParam]);
   
   // Change space and update URL
@@ -227,8 +231,8 @@ export function useMarketplaceSpace() {
     params.delete('view');
     params.delete('space');
     
-    // Only add space param if not marketplace (default)
-    if (newSpace !== 'marketplace') {
+    // Only add space param when not the default (Bike Stores)
+    if (newSpace !== DEFAULT_MARKETPLACE_SPACE) {
       params.set('space', newSpace);
     }
     

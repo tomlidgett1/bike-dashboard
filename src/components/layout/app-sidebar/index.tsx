@@ -49,6 +49,7 @@ import { SidebarLightspeedStatus } from "./sidebar-lightspeed-status";
 import { SidebarViewStoreLink } from "./sidebar-view-store-link";
 import { SidebarCollapseTrigger } from "./sidebar-collapse-trigger";
 import { cn } from "@/lib/utils";
+import { useCustomerInquiriesNeedsActionCount } from "@/lib/hooks/use-customer-inquiries-needs-action-count";
 
 const COMPRESSED_NAV_BUTTON =
   "data-active:bg-white data-active:shadow-sm";
@@ -261,12 +262,21 @@ function FlatNavItem({
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname() ?? "/products";
   const router = useRouter();
+  const { badge: customerInquiriesBadge } = useCustomerInquiriesNeedsActionCount();
 
   const prefetch = React.useCallback(
     (href: string) => {
       router.prefetch(href);
     },
     [router]
+  );
+
+  const enrichNavItem = React.useCallback(
+    (item: NavItem): NavItem => {
+      if (item.href !== "/settings/store/customer-inquiries") return item;
+      return { ...item, badge: customerInquiriesBadge ?? item.badge };
+    },
+    [customerInquiriesBadge],
   );
 
   return (
@@ -298,7 +308,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
                 ) : (
                   <FlatNavItem
                     key={item.title}
-                    item={item}
+                    item={enrichNavItem(item)}
                     pathname={pathname}
                     onPrefetch={prefetch}
                   />

@@ -44,11 +44,29 @@ function CheckIcon() {
   );
 }
 
+const SERVICE_CARD_BACKGROUNDS = [
+  "/service-cards/1.png",
+  "/service-cards/2.png",
+  "/service-cards/3.png",
+  "/service-cards/4.png",
+] as const;
+
 function CardPattern() {
   return (
     <div
       aria-hidden
       className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle,rgb(0_0_0/0.055)_1px,transparent_1px)] [background-size:12px_12px]"
+    />
+  );
+}
+
+function CardBackground({ index }: { index: number }) {
+  const src = SERVICE_CARD_BACKGROUNDS[index % SERVICE_CARD_BACKGROUNDS.length];
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 bg-cover bg-center bg-no-repeat"
+      style={{ backgroundImage: `url('${src}')` }}
     />
   );
 }
@@ -60,8 +78,10 @@ interface ServiceCardProps {
   /** Readable text colour on top of the accent. */
   accentText?: string;
   /** When provided, renders the CTA button wired to this handler. */
-  onBook?: () => void;
+  onBook?: (service: StoreService) => void;
   bookLabel?: string;
+  /** Maps to `/service-cards/1.png` … `4.png` (cycles for 5+). */
+  backgroundIndex?: number;
   className?: string;
 }
 
@@ -71,8 +91,10 @@ export function ServiceCard({
   accentText = "#0a0a0a",
   onBook,
   bookLabel = "Book service",
+  backgroundIndex,
   className,
 }: ServiceCardProps) {
+  const hasBackground = backgroundIndex != null;
   const featured = !!service.highlight;
   const hasPrice = service.price != null;
   const includes = service.includes?.filter((i) => i && i.trim().length > 0) ?? [];
@@ -80,8 +102,14 @@ export function ServiceCard({
     service.duration_minutes != null ? formatDuration(service.duration_minutes) : null;
 
   return (
-    <Card className={cn("relative flex h-full w-full flex-col", className)}>
-      <CardPattern />
+    <Card
+      className={cn(
+        "relative flex h-full w-full flex-col overflow-hidden",
+        hasBackground && "border-foreground/10 bg-transparent",
+        className,
+      )}
+    >
+      {hasBackground ? <CardBackground index={backgroundIndex} /> : <CardPattern />}
       <CardHeader className="relative z-10 shrink-0">
         <div className="flex items-center justify-between gap-2">
           <CardTitle className="text-base font-semibold tracking-tight">
@@ -144,7 +172,7 @@ export function ServiceCard({
           <Button
             type="button"
             className="w-full"
-            onClick={onBook}
+            onClick={() => onBook(service)}
             style={
               featured
                 ? { backgroundColor: accent, color: accentText }

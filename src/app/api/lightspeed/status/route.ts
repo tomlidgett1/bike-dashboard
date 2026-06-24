@@ -84,7 +84,7 @@ export async function GET() {
         } else {
           // Token is expired or within the buffer window — refresh it now.
           // refreshAccessToken handles its own race-condition guard.
-          const refreshed = await refreshAccessToken(user.id)
+          const refreshed = await refreshAccessToken(user.id, { source: 'status_poll' })
           isConnected = refreshed !== null
         }
       }
@@ -114,6 +114,7 @@ export async function GET() {
       disconnected_at: connection.disconnected_at,
       last_sync_at: connection.last_sync_at,
       last_token_refresh_at: connection.last_token_refresh_at,
+      token_generation: connection.token_generation ?? 0,
       last_error: connection.last_error,
       last_error_at: connection.last_error_at,
       error_count: connection.error_count,

@@ -81,6 +81,7 @@ export type BehaviourAnalytics = {
   tabEngagement: BehaviourAnalyticsRow[];
   sectionEngagement: BehaviourAnalyticsRow[];
   ctaClicks: BehaviourAnalyticsRow[];
+  serviceBookClicks: BehaviourAnalyticsRow[];
   carouselEngagement: BehaviourAnalyticsRow[];
   scrollDepth: Array<{ depth: number; sessions: number; percent: number }>;
   journeyPaths: Array<{ path: string; count: number; percent: number }>;
@@ -196,6 +197,17 @@ function eventLabel(event: TimelineEvent) {
   }
   if (event.eventType === "cta_click" || event.eventType === "contact_click") {
     return metadataString(event.metadata, "label") || metadataString(event.metadata, "action") || EVENT_LABELS[event.eventType];
+  }
+  if (event.eventType === "service_book_click") {
+    const serviceName = metadataString(event.metadata, "serviceName");
+    const source = metadataString(event.metadata, "source");
+    if (serviceName) {
+      if (source === "home_service_card") return `Book ${serviceName} (Home)`;
+      if (source === "home_services_header") return "Call to book (Home services)";
+      if (source === "services_banner") return "Call to book (Services tab)";
+      return `Book ${serviceName}`;
+    }
+    return metadataString(event.metadata, "label") || EVENT_LABELS[event.eventType];
   }
   if (event.eventType === "search") {
     return metadataString(event.metadata, "term") || EVENT_LABELS.search;
@@ -368,6 +380,7 @@ export async function getCustomerBehaviourAnalytics(
   const tabMap = new Map<string, { label: string; count: number; visitors: Set<string>; sessions: Set<string> }>();
   const sectionMap = new Map<string, { label: string; count: number; visitors: Set<string>; sessions: Set<string> }>();
   const ctaMap = new Map<string, { label: string; count: number; visitors: Set<string>; sessions: Set<string> }>();
+  const serviceBookMap = new Map<string, { label: string; count: number; visitors: Set<string>; sessions: Set<string> }>();
   const carouselMap = new Map<string, { label: string; count: number; visitors: Set<string>; sessions: Set<string> }>();
 
   for (const event of timeline) {
@@ -419,6 +432,15 @@ export async function getCustomerBehaviourAnalytics(
     ) {
       const key = metadataString(event.metadata, "action") || event.eventType;
       addToRowMap(ctaMap, key, metadataString(event.metadata, "label") || EVENT_LABELS[event.eventType], event);
+    }
+
+    if (event.eventType === "service_book_click") {
+      const serviceKey =
+        metadataString(event.metadata, "serviceId") ||
+        metadataString(event.metadata, "serviceName") ||
+        metadataString(event.metadata, "source") ||
+        "service_book_click";
+      addToRowMap(serviceBookMap, serviceKey, eventLabel(event), event);
     }
 
     if (event.eventType === "carousel_scroll" || event.eventType === "carousel_expand") {
@@ -515,6 +537,7 @@ export async function getCustomerBehaviourAnalytics(
     tabEngagement: serialiseRows(tabMap, 12),
     sectionEngagement: serialiseRows(sectionMap, 16),
     ctaClicks: serialiseRows(ctaMap, 20),
+    serviceBookClicks: serialiseRows(serviceBookMap, 12),
     carouselEngagement: serialiseRows(carouselMap, 16),
     scrollDepth,
     journeyPaths,

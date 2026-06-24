@@ -28,6 +28,7 @@ export interface LightspeedConnection {
   last_sync_at: string | null
   last_token_refresh_at: string | null
   token_refresh_locked_at: string | null
+  token_generation: number
   last_error: string | null
   last_error_at: string | null
   error_count: number

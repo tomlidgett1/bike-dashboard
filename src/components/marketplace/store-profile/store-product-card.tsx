@@ -183,7 +183,8 @@ export const StoreProductCard = React.memo<StoreProductCardProps>(function Store
     <Link
       href={href}
       className={cn(
-        "block w-full touch-pan-x",
+        "block w-full",
+        inCarousel && "touch-pan-x",
         inCarousel ? "product-card-root--in-carousel h-auto" : "h-full",
       )}
       data-analytics-product-id={product.id}
@@ -299,7 +300,11 @@ export const StoreProductCard = React.memo<StoreProductCardProps>(function Store
           )}
         </div>
 
-        <div className={cn("shrink-0", inCarousel ? "pb-0.5" : undefined)}>
+        <div
+          className={cn(
+            inCarousel ? "shrink-0 pb-0.5" : "flex min-h-0 flex-1 flex-col",
+          )}
+        >
           <h3
             className={cn(
               "font-bold leading-snug tracking-tight text-gray-900",
@@ -314,7 +319,7 @@ export const StoreProductCard = React.memo<StoreProductCardProps>(function Store
           <div
             className={cn(
               "border-t border-gray-200",
-              inCarousel ? "mt-1 pt-1" : "mt-2.5 pt-2.5 sm:mt-3 sm:pt-3",
+              inCarousel ? "mt-1 pt-1" : "mt-auto pt-2.5 sm:pt-3",
             )}
           >
             <div className="flex items-center justify-between gap-1.5">

@@ -1,7 +1,11 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { getAshburtonLegacyRedirect } from '@/lib/seo/legacy-ashburton-domain'
 
 export async function middleware(request: NextRequest) {
+  const ashburtonRedirect = getAshburtonLegacyRedirect(request)
+  if (ashburtonRedirect) return ashburtonRedirect
+
   if (request.nextUrl.pathname === '/why-yellow-jersey') {
     const url = request.nextUrl.clone()
     url.pathname = '/home2/why-yellow-jersey'
@@ -59,6 +63,7 @@ export async function middleware(request: NextRequest) {
     // login popup itself and resumes the listing after auth.
     (request.nextUrl.pathname === '/marketplace/sell' &&
       request.nextUrl.searchParams.has('textUploadToken')) ||
+    request.nextUrl.pathname.startsWith('/products/') ||   // Legacy Shopify product URLs
     request.nextUrl.pathname.startsWith('/marketplace/product') ||
     request.nextUrl.pathname.startsWith('/marketplace/store') ||
     request.nextUrl.pathname.startsWith('/marketplace/sell-prototypes') || // Mobile design prototypes (mock data, no auth)

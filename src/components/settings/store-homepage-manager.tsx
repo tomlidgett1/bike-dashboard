@@ -85,12 +85,27 @@ import type {
 const SECTION_LABELS: Record<HomeSectionKey, string> = {
   highlights: "Highlights",
   collections: "Collections",
-  carousels: "Featured carousels",
+  carousel_1: "Carousel 1",
+  carousel_2: "Carousel 2",
   story: "Our story",
   services: "Services",
   gallery: "Gallery",
   visit: "Visit us",
 };
+
+function homeSectionLabel(
+  key: HomeSectionKey,
+  config: StoreHomepageConfig,
+  store: StoreProfile | null,
+): string {
+  if (key === "carousel_1" || key === "carousel_2") {
+    const slotId = key === "carousel_1" ? config.featured_carousels.slot1 : config.featured_carousels.slot2;
+    const category = slotId ? store?.categories.find((c) => c.id === slotId) : undefined;
+    if (category) return `Carousel: ${category.name}`;
+    return key === "carousel_1" ? "Carousel 1" : "Carousel 2";
+  }
+  return SECTION_LABELS[key];
+}
 
 type EditorTabId =
   | "theme"
@@ -476,6 +491,66 @@ export function StoreHomepageManager() {
         />
         <TextField label="Headline" value={config.hero.headline} onChange={(v) => patchHero({ headline: v })} placeholder={store.store_name} />
         <TextAreaField label="Subheadline" value={config.hero.subheadline} onChange={(v) => patchHero({ subheadline: v })} rows={2} />
+
+        <div className="space-y-4 rounded-md border border-gray-200 bg-white p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">Address line</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Shown below the subheadline at the same size. Leave blank to use your store address.
+              </p>
+            </div>
+            <Switch
+              checked={config.hero.contact.show_address}
+              onCheckedChange={(show_address) => patchHero({ contact: { ...config.hero.contact, show_address } })}
+              className="mt-0.5 flex-shrink-0"
+            />
+          </div>
+          {config.hero.contact.show_address && (
+            <TextField
+              label="Address"
+              value={config.hero.contact.address}
+              onChange={(address) => patchHero({ contact: { ...config.hero.contact, address } })}
+              placeholder={store.address || "277 High Street, Ashburton 3147"}
+            />
+          )}
+        </div>
+
+        <div className="space-y-4 rounded-md border border-gray-200 bg-white p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">Email line</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Shown below the address. Tapping opens the visitor&apos;s email app.
+              </p>
+            </div>
+            <Switch
+              checked={config.hero.contact.show_email}
+              onCheckedChange={(show_email) =>
+                patchHero({
+                  contact: {
+                    ...config.hero.contact,
+                    show_email,
+                    email:
+                      show_email && !config.hero.contact.email
+                        ? user?.email ?? ""
+                        : config.hero.contact.email,
+                  },
+                })
+              }
+              className="mt-0.5 flex-shrink-0"
+            />
+          </div>
+          {config.hero.contact.show_email && (
+            <TextField
+              label="Email"
+              value={config.hero.contact.email}
+              onChange={(email) => patchHero({ contact: { ...config.hero.contact, email } })}
+              placeholder={user?.email || "hello@yourstore.com"}
+            />
+          )}
+        </div>
+
         <div className="grid sm:grid-cols-2 gap-4">
           <Field label="Text alignment">
             <Segmented
@@ -847,7 +922,7 @@ export function StoreHomepageManager() {
       {activeTab === "carousels" && (
       <EditorSection
         title="Featured carousels"
-        description="Pin up to two product carousels to your home page."
+        description="Pin up to two product carousels to your home page. Use the Layout tab to place each carousel separately."
         enabled={config.featured_carousels.enabled}
         onEnabledChange={(v) => patchFeaturedCarousels({ enabled: v })}
       >
@@ -931,13 +1006,13 @@ export function StoreHomepageManager() {
         />
       </EditorSection>
 
-      <EditorSection title="Section order" description="Drag to reorder how sections appear down the page.">
+      <EditorSection title="Section order" description="Drag to reorder sections. Carousel 1 and Carousel 2 can be placed independently — for example, one below services and one above the story.">
         <Reorder.Group axis="y" values={config.section_order} onReorder={setSectionOrder} className="divide-y divide-border rounded-md border border-border bg-background">
           {config.section_order.map((key) => (
             <Reorder.Item key={key} value={key}>
               <div className="flex cursor-grab items-center gap-3 px-3 py-2.5 transition-colors hover:bg-muted/50 active:cursor-grabbing">
               <GripVertical className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium text-foreground">{SECTION_LABELS[key]}</span>
+              <span className="text-sm font-medium text-foreground">{homeSectionLabel(key, config, store)}</span>
               </div>
             </Reorder.Item>
           ))}

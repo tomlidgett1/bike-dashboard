@@ -2,6 +2,7 @@ import type {
   CustomerInquiryListItem,
   CustomerInquiryStatus,
 } from '@/lib/customer-inquiries/types'
+import { notifyInboxNeedsActionChanged } from '@/lib/customer-inquiries/inbox-needs-action-events'
 
 export type CustomerInquiryDetail = {
   id: string
@@ -146,6 +147,7 @@ export async function sendCustomerInquiryReply(
   if (!res.ok || !data.inquiry) {
     throw new Error(data.error || 'Could not send reply.')
   }
+  notifyInboxNeedsActionChanged()
   return {
     message: data.message || 'Reply sent.',
     inquiry: data.inquiry,

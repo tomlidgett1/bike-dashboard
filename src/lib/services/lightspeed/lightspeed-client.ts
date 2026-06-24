@@ -291,7 +291,7 @@ export class LightspeedClient {
   }
 
   private async refreshCachedAccessToken(): Promise<string | null> {
-    const refreshed = await refreshAccessToken(this.userId)
+    const refreshed = await refreshAccessToken(this.userId, { source: 'lightspeed_client_401' })
     this.accessToken = refreshed?.accessToken ?? null
     return this.accessToken
   }

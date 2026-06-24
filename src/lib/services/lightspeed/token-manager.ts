@@ -7,7 +7,8 @@
 
 import { createServiceRoleClient } from '@/lib/supabase/server'
 import { getEncryptionKey, getLightspeedCredentials, LIGHTSPEED_CONFIG } from './config'
-import type { LightspeedConnection, LightspeedTokenResponse } from './types'
+import type { LightspeedConnection, LightspeedConnectionStatus, LightspeedTokenResponse } from './types'
+import { logLightspeedConnectionEvent } from './connection-events'
 import crypto from 'crypto'
 
 // ============================================================
@@ -60,7 +61,8 @@ export function decryptToken(encryptedToken: string): string {
 // ============================================================
 
 /**
- * Store tokens for a user (encrypts before storage)
+ * Store tokens for a user (encrypts before storage).
+ * Increments token_generation and clears stale disconnect/error/lock fields.
  */
 export async function storeTokens(
   userId: string,
@@ -68,42 +70,120 @@ export async function storeTokens(
   refreshToken: string,
   expiresIn: number,
   accountId?: string,
-  accountName?: string
+  accountName?: string,
+  options?: { source?: string },
 ): Promise<LightspeedConnection> {
   const supabase = createServiceRoleClient()
-  
+  const existing = await getConnection(userId)
+  const previousStatus = existing?.status ?? null
+  const nextGeneration = (existing?.token_generation ?? 0) + 1
+
   const encryptedAccessToken = encryptToken(accessToken)
   const encryptedRefreshToken = encryptToken(refreshToken)
   const tokenExpiresAt = new Date(Date.now() + expiresIn * 1000).toISOString()
-  
+  const now = new Date().toISOString()
+
   const { data, error } = await supabase
     .from('lightspeed_connections')
     .upsert({
       user_id: userId,
       status: 'connected',
-      account_id: accountId || null,
-      account_name: accountName || null,
+      account_id: accountId || existing?.account_id || null,
+      account_name: accountName || existing?.account_name || null,
       access_token_encrypted: encryptedAccessToken,
       refresh_token_encrypted: encryptedRefreshToken,
       token_expires_at: tokenExpiresAt,
-      connected_at: new Date().toISOString(),
-      last_token_refresh_at: new Date().toISOString(),
+      connected_at: existing?.connected_at ?? now,
+      last_token_refresh_at: now,
       oauth_state: null,
       oauth_state_expires_at: null,
+      disconnected_at: null,
+      token_refresh_locked_at: null,
       last_error: null,
       last_error_at: null,
       error_count: 0,
+      token_generation: nextGeneration,
     }, {
       onConflict: 'user_id',
     })
     .select()
     .single()
-  
+
   if (error) {
     console.error('Error storing tokens:', error)
     throw new Error(`Failed to store tokens: ${error.message}`)
   }
-  
+
+  await logLightspeedConnectionEvent({
+    userId,
+    connectionId: data.id,
+    eventType: options?.source === 'oauth_callback' ? 'oauth_callback_success' : 'token_refresh_success',
+    source: options?.source,
+    previousStatus,
+    newStatus: 'connected',
+    tokenGeneration: nextGeneration,
+    tokenExpiresAt,
+  })
+
+  return data
+}
+
+/**
+ * Persist refreshed tokens only if token_generation is unchanged (compare-and-set).
+ */
+async function persistRefreshedTokens(
+  userId: string,
+  expectedGeneration: number,
+  accessToken: string,
+  refreshToken: string,
+  expiresIn: number,
+  accountId?: string | null,
+  accountName?: string | null,
+  source?: string,
+): Promise<LightspeedConnection | null> {
+  const supabase = createServiceRoleClient()
+  const nextGeneration = expectedGeneration + 1
+  const tokenExpiresAt = new Date(Date.now() + expiresIn * 1000).toISOString()
+  const now = new Date().toISOString()
+
+  const { data, error } = await supabase
+    .from('lightspeed_connections')
+    .update({
+      status: 'connected',
+      access_token_encrypted: encryptToken(accessToken),
+      refresh_token_encrypted: encryptToken(refreshToken),
+      token_expires_at: tokenExpiresAt,
+      last_token_refresh_at: now,
+      token_refresh_locked_at: null,
+      disconnected_at: null,
+      last_error: null,
+      last_error_at: null,
+      error_count: 0,
+      token_generation: nextGeneration,
+      account_id: accountId ?? null,
+      account_name: accountName ?? null,
+      updated_at: now,
+    })
+    .eq('user_id', userId)
+    .eq('token_generation', expectedGeneration)
+    .select()
+    .single()
+
+  if (error || !data) {
+    return null
+  }
+
+  await logLightspeedConnectionEvent({
+    userId,
+    connectionId: data.id,
+    eventType: 'token_refresh_success',
+    source,
+    previousStatus: 'connected',
+    newStatus: 'connected',
+    tokenGeneration: nextGeneration,
+    tokenExpiresAt,
+  })
+
   return data
 }
 
@@ -209,7 +289,7 @@ type DecryptedTokens = NonNullable<Awaited<ReturnType<typeof getDecryptedTokens>
  */
 async function claimRefreshLock(
   userId: string,
-): Promise<{ claimedAt: string } | 'locked' | 'unsupported'> {
+): Promise<{ claimedAt: string } | 'locked' | 'unsupported' | 'failed'> {
   const supabase = createServiceRoleClient()
   const claimedAt = new Date().toISOString()
   const staleCutoff = new Date(Date.now() - REFRESH_LOCK_TTL_MS).toISOString()
@@ -226,8 +306,8 @@ async function claimRefreshLock(
     // 42703 = undefined_column → the migration adding token_refresh_locked_at has not
     // been applied yet. Degrade gracefully to the unlocked path rather than failing.
     if (error.code === '42703') return 'unsupported'
-    console.error('[Lightspeed] Failed to claim refresh lock, proceeding without it:', error)
-    return 'unsupported'
+    console.error('[Lightspeed] Failed to claim refresh lock — aborting refresh (fail closed):', error)
+    return 'failed'
   }
 
   return data && data.length > 0 ? { claimedAt } : 'locked'
@@ -291,7 +371,10 @@ async function waitForConcurrentRefresh(
  * single refresh code path — the Vercel cron, the pre-expiry check in
  * getValidAccessToken, and the 401 handler in the API client all funnel through here.
  */
-export async function refreshAccessToken(userId: string): Promise<{
+export async function refreshAccessToken(
+  userId: string,
+  options?: { source?: string },
+): Promise<{
   accessToken: string
   expiresAt: Date
 } | null> {
@@ -313,6 +396,8 @@ export async function refreshAccessToken(userId: string): Promise<{
     return null
   }
 
+  const generationAtStart = tokens.connection.token_generation ?? 0
+
   // Fast path: a refresh happened in the last 10 seconds and the token is still fresh.
   // Return it rather than redeeming the (now-rotated) refresh token again.
   const lastRefresh = tokens.connection.last_token_refresh_at
@@ -326,15 +411,59 @@ export async function refreshAccessToken(userId: string): Promise<{
 
   // Serialise: only the lock holder may redeem the rotating refresh token.
   const lock = await claimRefreshLock(userId)
+  if (lock === 'failed') {
+    await logLightspeedConnectionEvent({
+      userId,
+      connectionId: tokens.connection.id,
+      eventType: 'lock_failed',
+      source: options?.source,
+      tokenGeneration: generationAtStart,
+      errorMessage: 'Could not acquire refresh lock',
+    })
+    return null
+  }
   if (lock === 'locked') {
+    await logLightspeedConnectionEvent({
+      userId,
+      connectionId: tokens.connection.id,
+      eventType: 'lock_contention',
+      source: options?.source,
+      tokenGeneration: generationAtStart,
+    })
     return waitForConcurrentRefresh(userId, tokens)
   }
   const claimedAt = lock === 'unsupported' ? null : lock.claimedAt
+
+  await logLightspeedConnectionEvent({
+    userId,
+    connectionId: tokens.connection.id,
+    eventType: 'token_refresh_started',
+    source: options?.source,
+    tokenGeneration: generationAtStart,
+    tokenExpiresAt: tokens.connection.token_expires_at,
+  })
 
   try {
     // Re-read after acquiring the lock: another process may have refreshed between our
     // first read and the claim, leaving a fresh token already stored.
     const latest = (await getDecryptedTokens(userId)) ?? tokens
+    const latestGeneration = latest.connection.token_generation ?? 0
+
+    if (latestGeneration !== generationAtStart) {
+      await logLightspeedConnectionEvent({
+        userId,
+        connectionId: latest.connection.id,
+        eventType: 'stale_refresh_suppressed',
+        source: options?.source,
+        tokenGeneration: latestGeneration,
+        metadata: { generationAtStart },
+      })
+      if (!tokenNeedsRefresh(latest.expiresAt) && latest.connection.status === 'connected') {
+        return { accessToken: latest.accessToken, expiresAt: latest.expiresAt }
+      }
+      return null
+    }
+
     if (
       latest.connection.last_token_refresh_at !== tokens.connection.last_token_refresh_at &&
       !tokenNeedsRefresh(latest.expiresAt)
@@ -362,21 +491,56 @@ export async function refreshAccessToken(userId: string): Promise<{
       const errorData = await response.json().catch(() => ({}))
       console.error('Token refresh failed:', errorData)
 
-      // Rotating refresh-token race: another request may have refreshed successfully.
-      // Never reuse a stale access token when Lightspeed says invalid_grant — the stored
-      // access token is revoked even if token_expires_at has not elapsed yet.
-      if (errorData.error !== 'invalid_grant') {
-        const afterFail = await getDecryptedTokens(userId)
-        if (afterFail && !tokenNeedsRefresh(afterFail.expiresAt)) {
-          console.log('[Lightspeed] Refresh lost race but concurrent refresh succeeded — using fresh token')
-          return { accessToken: afterFail.accessToken, expiresAt: afterFail.expiresAt }
+      const afterFail = await getDecryptedTokens(userId)
+      if (afterFail) {
+        const currentGeneration = afterFail.connection.token_generation ?? 0
+        if (currentGeneration !== generationAtStart) {
+          await logLightspeedConnectionEvent({
+            userId,
+            connectionId: afterFail.connection.id,
+            eventType: 'stale_refresh_suppressed',
+            source: options?.source,
+            tokenGeneration: currentGeneration,
+            errorCode: errorData.error,
+            errorMessage: 'Refresh failed after a newer token generation was stored',
+            metadata: { generationAtStart },
+          })
+          if (
+            afterFail.connection.status === 'connected' &&
+            !tokenNeedsRefresh(afterFail.expiresAt)
+          ) {
+            console.log('[Lightspeed] Stale refresh failure suppressed — using newer token')
+            return { accessToken: afterFail.accessToken, expiresAt: afterFail.expiresAt }
+          }
+          return null
         }
       }
+
+      // Rotating refresh-token race: another request may have refreshed successfully.
+      if (errorData.error !== 'invalid_grant' && afterFail && !tokenNeedsRefresh(afterFail.expiresAt)) {
+        console.log('[Lightspeed] Refresh lost race but concurrent refresh succeeded — using fresh token')
+        return { accessToken: afterFail.accessToken, expiresAt: afterFail.expiresAt }
+      }
+
+      await logLightspeedConnectionEvent({
+        userId,
+        connectionId: tokens.connection.id,
+        eventType: 'token_refresh_failed',
+        source: options?.source,
+        tokenGeneration: generationAtStart,
+        errorCode: errorData.error,
+        errorMessage: errorData.error_description ?? errorData.error,
+      })
 
       // Genuine failure — mark expired only for invalid_grant (truly revoked token).
       // For transient errors (5xx, network) just return null so the caller can retry.
       if (errorData.error === 'invalid_grant') {
-        await updateConnectionStatus(userId, 'expired', 'Refresh token invalid or revoked. Please reconnect.')
+        await updateConnectionStatus(
+          userId,
+          'expired',
+          'Refresh token invalid or revoked. Please reconnect.',
+          { expectedGeneration: generationAtStart, source: options?.source },
+        )
       } else {
         console.warn('[Lightspeed] Transient refresh error, not marking as expired:', errorData)
       }
@@ -385,15 +549,37 @@ export async function refreshAccessToken(userId: string): Promise<{
 
     const tokenData: LightspeedTokenResponse = await response.json()
 
-    // Store the new tokens (also records last_token_refresh_at).
-    await storeTokens(
+    const persisted = await persistRefreshedTokens(
       userId,
+      generationAtStart,
       tokenData.access_token,
       tokenData.refresh_token,
       tokenData.expires_in,
-      latest.connection.account_id || undefined,
-      latest.connection.account_name || undefined
+      latest.connection.account_id,
+      latest.connection.account_name,
+      options?.source,
     )
+
+    if (!persisted) {
+      const afterRace = await getDecryptedTokens(userId)
+      if (afterRace) {
+        await logLightspeedConnectionEvent({
+          userId,
+          connectionId: afterRace.connection.id,
+          eventType: 'stale_refresh_suppressed',
+          source: options?.source,
+          tokenGeneration: afterRace.connection.token_generation ?? 0,
+          metadata: { generationAtStart, reason: 'persist_cas_miss' },
+        })
+        if (
+          afterRace.connection.status === 'connected' &&
+          !tokenNeedsRefresh(afterRace.expiresAt)
+        ) {
+          return { accessToken: afterRace.accessToken, expiresAt: afterRace.expiresAt }
+        }
+      }
+      return null
+    }
 
     return {
       accessToken: tokenData.access_token,
@@ -401,12 +587,14 @@ export async function refreshAccessToken(userId: string): Promise<{
     }
   } catch (error) {
     console.error('Error refreshing token:', error)
-    await updateConnectionStatus(userId, 'error', 'Token refresh error')
+    await updateConnectionStatus(
+      userId,
+      'error',
+      'Token refresh error',
+      { expectedGeneration: generationAtStart, source: options?.source, incrementGeneration: false },
+    )
     return null
   } finally {
-    // Release exactly once, at the very end, and only if we still hold the lock.
-    // The lock is held for the whole operation above, so no other refresher can have
-    // redeemed the token in the meantime.
     if (claimedAt) {
       await releaseRefreshLock(userId, claimedAt)
     }
@@ -470,51 +658,123 @@ export async function isLightspeedConnected(userId: string): Promise<boolean> {
 // Connection Management Functions
 // ============================================================
 
+export interface UpdateConnectionStatusOptions {
+  expectedGeneration?: number
+  source?: string
+  incrementGeneration?: boolean
+}
+
 /**
  * Update connection status
  */
 export async function updateConnectionStatus(
   userId: string,
-  status: 'connected' | 'disconnected' | 'error' | 'expired',
-  errorMessage?: string
+  status: LightspeedConnectionStatus,
+  errorMessage?: string,
+  options?: UpdateConnectionStatusOptions,
 ): Promise<void> {
   const supabase = createServiceRoleClient()
-  
+
+  const { data: current } = await supabase
+    .from('lightspeed_connections')
+    .select('id, status, token_generation, error_count')
+    .eq('user_id', userId)
+    .single()
+
+  if (!current) {
+    console.error('[Lightspeed] Cannot update status — connection not found for user:', userId)
+    return
+  }
+
+  const previousStatus = current.status as LightspeedConnectionStatus
+  const shouldIncrement =
+    options?.incrementGeneration ??
+    (status === 'disconnected' || status === 'expired')
+  const currentGeneration = current.token_generation ?? 0
+
+  if (
+    options?.expectedGeneration !== undefined &&
+    currentGeneration !== options.expectedGeneration
+  ) {
+    await logLightspeedConnectionEvent({
+      userId,
+      connectionId: current.id,
+      eventType: 'stale_refresh_suppressed',
+      source: options.source,
+      previousStatus,
+      newStatus: previousStatus,
+      tokenGeneration: currentGeneration,
+      metadata: {
+        attemptedStatus: status,
+        expectedGeneration: options.expectedGeneration,
+      },
+    })
+    return
+  }
+
   const updateData: Record<string, unknown> = {
     status,
     updated_at: new Date().toISOString(),
   }
-  
+
+  if (shouldIncrement) {
+    updateData.token_generation = currentGeneration + 1
+  }
+
   if (status === 'disconnected') {
     updateData.disconnected_at = new Date().toISOString()
     updateData.access_token_encrypted = null
     updateData.refresh_token_encrypted = null
     updateData.token_expires_at = null
+    updateData.token_refresh_locked_at = null
   }
-  
+
+  if (status === 'connected') {
+    updateData.disconnected_at = null
+    updateData.last_error = null
+    updateData.last_error_at = null
+  }
+
   if (errorMessage) {
     updateData.last_error = errorMessage
     updateData.last_error_at = new Date().toISOString()
   }
-  
+
   if (status === 'error' || status === 'expired') {
-    const { data: current } = await supabase
-      .from('lightspeed_connections')
-      .select('error_count')
-      .eq('user_id', userId)
-      .single()
-    
-    updateData.error_count = (current?.error_count || 0) + 1
+    updateData.error_count = (current.error_count || 0) + 1
   }
-  
-  const { error } = await supabase
+
+  let query = supabase
     .from('lightspeed_connections')
     .update(updateData)
     .eq('user_id', userId)
-  
+
+  if (options?.expectedGeneration !== undefined) {
+    query = query.eq('token_generation', options.expectedGeneration)
+  }
+
+  const { data: updated, error } = await query.select('id, token_generation').single()
+
   if (error) {
     console.error('Error updating connection status:', error)
+    return
   }
+
+  const eventType =
+    status === 'disconnected'
+      ? 'manual_disconnect'
+      : 'status_changed'
+
+  await logLightspeedConnectionEvent({
+    userId,
+    connectionId: updated?.id ?? current.id,
+    eventType,
+    source: options?.source,
+    previousStatus,
+    newStatus: status,
+    tokenGeneration: (updated?.token_generation as number | undefined) ?? currentGeneration,
+    errorMessage: errorMessage ?? null,
+  })
 }
 
 /**
@@ -539,8 +799,24 @@ export async function updateLastSyncTime(userId: string): Promise<void> {
 /**
  * Disconnect and clear tokens
  */
-export async function disconnectUser(userId: string): Promise<void> {
-  await updateConnectionStatus(userId, 'disconnected')
+export async function disconnectUser(
+  userId: string,
+  options?: { source?: string },
+): Promise<void> {
+  await updateConnectionStatus(userId, 'disconnected', undefined, {
+    source: options?.source ?? 'manual_disconnect',
+  })
+}
+
+/**
+ * Whether the user already has a connected Lightspeed account with a non-expiring token.
+ * Used to block accidental OAuth reconnects unless force mode is requested.
+ */
+export async function hasFreshLightspeedConnection(userId: string): Promise<boolean> {
+  const connection = await getConnection(userId)
+  if (!connection || connection.status !== 'connected') return false
+  if (!connection.access_token_encrypted || !connection.token_expires_at) return false
+  return !tokenNeedsRefresh(new Date(connection.token_expires_at))
 }
 
 // ============================================================
@@ -548,32 +824,58 @@ export async function disconnectUser(userId: string): Promise<void> {
 // ============================================================
 
 /**
- * Generate and store OAuth state token
+ * Generate and store OAuth state token without disturbing an existing connection.
  */
-export async function generateOAuthState(userId: string): Promise<string> {
+export async function generateOAuthState(
+  userId: string,
+  options?: { source?: string },
+): Promise<string> {
   const supabase = createServiceRoleClient()
-  
-  // Generate secure random state
+  const existing = await getConnection(userId)
+
   const state = crypto.randomBytes(32).toString('hex')
   const expiresAt = new Date(Date.now() + LIGHTSPEED_CONFIG.STATE_TOKEN_EXPIRY_MS).toISOString()
-  
-  // Upsert connection with state
-  const { error } = await supabase
-    .from('lightspeed_connections')
-    .upsert({
-      user_id: userId,
-      status: 'disconnected',
-      oauth_state: state,
-      oauth_state_expires_at: expiresAt,
-    }, {
-      onConflict: 'user_id',
-    })
-  
-  if (error) {
-    console.error('Error storing OAuth state:', error)
-    throw new Error(`Failed to store OAuth state: ${error.message}`)
+
+  if (existing) {
+    const { error } = await supabase
+      .from('lightspeed_connections')
+      .update({
+        oauth_state: state,
+        oauth_state_expires_at: expiresAt,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId)
+
+    if (error) {
+      console.error('Error storing OAuth state:', error)
+      throw new Error(`Failed to store OAuth state: ${error.message}`)
+    }
+  } else {
+    const { error } = await supabase
+      .from('lightspeed_connections')
+      .insert({
+        user_id: userId,
+        status: 'disconnected',
+        oauth_state: state,
+        oauth_state_expires_at: expiresAt,
+      })
+
+    if (error) {
+      console.error('Error storing OAuth state:', error)
+      throw new Error(`Failed to store OAuth state: ${error.message}`)
+    }
   }
-  
+
+  await logLightspeedConnectionEvent({
+    userId,
+    connectionId: existing?.id,
+    eventType: 'oauth_initiated',
+    source: options?.source,
+    previousStatus: existing?.status ?? null,
+    newStatus: existing?.status ?? 'disconnected',
+    tokenGeneration: existing?.token_generation ?? 0,
+  })
+
   return state
 }
 

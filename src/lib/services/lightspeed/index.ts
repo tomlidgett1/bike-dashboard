@@ -107,6 +107,9 @@ export {
   disconnectUser,
   generateOAuthState,
   validateOAuthState,
+  hasFreshLightspeedConnection,
+  isLightspeedApiAvailable,
+  isLightspeedConnected,
 } from './token-manager'
 
 // API Client

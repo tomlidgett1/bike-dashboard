@@ -1,5 +1,6 @@
 import type { CustomerInquiryListItem } from "@/lib/customer-inquiries/types";
 import type { CustomerInquiriesResponse } from "@/lib/customer-inquiries/client";
+import { notifyInboxNeedsActionChanged } from "@/lib/customer-inquiries/inbox-needs-action-events";
 import type { NestConversationListItem } from "@/lib/nest/types";
 
 export type UnifiedInboxResponse = {
@@ -68,6 +69,7 @@ export async function closeInboxCases(payload: {
   if (!res.ok) {
     throw new Error(data.error || "Could not close cases.");
   }
+  notifyInboxNeedsActionChanged();
   return data;
 }
 
@@ -85,6 +87,7 @@ export async function closeNestCaseOnServer(
     const data = (await res.json()) as { error?: string };
     throw new Error(data.error || "Could not close conversation.");
   }
+  notifyInboxNeedsActionChanged();
 }
 
 export async function reopenNestCaseOnServer(chatId: string): Promise<void> {
@@ -98,6 +101,7 @@ export async function reopenNestCaseOnServer(chatId: string): Promise<void> {
     const data = (await res.json()) as { error?: string };
     throw new Error(data.error || "Could not reopen conversation.");
   }
+  notifyInboxNeedsActionChanged();
 }
 
 const pendingNestReadPosts = new Map<string, Promise<void>>();

@@ -287,6 +287,7 @@ function buildAiPrompt(input: {
       tabEngagement: input.behaviourAnalytics.tabEngagement.slice(0, 10),
       sectionEngagement: input.behaviourAnalytics.sectionEngagement.slice(0, 12),
       ctaClicks: input.behaviourAnalytics.ctaClicks.slice(0, 12),
+      serviceBookClicks: input.behaviourAnalytics.serviceBookClicks.slice(0, 12),
       carouselEngagement: input.behaviourAnalytics.carouselEngagement.slice(0, 10),
       scrollDepth: input.behaviourAnalytics.scrollDepth,
       journeyPaths: input.behaviourAnalytics.journeyPaths.slice(0, 8),

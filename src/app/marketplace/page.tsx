@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { MarketplacePageContent } from "./marketplace-page-content";
-import { fetchInitialMarketplaceProducts } from "@/lib/server/fetch-initial-marketplace-products";
+import { fetchInitialStoresProducts } from "@/lib/server/fetch-initial-marketplace-products";
 import { JsonLd } from "@/components/seo/json-ld";
 import { organizationSchema, websiteSchema } from "@/lib/seo/structured-data";
 import { SITE_DESCRIPTION, SITE_TITLE } from "@/lib/seo/site";
@@ -34,7 +34,7 @@ function LoadingFallback() {
 // the browser receives the LoadingFallback shell immediately while the DB query
 // runs on the server, then the product HTML streams in once it's ready.
 async function MarketplaceDataFetcher() {
-  const initialData = await fetchInitialMarketplaceProducts();
+  const initialData = await fetchInitialStoresProducts();
 
   // MarketplacePageContent uses useSearchParams, which requires a Suspense
   // boundary. The outer boundary (in MarketplacePage) covers both this fetch

@@ -10,6 +10,7 @@ import { ProductCard } from "@/components/marketplace/product-card";
 import { ListItemBannerSlot } from "@/components/marketplace/list-item-banner";
 import { StoreProfileView } from "@/components/marketplace/store-profile/store-profile-view";
 import { useAuth } from "@/components/providers/auth-provider";
+import { StoreProfileSkeleton } from "@/components/marketplace/store-profile/store-profile-skeleton";
 import type { StoreProfile } from "@/lib/types/store";
 import type { SellerProfile, SellerCategory } from "@/app/api/marketplace/seller/[sellerId]/route";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
@@ -39,38 +40,6 @@ const SellerCategories = dynamic(() =>
 interface StoreProfilePageClientProps {
   storeId: string;
   initialStore?: StoreProfile | null;
-}
-
-function StorePageLoadingAnimation({ className = "h-16 w-16" }: { className?: string }) {
-  return (
-    <Image
-      src="/dual-ball-loader.svg"
-      alt="Loading"
-      width={200}
-      height={200}
-      className={className}
-      priority
-      unoptimized
-    />
-  );
-}
-
-function PoweredByYellowJersey() {
-  return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-[11px] font-medium uppercase tracking-wide text-gray-400">
-        Powered by Yellow Jersey
-      </span>
-      <Image
-        src="/yj.svg"
-        alt=""
-        width={64}
-        height={13}
-        className="h-3 w-auto opacity-60"
-        unoptimized
-      />
-    </div>
-  );
 }
 
 // Convert seller categories to marketplace products for carousel display
@@ -202,12 +171,9 @@ export function StoreProfilePageClient({
 
   if (loading) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-white px-6">
-        <div className="flex flex-col items-center gap-5">
-          <StorePageLoadingAnimation />
-          <PoweredByYellowJersey />
-        </div>
-      </div>
+      <MarketplaceLayout showFooter={false}>
+        <StoreProfileSkeleton />
+      </MarketplaceLayout>
     );
   }
 
