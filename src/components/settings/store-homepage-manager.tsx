@@ -71,6 +71,8 @@ import {
 } from "@/components/marketplace/store-profile/homepage-icons";
 import type {
   StoreProfile,
+  StoreCategory,
+  StoreCategoryWithProducts,
   StoreHomepageConfig,
   HomeHighlight,
   HomeCollection,
@@ -80,6 +82,57 @@ import type {
   HomeBanner,
   HeroVariant,
 } from "@/lib/types/store";
+
+/** Carousels eligible for the landing-page featured slots (Products tab only). */
+function featuredCarouselOptions(categories: StoreCategory[]): StoreCategory[] {
+  return categories.filter((category) => {
+    if ((category.store_page ?? "products") === "bikes") return false;
+    if (category.is_active === false) return false;
+    if (category.source === "specials") return true;
+    const count = category.resolved_product_count ?? category.product_ids?.length ?? 0;
+    return count > 0;
+  });
+}
+
+/** Ensure carousel rows from /api/store/categories appear in the store profile used by this editor. */
+function mergeCarouselCategoriesIntoStore(
+  profile: StoreProfile,
+  carousels: StoreCategory[],
+): StoreProfile {
+  const byId = new Map(profile.categories.map((category) => [category.id, category]));
+  const productById = new Map(
+    profile.categories.flatMap((category) => category.products).map((product) => [product.id, product]),
+  );
+
+  for (const carousel of featuredCarouselOptions(carousels)) {
+    if (byId.has(carousel.id)) continue;
+
+    const productIds = carousel.product_ids ?? [];
+    const products = productIds
+      .map((id) => productById.get(id))
+      .filter((product): product is StoreCategoryWithProducts["products"][number] => !!product);
+
+    byId.set(carousel.id, {
+      id: carousel.id,
+      name: carousel.name,
+      display_order: carousel.display_order,
+      source: carousel.source,
+      products,
+      product_count: carousel.resolved_product_count ?? productIds.length,
+      carousel_size: carousel.carousel_size,
+      section_id: carousel.section_id ?? null,
+      logo_url: carousel.logo_url ?? null,
+      hide_title: carousel.hide_title ?? false,
+      subtitle: carousel.subtitle ?? null,
+      store_page: carousel.store_page === "bikes" ? "bikes" : "products",
+    });
+  }
+
+  return {
+    ...profile,
+    categories: Array.from(byId.values()).sort((a, b) => a.display_order - b.display_order),
+  };
+}
 
 // ── Static option tables ───────────────────────────────────
 const SECTION_LABELS: Record<HomeSectionKey, string> = {
@@ -97,10 +150,13 @@ function homeSectionLabel(
   key: HomeSectionKey,
   config: StoreHomepageConfig,
   store: StoreProfile | null,
+  carouselCategories: StoreCategory[],
 ): string {
   if (key === "carousel_1" || key === "carousel_2") {
     const slotId = key === "carousel_1" ? config.featured_carousels.slot1 : config.featured_carousels.slot2;
-    const category = slotId ? store?.categories.find((c) => c.id === slotId) : undefined;
+    const category =
+      (slotId ? store?.categories.find((c) => c.id === slotId) : undefined) ??
+      (slotId ? carouselCategories.find((c) => c.id === slotId) : undefined);
     if (category) return `Carousel: ${category.name}`;
     return key === "carousel_1" ? "Carousel 1" : "Carousel 2";
   }
@@ -182,6 +238,7 @@ const AUTO_SAVE_DELAY_MS = 800;
 export function StoreHomepageManager() {
   const { user } = useAuth();
   const [store, setStore] = React.useState<StoreProfile | null>(null);
+  const [carouselCategories, setCarouselCategories] = React.useState<StoreCategory[]>([]);
   const [config, setConfig] = React.useState<StoreHomepageConfig | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
@@ -254,13 +311,20 @@ export function StoreHomepageManager() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [storeRes, cfgRes] = await Promise.all([
+      const [storeRes, cfgRes, categoriesRes] = await Promise.all([
         fetch(`/api/marketplace/store/${user.id}`),
         fetch("/api/store/homepage"),
+        fetch("/api/store/categories"),
       ]);
       if (!storeRes.ok) throw new Error("Could not load your store profile");
       const storeData = await storeRes.json();
-      const profile: StoreProfile = storeData.store;
+      let profile: StoreProfile = storeData.store;
+
+      const carouselRows: StoreCategory[] = categoriesRes.ok
+        ? ((await categoriesRes.json()).categories ?? [])
+        : [];
+      setCarouselCategories(carouselRows);
+      profile = mergeCarouselCategoriesIntoStore(profile, carouselRows);
 
       let raw: Partial<StoreHomepageConfig> = profile.homepage_config ?? {};
       if (cfgRes.ok) {
@@ -927,9 +991,7 @@ export function StoreHomepageManager() {
         onEnabledChange={(v) => patchFeaturedCarousels({ enabled: v })}
       >
         {(() => {
-          const cats = (store.categories ?? []).filter(
-            (c) => c.products.length > 0 && (c.store_page ?? "products") !== "bikes",
-          );
+          const cats = featuredCarouselOptions(carouselCategories);
           return (
             <div className="space-y-4">
               {/* Products per row */}
@@ -970,7 +1032,10 @@ export function StoreHomepageManager() {
                       <option value="">— None —</option>
                       {cats.map((c) => (
                         <option key={c.id} value={c.id} disabled={c.id === other}>
-                          {c.name} ({c.product_count || c.products.length} products)
+                          {c.name}
+                          {c.source === "specials" ? " · Auto-rotating" : ""}
+                          {" "}
+                          ({c.resolved_product_count ?? c.product_ids?.length ?? 0} products)
                         </option>
                       ))}
                     </select>
@@ -1012,7 +1077,7 @@ export function StoreHomepageManager() {
             <Reorder.Item key={key} value={key}>
               <div className="flex cursor-grab items-center gap-3 px-3 py-2.5 transition-colors hover:bg-muted/50 active:cursor-grabbing">
               <GripVertical className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium text-foreground">{homeSectionLabel(key, config, store)}</span>
+              <span className="text-sm font-medium text-foreground">{homeSectionLabel(key, config, store, carouselCategories)}</span>
               </div>
             </Reorder.Item>
           ))}

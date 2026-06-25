@@ -40,13 +40,13 @@ import type {
   LightspeedCategoryOption,
   MissingCategoryProduct,
 } from "@/lib/missing-categories/types";
-import { isNestConversationUnread } from "@/lib/nest/conversation-read-state";
+import { fetchNestListForActions } from "@/lib/nest/fetch-nest-list";
+import { readNestCloseMap } from "@/lib/nest/conversation-close-state";
 import {
-  filterNestCustomerChats,
-  sanitiseNestConversationsResponse,
   type NestConversationListItem,
-  type NestConversationsResponse,
 } from "@/lib/nest/types";
+import { nestChatNeedsStoreResponse } from "@/lib/store/open-store-actions";
+import { notifyOpenActionsChanged } from "@/lib/store/open-actions-events";
 import { cn } from "@/lib/utils";
 
 type ActionRowKind = "enquiry" | "nest" | "missing-brand" | "assign-category";
@@ -89,19 +89,7 @@ const rowDismissButtonClass =
   "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40";
 
 async function fetchNestList(): Promise<NestConversationListItem[]> {
-  const res = await fetch("/api/store/nest-messages?listOnly=1", { cache: "no-store" });
-  const data = (await res.json()) as NestConversationsResponse & { error?: string };
-  if (!res.ok) {
-    throw new Error(data.error || "Could not load Nest messages.");
-  }
-  const sanitised = sanitiseNestConversationsResponse({
-    chats: Array.isArray(data.chats) ? data.chats : [],
-    selectedChatId: null,
-    conversation: null,
-  });
-  return filterNestCustomerChats(sanitised.chats).sort(
-    (a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime(),
-  );
+  return fetchNestListForActions();
 }
 
 function nestDisplayTitle(chat: NestConversationListItem): string {
@@ -114,14 +102,22 @@ function nestDisplayTitle(chat: NestConversationListItem): string {
 }
 
 function SourceIcon({ kind }: { kind: ActionRowKind }) {
+  const isLightspeed = kind === "missing-brand" || kind === "assign-category";
+
+  if (isLightspeed) {
+    return (
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center">
+        <LightspeedLogo className="h-7 w-7" />
+      </span>
+    );
+  }
+
   return (
     <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-white">
       {kind === "enquiry" ? (
         <GmailLogo className="h-4 w-auto max-w-[22px] object-contain" />
-      ) : kind === "nest" ? (
-        <NestLogo className="h-full w-full rounded-none object-cover" />
       ) : (
-        <LightspeedLogo className="h-[18px] w-[18px]" />
+        <NestLogo className="h-full w-full rounded-none object-cover" />
       )}
     </span>
   );
@@ -134,6 +130,7 @@ function buildRows({
   categoryProducts,
   brandSuggestions,
   categorySuggestions,
+  nestCloseMap,
 }: {
   enquiries: CustomerInquiryListItem[];
   nestChats: NestConversationListItem[];
@@ -141,6 +138,7 @@ function buildRows({
   categoryProducts: MissingCategoryProduct[];
   brandSuggestions: Record<string, BrandSuggestion | null>;
   categorySuggestions: Record<string, CategorySuggestion | null>;
+  nestCloseMap: Record<string, string>;
 }): SimpleActionRow[] {
   const rows: SimpleActionRow[] = [];
 
@@ -160,7 +158,7 @@ function buildRows({
   }
 
   for (const chat of nestChats) {
-    if (!isNestConversationUnread(chat)) continue;
+    if (!nestChatNeedsStoreResponse(chat, nestCloseMap)) continue;
     rows.push({
       key: `nest:${chat.chatId}`,
       kind: "nest",
@@ -657,6 +655,7 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
     }
   }
 
+  const nestCloseMap = readNestCloseMap();
   const rows = buildRows({
     enquiries,
     nestChats,
@@ -664,7 +663,13 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
     categoryProducts,
     brandSuggestions,
     categorySuggestions,
+    nestCloseMap,
   }).filter((row) => !isDismissed(row.key));
+
+  React.useEffect(() => {
+    if (loading) return;
+    notifyOpenActionsChanged(rows.length);
+  }, [loading, rows.length]);
 
   return (
     <div className={cn("flex min-h-0 flex-1 flex-col", className)}>

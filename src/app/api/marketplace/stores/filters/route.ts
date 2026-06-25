@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createPublicSupabaseClient } from '@/lib/marketplace/public-card-feed';
+import { filterVisibleMarketplaceStores } from '@/lib/marketplace/hidden-stores';
 
 // ============================================================
 // Store Filters API — store pills for Bike Stores tab
@@ -29,12 +30,14 @@ export async function GET() {
         `⚡ [STORE-FILTERS] Fetched ${stores.length} stores in ${queryTime.toFixed(0)}ms (RPC)`
       );
 
-      const storeFilters = (stores as { user_id: string; business_name: string | null; logo_url: string | null }[]).map(
-        (store) => ({
-          id: store.user_id,
-          name: store.business_name?.trim() || 'Bike Store',
-          logo_url: store.logo_url,
-        })
+      const storeFilters = filterVisibleMarketplaceStores(
+        (stores as { user_id: string; business_name: string | null; logo_url: string | null }[]).map(
+          (store) => ({
+            id: store.user_id,
+            name: store.business_name?.trim() || 'Bike Store',
+            logo_url: store.logo_url,
+          }),
+        ),
       );
 
       return NextResponse.json(
@@ -89,14 +92,16 @@ export async function GET() {
       eligible.add((row as { user_id: string }).user_id);
     }
 
-    const storeFilters = (users || [])
-      .filter((u) => eligible.has(u.user_id))
-      .map((user) => ({
-        id: user.user_id,
-        name: user.business_name?.trim() || 'Bike Store',
-        logo_url: user.logo_url,
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const storeFilters = filterVisibleMarketplaceStores(
+      (users || [])
+        .filter((u) => eligible.has(u.user_id))
+        .map((user) => ({
+          id: user.user_id,
+          name: user.business_name?.trim() || 'Bike Store',
+          logo_url: user.logo_url,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    );
 
     const queryTime = performance.now() - startTime;
     console.log(`⚡ [STORE-FILTERS] Fetched ${storeFilters.length} stores in ${queryTime.toFixed(0)}ms (fallback)`);

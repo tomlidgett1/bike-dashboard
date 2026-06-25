@@ -1601,9 +1601,10 @@ function FeaturedCarouselSlotSection({
         trackAnalytics={trackAnalytics}
         onOpenCollection={onOpenCollection}
         subtitle={
-          category.section_id
+          category.subtitle ??
+          (category.section_id
             ? store.sections.find((s) => s.id === category.section_id)?.description ?? null
-            : null
+            : null)
         }
       />
       {showHomeSearch && onStoreSearchChange && (
@@ -1715,7 +1716,14 @@ function FeaturedCarouselBlock({
               />
             )}
             {!category.hide_title && (
-              <h3 className="truncate text-lg font-semibold text-gray-900">{category.name}</h3>
+              <div className="min-w-0">
+                <h3 className="truncate text-lg font-semibold text-gray-900">{category.name}</h3>
+                {subtitle ? (
+                  <p className="m-0 mt-0.5 truncate text-sm leading-snug text-gray-500">
+                    {subtitle}
+                  </p>
+                ) : null}
+              </div>
             )}
           </div>
           <button

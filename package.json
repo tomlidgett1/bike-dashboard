@@ -12,6 +12,7 @@
     "lint": "eslint",
     "test:variants": "tsx scripts/test-variant-normalize.ts && tsx scripts/test-variant-prefilter.ts && tsx scripts/test-variant-grouping.ts && tsx scripts/test-variant-apply.ts && tsx scripts/test-variant-lightspeed-payload.ts",
     "test:hero-images": "tsx scripts/test-hero-image-dedup.ts",
+    "test:specials": "tsx scripts/test-specials-engine.ts",
     "test:genie-orchestration": "tsx scripts/test-genie-orchestration.ts",
     "test:lightspeed-auth": "tsx scripts/test-lightspeed-token-manager.ts",
     "test:genie-quality": "tsx scripts/eval-genie-quality.ts",

@@ -29,6 +29,11 @@ import { MARKETPLACE_PROMO_BANNERS_ENABLED } from "@/lib/marketplace-feature-fla
 import { MARKETPLACE_INITIAL_PAGE_SIZE } from "@/lib/marketplace-constants";
 import { saveStoreSplashSeed } from "@/lib/marketplace/store-splash";
 import type { InitialMarketplacePagination } from "@/lib/server/fetch-initial-marketplace-products";
+import {
+  filterVisibleMarketplaceStoreProducts,
+  filterVisibleMarketplaceStores,
+  isHiddenMarketplaceStoreUserId,
+} from "@/lib/marketplace/hidden-stores";
 import { cn } from "@/lib/utils";
 
 // ============================================================
@@ -395,6 +400,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
 
   const handleNavigateToStore = React.useCallback(
     (storeId: string) => {
+      if (isHiddenMarketplaceStoreUserId(storeId)) return;
       setSelectedStoreId(storeId);
       setSelectedStoreCategory(null);
       resetProductsForFilterChange();
@@ -424,9 +430,11 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   React.useEffect(() => {
     if (!isStoresView) return;
     const storeFromUrl = searchParams.get("store") || null;
+    const nextStoreId =
+      storeFromUrl && isHiddenMarketplaceStoreUserId(storeFromUrl) ? null : storeFromUrl;
     // Only update if genuinely different — React bails out on equal values so
     // the idempotent call after a click-driven router.replace is harmless.
-    setSelectedStoreId(storeFromUrl);
+    setSelectedStoreId(nextStoreId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, isStoresView]); // intentionally omit selectedStoreId: including it
   // causes the effect to fire immediately after a click (before the URL updates),
@@ -659,7 +667,12 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     return products.filter(p => p.marketplace_category === selectedStoreCategory);
   }, [products, selectedStoreCategory, isStoresView, isProductSearchActive]);
 
-  const gridProducts = displayProducts;
+  const gridProducts = React.useMemo(() => {
+    const visible = isStoreInventoryView
+      ? filterVisibleMarketplaceStoreProducts(displayProducts)
+      : displayProducts;
+    return visible;
+  }, [displayProducts, isStoreInventoryView]);
 
   // Fetch stores when in stores view
   React.useEffect(() => {
@@ -670,7 +683,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
           const response = await fetch('/api/marketplace/stores');
           if (response.ok) {
             const data = await response.json();
-            setStores(data.stores || []);
+            setStores(filterVisibleMarketplaceStores(data.stores || []));
           }
         } catch (error) {
           console.error('[Marketplace] Error fetching stores:', error);

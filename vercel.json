@@ -21,6 +21,10 @@
       "schedule": "*/10 * * * *"
     },
     {
+      "path": "/api/cron/specials-rotate",
+      "schedule": "0 * * * *"
+    },
+    {
       "path": "/api/cron/lightspeed-sales-report-backfill",
       "schedule": "* * * * *"
     },

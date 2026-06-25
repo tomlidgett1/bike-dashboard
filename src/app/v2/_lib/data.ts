@@ -5,6 +5,7 @@ import {
   transformPublicMarketplaceCard,
   type PublicMarketplaceCardRow,
 } from '@/lib/marketplace/public-card-feed'
+import { filterVisibleMarketplaceStores } from '@/lib/marketplace/hidden-stores'
 
 // ============================================================
 // /v2 homepage data — one parallel fan-out, ISR-cacheable.
@@ -260,17 +261,19 @@ export async function fetchV2HomeData(): Promise<V2HomeData> {
 
   let stores: V2Store[] = []
   if (storesRes.status === 'fulfilled' && !storesRes.value.error && Array.isArray(storesRes.value.data)) {
-    stores = (storesRes.value.data as Array<Record<string, unknown>>)
-      .map((s) => ({
-        id: String(s.user_id ?? ''),
-        name: String(s.business_name ?? '').trim(),
-        type: String(s.store_type ?? '').trim(),
-        logoUrl: (s.logo_url as string | null) ?? null,
-        productCount: Number(s.product_count ?? 0),
-      }))
-      .filter((s) => s.id && s.name && s.productCount > 0)
-      .sort((a, b) => b.productCount - a.productCount)
-      .slice(0, 8)
+    stores = filterVisibleMarketplaceStores(
+      (storesRes.value.data as Array<Record<string, unknown>>)
+        .map((s) => ({
+          id: String(s.user_id ?? ''),
+          name: String(s.business_name ?? '').trim(),
+          type: String(s.store_type ?? '').trim(),
+          logoUrl: (s.logo_url as string | null) ?? null,
+          productCount: Number(s.product_count ?? 0),
+        }))
+        .filter((s) => s.id && s.name && s.productCount > 0)
+        .sort((a, b) => b.productCount - a.productCount)
+        .slice(0, 8),
+    )
   }
 
   let live = 0

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createPublicSupabaseClient } from '@/lib/marketplace/public-card-feed';
+import { filterVisibleMarketplaceStores } from '@/lib/marketplace/hidden-stores';
 
 // ============================================================
 // Marketplace Stores API - Public Endpoint
@@ -24,14 +25,16 @@ export async function GET() {
       console.log(`⚡ [STORES] Fetched ${stores.length} stores in ${queryTime.toFixed(0)}ms (RPC)`);
       
       // Transform the data
-      const activeStores = stores.map((store: any) => ({
-        id: store.user_id,
-        store_name: store.business_name?.trim() || 'Bike Store',
-        store_type: store.store_type?.trim() || 'Retail',
-        logo_url: store.logo_url,
-        product_count: store.product_count || 0,
-        joined_date: store.created_at,
-      }));
+      const activeStores = filterVisibleMarketplaceStores(
+        stores.map((store: any) => ({
+          id: store.user_id,
+          store_name: store.business_name?.trim() || 'Bike Store',
+          store_type: store.store_type?.trim() || 'Retail',
+          logo_url: store.logo_url,
+          product_count: store.product_count || 0,
+          joined_date: store.created_at,
+        })),
+      );
 
       return NextResponse.json(
         { stores: activeStores, total: activeStores.length },
@@ -94,16 +97,18 @@ export async function GET() {
         countMap.set(p.user_id, (countMap.get(p.user_id) || 0) + 1);
       });
 
-      const activeStores = (users || [])
-        .map(user => ({
-          id: user.user_id,
-          store_name: user.business_name?.trim() || 'Bike Store',
-          store_type: user.store_type?.trim() || 'Retail',
-          logo_url: user.logo_url,
-          product_count: countMap.get(user.user_id) || 0,
-          joined_date: user.created_at,
-        }))
-        .filter(store => store.product_count > 0);
+      const activeStores = filterVisibleMarketplaceStores(
+        (users || [])
+          .map(user => ({
+            id: user.user_id,
+            store_name: user.business_name?.trim() || 'Bike Store',
+            store_type: user.store_type?.trim() || 'Retail',
+            logo_url: user.logo_url,
+            product_count: countMap.get(user.user_id) || 0,
+            joined_date: user.created_at,
+          }))
+          .filter(store => store.product_count > 0),
+      );
 
       const queryTime = performance.now() - startTime;
       console.log(`⚡ [STORES] Fetched ${activeStores.length} stores in ${queryTime.toFixed(0)}ms (batched fallback)`);
@@ -122,16 +127,18 @@ export async function GET() {
     }
 
     // Process JOIN fallback result
-    const activeStores = (fallbackData || [])
-      .map((user: any) => ({
-        id: user.user_id,
-        store_name: user.business_name?.trim() || 'Bike Store',
-        store_type: user.store_type?.trim() || 'Retail',
-        logo_url: user.logo_url,
-        product_count: Array.isArray(user.products) ? user.products.length : 0,
-        joined_date: user.created_at,
-      }))
-      .filter((store: any) => store.product_count > 0);
+    const activeStores = filterVisibleMarketplaceStores(
+      (fallbackData || [])
+        .map((user: any) => ({
+          id: user.user_id,
+          store_name: user.business_name?.trim() || 'Bike Store',
+          store_type: user.store_type?.trim() || 'Retail',
+          logo_url: user.logo_url,
+          product_count: Array.isArray(user.products) ? user.products.length : 0,
+          joined_date: user.created_at,
+        }))
+        .filter((store: any) => store.product_count > 0),
+    );
 
     const queryTime = performance.now() - startTime;
     console.log(`⚡ [STORES] Fetched ${activeStores.length} stores in ${queryTime.toFixed(0)}ms (JOIN fallback)`);

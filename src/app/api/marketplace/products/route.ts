@@ -11,6 +11,10 @@ import {
   transformPublicMarketplaceCard,
   type PublicMarketplaceCardRow,
 } from '@/lib/marketplace/public-card-feed';
+import {
+  filterVisibleMarketplaceStoreProducts,
+  isHiddenMarketplaceStoreUserId,
+} from '@/lib/marketplace/hidden-stores';
 
 // ============================================================
 // Marketplace Products API - Public Endpoint
@@ -194,7 +198,9 @@ async function tryGetProductsFromPublicCards(
 
     const hasMore = rows.length > pageSize;
     const pageRows = rows.slice(0, pageSize);
-    const products = pageRows.map(transformPublicMarketplaceCard);
+    const products = filterVisibleMarketplaceStoreProducts(
+      pageRows.map(transformPublicMarketplaceCard),
+    );
     const last = products[products.length - 1];
 
     const hasOnlySpaceFilters =
@@ -279,6 +285,20 @@ export async function GET(request: NextRequest) {
     const page = parsePositiveInt(searchParams.get('page'), 1, 10_000);
     const pageSize = parsePositiveInt(searchParams.get('pageSize'), 24, 60);
     const storeId = searchParams.get('storeId');
+
+    if (storeId && isHiddenMarketplaceStoreUserId(storeId)) {
+      return NextResponse.json({
+        products: [],
+        pagination: {
+          page,
+          pageSize,
+          total: 0,
+          totalPages: 0,
+          hasMore: false,
+        },
+        success: true,
+      });
+    }
 
     const publicCardResponse = await tryGetProductsFromPublicCards(request, startTime);
     if (publicCardResponse) return publicCardResponse;
@@ -397,7 +417,9 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      const storeUserIds = (storeUsers ?? []).map((u: { user_id: string }) => u.user_id);
+      const storeUserIds = (storeUsers ?? [])
+        .map((u: { user_id: string }) => u.user_id)
+        .filter((userId) => !isHiddenMarketplaceStoreUserId(userId));
       if (storeUserIds.length === 0) {
         return NextResponse.json({
           products: [],
@@ -556,7 +578,8 @@ export async function GET(request: NextRequest) {
     const hasMore = page < totalPages;
 
     // Transform data to marketplace product format
-    const products: MarketplaceProduct[] = uniqueData.map((product: any) => {
+    const products: MarketplaceProduct[] = filterVisibleMarketplaceStoreProducts(
+      uniqueData.map((product: any) => {
       const user = usersById.get(product.user_id);
 
       // Normalise hero PIDs to the current HERO_NORMALIZE_TRANSFORM so every
@@ -619,7 +642,8 @@ export async function GET(request: NextRequest) {
         condition_rating: product.condition_rating || null,
         pickup_location: product.pickup_location || null,
       } as MarketplaceProduct;
-    });
+    }),
+    );
 
     console.log(`⚡ [READY PRODUCTS] Returned ${products.length} products with resolved images`);
 

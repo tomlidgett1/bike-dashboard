@@ -23,8 +23,9 @@ export interface DayHours {
 
 export type CarouselSize = 'featured' | 'normal' | 'compact';
 export type StoreCarouselPage = 'products' | 'bikes';
-export type StoreCategorySource = 'lightspeed' | 'custom' | 'brand' | 'uber' | 'display_override';
-export type EditableStoreCategorySource = Exclude<StoreCategorySource, 'display_override'>;
+export type StoreCategorySource = 'lightspeed' | 'custom' | 'brand' | 'uber' | 'specials' | 'display_override';
+/** Sources a store owner can create directly. `specials` is managed by the specials engine; `display_override` is internal. */
+export type EditableStoreCategorySource = Exclude<StoreCategorySource, 'display_override' | 'specials'>;
 
 export interface StoreCategory {
   id: string;
@@ -43,6 +44,8 @@ export interface StoreCategory {
   carousel_size?: CarouselSize;
   logo_url?: string | null;
   hide_title?: boolean;
+  /** Optional tagline shown under the carousel title on the storefront. */
+  subtitle?: string | null;
   section_id?: string | null;
   store_page?: StoreCarouselPage;
   created_at?: string;
@@ -312,6 +315,7 @@ export interface StoreCategoryWithProducts {
   section_id?: string | null;
   logo_url?: string | null;
   hide_title?: boolean;
+  subtitle?: string | null;
   store_page?: StoreCarouselPage;
 }
 

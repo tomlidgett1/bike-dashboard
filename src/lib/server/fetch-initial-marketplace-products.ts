@@ -10,6 +10,7 @@ import {
   transformPublicMarketplaceCard,
   type PublicMarketplaceCardRow,
 } from '@/lib/marketplace/public-card-feed'
+import { filterVisibleMarketplaceStoreProducts } from '@/lib/marketplace/hidden-stores'
 
 // Uses the plain (cookie-free) Supabase client so this fetch is compatible
 // with ISR / static caching — no dynamic functions like cookies() are called.
@@ -124,7 +125,9 @@ export async function fetchInitialStoresProducts(): Promise<InitialMarketplaceDa
 
     if (!cardError && cardRows) {
       const rows = (cardRows as PublicMarketplaceCardRow[]).slice(0, MARKETPLACE_INITIAL_PAGE_SIZE)
-      const products = rows.map(transformPublicMarketplaceCard)
+      const products = filterVisibleMarketplaceStoreProducts(
+        rows.map(transformPublicMarketplaceCard),
+      )
       const { data: countData } = await supabase
         .from('public_marketplace_space_counts')
         .select('total')
@@ -177,7 +180,8 @@ export async function fetchInitialStoresProducts(): Promise<InitialMarketplaceDa
     const users = (usersData ?? []) as InitialMarketplaceUserRow[]
     const usersById = new Map(users.map((u) => [u.user_id, u]))
 
-    const products: MarketplaceProduct[] = rows.map((product) => {
+    const products = filterVisibleMarketplaceStoreProducts(
+      rows.map((product) => {
       const user = product.user_id ? usersById.get(product.user_id) : null
       const effectivePublicId = toCurrentHeroPublicId(
         product.resolved_cloudinary_public_id,
@@ -232,7 +236,8 @@ export async function fetchInitialStoresProducts(): Promise<InitialMarketplaceDa
         condition_rating: product.condition_rating ?? null,
         pickup_location: product.pickup_location ?? null,
       } as MarketplaceProduct
-    })
+    }),
+    )
 
     const total = count ?? 0
     return {

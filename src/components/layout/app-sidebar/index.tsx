@@ -50,6 +50,7 @@ import { SidebarViewStoreLink } from "./sidebar-view-store-link";
 import { SidebarCollapseTrigger } from "./sidebar-collapse-trigger";
 import { cn } from "@/lib/utils";
 import { useCustomerInquiriesNeedsActionCount } from "@/lib/hooks/use-customer-inquiries-needs-action-count";
+import { useStoreOpenActionsCount } from "@/lib/hooks/use-store-open-actions-count";
 
 const COMPRESSED_NAV_BUTTON =
   "data-active:bg-white data-active:shadow-sm";
@@ -79,6 +80,7 @@ const NAV: NavGroup[] = [
         items: [
           { title: "Landing page", href: "/settings/store/landing" },
           { title: "Carousels", href: "/settings/store/carousels" },
+          { title: "Specials", href: "/settings/store/specials" },
           { title: "Brands", href: "/settings/store/brands" },
           { title: "Services", href: "/settings/store/services" },
           { title: "Rentals", href: "/settings/store/rentals" },
@@ -263,6 +265,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname() ?? "/products";
   const router = useRouter();
   const { badge: customerInquiriesBadge } = useCustomerInquiriesNeedsActionCount();
+  const { badge: openActionsBadge } = useStoreOpenActionsCount();
 
   const prefetch = React.useCallback(
     (href: string) => {
@@ -273,10 +276,15 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
   const enrichNavItem = React.useCallback(
     (item: NavItem): NavItem => {
-      if (item.href !== "/settings/store/customer-inquiries") return item;
-      return { ...item, badge: customerInquiriesBadge ?? item.badge };
+      if (item.href === "/settings/store/customer-inquiries") {
+        return { ...item, badge: customerInquiriesBadge ?? item.badge };
+      }
+      if (item.href === "/settings/store/actions") {
+        return { ...item, badge: openActionsBadge ?? item.badge };
+      }
+      return item;
     },
-    [customerInquiriesBadge],
+    [customerInquiriesBadge, openActionsBadge],
   );
 
   return (

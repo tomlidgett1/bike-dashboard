@@ -11,7 +11,11 @@ import {
   useReducedMotion,
   useMotionValueEvent,
 } from "framer-motion";
-import { ArrowRight, ArrowUpRight, Download } from "lucide-react";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Download,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BlurFade } from "@/registry/magicui/blur-fade";
 import { NoiseTexture } from "@/components/ui/noise-texture";
@@ -225,6 +229,19 @@ function MinorBento({
   );
 }
 
+function AgentSearchVisual() {
+  return (
+    <Image
+      src="/chat.png"
+      alt="ChatGPT recommending Yellow Jersey bike listings"
+      width={1672}
+      height={941}
+      unoptimized
+      className="h-auto w-full"
+    />
+  );
+}
+
 export function Home2Client() {
   const reduced = useReducedMotion() ?? false;
   const { scrollYProgress, scrollY } = useScroll();
@@ -271,7 +288,7 @@ export function Home2Client() {
         <section className="mx-auto max-w-[1340px] px-5 pb-12 pt-8 sm:px-6 sm:pb-16 sm:pt-10">
           <Reveal>
             <h1 className="max-w-4xl text-[2.6rem] font-medium leading-[1.06] tracking-tight text-zinc-950 sm:text-[3.4rem] lg:text-[3.75rem]">
-              Yellow Jersey is the connected commerce platform for independent bike shops.
+              Yellow Jersey is the AI-powered platform for independent bike shops.
             </h1>
           </Reveal>
           <Reveal delay={0.05}>
@@ -351,10 +368,32 @@ export function Home2Client() {
             </Card>
           </Reveal>
 
-          {/* Value bento 3 — Nest AI concierge */}
+          {/* Value bento 3 — Get found in AI search */}
           <Reveal delay={0.05}>
             <Card surface="light-beige" className="grid items-center gap-8 lg:grid-cols-[minmax(0,360px)_1fr] lg:gap-10">
               <div className="max-w-[360px]">
+                <h3 className="text-2xl font-medium tracking-tight text-zinc-950 sm:text-[1.9rem]">
+                  Get found when shoppers ask AI.
+                </h3>
+                <p className="mt-3 text-[15px] leading-relaxed text-zinc-500">
+                  More customers start with ChatGPT and Google AI. Yellow Jersey keeps your live stock,
+                  prices and opening hours ready for AI to recommend — so buyers get sent to your shop.
+                </p>
+                <LearnLink href="/login">Learn about AI search</LearnLink>
+              </div>
+              <div className="min-w-0">
+                <AgentSearchVisual />
+              </div>
+            </Card>
+          </Reveal>
+
+          {/* Value bento 4 — Nest AI concierge */}
+          <Reveal delay={0.05}>
+            <Card surface="light-beige" className="grid items-center gap-8 lg:grid-cols-[1fr_minmax(0,360px)] lg:gap-10">
+              <div className="min-w-0 order-2 lg:order-1">
+                <NestBentoVisual />
+              </div>
+              <div className="order-1 max-w-[360px] lg:order-2 lg:ml-auto">
                 <h3 className="text-2xl font-medium tracking-tight text-zinc-950 sm:text-[1.9rem]">
                   An AI concierge for every customer.
                 </h3>
@@ -363,9 +402,6 @@ export function Home2Client() {
                   Pickups, service reminders and product questions, handled in one inbox.
                 </p>
                 <LearnLink href="/login">Learn about Nest</LearnLink>
-              </div>
-              <div className="min-w-0">
-                <NestBentoVisual />
               </div>
             </Card>
           </Reveal>

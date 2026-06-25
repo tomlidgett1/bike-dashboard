@@ -136,6 +136,7 @@ type StoreProductCategory = StoreCategoryWithProducts & {
   section_id?: string | null;
   logo_url?: string | null;
   hide_title?: boolean;
+  subtitle?: string | null;
 };
 
 interface StoreProfileViewProps {
@@ -497,7 +498,16 @@ function CarouselRow({
   onCategoryRename,
   edgeBleed = true,
 }: {
-  cat: { id: string; name: string; products: MarketplaceProduct[]; carousel_size?: string; logo_url?: string | null; hide_title?: boolean; source?: string | null };
+  cat: {
+    id: string;
+    name: string;
+    products: MarketplaceProduct[];
+    carousel_size?: string;
+    logo_url?: string | null;
+    hide_title?: boolean;
+    subtitle?: string | null;
+    source?: string | null;
+  };
   rowIndex: number;
   expandedCategories: Set<string>;
   setExpandedCategories: React.Dispatch<React.SetStateAction<Set<string>>>;
@@ -654,7 +664,7 @@ function CarouselRow({
       data-store-analytics-label={cat.name}
     >
       <div className={cn("mb-1 flex items-center justify-between gap-2", !edgeBleed && "px-4 sm:px-4 lg:px-4 xl:px-5")}>
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           {logoUrl ? (
             <div className="group relative h-8 flex-shrink-0 inline-flex items-center">
               <img src={logoUrl} alt={cat.name} className="h-full w-auto max-w-[96px] object-contain rounded-sm" />
@@ -691,12 +701,19 @@ function CarouselRow({
             />
           )}
           {!cat.hide_title && (
-            <CarouselEditableTitle
-              name={cat.name}
-              categoryId={cat.id}
-              canEdit={isOwnProfile}
-              onRename={onCategoryRename}
-            />
+            <div className="min-w-0">
+              <CarouselEditableTitle
+                name={cat.name}
+                categoryId={cat.id}
+                canEdit={isOwnProfile}
+                onRename={onCategoryRename}
+              />
+              {cat.subtitle ? (
+                <p className="m-0 mt-0.5 truncate text-sm leading-snug text-gray-500">
+                  {cat.subtitle}
+                </p>
+              ) : null}
+            </div>
           )}
         </div>
         {isExpanded ? (

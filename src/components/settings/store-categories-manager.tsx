@@ -110,6 +110,12 @@ function CarouselCardMetadata({ category }: { category: StoreCategory }) {
     return <p className="mt-0.5 text-xs text-gray-500">{countLabel} · Uber delivery</p>;
   }
 
+  if (category.source === "specials") {
+    return (
+      <p className="mt-0.5 text-xs text-gray-500">{countLabel} · Specials · Auto-rotating</p>
+    );
+  }
+
   if (category.source === "lightspeed") {
     const originalName =
       category.lightspeed_category_name &&
@@ -228,6 +234,9 @@ function carouselProductsSubtitle(category: StoreCategory): string | null {
   }
   if (category.source === "uber") {
     return "Synced automatically from Uber-enabled products in stock";
+  }
+  if (category.source === "specials") {
+    return "Curated automatically — manage products on the Specials page";
   }
   return null;
 }
