@@ -43,6 +43,8 @@ export interface StoreCategory {
   is_active: boolean;
   carousel_size?: CarouselSize;
   logo_url?: string | null;
+  /** Max rendered logo width in px on the storefront carousel header. */
+  logo_max_width?: number | null;
   hide_title?: boolean;
   /** Optional tagline shown under the carousel title on the storefront. */
   subtitle?: string | null;
@@ -314,6 +316,7 @@ export interface StoreCategoryWithProducts {
   carousel_size?: CarouselSize;
   section_id?: string | null;
   logo_url?: string | null;
+  logo_max_width?: number | null;
   hide_title?: boolean;
   subtitle?: string | null;
   store_page?: StoreCarouselPage;
@@ -365,6 +368,7 @@ export interface UpdateCategoryRequest {
   carousel_size?: CarouselSize;
   section_id?: string | null;
   logo_url?: string | null;
+  logo_max_width?: number | null;
   hide_title?: boolean;
   store_page?: StoreCarouselPage;
 }

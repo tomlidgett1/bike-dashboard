@@ -322,12 +322,12 @@ export const StoreProductCard = React.memo<StoreProductCardProps>(function Store
               inCarousel ? "mt-1 pt-1" : "mt-auto pt-2.5 sm:pt-3",
             )}
           >
-            <div className="flex items-center justify-between gap-1.5">
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
               <div className="flex min-w-0 items-baseline gap-1">
                 <span
                   className={cn(
                     "shrink-0 font-bold text-gray-900",
-                    inCarousel ? "text-xs" : "text-base sm:text-xl",
+                    inCarousel ? "text-xs" : "text-sm sm:text-base lg:text-lg",
                   )}
                 >
                   {formatPriceAUDFull(live.price)}
@@ -346,10 +346,10 @@ export const StoreProductCard = React.memo<StoreProductCardProps>(function Store
               {isUberDeliveryEligible && (
                 <span
                   className={cn(
-                    "inline-flex shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white font-medium text-gray-700",
+                    "inline-flex shrink-0 items-center rounded-full border border-gray-200 bg-white font-medium text-gray-700",
                     inCarousel
-                      ? "px-1.5 py-0.5 text-[9px]"
-                      : "gap-1.5 px-2 py-1 text-[10px] sm:px-2.5 sm:text-[11px]",
+                      ? "gap-1 px-1.5 py-0.5 text-[9px]"
+                      : "gap-1 px-1.5 py-0.5 text-[10px] sm:px-1 sm:py-0.5",
                   )}
                 >
                   <Image
@@ -360,7 +360,7 @@ export const StoreProductCard = React.memo<StoreProductCardProps>(function Store
                     unoptimized
                     className={cn(
                       "w-auto object-contain",
-                      inCarousel ? "h-2.5" : "h-3 sm:h-3.5",
+                      inCarousel ? "h-2.5" : "h-2.5 sm:h-3",
                     )}
                   />
                   <span className="sm:hidden">

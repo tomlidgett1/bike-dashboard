@@ -264,6 +264,20 @@ export async function PUT(request: NextRequest) {
     if (body.carousel_size !== undefined) updateData.carousel_size = body.carousel_size;
     if ('section_id' in body) updateData.section_id = body.section_id ?? null;
     if ('logo_url' in body) updateData.logo_url = body.logo_url ?? null;
+    if ('logo_max_width' in body) {
+      if (body.logo_max_width == null) {
+        updateData.logo_max_width = null;
+      } else {
+        const width = Number(body.logo_max_width);
+        if (!Number.isFinite(width) || width <= 0) {
+          return NextResponse.json(
+            { error: 'logo_max_width must be a positive number' },
+            { status: 400 },
+          );
+        }
+        updateData.logo_max_width = Math.round(width);
+      }
+    }
     if ('hide_title' in body) updateData.hide_title = !!body.hide_title;
     if (body.store_page !== undefined) {
       updateData.store_page = body.store_page === 'bikes' ? 'bikes' : 'products';

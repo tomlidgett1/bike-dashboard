@@ -24,6 +24,9 @@ import {
   Eye,
   EyeOff,
 } from '@/components/layout/app-sidebar/dashboard-icons';
+import {
+  CarouselCategoryLogo,
+} from "@/components/marketplace/store-profile/carousel-category-logo";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,6 +49,8 @@ import {
   type StoreTab,
 } from "@/components/marketplace/store-profile/store-profile-chrome";
 import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
+import { AtelierStorefront } from "@/components/marketplace/store-profile/atelier/atelier-storefront";
+import { useStoreDesign } from "@/components/marketplace/store-profile/atelier/use-store-design";
 import type { StoreCategoryWithProducts, StoreProfile, OpeningHours, StoreSectionWithCategories } from "@/lib/types/store";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { resolveLivePrice, sortProductsSaleFirst } from "@/lib/marketplace/pricing";
@@ -496,6 +501,7 @@ function CarouselRow({
   onBackgroundRemove,
   backgroundRemovingIds,
   onCategoryRename,
+  onCategoryLogoResize,
   edgeBleed = true,
 }: {
   cat: {
@@ -504,6 +510,7 @@ function CarouselRow({
     products: MarketplaceProduct[];
     carousel_size?: string;
     logo_url?: string | null;
+    logo_max_width?: number | null;
     hide_title?: boolean;
     subtitle?: string | null;
     source?: string | null;
@@ -519,11 +526,21 @@ function CarouselRow({
   onBackgroundRemove?: (product: MarketplaceProduct) => void;
   backgroundRemovingIds?: Set<string>;
   onCategoryRename?: (categoryId: string, name: string) => Promise<boolean>;
+  onCategoryLogoResize?: (categoryId: string, logoMaxWidth: number) => Promise<boolean>;
   edgeBleed?: boolean;
 }) {
   const [logoUrl, setLogoUrl] = React.useState<string | null>(cat.logo_url ?? null);
+  const [logoMaxWidth, setLogoMaxWidth] = React.useState<number | null>(
+    cat.logo_max_width ?? null,
+  );
   const [uploading, setUploading] = React.useState(false);
+  const [savingLogoSize, setSavingLogoSize] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    setLogoUrl(cat.logo_url ?? null);
+    setLogoMaxWidth(cat.logo_max_width ?? null);
+  }, [cat.logo_url, cat.logo_max_width]);
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -550,6 +567,26 @@ function CarouselRow({
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleLogoMaxWidthChange = async (width: number) => {
+    if (!storeId) return;
+    setSavingLogoSize(true);
+    try {
+      const response = await fetch(`/api/marketplace/store/${storeId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ categoryId: cat.id, logo_max_width: width }),
+      });
+      if (!response.ok) throw new Error("Failed to save logo size");
+      setLogoMaxWidth(width);
+      await onCategoryLogoResize?.(cat.id, width);
+    } catch (err) {
+      console.error("Category logo resize failed:", err);
+      setLogoMaxWidth(cat.logo_max_width ?? null);
+    } finally {
+      setSavingLogoSize(false);
     }
   };
 
@@ -666,19 +703,16 @@ function CarouselRow({
       <div className={cn("mb-1 flex items-center justify-between gap-2", !edgeBleed && "px-4 sm:px-4 lg:px-4 xl:px-5")}>
         <div className="flex min-w-0 items-center gap-3">
           {logoUrl ? (
-            <div className="group relative h-8 flex-shrink-0 inline-flex items-center">
-              <img src={logoUrl} alt={cat.name} className="h-full w-auto max-w-[96px] object-contain rounded-sm" />
-              {isOwnProfile && (
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="absolute inset-0 flex items-center justify-center bg-white/70 opacity-0 group-hover:opacity-100 transition-opacity rounded cursor-pointer"
-                  title="Change logo"
-                >
-                  {uploading ? <SpinnerIcon className="h-3.5 w-3.5 animate-spin text-gray-600" /> : <ImagePlus className="h-3.5 w-3.5 text-gray-600" />}
-                </button>
-              )}
-            </div>
+            <CarouselCategoryLogo
+              alt={cat.name}
+              logoUrl={logoUrl}
+              logoMaxWidth={logoMaxWidth}
+              isEditable={isOwnProfile}
+              uploading={uploading}
+              savingSize={savingLogoSize}
+              onUploadClick={() => fileInputRef.current?.click()}
+              onLogoMaxWidthChange={handleLogoMaxWidthChange}
+            />
           ) : isOwnProfile ? (
             <button
               type="button"
@@ -866,6 +900,7 @@ function ProductsTab({
   onBackgroundRemove,
   backgroundRemovingIds,
   onCategoryRename,
+  onCategoryLogoResize,
 }: {
   sortedCategories: StoreProductCategory[];
   sections: StoreSectionWithCategories[];
@@ -880,6 +915,7 @@ function ProductsTab({
   onBackgroundRemove?: (product: MarketplaceProduct) => void;
   backgroundRemovingIds?: Set<string>;
   onCategoryRename?: (categoryId: string, name: string) => Promise<boolean>;
+  onCategoryLogoResize?: (categoryId: string, logoMaxWidth: number) => Promise<boolean>;
 }) {
   const productsByCatId = new Map(sortedCategories.map((c) => [c.id, c.products]));
 
@@ -929,7 +965,7 @@ function ProductsTab({
           return (
             <CarouselRow
               key={cat.id}
-              cat={{ ...cat, logo_url: cat.logo_url ?? null }}
+              cat={{ ...cat, logo_url: cat.logo_url ?? null, logo_max_width: cat.logo_max_width ?? null }}
               rowIndex={r}
               expandedCategories={expandedCategories}
               setExpandedCategories={setExpandedCategories}
@@ -942,6 +978,7 @@ function ProductsTab({
               onBackgroundRemove={onBackgroundRemove}
               backgroundRemovingIds={backgroundRemovingIds}
               onCategoryRename={onCategoryRename}
+              onCategoryLogoResize={onCategoryLogoResize}
             />
           );
         })}
@@ -955,7 +992,7 @@ function ProductsTab({
     return (
       <CarouselRow
         key={cat.id}
-        cat={cat}
+        cat={{ ...cat, logo_url: cat.logo_url ?? null, logo_max_width: cat.logo_max_width ?? null }}
         rowIndex={r}
         expandedCategories={expandedCategories}
         setExpandedCategories={setExpandedCategories}
@@ -967,6 +1004,7 @@ function ProductsTab({
         onBackgroundRemove={onBackgroundRemove}
         backgroundRemovingIds={backgroundRemovingIds}
         onCategoryRename={onCategoryRename}
+        onCategoryLogoResize={onCategoryLogoResize}
       />
     );
   };
@@ -1015,6 +1053,61 @@ function ProductsTab({
   );
 }
 
+function patchStoreCategoryFields(
+  store: StoreProfile,
+  categoryId: string,
+  patch: Partial<StoreCategoryWithProducts>,
+): StoreProfile {
+  const patchInList = (categories: StoreCategoryWithProducts[]) =>
+    categories.map((category) =>
+      category.id === categoryId ? { ...category, ...patch } : category,
+    );
+
+  return {
+    ...store,
+    categories: patchInList(store.categories),
+    sections: store.sections.map((section) => ({
+      ...section,
+      categories: patchInList(section.categories),
+    })),
+  };
+}
+
+function mergeStoreCategoryDisplayMeta(
+  previous: StoreProfile,
+  incoming: StoreProfile,
+): StoreProfile {
+  const previousById = new Map<string, StoreCategoryWithProducts>();
+  for (const category of previous.categories) {
+    previousById.set(category.id, category);
+  }
+  for (const section of previous.sections) {
+    for (const category of section.categories) {
+      previousById.set(category.id, category);
+    }
+  }
+
+  const mergeList = (categories: StoreCategoryWithProducts[]) =>
+    categories.map((category) => {
+      const prior = previousById.get(category.id);
+      if (!prior) return category;
+      return {
+        ...category,
+        logo_url: category.logo_url ?? prior.logo_url ?? null,
+        logo_max_width: category.logo_max_width ?? prior.logo_max_width ?? null,
+      };
+    });
+
+  return {
+    ...incoming,
+    categories: mergeList(incoming.categories),
+    sections: incoming.sections.map((section) => ({
+      ...section,
+      categories: mergeList(section.categories),
+    })),
+  };
+}
+
 export function StoreProfileView({ store: initialStore, isOwnProfile, immersive }: StoreProfileViewProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1040,6 +1133,10 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
   const analyticsRootRef = React.useRef<HTMLDivElement | null>(null);
   const shouldTrackStoreAnalytics = !isOwnProfile;
   const analyticsContext = React.useMemo(() => ({ tab: activeTab }), [activeTab]);
+
+  // Storefront design toggle — a store/visitor can switch the entire look.
+  // Persisted per-store in localStorage so the choice sticks across visits.
+  const { design, setDesign } = useStoreDesign(store.id);
 
   useStorePageView(shouldTrackStoreAnalytics ? store.id : null);
   useStoreTabTracking(shouldTrackStoreAnalytics ? store.id : null, activeTab, shouldTrackStoreAnalytics);
@@ -1080,7 +1177,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
         })
         .then((data) => {
           if (!cancelled && data.store) {
-            setStore(data.store);
+            setStore((prev) => mergeStoreCategoryDisplayMeta(prev, data.store));
           }
         })
         .catch((error) => {
@@ -1171,6 +1268,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
         ...cat,
         products: applyStoreProductFilters(cat.products, filterOptions),
         logo_url: cat.logo_url ?? null,
+        logo_max_width: cat.logo_max_width ?? null,
       }));
     },
     [selectedCategory, store.categories, filterOptions],
@@ -1394,6 +1492,16 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
     [store.categories],
   );
 
+  const handleCategoryLogoResize = React.useCallback(
+    async (categoryId: string, logoMaxWidth: number): Promise<boolean> => {
+      setStore((prev) =>
+        patchStoreCategoryFields(prev, categoryId, { logo_max_width: logoMaxWidth }),
+      );
+      return true;
+    },
+    [],
+  );
+
   const patchStoreProduct = React.useCallback(
     (productId: string, patch: Partial<MarketplaceProduct>) => {
       const patchCategories = (categories: StoreCategoryWithProducts[]) =>
@@ -1452,6 +1560,12 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
 
   const actionButtons = (
     <>
+      <HeroAction
+        icon={LayoutGrid}
+        label="Studio"
+        onClick={() => setDesign("atelier")}
+        title="Switch to the Studio storefront design"
+      />
       {isOwnProfile && !previewMode && (
         <HeroAction
           icon={Settings}
@@ -1474,6 +1588,24 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
   const storeContentShell = immersive
     ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12"
     : STORE_PAGE_CONTENT_SHELL;
+
+  // ── Alternative storefront design ──────────────────────────
+  // When a store/visitor picks the Atelier design from the header tab,
+  // render the entire alternative storefront instead of the classic chrome.
+  // `hydrated` guards against SSR/CSR markup mismatch on first paint.
+  if (design === "atelier") {
+    return (
+      <AtelierStorefront
+        store={store}
+        isOwnProfile={isOwnProfile}
+        onSwitchDesign={() => setDesign("classic")}
+        activeTab={activeTab}
+        onTabSelect={setActiveTab}
+        hoursOpen={hoursOpen}
+        onHoursOpenChange={setHoursOpen}
+      />
+    );
+  }
 
   return (
     <div ref={analyticsRootRef} className={cn("min-h-screen overflow-x-hidden bg-gray-50", immersive && "pt-14")}>
@@ -1698,6 +1830,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                     onBackgroundRemove={viewAsOwner ? handleBackgroundRemove : undefined}
                     backgroundRemovingIds={backgroundRemovingIds}
                     onCategoryRename={viewAsOwner ? handleCategoryRename : undefined}
+                    onCategoryLogoResize={viewAsOwner ? handleCategoryLogoResize : undefined}
                   />
                 )
               ) : (
@@ -1864,12 +1997,14 @@ function HeroAction({
   onClick,
   href,
   active,
+  title,
 }: {
   icon: typeof Package;
   label: string;
   onClick?: () => void;
   href?: string;
   active?: boolean;
+  title?: string;
 }) {
   const cls = cn(
     "inline-flex items-center gap-1.5 rounded-md px-2.5 h-8 text-sm font-medium cursor-pointer transition-colors",
@@ -1879,14 +2014,14 @@ function HeroAction({
   );
   if (href) {
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>
+      <a href={href} target="_blank" rel="noopener noreferrer" className={cls} title={title}>
         <Icon className="h-3.5 w-3.5" />
         {label}
       </a>
     );
   }
   return (
-    <button type="button" onClick={onClick} className={cls}>
+    <button type="button" onClick={onClick} className={cls} title={title}>
       <Icon className={cn("h-3.5 w-3.5", active && "fill-current")} />
       {label}
     </button>

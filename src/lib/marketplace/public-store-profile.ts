@@ -196,7 +196,7 @@ export async function fetchPublicStoreProfile(
     productsQuery.limit(10000),
     supabase
       .from('store_categories')
-      .select('id, name, source, lightspeed_category_id, brand_name, product_ids, display_order, carousel_size, section_id, logo_url, hide_title, subtitle, store_page')
+      .select('id, name, source, lightspeed_category_id, brand_name, product_ids, display_order, carousel_size, section_id, logo_url, logo_max_width, hide_title, subtitle, store_page')
       .eq('user_id', storeId)
       .eq('is_active', true)
       .neq('source', 'display_override')
@@ -221,7 +221,7 @@ export async function fetchPublicStoreProfile(
     )
     const fallback = await supabase
       .from('store_categories')
-      .select('id, name, source, lightspeed_category_id, brand_name, product_ids, display_order, carousel_size, logo_url, hide_title')
+      .select('id, name, source, lightspeed_category_id, brand_name, product_ids, display_order, carousel_size, logo_url, logo_max_width, hide_title')
       .eq('user_id', storeId)
       .eq('is_active', true)
       .neq('source', 'display_override')
@@ -405,6 +405,7 @@ export async function fetchPublicStoreProfile(
           carousel_size: category.carousel_size ?? 'normal',
           section_id: category.section_id ?? null,
           logo_url: category.logo_url ?? null,
+          logo_max_width: category.logo_max_width ?? null,
           hide_title: category.hide_title ?? false,
           subtitle: category.subtitle ?? null,
           store_page: category.store_page === 'bikes' ? 'bikes' : 'products',
@@ -522,18 +523,20 @@ export async function fetchPublicStoreProfile(
   }
 }
 
+export const PUBLIC_STORE_PROFILE_CACHE_TAG = 'public-store-profile'
+
 export const fetchCachedPublicStoreProfile = unstable_cache(
   async (storeId: string, searchQuery: string | null = null) =>
     fetchPublicStoreProfile(storeId, { searchQuery }),
-  ['public-store-profile-v1'],
-  { revalidate: 60 },
+  ['public-store-profile-v2'],
+  { revalidate: 60, tags: [PUBLIC_STORE_PROFILE_CACHE_TAG] },
 )
 
 export const fetchCachedPublicStoreHomepageProfile = unstable_cache(
   async (storeId: string) =>
     fetchPublicStoreProfile(storeId, { homeContentOnly: true }),
-  ['public-store-homepage-profile-v2'],
-  { revalidate: 60 },
+  ['public-store-homepage-profile-v3'],
+  { revalidate: 60, tags: [PUBLIC_STORE_PROFILE_CACHE_TAG] },
 )
 
 const STORE_UUID_RE =

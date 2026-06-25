@@ -15,6 +15,7 @@ import {
   ZoomIn,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { SpeedSearchCandidate } from "@/lib/admin/image-qa-speed";
 import {
@@ -39,6 +40,10 @@ export function OptimizerImageReview({
   hideApproveAction = false,
   hideToolbar = false,
   size = "default",
+  serperQuery,
+  onSerperQueryChange,
+  onCustomSearch,
+  searchDisabled = false,
 }: {
   img: ImageRun;
   hasCanonical: boolean;
@@ -55,6 +60,10 @@ export function OptimizerImageReview({
   hideApproveAction?: boolean;
   hideToolbar?: boolean;
   size?: "default" | "large" | "compact";
+  serperQuery?: string;
+  onSerperQueryChange?: (query: string) => void;
+  onCustomSearch?: () => void;
+  searchDisabled?: boolean;
 }) {
   const editable = img.phase === "ready";
   const done = img.phase === "done";
@@ -85,9 +94,27 @@ export function OptimizerImageReview({
 
   if (img.phase === "no_results" || img.phase === "error") {
     return (
-      <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-        {img.error || "Image step failed"}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          {img.error || "Image step failed"}
+        </div>
+        {!hideToolbar && onCustomSearch && onSerperQueryChange ? (
+          <OptimizerPhotoToolbar
+            img={img}
+            hasCanonical={hasCanonical}
+            saving={saving}
+            hideApproveAction
+            showMoreImages={false}
+            serperQuery={serperQuery ?? ""}
+            onSerperQueryChange={onSerperQueryChange}
+            onCustomSearch={onCustomSearch}
+            onToggleAdditional={onToggleAdditional}
+            onRerunSearch={onRerunSearch}
+            onApprove={onApprove}
+            searchDisabled={searchDisabled}
+          />
+        ) : null}
       </div>
     );
   }
@@ -152,6 +179,10 @@ export function OptimizerImageReview({
               onToggleAdditional={onToggleAdditional}
               onRerunSearch={onRerunSearch}
               onApprove={onApprove}
+              serperQuery={serperQuery}
+              onSerperQueryChange={onSerperQueryChange}
+              onCustomSearch={onCustomSearch}
+              searchDisabled={searchDisabled}
             />
           ) : null}
         </div>
@@ -373,35 +404,99 @@ export function OptimizerImageReview({
   );
 }
 
+export function OptimizerSerperQueryField({
+  value,
+  onChange,
+  onSearch,
+  disabled = false,
+  className,
+}: {
+  value: string;
+  onChange: (query: string) => void;
+  onSearch: () => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex min-w-0 max-w-full items-center gap-1 sm:max-w-xs", className)}>
+      <Input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !disabled && value.trim()) {
+            event.preventDefault();
+            onSearch();
+          }
+        }}
+        placeholder="Serper image search"
+        disabled={disabled}
+        className="h-8 min-w-0 flex-1 rounded-md text-xs"
+      />
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={disabled || !value.trim()}
+        onClick={onSearch}
+        title="Search with custom query"
+      >
+        <Search className="size-4" />
+      </Button>
+    </div>
+  );
+}
+
 export function OptimizerPhotoToolbar({
   img,
   hasCanonical,
   saving,
   hideApproveAction = false,
+  showMoreImages = true,
   onToggleAdditional,
   onRerunSearch,
   onApprove,
   className,
+  serperQuery,
+  onSerperQueryChange,
+  onCustomSearch,
+  searchDisabled = false,
 }: {
   img: ImageRun;
   hasCanonical: boolean;
   saving: boolean;
   hideApproveAction?: boolean;
+  showMoreImages?: boolean;
   onToggleAdditional: () => void;
   onRerunSearch?: () => void;
   onApprove: () => void;
   className?: string;
+  serperQuery?: string;
+  onSerperQueryChange?: (query: string) => void;
+  onCustomSearch?: () => void;
+  searchDisabled?: boolean;
 }) {
+  const showSerperQuery = Boolean(onCustomSearch && onSerperQueryChange);
+
   return (
     <div className={cn("flex flex-wrap items-center justify-end gap-1.5", className)}>
-      <Button type="button" size="sm" variant="outline" disabled={img.reloading} onClick={onToggleAdditional}>
-        {img.reloading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-        {img.showAdditional ? "Hide more" : "More images"}
-      </Button>
+      {showSerperQuery ? (
+        <OptimizerSerperQueryField
+          value={serperQuery ?? ""}
+          onChange={onSerperQueryChange!}
+          onSearch={onCustomSearch!}
+          disabled={searchDisabled || img.reloading}
+        />
+      ) : null}
+      {showMoreImages ? (
+        <Button type="button" size="sm" variant="outline" disabled={img.reloading} onClick={onToggleAdditional}>
+          {img.reloading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+          {img.showAdditional ? "Hide more" : "More images"}
+        </Button>
+      ) : null}
       {!hideApproveAction ? (
         <>
           {onRerunSearch ? (
-            <Button type="button" size="sm" onClick={onRerunSearch}>
+            <Button type="button" size="sm" disabled={searchDisabled} onClick={onRerunSearch}>
               <Search className="size-4" />
               Rerun search
             </Button>

@@ -15,6 +15,7 @@ import {
   Help,
   HomeSmile,
   Letter,
+  Gallery,
   MagicStick3,
   Settings,
   Shop,
@@ -119,6 +120,7 @@ const NAV: NavGroup[] = [
       { title: "Data", href: "/settings/data", icon: Database },
       { title: "Test", href: "/settings/test", icon: TestTube, exact: true },
       { title: "Lightspeed", href: "/connect-lightspeed", icon: Bolt },
+      { title: "Test new images", href: "/settings/test-new-images", icon: Gallery, exact: true },
     ],
   },
 ];

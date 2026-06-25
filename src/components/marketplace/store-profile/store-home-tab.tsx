@@ -20,6 +20,7 @@ import {
   Facebook,
 } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
+import { resolveCarouselLogoMaxWidth } from "@/components/marketplace/store-profile/carousel-category-logo";
 import type {
   StoreProfile,
   StoreHomepageConfig,
@@ -1678,7 +1679,8 @@ function FeaturedCarouselBlock({
                 <img
                   src={category.logo_url}
                   alt={category.name}
-                  className="h-8 w-auto max-w-[96px] flex-shrink-0 rounded-sm object-contain"
+                  style={{ maxWidth: `${resolveCarouselLogoMaxWidth(category.logo_max_width)}px` }}
+                  className="h-8 w-auto flex-shrink-0 rounded-sm object-contain"
                 />
               )}
               {!category.hide_title && (
@@ -1712,7 +1714,8 @@ function FeaturedCarouselBlock({
               <img
                 src={category.logo_url}
                 alt={category.name}
-                className="h-8 w-auto max-w-[96px] flex-shrink-0 rounded-sm object-contain"
+                style={{ maxWidth: `${resolveCarouselLogoMaxWidth(category.logo_max_width)}px` }}
+                className="h-8 w-auto flex-shrink-0 rounded-sm object-contain"
               />
             )}
             {!category.hide_title && (

@@ -9,6 +9,7 @@ const FLOATING_CARD_ROUTE_PREFIXES = [
   "/settings/uber",
   "/settings/data",
   "/settings/test",
+  "/settings/test-new-images",
 ] as const;
 
 export function isDashboardFloatingCardRoute(pathname: string | null | undefined): boolean {

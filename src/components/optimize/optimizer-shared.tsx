@@ -107,6 +107,8 @@ export interface ImageRun {
   showAdditional?: boolean;
   reloading?: boolean;
   savedCount?: number;
+  /** Query used for the last direct Serper search (no AI pipeline). */
+  searchQuery?: string;
 }
 
 export type TextStatus = "idle" | "queued" | "running" | "done" | "error";

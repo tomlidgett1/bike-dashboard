@@ -122,6 +122,7 @@ function mergeCarouselCategoriesIntoStore(
       carousel_size: carousel.carousel_size,
       section_id: carousel.section_id ?? null,
       logo_url: carousel.logo_url ?? null,
+      logo_max_width: carousel.logo_max_width ?? null,
       hide_title: carousel.hide_title ?? false,
       subtitle: carousel.subtitle ?? null,
       store_page: carousel.store_page === "bikes" ? "bikes" : "products",

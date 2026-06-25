@@ -35,7 +35,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { SafeProductImage } from "@/components/settings/safe-product-image";
-import { OptimizerImageReview, OptimizerPhotoToolbar } from "@/components/optimize/optimizer-image-review";
+import { OptimizerImageReview, OptimizerPhotoToolbar, OptimizerSerperQueryField } from "@/components/optimize/optimizer-image-review";
 import {
   type CanonicalImage,
   type ImageRun,
@@ -48,10 +48,12 @@ import {
   hasSerperImage,
   hasSpecs,
   hasTitle,
+  MAX_SELECTED_IMAGES,
   readSSE,
+  toSpeedProduct,
   useLightbox,
 } from "@/components/optimize/optimizer-shared";
-import type { SpeedSearchCandidate } from "@/lib/admin/image-qa-speed";
+import { fetchSerperCandidates, type SpeedSearchCandidate } from "@/lib/admin/image-qa-speed";
 import {
   type SerperAiSelectionCache,
   type SerperImageCacheEntry,
@@ -302,6 +304,12 @@ function buildSmartPhotoPayload(product: BulkProduct) {
     searchQuery: canonical?.image_review_search_query ?? null,
     maxImages: 6,
   };
+}
+
+function buildDefaultSerperQuery(product: BulkProduct) {
+  const payload = buildSmartPhotoPayload(product);
+  if (payload.searchQuery) return payload.searchQuery;
+  return [payload.upc, payload.brand, payload.name, "cycling product image"].filter(Boolean).join(" ");
 }
 
 function buildSmartPhotoPayloadKey(payload: ReturnType<typeof buildSmartPhotoPayload>) {
@@ -660,7 +668,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
     async (
       product: BulkProduct,
       cacheEntry?: SerperImageCacheEntry | null,
-      options?: { forceFresh?: boolean },
+      options?: { forceFresh?: boolean; searchQuery?: string },
     ) => {
       if (hasSerperImage(product)) {
         patchImageRun(product.id, emptyImageRun());
@@ -677,6 +685,10 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
 
       try {
         const smartPhotoPayload = buildSmartPhotoPayload(product);
+        const queryOverride = options?.searchQuery?.trim();
+        if (queryOverride) {
+          smartPhotoPayload.searchQuery = queryOverride;
+        }
         const smartPhotoPayloadKey = buildSmartPhotoPayloadKey(smartPhotoPayload);
         let entry = options?.forceFresh ? null : cacheEntry ?? null;
 
@@ -767,6 +779,73 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
     [patchImageRun],
   );
 
+  const runDirectSerperSearch = React.useCallback(
+    async (product: BulkProduct, searchQuery: string) => {
+      const query = searchQuery.trim();
+      if (!query) return false;
+
+      if (hasSerperImage(product)) {
+        patchImageRun(product.id, emptyImageRun());
+        return true;
+      }
+
+      if (!product.canonical_product_id) {
+        patchImageRun(product.id, {
+          phase: "error",
+          error: "No canonical product. Sync from Lightspeed first.",
+        });
+        return false;
+      }
+
+      try {
+        patchImageRun(product.id, { ...emptyImageRun(), phase: "searching" });
+        const speedProduct = toSpeedProduct(product);
+        const candidates = await fetchSerperCandidates(speedProduct, query);
+
+        if (candidates.length === 0) {
+          patchImageRun(product.id, {
+            phase: "no_results",
+            error: "No images found for that query",
+            searchQuery: query,
+          });
+          saveSerperCache(product.canonical_product_id, {
+            searchQuery: query,
+            candidates: [],
+            aiSelection: null,
+          });
+          return false;
+        }
+
+        const selectedCandidates = candidates.slice(0, MAX_SELECTED_IMAGES);
+        const selectedUrls = selectedCandidates.map((candidate) => candidate.url);
+
+        patchImageRun(product.id, {
+          phase: "ready",
+          candidates,
+          selectedCandidates,
+          selectedUrls,
+          primaryUrl: selectedUrls[0] ?? null,
+          searchQuery: query,
+          showAdditional: candidates.length > selectedCandidates.length,
+          error: undefined,
+        });
+        saveSerperCache(product.canonical_product_id, {
+          searchQuery: query,
+          candidates,
+          aiSelection: null,
+        });
+        return true;
+      } catch (error) {
+        patchImageRun(product.id, {
+          phase: "error",
+          error: error instanceof Error ? error.message : "Serper search failed",
+        });
+        return false;
+      }
+    },
+    [patchImageRun],
+  );
+
   const runPhotoPipeline = React.useCallback(
     async (targets: BulkProduct[]) => {
       const skipPhases = new Set<ImageRun["phase"]>([
@@ -821,7 +900,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
             canonicalProductId: product.canonical_product_id,
             selectedCandidates: run.selectedCandidates,
             primaryCandidateUrl: run.primaryUrl,
-            searchQuery: payload.searchQuery || payload.name,
+            searchQuery: run.searchQuery || payload.searchQuery || payload.name,
             rejectPending: true,
             quickMode: true,
           }),
@@ -1947,8 +2026,8 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
             onSetBicycle={(value) => void setBicycle(product, value)}
             onAutoDetectBicycle={() => void autoDetectBicycle(product)}
             onIdentifyBrand={() => void fixBrands([product.id])}
-            onFindPhotos={() => void runPhotoPipeline([product])}
             onRerunPhotos={() => void runImageSearch(product, null, { forceFresh: true })}
+            onDirectSerperSearch={(searchQuery) => void runDirectSerperSearch(product, searchQuery)}
             onImageUpdate={(patch) => updateImageRunForProduct(product, patch)}
             onEnhance={(url) => void enhanceImage(product, url)}
             onApproveImages={() => void approveImages(product)}
@@ -2061,8 +2140,8 @@ function ProductRow({
   onSetBicycle,
   onAutoDetectBicycle,
   onIdentifyBrand,
-  onFindPhotos,
   onRerunPhotos,
+  onDirectSerperSearch,
   onImageUpdate,
   onEnhance,
   onApproveImages,
@@ -2091,8 +2170,8 @@ function ProductRow({
   onSetBicycle: (value: boolean) => void;
   onAutoDetectBicycle: () => void;
   onIdentifyBrand: () => void;
-  onFindPhotos: () => void;
   onRerunPhotos: () => void;
+  onDirectSerperSearch: (searchQuery: string) => void;
   onImageUpdate: (patch: Partial<ImageRun> | ((prev: ImageRun) => Partial<ImageRun>)) => void;
   onEnhance: (url: string) => void;
   onApproveImages: () => void;
@@ -2103,6 +2182,25 @@ function ProductRow({
   const sku = getSku(product);
   const imageUrl = product.resolved_image_url || product.primary_image_url;
   const photoBusyNow = IMG_BUSY.includes(imageRun.phase);
+  const defaultSerperQuery = React.useMemo(() => buildDefaultSerperQuery(product), [product]);
+  const [serperQuery, setSerperQuery] = React.useState(defaultSerperQuery);
+
+  React.useEffect(() => {
+    setSerperQuery(defaultSerperQuery);
+  }, [defaultSerperQuery]);
+
+  const runCustomPhotoSearch = React.useCallback(() => {
+    const query = serperQuery.trim();
+    if (!query) return;
+    onDirectSerperSearch(query);
+  }, [onDirectSerperSearch, serperQuery]);
+
+  const photoSearchProps = {
+    serperQuery,
+    onSerperQueryChange: setSerperQuery,
+    onCustomSearch: runCustomPhotoSearch,
+    searchDisabled: photoBusyNow,
+  };
 
   const statusText = copyBusy
     ? "Writing copy..."
@@ -2190,15 +2288,21 @@ function ProductRow({
 
   const photoToolbarFloating =
     isFloating &&
-    imageRun.phase === "ready" &&
-    imageRun.selectedUrls.length > 0 ? (
+    !hasSerperImage(product) &&
+    (fieldSelection.photos ||
+      imageRun.phase === "ready" ||
+      imageRun.phase === "no_results" ||
+      imageRun.phase === "error") ? (
       <OptimizerPhotoToolbar
         img={imageRun}
         hasCanonical={!!product.canonical_product_id}
         saving={false}
+        showMoreImages={imageRun.phase === "ready" && imageRun.selectedUrls.length > 0}
+        hideApproveAction={imageRun.phase !== "ready" || imageRun.selectedUrls.length === 0}
         onToggleAdditional={() => onImageUpdate((prev) => ({ showAdditional: !prev.showAdditional }))}
         onRerunSearch={photoBusyNow ? undefined : onRerunPhotos}
         onApprove={onApproveImages}
+        {...photoSearchProps}
       />
     ) : null;
 
@@ -2208,9 +2312,21 @@ function ProductRow({
         {hasSerperImage(product) ? (
           <ApprovedImagesStrip product={product} onLightbox={onLightbox} />
         ) : imageRun.phase === "idle" ? (
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
             <p className="text-xs text-muted-foreground">No photos yet.</p>
-            <Button type="button" size="sm" variant="outline" disabled={photoBusyNow} onClick={onFindPhotos}>
+            <OptimizerSerperQueryField
+              value={serperQuery}
+              onChange={setSerperQuery}
+              onSearch={runCustomPhotoSearch}
+              disabled={photoBusyNow}
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={photoBusyNow || !serperQuery.trim()}
+              onClick={runCustomPhotoSearch}
+            >
               <Search className="size-4" />
               Find photos
             </Button>
@@ -2223,6 +2339,7 @@ function ProductRow({
             size="default"
             hideToolbar={isFloating}
             onRerunSearch={photoBusyNow ? undefined : onRerunPhotos}
+            {...photoSearchProps}
             onSetPrimary={(url) => onImageUpdate({ primaryUrl: url })}
             onRemove={(url) =>
               onImageUpdate((prev) => {
@@ -2559,15 +2676,21 @@ function ProductRow({
           {hasSerperImage(product) ? (
             <ApprovedImagesStrip product={product} onLightbox={onLightbox} />
           ) : imageRun.phase === "idle" ? (
-            <div className="flex items-center gap-2.5">
+            <div className="flex flex-wrap items-center gap-2.5">
               <p className="text-xs text-muted-foreground">No photos yet.</p>
+              <OptimizerSerperQueryField
+                value={serperQuery}
+                onChange={setSerperQuery}
+                onSearch={runCustomPhotoSearch}
+                disabled={photoBusyNow}
+              />
               <Button
                 type="button"
                 size="xs"
                 variant="outline"
                 className="rounded-md"
-                disabled={photoBusyNow}
-                onClick={onFindPhotos}
+                disabled={photoBusyNow || !serperQuery.trim()}
+                onClick={runCustomPhotoSearch}
               >
                 <Search className="size-3" />
                 Find photos
@@ -2580,6 +2703,7 @@ function ProductRow({
               saving={imageRun.phase === "saving"}
               size="default"
               onRerunSearch={photoBusyNow ? undefined : onRerunPhotos}
+              {...photoSearchProps}
                 onSetPrimary={(url) => onImageUpdate({ primaryUrl: url })}
                 onRemove={(url) =>
                   onImageUpdate((prev) => {
