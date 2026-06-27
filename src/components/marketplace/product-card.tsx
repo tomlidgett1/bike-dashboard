@@ -4,7 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Package, Plus, Check, Sparkles, Store, BadgeCheck, ShoppingBag, Loader2, Wand2 } from '@/components/layout/app-sidebar/dashboard-icons';
+import { Package, Plus, Check, Sparkles, BadgeCheck, ShoppingBag, Loader2, Wand2 } from '@/components/layout/app-sidebar/dashboard-icons';
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { trackInteraction } from "@/lib/tracking/interaction-tracker";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -33,7 +33,7 @@ interface ProductCardProps {
   /** Row layout for marketplace list view */
   layout?: "grid" | "list";
   isAdmin?: boolean;
-  /** Hide store badge + relative time (use on store profile where they're redundant) */
+  /** Hide seller row + relative time (use on store profile where they're redundant) */
   hideStoreMeta?: boolean;
   /** Compact density — smaller text for 8-col grid */
   compact?: boolean;
@@ -646,51 +646,36 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             );
           })()}
 
-          {/* Seller info - Better organized layout */}
+          {/* Seller info */}
           {!hideStoreMeta && (
-          <div className={cn("flex items-center justify-between gap-0.5 flex-wrap w-full", isList ? "mt-1" : "order-3 mt-0.5")}>
-            <div className="flex items-center gap-0.5 min-w-0 flex-1">
-              {/* Seller name/location with verified badge */}
-              <div className="flex items-center gap-0.5 min-w-0">
-                <p className="text-xs text-gray-600 font-medium truncate">
-                  {(() => {
-                    // For private listings, show pickup location instead of seller name
-                    if (productData.listing_type === 'private_listing') {
-                      return productData.pickup_location || 'Melbourne';
-                    }
-                    // For bike stores, show business name or "Bike Store"
-                    if (productData.store_account_type === 'bicycle_store' || productData.listing_type === 'store_inventory') {
-                      return product.store_name || 'Bike Store';
-                    }
-                    // For individual users (fallback), show "FirstName L."
-                    if (productData.first_name && productData.last_name) {
-                      return `${productData.first_name} ${productData.last_name.charAt(0)}.`;
-                    }
-                    // Fallback to store_name
-                    return product.store_name || 'Seller';
-                  })()}
-                </p>
-                {/* Verified badge for Ashburton Cycles */}
-                {product.store_name === 'Ashburton Cycles' && (
-                  <BadgeCheck className="h-3 w-3 text-blue-500 flex-shrink-0" />
-                )}
-              </div>
-
-              {/* Secondary info - Time */}
-              {relativeTime && (
-                <div className="flex items-center gap-0.5 text-xs">
-                  <span className="text-emerald-600 font-medium whitespace-nowrap">
-                    {relativeTime}
-                  </span>
-                </div>
+          <div className={cn("flex items-center gap-0.5 flex-wrap w-full", isList ? "mt-1" : "order-3 mt-0.5")}>
+            <div className="flex items-center gap-0.5 min-w-0">
+              <p className="text-xs text-gray-600 font-medium truncate">
+                {(() => {
+                  // For private listings, show pickup location instead of seller name
+                  if (productData.listing_type === 'private_listing') {
+                    return productData.pickup_location || 'Melbourne';
+                  }
+                  // For bike stores, show business name or "Bike Store"
+                  if (productData.store_account_type === 'bicycle_store' || productData.listing_type === 'store_inventory') {
+                    return product.store_name || 'Bike Store';
+                  }
+                  // For individual users (fallback), show "FirstName L."
+                  if (productData.first_name && productData.last_name) {
+                    return `${productData.first_name} ${productData.last_name.charAt(0)}.`;
+                  }
+                  // Fallback to store_name
+                  return product.store_name || 'Seller';
+                })()}
+              </p>
+              {product.store_name === 'Ashburton Cycles' && (
+                <BadgeCheck className="h-3 w-3 text-blue-500 flex-shrink-0" />
               )}
             </div>
 
-            {/* Store badge for store inventory items (not online_catalog) */}
-            {productData.listing_type === 'store_inventory' && productData.listing_source !== 'online_catalog' && (
-              <span className="inline-flex shrink-0 items-center gap-0.5 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-medium rounded-md">
-                <Store className="h-2.5 w-2.5" />
-                Store
+            {relativeTime && (
+              <span className="text-xs text-emerald-600 font-medium whitespace-nowrap">
+                {relativeTime}
               </span>
             )}
           </div>
