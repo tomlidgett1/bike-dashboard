@@ -81,7 +81,10 @@ export function scorePage(s: ScoreSignals): ScoreResult {
   const freshness = 3;
 
   // Risks -------------------------------------------------------------------
-  const thinContentRisk = hasRealSupply ? clamp(10 - s.supplyCount * 1.2, 0, 10) : 35;
+  // Store-backed pages (directories / owned store) are never "thin" — a real
+  // business underpins them even with a handful of stores. Only listing-backed
+  // pages get the low-supply penalty.
+  const thinContentRisk = !hasRealSupply ? 35 : s.storeBacked ? 0 : clamp(10 - s.supplyCount * 1.2, 0, 10);
   const cannibalisationRisk = clamp(s.cannibalisationRisk * 18, 0, 18);
   const duplicationRisk = clamp(s.duplicationRisk * 18, 0, 18);
   const spamRisk = clamp(

@@ -27,9 +27,9 @@ const REFRESH_AFTER_DAYS = 7;
 
 export const pagePlanner: Handler = async (_task, { db, site }) => {
   // --- Gather supply in a handful of round-trips ---------------------------
-  const [{ data: cats }, { data: brands }, { data: stores }, { data: matrix }, { data: kwRows }, { data: existingPages }] =
+  const [{ data: catNameRows }, { data: brands }, { data: stores }, { data: matrix }, { data: kwRows }, { data: existingPages }] =
     await Promise.all([
-      db.rpc('seo_category_supply'),
+      db.from('public_marketplace_cards').select('category_name').range(0, 9999),
       db.rpc('seo_brand_supply', { p_min: 5 }),
       db.rpc('seo_store_directory'),
       db.rpc('seo_suburb_supply_matrix', { p_suburbs: MELBOURNE_SUBURBS }),
@@ -48,19 +48,31 @@ export const pagePlanner: Handler = async (_task, { db, site }) => {
     if (p.target_keyword) keywordToUrl.set(p.target_keyword, p.url);
   }
 
+  // City category hubs come from the Lightspeed category_name (Helmets, Lights,
+  // Pedals…) — far richer than the mostly-null marketplace_category. Count in JS.
+  const catCounts = new Map<string, number>();
+  for (const r of (catNameRows ?? []) as Array<{ category_name: string | null }>) {
+    const c = (r.category_name ?? '').trim();
+    if (c) catCounts.set(c, (catCounts.get(c) ?? 0) + 1);
+  }
+  const cats = [...catCounts.entries()]
+    .map(([category, n]) => ({ category, n }))
+    .filter((c) => c.n >= 5)
+    .sort((a, b) => b.n - a.n);
+
   const candidates: Candidate[] = [];
 
   // A. category x Melbourne (city hubs) — only categories that actually exist.
-  for (const c of (cats ?? []) as Array<{ category: string; n: number }>) {
-    const cat = (c.category || '').trim();
+  for (const c of cats) {
+    const cat = c.category.trim();
     if (!cat || cat.toLowerCase() === 'uncategorised') continue;
     const slug = slugify(cat);
     candidates.push({
       url: `/bikes/${slug}/melbourne`,
       page_type: 'marketplace_category',
       target_keyword: `${cat.toLowerCase()} melbourne`,
-      params: { category: cat, categorySlug: slug, place: 'melbourne', placeLabel: 'Melbourne', scope: 'city' },
-      supplyCount: Number(c.n) || 0,
+      params: { category: cat, categoryField: 'category_name', categorySlug: slug, place: 'melbourne', placeLabel: 'Melbourne', scope: 'city' },
+      supplyCount: c.n,
       storeBacked: false,
     });
   }
@@ -74,7 +86,7 @@ export const pagePlanner: Handler = async (_task, { db, site }) => {
       url: `/bikes/${slug}/${row.suburb}`,
       page_type: 'suburb_category',
       target_keyword: `${cat.toLowerCase()} ${row.suburb.replace(/-/g, ' ')}`,
-      params: { category: cat, categorySlug: slug, place: row.suburb, placeLabel: placeLabel(row.suburb), scope: 'suburb' },
+      params: { category: cat, categoryField: 'marketplace_category', categorySlug: slug, place: row.suburb, placeLabel: placeLabel(row.suburb), scope: 'suburb' },
       supplyCount: Number(row.n) || 0,
       storeBacked: false,
     });

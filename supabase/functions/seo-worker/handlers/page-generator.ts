@@ -64,7 +64,7 @@ async function gatherFacts(db: SeoCtxDb, page: SeoPageRow): Promise<Facts> {
   const sample = await sampleListings(db, (q) => {
     let qq = q;
     if (page.page_type === 'brand_city' && p.brand) qq = qq.ilike('brand', p.brand);
-    if ((page.page_type === 'marketplace_category' || page.page_type === 'suburb_category') && p.category) qq = qq.eq('marketplace_category', p.category);
+    if ((page.page_type === 'marketplace_category' || page.page_type === 'suburb_category') && p.category) qq = qq.eq(p.categoryField || 'marketplace_category', p.category);
     if (page.page_type === 'suburb_category' && p.place) qq = qq.ilike('pickup_location', `%${p.place.replace(/-/g, ' ')}%`);
     return qq;
   });
