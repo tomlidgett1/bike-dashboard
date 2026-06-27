@@ -88,7 +88,8 @@ export async function loadListingsForPage(page: AgentPage): Promise<MarketplaceP
     } else if (page.page_type === 'owned_store' && page.params.user_id) {
       q = q.eq('user_id', page.params.user_id);
     } else if (page.params.category) {
-      q = q.eq('marketplace_category', page.params.category);
+      // City hubs filter by Lightspeed category_name; suburb pages by marketplace_category.
+      q = q.eq(page.params.categoryField || 'marketplace_category', page.params.category);
       if (page.page_type === 'suburb_category' && page.params.place) {
         q = q.ilike('pickup_location', `%${page.params.place.replace(/-/g, ' ')}%`);
       }
