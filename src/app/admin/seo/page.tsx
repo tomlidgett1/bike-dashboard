@@ -184,20 +184,47 @@ export default async function SeoAgentDashboard() {
 
   const livePages = allPages.filter((p: any) => p.status === 'published' && p.indexability === 'index').slice(0, 25);
 
-  // Opportunity cross-reference: does a page already target this keyword?
+  // Opportunity cross-reference with TOKEN-AWARE matching (so "ashburton bike
+  // shop" credits the page targeting "bike shop ashburton") + plural stemming +
+  // junk filtering. Exact-string matching wrongly flagged covered keywords as
+  // "needs stock".
+  const STOP = new Set(['in', 'for', 'the', 'and', 'near', 'me', 'best', 'buy', 'melbourne', 'vic']);
+  const toks = (s: string) =>
+    (s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
+      .map((t) => t.replace(/(ies|s)$/, '')) // crude stem: bikes→bike, cycles→cycle
+      .filter((t) => t.length > 2 && !STOP.has(t));
+  const publishedPages = allPages.filter((p: any) => p.status === 'published');
+  const pageToks = publishedPages.map((p: any) => ({ page: p, set: new Set(toks(p.target_keyword || p.url)) }));
+  const coverFor = (kw: string) => {
+    const kt = toks(kw);
+    let best: any = null, bestN = 1; // require ≥2 shared meaningful tokens
+    for (const { page, set } of pageToks) {
+      const n = kt.filter((t) => set.has(t)).length;
+      if (n > bestN) { best = page; bestN = n; }
+    }
+    return best;
+  };
+  // Generic noise / pure-brand single words that should never spawn a page.
+  const JUNK = /^(yellow|commerce|e[\s-]?commerce|ecommerce|bike|shop|store|cycle|online)$/i;
+  const isJunk = (kw: string) => JUNK.test((kw || '').trim()) || toks(kw).length === 0;
+
   const pageByKw = new Map<string, any>();
   for (const p of allPages) if (p.target_keyword) pageByKw.set(p.target_keyword, p);
-  const opportunities = keywords.slice(0, 25).map((k: any) => {
-    const p = pageByKw.get(k.keyword);
-    const impr = k.demand?.impressions ?? 0;
-    const pos = k.demand?.position ?? 0;
-    const supply = k.demand?.supply_count ?? 0;
-    let action: string;
-    if (p?.status === 'published') action = pos > 8 ? `improve (pos ${Number(pos).toFixed(0)})` : 'live ✓';
-    else if (p) action = `in ${p.status}`;
-    else action = supply >= 5 ? 'build page' : impr > 0 ? 'needs stock' : 'watch';
-    return { ...k, impr, pos, supply, pageStatus: p?.status ?? null, action };
-  });
+
+  const opportunities = (keywords as any[])
+    .filter((k) => !isJunk(k.keyword))
+    .slice(0, 25)
+    .map((k: any) => {
+      const impr = k.demand?.impressions ?? 0;
+      const pos = k.demand?.position ?? 0;
+      const supply = k.demand?.supply_count ?? 0;
+      const p = pageByKw.get(k.keyword) || coverFor(k.keyword);
+      let action: string;
+      if (p?.status === 'published') action = pos > 10 ? `improve (pos ${Number(pos).toFixed(0)})` : 'live ✓';
+      else if (p) action = `in ${p.status}`;
+      else action = supply >= 5 ? 'build page' : impr >= 10 ? 'gap — add page' : 'watch';
+      return { ...k, impr, pos, supply, pageStatus: p?.status ?? null, action };
+    });
 
   // Keyword universe breakdown.
   const intents = ['transactional_local', 'local_store', 'service', 'product', 'guide'];
