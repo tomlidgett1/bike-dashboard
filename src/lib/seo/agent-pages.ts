@@ -102,3 +102,33 @@ export async function loadListingsForPage(page: AgentPage): Promise<MarketplaceP
     return [];
   }
 }
+
+export interface PageLink {
+  url: string;
+  title: string | null;
+  h1: string | null;
+  page_type: AgentPage['page_type'];
+  params: Record<string, string>;
+  supply_count: number;
+}
+
+/** All published + indexable pages of the given types, newest-supply first — for
+ *  the hub/index pages and the site-wide internal-link footer that get these
+ *  pages discovered + weighted by Google (not just sitemap-listed). */
+export async function listPublishedPages(types: AgentPage['page_type'][], limit = 300): Promise<PageLink[]> {
+  try {
+    const supabase = createPublicSupabaseClient();
+    const { data, error } = await supabase
+      .from('seo_pages')
+      .select('url, title, h1, page_type, params, supply_count')
+      .eq('status', 'published')
+      .eq('indexability', 'index')
+      .in('page_type', types)
+      .order('supply_count', { ascending: false })
+      .limit(limit);
+    if (error || !data) return [];
+    return data as PageLink[];
+  } catch {
+    return [];
+  }
+}

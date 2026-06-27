@@ -31,6 +31,10 @@ const STATIC_ROUTES: Array<{
   { path: '/sell-your-bike', priority: 0.8, changeFrequency: 'monthly' },
   { path: '/used-bikes', priority: 0.8, changeFrequency: 'daily' },
   { path: '/guides', priority: 0.8, changeFrequency: 'weekly' },
+  // Agent SEO hub/index pages — link into all the category/brand/shop leaves.
+  { path: '/bikes', priority: 0.9, changeFrequency: 'daily' },
+  { path: '/brands', priority: 0.9, changeFrequency: 'daily' },
+  { path: '/bike-shops', priority: 0.9, changeFrequency: 'daily' },
   { path: '/for-you', priority: 0.5, changeFrequency: 'daily' },
   { path: '/marketplace/help', priority: 0.3, changeFrequency: 'monthly' },
 ];

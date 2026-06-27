@@ -72,11 +72,11 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/marketplace/new-products') ||
     request.nextUrl.pathname === '/sell-your-bike' ||         // Public SEO content page
     request.nextUrl.pathname.startsWith('/used-bikes') ||     // Public SEO used-bike hubs
-    request.nextUrl.pathname.startsWith('/bikes/') ||         // Agent SEO: category × place hubs
-    request.nextUrl.pathname.startsWith('/brands/') ||        // Agent SEO: brand pages
-    request.nextUrl.pathname.startsWith('/bike-shops') ||     // Agent SEO: bike-shop directory
+    request.nextUrl.pathname.startsWith('/bikes') ||          // Agent SEO: /bikes hub + category × place
+    request.nextUrl.pathname.startsWith('/brands') ||         // Agent SEO: /brands hub + brand pages
+    request.nextUrl.pathname.startsWith('/bike-shops') ||     // Agent SEO: bike-shop directory + hub
     request.nextUrl.pathname.startsWith('/bike-service') ||   // Agent SEO: service pages
-    request.nextUrl.pathname.startsWith('/stores/') ||        // Agent SEO: owned-store pages
+    request.nextUrl.pathname.startsWith('/stores') ||         // Agent SEO: owned-store pages
     request.nextUrl.pathname.startsWith('/guides') ||         // Public SEO guides
     request.nextUrl.pathname === '/return-policy' ||          // Public return policy
     request.nextUrl.pathname.startsWith('/api/marketplace') ||

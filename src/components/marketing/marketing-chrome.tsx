@@ -46,7 +46,9 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
         <div className="mx-auto flex max-w-[1340px] flex-col gap-4 px-5 py-10 sm:px-6">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[13px] text-zinc-500">
             <Link href="/marketplace" className="hover:text-zinc-900">Marketplace</Link>
-            <Link href="/marketplace/new-products" className="hover:text-zinc-900">New bikes</Link>
+            <Link href="/bikes" className="hover:text-zinc-900">Shop by category</Link>
+            <Link href="/brands" className="hover:text-zinc-900">Brands</Link>
+            <Link href="/bike-shops" className="hover:text-zinc-900">Bike shops</Link>
             <Link href="/marketplace/used-products" className="hover:text-zinc-900">Used bikes</Link>
             <Link href="/sell-your-bike" className="hover:text-zinc-900">Sell your bike</Link>
             <Link href="/guides" className="hover:text-zinc-900">Guides</Link>
