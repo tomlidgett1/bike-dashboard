@@ -6,6 +6,7 @@ import { resolveProductImage } from '@/lib/services/image-resolver'
 import { resolveLivePrice } from '@/lib/marketplace/pricing'
 import { toCurrentHeroPublicId } from '@/lib/utils/cloudinary-transforms'
 import type {
+  StoreBundleOffer,
   StoreCategoryWithProducts,
   StoreProfile,
   StoreRental,
@@ -102,6 +103,7 @@ export async function fetchPublicStoreProfile(
   const [
     servicesResult,
     rentalsResult,
+    offersResult,
     brandsResult,
     displayOverridesResult,
     searchProductIds,
@@ -117,6 +119,13 @@ export async function fetchPublicStoreProfile(
       .select('id, product_id, description, price_per_hour, price_per_day, is_available, display_order')
       .eq('user_id', storeId)
       .eq('is_active', true)
+      .order('display_order', { ascending: true }),
+    supabase
+      .from('store_bundle_offers')
+      .select('*')
+      .eq('user_id', storeId)
+      .eq('is_active', true)
+      .gt('expires_at', new Date().toISOString())
       .order('display_order', { ascending: true }),
     supabase
       .from('store_brands')
@@ -137,6 +146,9 @@ export async function fetchPublicStoreProfile(
   }
   if (rentalsResult.error) {
     console.error('[Store profile] Rentals query failed:', rentalsResult.error)
+  }
+  if (offersResult.error) {
+    console.error('[Store profile] Offers query failed:', offersResult.error)
   }
   if (brandsResult.error) {
     console.error('[Store profile] Brands query failed:', brandsResult.error)
@@ -500,6 +512,74 @@ export async function fetchPublicStoreProfile(
     } satisfies StoreRental]
   })
 
+  const serviceLookup = new Map(
+    (servicesResult.data ?? []).map((service: { id: string; name: string; price?: number | null }) => [
+      service.id,
+      service,
+    ]),
+  )
+
+  function resolveOfferProduct(productId: string) {
+    const product = productLookup.get(productId)
+    if (!product) return null
+
+    const effectivePublicId = toCurrentHeroPublicId(
+      product.resolved_cloudinary_public_id,
+      product.resolved_image_source,
+    )
+    const resolved = resolveProductImage({
+      id: product.resolved_image_id,
+      cloudinary_public_id: effectivePublicId,
+      cloudinary_url: product.resolved_cloudinary_url,
+      external_url: product.resolved_external_url,
+      approval_status: 'approved',
+    })
+    const imageUrl = resolved?.card_url || resolved?.original_url || null
+    const livePrice = resolveLivePrice(product)
+
+    return {
+      id: product.id,
+      name: product.display_name || product.description,
+      image_url: imageUrl,
+      price: livePrice.price ?? null,
+    }
+  }
+
+  const offers: StoreBundleOffer[] = (offersResult.data ?? []).flatMap((offer: any) => {
+    const buyProduct = offer.buy_product_id ? resolveOfferProduct(offer.buy_product_id) : null
+    const buyServiceRow = offer.buy_service_id ? serviceLookup.get(offer.buy_service_id) : null
+    const buyService = buyServiceRow
+      ? {
+          id: buyServiceRow.id,
+          name: buyServiceRow.name,
+          price: buyServiceRow.price ?? null,
+        }
+      : null
+
+    if (!buyProduct && !buyService) return []
+
+    const freeProducts = (offer.free_product_ids ?? [])
+      .map((productId: string) => resolveOfferProduct(productId))
+      .filter(Boolean)
+
+    if (freeProducts.length === 0) return []
+
+    return [{
+      id: offer.id,
+      name: offer.name,
+      description: offer.description ?? null,
+      buy_product_id: offer.buy_product_id ?? null,
+      buy_service_id: offer.buy_service_id ?? null,
+      free_product_ids: offer.free_product_ids ?? [],
+      expires_at: offer.expires_at,
+      is_active: offer.is_active,
+      display_order: offer.display_order,
+      buy_product: buyProduct,
+      buy_service: buyService,
+      free_products: freeProducts,
+    } satisfies StoreBundleOffer]
+  })
+
   return {
     id: storeId,
     slug: (storeUser as any).store_slug ?? null,
@@ -513,6 +593,7 @@ export async function fetchPublicStoreProfile(
     sections: sectionsWithCategories,
     services: servicesResult.data || [],
     rentals,
+    offers,
     brands: brandsResult.data || [],
     cover_image_url: storeUser.cover_image_url || null,
     description: storeUser.bio || null,

@@ -76,6 +76,19 @@ const pillTriggerClass =
   "data-[size=default]:h-full data-[size=sm]:h-full [&_svg]:shrink-0 " +
   "hover:bg-gray-50 whitespace-nowrap cursor-pointer";
 
+/** Flat text triggers for the desktop nav bar — no pill / button chrome */
+const navTriggerClass =
+  "h-10 w-auto min-w-0 gap-1.5 border-0 bg-transparent px-0 py-0 text-sm font-medium leading-none text-gray-600 shadow-none ring-0 " +
+  "transition-colors hover:text-gray-900 focus:ring-0 focus:outline-none focus-visible:ring-0 " +
+  "data-[size=default]:h-10 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0 [&_svg]:text-gray-400 " +
+  "whitespace-nowrap cursor-pointer";
+
+function NavFilterSeparator() {
+  return <span className="h-3 w-px shrink-0 bg-gray-200" aria-hidden />;
+}
+
+export { NavFilterSeparator };
+
 const filterSelectContentClass =
   "max-h-[min(60vh,22rem)] overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 text-gray-900 shadow-lg ring-0 min-w-[var(--radix-select-trigger-width)]";
 
@@ -119,7 +132,7 @@ export function BrowseSortButton({
   onSortChange: (value: SortOption) => void;
   onApply?: () => void;
   className?: string;
-  variant?: "icon" | "pill";
+  variant?: "icon" | "pill" | "text";
 }) {
   const sortLabel = SORT_ITEMS.find((s) => s.value === sortBy)?.label ?? "Newest";
   const isActive = sortBy !== "newest";
@@ -141,6 +154,8 @@ export function BrowseSortButton({
                 "min-w-[7rem]",
                 isActive ? "text-gray-900" : "text-gray-700"
               )
+            : variant === "text"
+              ? cn(navTriggerClass, isActive && "text-gray-900")
             : cn(
                 "flex h-9 w-9 min-w-9 shrink-0 items-center justify-center rounded-md border border-gray-200 bg-white p-0 shadow-none ring-0 transition-colors cursor-pointer [&>svg:last-child]:hidden",
                 isActive ? "text-gray-900" : "text-gray-500 hover:text-gray-700"
@@ -151,6 +166,11 @@ export function BrowseSortButton({
         {variant === "pill" ? (
           <>
             <SortVertical className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+            <SelectValue />
+          </>
+        ) : variant === "text" ? (
+          <>
+            <SortVertical className="h-3.5 w-3.5 flex-shrink-0" />
             <SelectValue />
           </>
         ) : (
@@ -201,7 +221,307 @@ function priceValueFromFilters(f: AdvancedFiltersState): string {
 }
 
 function PillDivider() {
-  return <div className="w-px bg-gray-100 my-2 flex-shrink-0" aria-hidden />;
+  return <div className="w-px bg-gray-100 my-1.5 flex-shrink-0 self-stretch" aria-hidden />;
+}
+
+export interface BrowseFilterControlsProps {
+  filters: AdvancedFiltersState;
+  onFiltersChange: (f: AdvancedFiltersState) => void;
+  onFiltersApply: () => void;
+  gridLayout: ProductGridLayout;
+  onGridLayoutChange: (layout: ProductGridLayout) => void;
+  productCount?: number;
+  additionalFilters?: React.ReactNode;
+  className?: string;
+  /** Compact styling for the desktop nav bar beside space tabs. */
+  variant?: "default" | "nav";
+}
+
+export function BrowseFilterControls({
+  filters,
+  onFiltersChange,
+  onFiltersApply,
+  gridLayout,
+  onGridLayoutChange,
+  productCount,
+  additionalFilters,
+  className,
+  variant = "default",
+}: BrowseFilterControlsProps) {
+  const priceSelectValue = priceValueFromFilters(filters);
+
+  if (variant === "nav") {
+    return (
+      <div className={cn("flex h-10 items-center gap-3 flex-shrink-0", className)}>
+        <SolarProvider {...solarProviderProps}>
+          <div className="flex h-10 items-center gap-3">
+          <Select defaultValue="melbourne">
+            <SelectTrigger className={navTriggerClass}>
+              <MapPoint className="h-3.5 w-3.5 flex-shrink-0" />
+              <SelectValue placeholder="Location" />
+            </SelectTrigger>
+            <FilterSelectContent>
+              {LOCATION_OPTIONS.map((loc) => (
+                <SelectItem key={loc.value} value={loc.value} className={filterSelectItemClass}>
+                  {loc.label}
+                </SelectItem>
+              ))}
+            </FilterSelectContent>
+          </Select>
+
+          <NavFilterSeparator />
+
+          <Select
+            value={filters.condition}
+            onValueChange={(v) => {
+              onFiltersChange({ ...filters, condition: v as ConditionFilter });
+              onFiltersApply();
+            }}
+          >
+            <SelectTrigger className={navTriggerClass}>
+              <Tag className="h-3.5 w-3.5 flex-shrink-0" />
+              <SelectValue placeholder="Condition" />
+            </SelectTrigger>
+            <FilterSelectContent>
+              {CONDITION_ITEMS.map((c) => (
+                <SelectItem key={c.value} value={c.value} className={filterSelectItemClass}>
+                  {c.label}
+                </SelectItem>
+              ))}
+            </FilterSelectContent>
+          </Select>
+
+          <NavFilterSeparator />
+
+          <Select
+            value={priceSelectValue}
+            onValueChange={(v) => {
+              if (v === "custom") return;
+              const row = PRICE_ITEMS.find((p) => p.value === v);
+              if (!row || v === "any") {
+                onFiltersChange({ ...filters, minPrice: "", maxPrice: "" });
+              } else {
+                onFiltersChange({ ...filters, minPrice: row.min, maxPrice: row.max });
+              }
+              onFiltersApply();
+            }}
+          >
+            <SelectTrigger className={navTriggerClass}>
+              <Dollar className="h-3.5 w-3.5 flex-shrink-0" />
+              <SelectValue placeholder="Price" />
+            </SelectTrigger>
+            <FilterSelectContent>
+              <SelectItem value="any" className={filterSelectItemClass}>
+                All prices
+              </SelectItem>
+              {PRICE_ITEMS.filter((p) => p.value !== "any").map((p) => (
+                <SelectItem key={p.value} value={p.value} className={filterSelectItemClass}>
+                  {p.label}
+                </SelectItem>
+              ))}
+              <SelectItem value="custom" disabled className={filterSelectItemClass}>
+                Custom range
+              </SelectItem>
+            </FilterSelectContent>
+          </Select>
+
+          <NavFilterSeparator />
+
+          <BrowseSortButton
+            variant="text"
+            sortBy={filters.sortBy}
+            onSortChange={(sortBy) => onFiltersChange({ ...filters, sortBy })}
+            onApply={onFiltersApply}
+          />
+          </div>
+        </SolarProvider>
+
+        <NavFilterSeparator />
+
+        <div className="flex h-10 items-center gap-1">
+          <button
+            type="button"
+            aria-label="4 per row"
+            onClick={() => onGridLayoutChange("grid4")}
+            className={cn(
+              "flex h-10 w-7 items-center justify-center transition-colors",
+              gridLayout === "grid4" ? "text-gray-900" : "text-gray-400 hover:text-gray-600",
+            )}
+          >
+            <Widget2 className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            aria-label="6 per row"
+            onClick={() => onGridLayoutChange("grid6")}
+            className={cn(
+              "flex h-10 w-7 items-center justify-center transition-colors",
+              gridLayout === "grid6" ? "text-gray-900" : "text-gray-400 hover:text-gray-600",
+            )}
+          >
+            <Widget4 className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            aria-label="8 per row"
+            onClick={() => onGridLayoutChange("grid8")}
+            className={cn(
+              "flex h-10 w-7 items-center justify-center transition-colors",
+              gridLayout === "grid8" ? "text-gray-900" : "text-gray-400 hover:text-gray-600",
+            )}
+          >
+            <Widget3 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        {additionalFilters}
+      </div>
+    );
+  }
+
+  const barHeight = "h-11";
+  const triggerClass = pillTriggerClass;
+
+  return (
+    <div className={cn("flex items-center gap-2 flex-shrink-0", className)}>
+      <SolarProvider {...solarProviderProps}>
+        <div
+          className={cn(
+            "flex items-stretch overflow-hidden rounded-full border border-gray-200 bg-white shadow-sm",
+            barHeight,
+          )}
+        >
+          <Select defaultValue="melbourne">
+            <SelectTrigger className={cn(triggerClass, "min-w-[8.5rem]")}>
+              <MapPoint className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+              <SelectValue placeholder="Location" />
+            </SelectTrigger>
+            <FilterSelectContent>
+              {LOCATION_OPTIONS.map((loc) => (
+                <SelectItem key={loc.value} value={loc.value} className={filterSelectItemClass}>
+                  {loc.label}
+                </SelectItem>
+              ))}
+            </FilterSelectContent>
+          </Select>
+
+          <PillDivider />
+
+          <Select
+            value={filters.condition}
+            onValueChange={(v) => {
+              onFiltersChange({ ...filters, condition: v as ConditionFilter });
+              onFiltersApply();
+            }}
+          >
+            <SelectTrigger className={cn(triggerClass, "min-w-[7.5rem]")}>
+              <Tag className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+              <SelectValue placeholder="Condition" />
+            </SelectTrigger>
+            <FilterSelectContent>
+              {CONDITION_ITEMS.map((c) => (
+                <SelectItem key={c.value} value={c.value} className={filterSelectItemClass}>
+                  {c.label}
+                </SelectItem>
+              ))}
+            </FilterSelectContent>
+          </Select>
+
+          <PillDivider />
+
+          <Select
+            value={priceSelectValue}
+            onValueChange={(v) => {
+              if (v === "custom") return;
+              const row = PRICE_ITEMS.find((p) => p.value === v);
+              if (!row || v === "any") {
+                onFiltersChange({ ...filters, minPrice: "", maxPrice: "" });
+              } else {
+                onFiltersChange({ ...filters, minPrice: row.min, maxPrice: row.max });
+              }
+              onFiltersApply();
+            }}
+          >
+            <SelectTrigger className={cn(triggerClass, "min-w-[6.5rem]")}>
+              <Dollar className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+              <SelectValue placeholder="Price" />
+            </SelectTrigger>
+            <FilterSelectContent>
+              <SelectItem value="any" className={filterSelectItemClass}>
+                All prices
+              </SelectItem>
+              {PRICE_ITEMS.filter((p) => p.value !== "any").map((p) => (
+                <SelectItem key={p.value} value={p.value} className={filterSelectItemClass}>
+                  {p.label}
+                </SelectItem>
+              ))}
+              <SelectItem value="custom" disabled className={filterSelectItemClass}>
+                Custom range
+              </SelectItem>
+            </FilterSelectContent>
+          </Select>
+
+          <PillDivider />
+
+          <BrowseSortButton
+            variant="pill"
+            sortBy={filters.sortBy}
+            onSortChange={(sortBy) => onFiltersChange({ ...filters, sortBy })}
+            onApply={onFiltersApply}
+          />
+
+          <PillDivider />
+
+          <div className="flex items-center gap-0.5 px-1.5">
+                <button
+                  type="button"
+                  aria-label="4 per row"
+                  onClick={() => onGridLayoutChange("grid4")}
+                  className={cn(
+                    "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+                    gridLayout === "grid4" ? "text-yellow-500" : "text-gray-400 hover:text-gray-600",
+                  )}
+                >
+                  <Widget2 className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="6 per row"
+                  onClick={() => onGridLayoutChange("grid6")}
+                  className={cn(
+                    "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+                    gridLayout === "grid6" ? "text-yellow-500" : "text-gray-400 hover:text-gray-600",
+                  )}
+                >
+                  <Widget4 className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="8 per row"
+                  onClick={() => onGridLayoutChange("grid8")}
+                  className={cn(
+                    "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+                    gridLayout === "grid8" ? "text-yellow-500" : "text-gray-400 hover:text-gray-600",
+                  )}
+                >
+                <Widget3 className="h-4 w-4" />
+              </button>
+          </div>
+
+          {productCount !== undefined && (
+            <>
+              <PillDivider />
+              <span className="flex items-center px-3.5 text-sm tabular-nums text-gray-400 whitespace-nowrap">
+                {productCount.toLocaleString()}
+              </span>
+            </>
+          )}
+        </div>
+      </SolarProvider>
+
+      {additionalFilters}
+    </div>
+  );
 }
 
 export type ProductGridLayout = "grid4" | "grid6" | "grid8";
@@ -273,8 +593,6 @@ export function BrowseFiltersToolbar({
     clearDrillDown();
     prefetchProducts(level1);
   };
-
-  const priceSelectValue = priceValueFromFilters(filters);
 
   // ─── Mobile sheet mode ────────────────────────────────────────────────────
   if (sheetMode) {
@@ -403,125 +721,17 @@ export function BrowseFiltersToolbar({
         </div>
       )}
 
-      {/* Filter pill — far right */}
-      <div className="flex items-center gap-2 ml-auto flex-shrink-0">
-        <SolarProvider {...solarProviderProps}>
-          <div className="flex h-11 items-stretch rounded-full border border-gray-200 bg-white shadow-sm overflow-hidden">
-
-            {/* Location */}
-            <Select defaultValue="melbourne">
-              <SelectTrigger className={cn(pillTriggerClass, "min-w-[8.5rem]")}>
-                <MapPoint className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
-                <SelectValue placeholder="Location" />
-              </SelectTrigger>
-              <FilterSelectContent>
-                {LOCATION_OPTIONS.map((loc) => (
-                  <SelectItem key={loc.value} value={loc.value} className={filterSelectItemClass}>{loc.label}</SelectItem>
-                ))}
-              </FilterSelectContent>
-            </Select>
-
-            <PillDivider />
-
-            {/* Condition */}
-            <Select
-              value={filters.condition}
-              onValueChange={(v) => {
-                onFiltersChange({ ...filters, condition: v as ConditionFilter });
-                onFiltersApply();
-              }}
-            >
-              <SelectTrigger className={cn(pillTriggerClass, "min-w-[7.5rem]")}>
-                <Tag className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
-                <SelectValue placeholder="Condition" />
-              </SelectTrigger>
-              <FilterSelectContent>
-                {CONDITION_ITEMS.map((c) => (
-                  <SelectItem key={c.value} value={c.value} className={filterSelectItemClass}>{c.label}</SelectItem>
-                ))}
-              </FilterSelectContent>
-            </Select>
-
-            <PillDivider />
-
-            {/* Price */}
-            <Select
-              value={priceSelectValue}
-              onValueChange={(v) => {
-                if (v === "custom") return;
-                const row = PRICE_ITEMS.find((p) => p.value === v);
-                if (!row || v === "any") {
-                  onFiltersChange({ ...filters, minPrice: "", maxPrice: "" });
-                } else {
-                  onFiltersChange({ ...filters, minPrice: row.min, maxPrice: row.max });
-                }
-                onFiltersApply();
-              }}
-            >
-              <SelectTrigger className={cn(pillTriggerClass, "min-w-[6.5rem]")}>
-                <Dollar className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
-                <SelectValue placeholder="Price" />
-              </SelectTrigger>
-              <FilterSelectContent>
-                <SelectItem value="any" className={filterSelectItemClass}>All prices</SelectItem>
-                {PRICE_ITEMS.filter((p) => p.value !== "any").map((p) => (
-                  <SelectItem key={p.value} value={p.value} className={filterSelectItemClass}>{p.label}</SelectItem>
-                ))}
-                <SelectItem value="custom" disabled className={filterSelectItemClass}>Custom range</SelectItem>
-              </FilterSelectContent>
-            </Select>
-
-            <PillDivider />
-
-            {/* Sort */}
-            <BrowseSortButton
-              variant="pill"
-              sortBy={filters.sortBy}
-              onSortChange={(sortBy) => onFiltersChange({ ...filters, sortBy })}
-              onApply={onFiltersApply}
-            />
-
-            <PillDivider />
-
-            {/* Layout */}
-            <div className="flex items-center px-1.5 gap-0.5">
-              <button type="button" aria-label="4 per row" onClick={() => onGridLayoutChange("grid4")}
-                className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
-                  gridLayout === "grid4" ? "text-yellow-500" : "text-gray-400 hover:text-gray-600"
-                )}>
-                <Widget2 className="h-4 w-4" />
-              </button>
-              <button type="button" aria-label="6 per row" onClick={() => onGridLayoutChange("grid6")}
-                className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
-                  gridLayout === "grid6" ? "text-yellow-500" : "text-gray-400 hover:text-gray-600"
-                )}>
-                <Widget4 className="h-4 w-4" />
-              </button>
-              <button type="button" aria-label="8 per row" onClick={() => onGridLayoutChange("grid8")}
-                className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
-                  gridLayout === "grid8" ? "text-yellow-500" : "text-gray-400 hover:text-gray-600"
-                )}>
-                <Widget3 className="h-4 w-4" />
-              </button>
-            </div>
-
-            {productCount !== undefined && (
-              <>
-                <PillDivider />
-                <span className="flex items-center px-3.5 text-sm tabular-nums text-gray-400 whitespace-nowrap">
-                  {productCount.toLocaleString()}
-                </span>
-              </>
-            )}
-          </div>
-        </SolarProvider>
-
-        {/* Advanced filters — sits alongside the pill */}
-        {additionalFilters}
-      </div>
+      {/* Filter controls — far right */}
+      <BrowseFilterControls
+        filters={filters}
+        onFiltersChange={onFiltersChange}
+        onFiltersApply={onFiltersApply}
+        gridLayout={gridLayout}
+        onGridLayoutChange={onGridLayoutChange}
+        productCount={productCount}
+        additionalFilters={additionalFilters}
+        className="ml-auto flex-shrink-0"
+      />
     </div>
   );
 }

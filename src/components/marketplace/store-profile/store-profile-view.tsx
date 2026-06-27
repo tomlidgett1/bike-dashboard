@@ -82,6 +82,9 @@ const ServicesSection = dynamic(() =>
 const RentalsSection = dynamic(() =>
   import("@/components/marketplace/store-profile/rentals-section").then((mod) => mod.RentalsSection),
 );
+const OffersSection = dynamic(() =>
+  import("@/components/marketplace/store-profile/offers-section").then((mod) => mod.OffersSection),
+);
 
 function isBikesStorePage(category: { store_page?: string | null }) {
   return category.store_page === "bikes";
@@ -1427,7 +1430,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
         window.open(href, "_blank", "noopener,noreferrer");
         return;
       }
-      const tabKeys: StoreTab[] = ["home", "products", "bikes", "rentals", "service", "about", "reviews"];
+      const tabKeys: StoreTab[] = ["home", "products", "bikes", "rentals", "service", "offers", "about", "reviews"];
       if (tabKeys.includes(href as StoreTab)) {
         const tab = href as StoreTab;
         trackBehaviour("cta_click", { action: "open_tab", tab, previousTab: activeTab, source: "home_cta" });
@@ -1966,6 +1969,23 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                   }
                 />
               ))}
+
+            {/* OFFERS */}
+            {activeTab === "offers" && (
+              <OffersSection
+                offers={store.offers ?? []}
+                storePhone={store.phone}
+                onClaim={(offer) =>
+                  trackBehaviour("cta_click", {
+                    action: "view_offer",
+                    offerId: offer.id,
+                    offerName: offer.name,
+                    tab: "offers",
+                    source: "offers_card",
+                  })
+                }
+              />
+            )}
 
             {/* ABOUT */}
             {activeTab === "about" && (

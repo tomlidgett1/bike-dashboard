@@ -383,3 +383,18 @@ entrypoint = "./functions/analyze-listing-ai/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/upload-to-cloudinary/index.ts"
+
+# --- Search Dominance Agent --------------------------------------------------
+# Both are internal: cron (pg_net) and the admin API call them with the
+# service-role JWT, so verify_jwt stays on to block anonymous callers.
+[functions.seo-orchestrator]
+enabled = true
+verify_jwt = true
+import_map = "./functions/seo-orchestrator/deno.json"
+entrypoint = "./functions/seo-orchestrator/index.ts"
+
+[functions.seo-worker]
+enabled = true
+verify_jwt = true
+import_map = "./functions/seo-worker/deno.json"
+entrypoint = "./functions/seo-worker/index.ts"

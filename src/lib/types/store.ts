@@ -88,6 +88,32 @@ export interface StoreRental {
   updated_at?: string;
 }
 
+export interface StoreBundleOfferItem {
+  id: string;
+  name: string;
+  image_url?: string | null;
+  price?: number | null;
+}
+
+export interface StoreBundleOffer {
+  id: string;
+  user_id?: string;
+  name: string;
+  description?: string | null;
+  buy_product_id?: string | null;
+  buy_service_id?: string | null;
+  free_product_ids: string[];
+  expires_at: string;
+  is_active: boolean;
+  display_order: number;
+  created_at?: string;
+  updated_at?: string;
+  /** Resolved for storefront display */
+  buy_product?: StoreBundleOfferItem | null;
+  buy_service?: StoreBundleOfferItem | null;
+  free_products?: StoreBundleOfferItem[];
+}
+
 export interface StoreBrand {
   id: string;
   user_id: string;
@@ -120,6 +146,7 @@ export interface StoreProfile {
   sections: StoreSectionWithCategories[];
   services: StoreService[];
   rentals: StoreRental[];
+  offers: StoreBundleOffer[];
   brands: StoreBrand[];
   /** Optional storefront enrichments — rendered only when present */
   cover_image_url?: string | null;
@@ -417,6 +444,28 @@ export interface CreateRentalRequest {
   price_per_hour?: number | null;
   price_per_day?: number | null;
   is_available?: boolean;
+  display_order?: number;
+}
+
+export interface CreateBundleOfferRequest {
+  name: string;
+  description?: string | null;
+  buy_product_id?: string | null;
+  buy_service_id?: string | null;
+  free_product_ids: string[];
+  expires_at: string;
+  display_order?: number;
+}
+
+export interface UpdateBundleOfferRequest {
+  id: string;
+  name?: string;
+  description?: string | null;
+  buy_product_id?: string | null;
+  buy_service_id?: string | null;
+  free_product_ids?: string[];
+  expires_at?: string;
+  is_active?: boolean;
   display_order?: number;
 }
 

@@ -56,6 +56,7 @@ const NAV_ITEMS: { key: StoreTab; label: string }[] = [
   { key: "bikes", label: "Bikes" },
   { key: "rentals", label: "Rentals" },
   { key: "service", label: "Service" },
+  { key: "offers", label: "Offers" },
   { key: "about", label: "About" },
 ];
 

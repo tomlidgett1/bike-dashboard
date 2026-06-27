@@ -5,9 +5,14 @@ import { createPublicSupabaseClient } from '@/lib/marketplace/public-card-feed';
 import { resolveProductImage } from '@/lib/services/image-resolver';
 import { toCurrentHeroPublicId } from '@/lib/utils/cloudinary-transforms';
 
-// Served at /sitemap.xml. Regenerated hourly (ISR) so new storefronts and
-// listings get discovered quickly. Enumerates every public storefront and
-// marketplace listing alongside the static public routes.
+// Served at /sitemap.xml. Regenerated hourly (ISR) so new storefronts, listings
+// and agent-built landing pages get discovered quickly. Enumerates every public
+// storefront, marketplace listing and published SEO page alongside the static
+// routes.
+//
+// One file holds up to MAX_ROWS (Google's 50k/​sitemap ceiling) — ample at the
+// current catalogue size. When listings approach that ceiling, split into a
+// sitemap index with per-type child sitemaps (Next `generateSitemaps`).
 export const revalidate = 3600;
 
 type SupabaseLike = ReturnType<typeof createPublicSupabaseClient>;
@@ -55,9 +60,6 @@ type StoreRow = { user_id: string | null; store_slug?: string | null };
 // falls back when the store_slug column isn't present yet (pre-migration),
 // so the sitemap keeps listing storefronts either way.
 async function fetchStoreRows(supabase: SupabaseLike): Promise<StoreRow[]> {
-  // Slug-aware select first; fall back to user_id only when the store_slug
-  // column isn't present yet (pre-migration). Separate branches keep the two
-  // differently-shaped responses from clashing under the type checker.
   const withSlug = await supabase
     .from('users')
     .select('user_id, store_slug')
@@ -79,6 +81,20 @@ async function fetchStoreRows(supabase: SupabaseLike): Promise<StoreRow[]> {
     return [];
   }
   return (idOnly.data ?? []) as StoreRow[];
+}
+
+// Agent-built landing pages that are live (published + indexable). The table may
+// not exist pre-migration, so any error degrades to an empty list — the sitemap
+// keeps working with the rest of the URLs.
+async function fetchSeoPages(supabase: SupabaseLike): Promise<Array<{ url: string; last_published_at: string | null }>> {
+  const { data, error } = await supabase
+    .from('seo_pages')
+    .select('url, last_published_at')
+    .eq('status', 'published')
+    .eq('indexability', 'index')
+    .range(0, 9999);
+  if (error) return [];
+  return (data ?? []) as Array<{ url: string; last_published_at: string | null }>;
 }
 
 interface ProductSitemapRow {
@@ -141,8 +157,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   try {
     const supabase = createPublicSupabaseClient();
 
-    const [stores, products] = await Promise.all([
+    const [stores, seoPages, products] = await Promise.all([
       fetchStoreRows(supabase),
+      fetchSeoPages(supabase),
       fetchAllRows<ProductSitemapRow>(
         'products',
         (sb, from, to) =>
@@ -166,6 +183,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         lastModified: now,
         changeFrequency: 'daily',
         priority: 0.9,
+      });
+    }
+
+    // Agent-built landing pages (category/suburb/store-directory/brand/owned).
+    for (const p of seoPages) {
+      entries.push({
+        url: `${SITE_URL}${p.url}`,
+        lastModified: p.last_published_at ? new Date(p.last_published_at) : now,
+        changeFrequency: 'weekly',
+        priority: 0.8,
       });
     }
 

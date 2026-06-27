@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { ProductPageClient } from "./product-page-client";
 import type { Metadata } from "next";
 import { JsonLd } from "@/components/seo/json-ld";
-import { productSchema, breadcrumbSchema, type ProductLike } from "@/lib/seo/structured-data";
+import { productSchema, breadcrumbSchema, isProductIndexable, type ProductLike } from "@/lib/seo/structured-data";
 import { productPath, absoluteUrl, SITE_NAME, extractProductId, productSlugId } from "@/lib/seo/site";
 import type { MarketplaceProduct, ProductVariantInfo } from "@/lib/types/marketplace";
 import {
@@ -693,10 +693,22 @@ export async function generateMetadata({
       ? product.primary_image_url
       : undefined;
 
+  // Only products genuinely live on the marketplace (real photo + title, not sold)
+  // are indexable; placeholder-only/untitled rows are thin, so we noindex them
+  // (follow:true preserves link equity) until they earn an image. This keeps the
+  // set of indexable product pages identical to the image-gated sitemap.
+  //
+  // Indexable products OMIT `robots` entirely (not `undefined`, which Next treats
+  // as an override that erases the inherited tag) so they keep the root layout's
+  // index/follow + max-image-preview:large + max-snippet:-1 — the directives that
+  // drive product rich results. Only thin rows get an explicit noindex.
+  const indexable = isProductIndexable(product);
+
   return {
     title: name,
     description,
     alternates: { canonical: canonicalPath },
+    ...(indexable ? {} : { robots: { index: false, follow: true } }),
     openGraph: {
       type: "website",
       title: `${name} · ${SITE_NAME}`,

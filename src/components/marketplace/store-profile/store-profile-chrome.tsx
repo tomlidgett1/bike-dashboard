@@ -14,6 +14,7 @@ import {
   Wrench,
   Info,
   CircleDot,
+  Gift,
   type LucideIcon,
 } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
@@ -34,6 +35,7 @@ export type StoreTab =
   | "bikes"
   | "rentals"
   | "service"
+  | "offers"
   | "about"
   | "reviews";
 
@@ -91,6 +93,7 @@ export function buildStoreTabs(
     { key: "bikes", label: "Bikes", icon: Bike },
     { key: "rentals", label: "Rentals", icon: CircleDot },
     { key: "service", label: "Service", icon: Wrench },
+    { key: "offers", label: "Offers", icon: Gift },
     { key: "about", label: "About", icon: Info },
     { key: "reviews", label: "Reviews", icon: Star },
   ];

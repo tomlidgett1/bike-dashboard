@@ -562,6 +562,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
 	        <div
 	          className={cn(
 	            isList && "flex flex-1 flex-col justify-center min-w-0 py-0",
+	            !isList && "flex flex-col",
 	            !isList &&
 	              !hideStoreMeta &&
 	              (featuredMobile
@@ -579,11 +580,12 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
 	                : "h-[3.25rem] overflow-hidden mb-0.5")
 	          )}
 	        >
-          {/* Product Title - Enhanced typography */}
+          {/* Product Title */}
           <h3
             className={cn(
               "text-gray-900 leading-tight line-clamp-2",
               isList && "text-sm font-semibold mb-1",
+              !isList && "order-2",
               !isList &&
                 (inCarousel && hideStoreMeta
                   ? "text-sm font-medium line-clamp-1 mb-0"
@@ -599,19 +601,19 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             {productData.display_name || product.description}
           </h3>
 
-          {/* Price - Below title, size between title and location.
-              Shows discounted price + struck-through original + % badge when on sale.
-              Both sale prices use formatPriceAUDFull (2dp) for precision and consistency. */}
+          {/* Price — above title on grid cards via flex order */}
           {(() => {
             const priceSizeClass = cn(
               "font-semibold leading-tight",
-              isList && "text-sm",
+              isList && "text-base",
               !isList &&
                 (inCarousel && hideStoreMeta
-                  ? "text-sm"
+                  ? "text-base"
                   : featuredMobile
-                    ? "text-xs sm:text-sm"
-                    : "text-xs")
+                    ? "text-sm sm:text-base"
+                    : compact
+                      ? "text-xs sm:text-sm"
+                      : "text-sm sm:text-base")
             );
             const priceConditionBadge = conditionBadge ? (
               <span className="inline-flex items-center rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-gray-700">
@@ -621,7 +623,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
 
             if (live.onSale) {
               return (
-	                <div className={cn("flex items-center gap-1.5 mb-0", hideStoreMeta ? "flex-nowrap overflow-hidden" : "flex-wrap")}>
+	                <div className={cn("flex items-center gap-1.5 mb-0", !isList && "order-1", hideStoreMeta ? "flex-nowrap overflow-hidden" : "flex-wrap")}>
 	                  <p className={cn(priceSizeClass, "text-red-600 mb-0 shrink-0")}>
 	                    {formatPriceAUDFull(live.price)}
 	                  </p>
@@ -634,7 +636,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
               );
             }
             return (
-	              <div className={cn("flex items-center gap-1.5 mb-0", hideStoreMeta ? "flex-nowrap overflow-hidden" : "flex-wrap")}>
+	              <div className={cn("flex items-center gap-1.5 mb-0", !isList && "order-1", hideStoreMeta ? "flex-nowrap overflow-hidden" : "flex-wrap")}>
 	                <p className={cn(priceSizeClass, "text-gray-900 mb-0 shrink-0")}>
 	                  {formatPriceAUD(live.price)}
 	                </p>
@@ -646,7 +648,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
 
           {/* Seller info - Better organized layout */}
           {!hideStoreMeta && (
-          <div className={cn("flex items-center gap-0.5 flex-wrap", isList ? "mt-1" : "mt-0.5")}>
+          <div className={cn("flex items-center gap-0.5 flex-wrap", isList ? "mt-1" : "order-3 mt-0.5")}>
             {/* Store badge for store inventory items (not online_catalog) */}
             {productData.listing_type === 'store_inventory' && productData.listing_source !== 'online_catalog' && (
               <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-medium rounded-md">

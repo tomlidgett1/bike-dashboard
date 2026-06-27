@@ -7,6 +7,7 @@ import { AtelierCatalogTab } from "./atelier-catalog-tab";
 import {
   AtelierServiceTab,
   AtelierRentalsTab,
+  AtelierOffersTab,
   AtelierAboutTab,
 } from "./atelier-tabs";
 import { STUDIO, STUDIO_FONT_CLASS, DISPLAY_FONT } from "./atelier-theme";
@@ -85,7 +86,7 @@ export function AtelierStorefront({
         window.open(href, "_blank", "noopener,noreferrer");
         return;
       }
-      const tabKeys: StoreTab[] = ["home", "products", "bikes", "rentals", "service", "about", "reviews"];
+      const tabKeys: StoreTab[] = ["home", "products", "bikes", "rentals", "service", "offers", "about", "reviews"];
       if (tabKeys.includes(href as StoreTab)) {
         const tab = href as StoreTab;
         trackBehaviour("cta_click", { action: "open_tab", tab, previousTab: activeTab, source: "atelier_cta" });
@@ -179,6 +180,10 @@ export function AtelierStorefront({
 
       {activeTab === "service" && (
         <AtelierServiceTab store={store} onCall={() => handleNavigate("call")} />
+      )}
+
+      {activeTab === "offers" && (
+        <AtelierOffersTab store={store} onCall={() => handleNavigate("call")} />
       )}
 
       {activeTab === "about" && (

@@ -184,6 +184,8 @@ interface InstantSearchProps {
   listingType?: 'store_inventory' | 'private_listing' | null;
   /** Preserve the active marketplace tab when navigating to a search results page. */
   spaceContext?: MarketplaceSpace;
+  /** Show ⌘K shortcut badge (hidden in compact header pill). */
+  showShortcut?: boolean;
 }
 
 export function InstantSearch({ 
@@ -194,6 +196,7 @@ export function InstantSearch({
   leftSlot,
   listingType,
   spaceContext = 'marketplace',
+  showShortcut = true,
 }: InstantSearchProps = {}) {
   const router = useRouter();
   const [query, setQuery] = React.useState("");
@@ -1021,7 +1024,7 @@ export function InstantSearch({
           ref={anchorRef}
           className={cn("relative", leftSlot ? "flex-1 min-w-0" : "")}
         >
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 pointer-events-none" />
           
           <Input
             ref={inputRef}
@@ -1047,7 +1050,10 @@ export function InstantSearch({
               "text-sm",
               mobileFullPage 
                 ? "h-10 pl-10 pr-10 rounded-lg border-0 bg-gray-100 focus:ring-2 focus:ring-gray-200 placeholder:text-gray-500" 
-                : "h-9 pl-10 pr-16 sm:pl-11 sm:pr-20 rounded-md border-gray-300 focus:border-gray-400 focus:ring-gray-400 bg-white"
+                : cn(
+                    "h-9 rounded-full border-0 bg-gray-100 pl-10 focus:ring-2 focus:ring-gray-200 focus:ring-offset-0 placeholder:text-gray-500",
+                    showShortcut ? "pr-16 sm:pr-20" : "pr-4",
+                  ),
             )}
           />
 
@@ -1066,7 +1072,7 @@ export function InstantSearch({
               </button>
             )}
 
-            {!mobileFullPage && (
+            {!mobileFullPage && showShortcut && (
               <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded-md border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
                 <span className="text-xs">⌘</span>K
               </kbd>

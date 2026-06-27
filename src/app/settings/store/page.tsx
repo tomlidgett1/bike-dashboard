@@ -10,6 +10,7 @@ const VALID = [
   "brands",
   "services",
   "rentals",
+  "offers",
   "analytics",
   "products",
   "titles",

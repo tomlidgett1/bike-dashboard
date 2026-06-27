@@ -421,20 +421,27 @@ export function MarketplaceHeader({
                   isGuestLayout ? "max-w-md" : "max-w-sm mx-auto"
                 )}
               >
-                <InstantSearch listingType={searchListingType} spaceContext={currentSpace} />
+                <InstantSearch
+                  listingType={searchListingType}
+                  spaceContext={currentSpace}
+                  placeholder="Search Yellow Jersey"
+                />
               </div>
               {/* Desktop search */}
               <div
                 className={cn(
-                  "hidden lg:flex items-center border border-gray-200 rounded-md h-9 px-2 min-w-0",
-                  "[&_input]:!border-0 [&_input]:!bg-transparent [&_input]:!shadow-none",
-                  "[&_input]:!ring-0 [&_input:focus]:!ring-0 [&_input:focus]:!border-0",
-                  "[&_input]:!h-8",
-                  "[&_kbd]:!hidden",
+                  "hidden lg:flex items-center min-w-0 rounded-full border border-gray-200 bg-gray-100 h-9",
+                  "[&_input]:!h-9 [&_input]:!rounded-full [&_input]:!border-0 [&_input]:!bg-transparent",
+                  "[&_input]:!shadow-none [&_input]:!ring-0 [&_input:focus]:!ring-0",
                   isGuestLayout ? "flex-1 max-w-xl" : "w-[583px]"
                 )}
               >
-                <InstantSearch listingType={searchListingType} spaceContext={currentSpace} />
+                <InstantSearch
+                  listingType={searchListingType}
+                  spaceContext={currentSpace}
+                  placeholder="Search Yellow Jersey"
+                  showShortcut={false}
+                />
               </div>
             </div>
 
@@ -954,6 +961,7 @@ export function MarketplaceHeader({
               mobileFullPage
               listingType={searchListingType}
               spaceContext={currentSpace}
+              placeholder="Search Yellow Jersey"
               leftSlot={
                 <button
                   onClick={() => setMobileSearchOpen(false)}

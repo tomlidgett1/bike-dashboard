@@ -33,6 +33,10 @@ export const floatingCardPageHeaderNudgeClass = "px-0.5";
 export const floatingCardPageCardClass =
   "relative z-[1] -ml-px flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-xl border border-gray-200 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)]";
 
+/** Marketplace homepage card — same shell as dashboard, without sidebar seam overlap. */
+export const marketplaceHomeCardClass =
+  "relative z-[1] flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-xl border border-gray-200 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)]";
+
 /** @deprecated Use `floatingCardPageContainerResetClass` */
 export const productsPageContainerResetClass = floatingCardPageContainerResetClass;
 

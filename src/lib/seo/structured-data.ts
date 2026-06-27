@@ -194,6 +194,24 @@ export function bikeStoreSchema(store: StoreProfile, url: string): Json {
   return schema;
 }
 
+/**
+ * Index policy: only products that are genuinely "live on the marketplace" should
+ * be indexable — a real (http) photo AND a real title, and not sold. Everything
+ * else (placeholder-only or untitled rows) renders a thin page, so we noindex it
+ * until it earns an image. This mirrors exactly what the sitemap
+ * (`public_marketplace_cards`, gated on `resolved_image_id IS NOT NULL`) already
+ * includes, so page-level indexability and sitemap membership stay consistent.
+ * It is self-healing: the page flips back to indexable the moment an approved
+ * image lands, with no redeploy.
+ */
+export function isProductIndexable(p: ProductLike): boolean {
+  const isHttp = (u?: string | null): u is string => !!u && /^https?:\/\//i.test(u);
+  const hasImage = isHttp(p.primary_image_url) || (p.all_images?.some(isHttp) ?? false);
+  const hasTitle = !!(p.display_name?.trim() || p.description?.trim());
+  const sold = !!p.sold_at || p.listing_status === 'sold';
+  return hasImage && hasTitle && !sold;
+}
+
 export function productSchema(p: ProductLike, url: string): Json {
   const name = p.display_name || p.description || 'Bicycle';
   const images = dedupe(p.all_images && p.all_images.length ? p.all_images : [p.primary_image_url]).filter(
@@ -240,6 +258,21 @@ export function breadcrumbSchema(items: Array<{ name: string; url: string }>): J
       position: i + 1,
       name: it.name,
       item: it.url,
+    })),
+  };
+}
+
+/** ItemList for collection/landing pages (category, suburb, brand, directory). */
+export function itemListSchema(items: Array<{ url: string; name: string }>): Json {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    numberOfItems: items.length,
+    itemListElement: items.map((it, i) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      url: it.url,
+      name: it.name,
     })),
   };
 }

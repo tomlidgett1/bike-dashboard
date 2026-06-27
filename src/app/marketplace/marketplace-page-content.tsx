@@ -9,7 +9,10 @@ import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
 import { ListItemBannerSlot } from "@/components/marketplace/list-item-banner";
-import { UnifiedFilterBar, ViewMode, ListingTypeFilter as ListingTypeFilterType } from "@/components/marketplace/unified-filter-bar";
+import { UnifiedFilterBar, ViewMode, ListingTypeFilter as ListingTypeFilterType, MarketplaceDesktopCategoryBrowse } from "@/components/marketplace/unified-filter-bar";
+import { MarketplaceSpaceTabs } from "@/components/marketplace/marketplace-space-tabs";
+import { BrowseFilterControls, NavFilterSeparator } from "@/components/marketplace/browse-filters-toolbar";
+import { BikeStoresPicker } from "@/components/marketplace/bike-stores-picker";
 import { SpaceNavigator, useMarketplaceSpace } from "@/components/marketplace/space-navigator";
 import { ForYouFeedView, ForYouFeedSkeletonBody } from "@/app/for-you/for-you-content";
 import { StoreCategoryPills } from "@/components/marketplace/store-category-pills";
@@ -598,19 +601,19 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
 
   const productGridClassName = React.useMemo(() => {
     if (isProductSearchActive) {
-      return "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-1 sm:gap-3 md:gap-4";
+      return "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-1 sm:gap-1.5 md:gap-2";
     }
     if (productGridLayout === "grid8") {
-      return "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-0.5 sm:gap-1.5";
+      return "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-0.5 sm:gap-1";
     }
     if (productGridLayout === "grid4") {
       return isStoresView
-        ? "grid grid-cols-2 md:grid-cols-4 gap-1 md:gap-4"
-        : "grid grid-cols-2 md:grid-cols-4 gap-1 md:gap-4";
+        ? "grid grid-cols-2 md:grid-cols-4 gap-1 md:gap-2"
+        : "grid grid-cols-2 md:grid-cols-4 gap-1 md:gap-2";
     }
     return isStoresView
-      ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-0.5 sm:gap-2.5"
-      : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-0.5 sm:gap-3";
+      ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-0.5 sm:gap-1"
+      : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-0.5 sm:gap-1.5";
   }, [isProductSearchActive, productGridLayout, isStoresView]);
 
   React.useEffect(() => {
@@ -1034,21 +1037,63 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     router.push(`/marketplace/store/${store.id}`);
   }, [router]);
 
+  const showDesktopBrowseFilters = viewMode === "all" && !isForYouView;
+
   return (
     <>
-      {/* Main header - always rendered so modals remain accessible */}
-      <MarketplaceHeader 
-        compactSearchOnMobile 
-        showFloatingButton 
-        showSpaceNavigator
-        currentSpace={currentSpace}
-        onSpaceChange={setSpace}
-        isNavigating={isNavigating}
-        showStickyFilters={showStickyFilters}
-        showMobileBrowseFiltersFab={(isMarketplaceView || isStoreInventoryView) && viewMode === "all"}
-        mobileBrowseFiltersBadge={activeFilterCount}
-        onOpenMobileBrowseFilters={() => setMobileBrowseSheetOpen(true)}
-      />
+      <div className="flex min-h-dvh min-h-screen flex-col">
+        <MarketplaceHeader
+          compactSearchOnMobile
+          showFloatingButton
+          showSpaceNavigator
+          currentSpace={currentSpace}
+          onSpaceChange={setSpace}
+          isNavigating={isNavigating}
+          showStickyFilters={showStickyFilters}
+          showMobileBrowseFiltersFab={(isMarketplaceView || isStoreInventoryView) && viewMode === "all"}
+          mobileBrowseFiltersBadge={activeFilterCount}
+          onOpenMobileBrowseFilters={() => setMobileBrowseSheetOpen(true)}
+        />
+
+        <div className="relative z-[2] hidden sm:block bg-white">
+          <MarketplaceSpaceTabs
+            currentSpace={currentSpace}
+            viewMode={viewMode}
+            onViewModeChange={handleViewModeChange}
+            onNavigateToStores={handleNavigateToAllStores}
+            onNavigateToUber={handleNavigateToUber}
+            onNavigateToForYou={() => setSpace("for-you")}
+            onPrefetchSpace={handlePrefetchSpace}
+            trailing={
+              showDesktopBrowseFilters || isStoresView ? (
+                <div className="flex h-10 items-center gap-3">
+                  {isStoresView && (
+                    <>
+                      <BikeStoresPicker
+                        variant="nav"
+                        selectedStoreId={selectedStoreId}
+                        onStoreSelect={handleNavigateToStore}
+                        onAllStores={handleNavigateToAllStores}
+                      />
+                      {showDesktopBrowseFilters ? <NavFilterSeparator /> : null}
+                    </>
+                  )}
+                  {showDesktopBrowseFilters ? (
+                    <BrowseFilterControls
+                      variant="nav"
+                      filters={advancedFilters}
+                      onFiltersChange={handleAdvancedFiltersChange}
+                      onFiltersApply={handleAdvancedFiltersApply}
+                      gridLayout={productGridLayout}
+                      onGridLayoutChange={setProductGridLayout}
+                      productCount={!searchQuery && isMarketplaceView ? totalCount : undefined}
+                    />
+                  ) : null}
+                </div>
+              ) : null
+            }
+          />
+        </div>
 
       {/* Sticky Filter Header - Mobile Only (appears when category pills scroll out) */}
       {showStickyFilters && ((isMarketplaceView && viewMode === 'all') || isStoreInventoryView) && (
@@ -1160,7 +1205,9 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
           </div>
         )}
 
-      <MarketplaceLayout showFooter={false} showStoreCTA={false}>
+        <div className="flex min-h-0 w-full flex-1 flex-col sm:bg-white">
+          <section className="flex min-h-0 w-full flex-1 flex-col sm:overflow-hidden">
+            <MarketplaceLayout showFooter={false} showStoreCTA={false} embedded>
         {/* Mobile: promo above tabs, then sticky tabs + category pills */}
         <div className="sm:hidden bg-white">
           {MARKETPLACE_PROMO_BANNERS_ENABLED &&
@@ -1206,6 +1253,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
               mobileBrowseSheetOpen={mobileBrowseSheetOpen}
               onMobileBrowseSheetOpenChange={setMobileBrowseSheetOpen}
               suppressCategoryBrowse={isProductSearchActive}
+              hideDesktopCategoryPills
             />
             {isStoresView && selectedStoreId && storeCategories.length > 0 && !isProductSearchActive && (
               <div className="px-3 pt-2 pb-2.5">
@@ -1221,137 +1269,41 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
         {/* Sentinel div for scroll tracking - invisible marker */}
         <div ref={sentinelRef} className="sm:hidden h-px" aria-hidden="true" />
 
-        {/* Desktop filter chrome — sits directly under the sticky header */}
-        <div className="hidden sm:block border-b border-gray-200 bg-gray-50">
-          <div className="space-y-3 px-4 pt-3 pb-0 sm:space-y-4 sm:px-6 sm:pb-0.5">
-            {isStoresView && (
-              <>
-                <UnifiedFilterBar
-                  currentSpace={currentSpace}
-                  viewMode={viewMode}
-                  onViewModeChange={handleViewModeChange}
-                  selectedLevel1={selectedLevel1}
-                  selectedLevel2={selectedLevel2}
-                  selectedLevel3={selectedLevel3}
-                  onLevel1Change={handleLevel1Change}
-                  onLevel2Change={handleLevel2Change}
-                  onLevel3Change={handleLevel3Change}
-                  listingTypeFilter={listingTypeFilter}
-                  onListingTypeChange={handleListingTypeChange}
-                  categoryPillsRef={categoryPillsRef}
-                  onNavigateToStores={handleNavigateToAllStores}
-                  onNavigateToUber={handleNavigateToUber}
-                  onNavigateToForYou={() => setSpace("for-you")}
-                  onPrefetchSpace={handlePrefetchSpace}
-                  selectedStoreId={selectedStoreId}
-                  onStoreSelect={handleNavigateToStore}
-                  browseFilters={advancedFilters}
-                  onBrowseFiltersChange={handleAdvancedFiltersChange}
-                  onBrowseFiltersApply={handleAdvancedFiltersApply}
-                  onBrowseFiltersReset={handleAdvancedFiltersReset}
-                  productGridLayout={productGridLayout}
-                  onProductGridLayoutChange={setProductGridLayout}
-                  dynamicCategories={storesViewCategories}
-                  categoriesLoading={storesViewCategoriesLoading}
-                  suppressCategoryBrowse={isProductSearchActive}
-                  additionalFilters={
-                    <AdvancedFilters
-                      filters={advancedFilters}
-                      onFiltersChange={handleAdvancedFiltersChange}
-                      onApply={handleAdvancedFiltersApply}
-                      onReset={handleAdvancedFiltersReset}
-                      activeFilterCount={activeFilterCount}
-                      listingTypeFilter={listingTypeFilter}
-                      onListingTypeChange={handleListingTypeChange}
-                    />
-                  }
-                />
-                {selectedStoreId && storeCategories.length > 0 && !isProductSearchActive && (
-                  <StoreCategoryPills
-                    categories={storeCategories}
-                    selectedCategory={selectedStoreCategory}
-                    onCategoryChange={setSelectedStoreCategory}
-                  />
-                )}
-              </>
-            )}
-            {(isMarketplaceView || isUberView) && (
-              <UnifiedFilterBar
-                currentSpace={currentSpace}
-                viewMode={viewMode}
-                onViewModeChange={handleViewModeChange}
-                selectedLevel1={selectedLevel1}
-                selectedLevel2={selectedLevel2}
-                selectedLevel3={selectedLevel3}
-                onLevel1Change={handleLevel1Change}
-                onLevel2Change={handleLevel2Change}
-                onLevel3Change={handleLevel3Change}
-                listingTypeFilter={listingTypeFilter}
-                onListingTypeChange={handleListingTypeChange}
-                productCount={!searchQuery ? totalCount : undefined}
-                categoryPillsRef={categoryPillsRef}
-                onNavigateToStores={handleNavigateToAllStores}
-                onNavigateToUber={handleNavigateToUber}
-                onNavigateToForYou={() => setSpace("for-you")}
-                onPrefetchSpace={handlePrefetchSpace}
-                selectedStoreId={selectedStoreId}
-                onStoreSelect={handleNavigateToStore}
-                browseFilters={advancedFilters}
-                onBrowseFiltersChange={handleAdvancedFiltersChange}
-                onBrowseFiltersApply={handleAdvancedFiltersApply}
-                onBrowseFiltersReset={handleAdvancedFiltersReset}
-                productGridLayout={productGridLayout}
-                onProductGridLayoutChange={setProductGridLayout}
-                dynamicCategories={isUberView ? storesViewCategories : marketplaceCategories}
-                categoriesLoading={isUberView ? storesViewCategoriesLoading : loading}
-                suppressCategoryBrowse={isProductSearchActive}
-                additionalFilters={
-                  <AdvancedFilters
-                    filters={advancedFilters}
-                    onFiltersChange={handleAdvancedFiltersChange}
-                    onApply={handleAdvancedFiltersApply}
-                    onReset={handleAdvancedFiltersReset}
-                    activeFilterCount={activeFilterCount}
-                    listingTypeFilter={listingTypeFilter}
-                    onListingTypeChange={handleListingTypeChange}
-                  />
-                }
-              />
-            )}
-            {isForYouView && (
-              <UnifiedFilterBar
-                currentSpace={currentSpace}
-                viewMode={viewMode}
-                onViewModeChange={handleViewModeChange}
-                selectedLevel1={selectedLevel1}
-                selectedLevel2={selectedLevel2}
-                selectedLevel3={selectedLevel3}
-                onLevel1Change={handleLevel1Change}
-                onLevel2Change={handleLevel2Change}
-                onLevel3Change={handleLevel3Change}
-                listingTypeFilter={listingTypeFilter}
-                onListingTypeChange={handleListingTypeChange}
-                categoryPillsRef={categoryPillsRef}
-                onNavigateToStores={handleNavigateToAllStores}
-                onNavigateToUber={handleNavigateToUber}
-                onNavigateToForYou={() => setSpace("for-you")}
-                onPrefetchSpace={handlePrefetchSpace}
-                selectedStoreId={selectedStoreId}
-                onStoreSelect={handleNavigateToStore}
-                browseFilters={advancedFilters}
-                onBrowseFiltersChange={handleAdvancedFiltersChange}
-                onBrowseFiltersApply={handleAdvancedFiltersApply}
-                onBrowseFiltersReset={handleAdvancedFiltersReset}
-                productGridLayout={productGridLayout}
-                onProductGridLayoutChange={setProductGridLayout}
-                suppressCategoryBrowse
-              />
-            )}
-          </div>
-        </div>
-
-        <div className="px-2 pb-24 sm:px-6 sm:pb-8">
+        <div className="min-h-0 w-full flex-1 px-2 pb-24 sm:relative sm:z-[1] sm:overflow-hidden sm:rounded-t-xl sm:border sm:border-gray-200 sm:bg-gray-50 sm:px-6 sm:pb-8">
           <div className={isForYouView ? "pt-2 pb-5 sm:pt-3 sm:pb-7" : "space-y-3 pt-4 sm:pt-5"}>
+            {showDesktopBrowseFilters ? (
+              <MarketplaceDesktopCategoryBrowse
+                selectedLevel1={selectedLevel1}
+                selectedLevel2={selectedLevel2}
+                selectedLevel3={selectedLevel3}
+                onLevel1Change={handleLevel1Change}
+                onLevel2Change={handleLevel2Change}
+                onLevel3Change={handleLevel3Change}
+                browseFilters={advancedFilters}
+                onBrowseFiltersChange={handleAdvancedFiltersChange}
+                onBrowseFiltersApply={handleAdvancedFiltersApply}
+                productGridLayout={productGridLayout}
+                onProductGridLayoutChange={setProductGridLayout}
+                categoryPillsRef={categoryPillsRef}
+                dynamicCategories={
+                  isStoresView || isUberView ? storesViewCategories : marketplaceCategories
+                }
+                categoriesLoading={
+                  isStoresView || isUberView ? storesViewCategoriesLoading : loading
+                }
+                suppressCategoryBrowse={isProductSearchActive}
+              />
+            ) : null}
+            {isStoresView && selectedStoreId && storeCategories.length > 0 && !isProductSearchActive && (
+              <div className="hidden sm:block">
+                <StoreCategoryPills
+                  className="pb-1"
+                  categories={storeCategories}
+                  selectedCategory={selectedStoreCategory}
+                  onCategoryChange={setSelectedStoreCategory}
+                />
+              </div>
+            )}
             {isForYouView ? (
               forYouFeed ? (
                 <ForYouFeedView initialFeed={forYouFeed} hadIdentity embedded />
@@ -1738,7 +1690,10 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
             )}
           </div>
         </div>
-      </MarketplaceLayout>
+            </MarketplaceLayout>
+          </section>
+        </div>
+      </div>
 
       {/* Image Discovery Modal (admin only) */}
       {isAdmin && (

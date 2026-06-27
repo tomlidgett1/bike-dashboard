@@ -19,6 +19,7 @@ import {
   MagicStick3,
   Settings,
   Shop,
+  Soundwave,
   Tag,
   TestTube,
   Widget,
@@ -82,6 +83,7 @@ const NAV: NavGroup[] = [
           { title: "Landing page", href: "/settings/store/landing" },
           { title: "Carousels", href: "/settings/store/carousels" },
           { title: "Specials", href: "/settings/store/specials" },
+          { title: "Offers", href: "/settings/store/offers" },
           { title: "Brands", href: "/settings/store/brands" },
           { title: "Services", href: "/settings/store/services" },
           { title: "Rentals", href: "/settings/store/rentals" },
@@ -98,6 +100,7 @@ const NAV: NavGroup[] = [
     items: [
       { title: "Nest", href: "/settings/store/nest", icon: ChatRound, exact: true },
       { title: "Customer inquiries", href: "/settings/store/customer-inquiries", icon: Letter, exact: true },
+      { title: "Test Tom", href: "/settings/store/test-tom", icon: Soundwave, exact: true },
     ],
   },
   {

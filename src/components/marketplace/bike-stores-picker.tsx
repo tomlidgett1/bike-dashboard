@@ -23,6 +23,8 @@ interface BikeStoresPickerProps {
   onStoreSelect: (storeId: string) => void;
   onAllStores?: () => void;
   className?: string;
+  /** Flat text style for the desktop nav bar beside browse filters. */
+  variant?: "default" | "nav";
 }
 
 export function BikeStoresPicker({
@@ -30,6 +32,7 @@ export function BikeStoresPicker({
   onStoreSelect,
   onAllStores,
   className,
+  variant = "default",
 }: BikeStoresPickerProps) {
   const [open, setOpen] = React.useState(false);
   const [stores, setStores] = React.useState<BikeStoreOption[]>([]);
@@ -83,6 +86,7 @@ export function BikeStoresPicker({
 
   const selectedStore = stores.find((s) => s.id === selectedStoreId);
   const triggerLabel = selectedStore?.name ?? "Stores";
+  const isNav = variant === "nav";
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -91,22 +95,28 @@ export function BikeStoresPicker({
           type="button"
           aria-label="Choose a bike store"
           className={cn(
-            "flex h-8 sm:h-11 max-w-[148px] sm:max-w-[200px] items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 sm:px-3.5 text-[13px] sm:text-sm font-medium text-gray-700 shadow-sm transition-colors hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 cursor-pointer",
+            isNav
+              ? "flex h-10 max-w-[180px] items-center gap-1.5 border-0 bg-transparent px-0 text-sm font-medium leading-none text-gray-600 shadow-none transition-colors hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 cursor-pointer"
+              : "flex h-8 sm:h-11 max-w-[148px] sm:max-w-[200px] items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 sm:px-3.5 text-[13px] sm:text-sm font-medium text-gray-700 shadow-sm transition-colors hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/20 cursor-pointer",
             className
           )}
         >
           {selectedStore?.logo_url ? (
-            <div className="relative h-5 w-5 flex-shrink-0 overflow-hidden rounded-full border border-gray-200">
+            <div className={cn(
+              "relative flex-shrink-0 overflow-hidden rounded-full border border-gray-200",
+              isNav ? "h-4 w-4" : "h-5 w-5",
+            )}>
               <Image src={selectedStore.logo_url} alt="" fill className="object-cover" />
             </div>
           ) : (
-            <Store className="h-4 w-4 flex-shrink-0 text-gray-400" />
+            <Store className={cn("flex-shrink-0 text-gray-400", isNav ? "h-3.5 w-3.5" : "h-4 w-4")} />
           )}
           <span className="truncate">{loading ? "Stores…" : triggerLabel}</span>
           <ChevronDown
             className={cn(
-              "h-4 w-4 flex-shrink-0 text-gray-400 transition-transform duration-200",
-              open && "rotate-180"
+              "flex-shrink-0 text-gray-400 transition-transform duration-200",
+              isNav ? "h-3.5 w-3.5" : "h-4 w-4",
+              open && "rotate-180",
             )}
           />
         </button>

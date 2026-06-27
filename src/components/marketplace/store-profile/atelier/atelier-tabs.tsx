@@ -11,7 +11,9 @@ import {
   Star,
   Clock,
   Check,
+  Gift,
 } from "@/components/layout/app-sidebar/dashboard-icons";
+import { BundleOfferCard } from "@/components/marketplace/store-profile/bundle-offer-card";
 import { STUDIO, DISPLAY_FONT } from "./atelier-theme";
 import type {
   StoreProfile,
@@ -392,6 +394,49 @@ function ContactCard({
     );
   }
   return <div>{inner}</div>;
+}
+
+// ════════════════════════════════════════════════════════════
+// OFFERS
+// ════════════════════════════════════════════════════════════
+
+export function AtelierOffersTab({
+  store,
+  onCall,
+}: {
+  store: StoreProfile;
+  onCall: () => void;
+}) {
+  const offers = store.offers ?? [];
+
+  return (
+    <div style={{ backgroundColor: STUDIO.surface, color: STUDIO.ink, minHeight: "60vh" }}>
+      <PageHeader title="Offers" subtitle="Buy one, get extras free" />
+      <div className="mx-auto max-w-[1400px] px-5 py-14 sm:px-8 sm:py-16 lg:px-12">
+        {offers.length === 0 ? (
+          <EmptyState
+            icon={Gift}
+            title="No offers right now"
+            body="This store hasn't published any bundle offers yet."
+          />
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {offers.map((offer, index) => (
+              <BundleOfferCard
+                key={offer.id}
+                offer={offer}
+                accent="#ffde59"
+                accentText="#0a0a0a"
+                backgroundIndex={index}
+                className="h-full w-full"
+                onClaim={store.phone ? onCall : undefined}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ── shared ───────────────────────────────────────────────

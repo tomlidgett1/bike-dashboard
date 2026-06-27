@@ -21,6 +21,8 @@ interface MarketplaceLayoutProps {
   showStoreCTA?: boolean;
   /** Force sidebar on/off; defaults to pathname-based settings detection */
   showSidebar?: boolean;
+  /** Skip outer page chrome when nested inside a floating card shell. */
+  embedded?: boolean;
 }
 
 function MarketplaceLayoutContent({
@@ -28,11 +30,16 @@ function MarketplaceLayoutContent({
   showFooter = true,
   showStoreCTA = false,
   showSidebar,
+  embedded = false,
 }: MarketplaceLayoutProps) {
   const pathname = usePathname();
   const { isCollapsed } = useSidebarState();
   const sidebarVisible =
     showSidebar ?? (pathname ? shouldShowMarketplaceSidebar(pathname) : false);
+
+  if (embedded) {
+    return <>{children}</>;
+  }
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-gray-50">
