@@ -648,48 +648,50 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
 
           {/* Seller info - Better organized layout */}
           {!hideStoreMeta && (
-          <div className={cn("flex items-center gap-0.5 flex-wrap", isList ? "mt-1" : "order-3 mt-0.5")}>
-            {/* Store badge for store inventory items (not online_catalog) */}
-            {productData.listing_type === 'store_inventory' && productData.listing_source !== 'online_catalog' && (
-              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-medium rounded-md">
-                <Store className="h-2.5 w-2.5" />
-                Store
-              </span>
-            )}
+          <div className={cn("flex items-center justify-between gap-0.5 flex-wrap w-full", isList ? "mt-1" : "order-3 mt-0.5")}>
+            <div className="flex items-center gap-0.5 min-w-0 flex-1">
+              {/* Seller name/location with verified badge */}
+              <div className="flex items-center gap-0.5 min-w-0">
+                <p className="text-xs text-gray-600 font-medium truncate">
+                  {(() => {
+                    // For private listings, show pickup location instead of seller name
+                    if (productData.listing_type === 'private_listing') {
+                      return productData.pickup_location || 'Melbourne';
+                    }
+                    // For bike stores, show business name or "Bike Store"
+                    if (productData.store_account_type === 'bicycle_store' || productData.listing_type === 'store_inventory') {
+                      return product.store_name || 'Bike Store';
+                    }
+                    // For individual users (fallback), show "FirstName L."
+                    if (productData.first_name && productData.last_name) {
+                      return `${productData.first_name} ${productData.last_name.charAt(0)}.`;
+                    }
+                    // Fallback to store_name
+                    return product.store_name || 'Seller';
+                  })()}
+                </p>
+                {/* Verified badge for Ashburton Cycles */}
+                {product.store_name === 'Ashburton Cycles' && (
+                  <BadgeCheck className="h-3 w-3 text-blue-500 flex-shrink-0" />
+                )}
+              </div>
 
-            {/* Seller name/location with verified badge */}
-            <div className="flex items-center gap-0.5 flex-1 min-w-0">
-              <p className="text-xs text-gray-600 font-medium truncate">
-                {(() => {
-                  // For private listings, show pickup location instead of seller name
-                  if (productData.listing_type === 'private_listing') {
-                    return productData.pickup_location || 'Melbourne';
-                  }
-                  // For bike stores, show business name or "Bike Store"
-                  if (productData.store_account_type === 'bicycle_store' || productData.listing_type === 'store_inventory') {
-                    return product.store_name || 'Bike Store';
-                  }
-                  // For individual users (fallback), show "FirstName L."
-                  if (productData.first_name && productData.last_name) {
-                    return `${productData.first_name} ${productData.last_name.charAt(0)}.`;
-                  }
-                  // Fallback to store_name
-                  return product.store_name || 'Seller';
-                })()}
-              </p>
-              {/* Verified badge for Ashburton Cycles */}
-              {product.store_name === 'Ashburton Cycles' && (
-                <BadgeCheck className="h-3 w-3 text-blue-500 flex-shrink-0" />
+              {/* Secondary info - Time */}
+              {relativeTime && (
+                <div className="flex items-center gap-0.5 text-xs">
+                  <span className="text-emerald-600 font-medium whitespace-nowrap">
+                    {relativeTime}
+                  </span>
+                </div>
               )}
             </div>
 
-            {/* Secondary info - Time */}
-            {relativeTime && (
-              <div className="flex items-center gap-0.5 text-xs">
-                <span className="text-emerald-600 font-medium whitespace-nowrap">
-                  {relativeTime}
-                </span>
-              </div>
+            {/* Store badge for store inventory items (not online_catalog) */}
+            {productData.listing_type === 'store_inventory' && productData.listing_source !== 'online_catalog' && (
+              <span className="inline-flex shrink-0 items-center gap-0.5 px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-medium rounded-md">
+                <Store className="h-2.5 w-2.5" />
+                Store
+              </span>
             )}
           </div>
           )}
