@@ -53,29 +53,31 @@ async function ensureDataSource(merchantId: string, token: string): Promise<{ na
   return { name: ds.name };
 }
 
-export const merchantSync: Handler = async (task, { db, site }) => {
-  const limit = (task.payload.limit as number) ?? 500;
+const BATCH = 120; // products per task invocation
+const CONCURRENCY = 8; // parallel inserts — Merchant API tolerates this fine
 
-  // Eligible = live marketplace card with a price (image is guaranteed by the view).
+export const merchantSync: Handler = async (task, { db, site }) => {
+  const offset = (task.payload.offset as number) ?? 0;
+
+  // One bounded page of eligible products (live card with a price).
   const { data, error } = await db
     .from('public_marketplace_cards')
     .select('id, display_name, description, price, brand, qoh, condition_rating, marketplace_category')
     .order('created_at', { ascending: false })
-    .limit(limit);
+    .range(offset, offset + BATCH - 1);
   if (error) throw new Error(error.message);
   const rows = ((data ?? []) as CardRow[]).filter((r) => Number(r.price) > 0);
+  if (rows.length === 0) return { done: true, offset, synced: 0 };
 
   const merchantId = Deno.env.get('MERCHANT_ID');
   const token = merchantId ? await getGoogleAccessToken([MERCHANT_SCOPE]) : null;
-  if (!merchantId || !token) return { skipped: 'MERCHANT_ID/creds not set', eligible: rows.length };
+  if (!merchantId || !token) return { skipped: 'MERCHANT_ID/creds not set' };
 
   const ds = await ensureDataSource(merchantId, token);
-  if (!ds.name) return { error: ds.error ?? 'no data source', eligible: rows.length };
+  if (!ds.name) return { error: ds.error ?? 'no data source' };
+  const endpoint = `${API}/products/v1/accounts/${merchantId}/productInputs:insert?dataSource=${encodeURIComponent(ds.name)}`;
 
-  let synced = 0;
-  let firstError: string | undefined;
-  for (const r of rows) {
-    const productUrl = `${site}/marketplace/product/${slugify(r.display_name)}-${r.id}`;
+  const insertOne = async (r: CardRow): Promise<string | null> => {
     const productInput = {
       offerId: r.id,
       contentLanguage: 'en',
@@ -83,7 +85,7 @@ export const merchantSync: Handler = async (task, { db, site }) => {
       productAttributes: {
         title: (r.display_name || 'Bicycle').slice(0, 150),
         description: (r.description || r.display_name || '').slice(0, 5000),
-        link: productUrl,
+        link: `${site}/marketplace/product/${slugify(r.display_name)}-${r.id}`,
         price: { amountMicros: String(Math.round(Number(r.price) * 1_000_000)), currencyCode: 'AUD' },
         availability: (r.qoh ?? 0) > 0 ? 'in_stock' : 'out_of_stock',
         condition: (r.condition_rating ?? '').toLowerCase().includes('new') || !r.condition_rating ? 'new' : 'used',
@@ -92,19 +94,30 @@ export const merchantSync: Handler = async (task, { db, site }) => {
       },
     };
     try {
-      const res = await fetch(
-        `${API}/products/v1/accounts/${merchantId}/productInputs:insert?dataSource=${encodeURIComponent(ds.name)}`,
-        { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(productInput) },
-      );
-      if (res.ok) synced++;
-      else {
-        if (!firstError) firstError = `${res.status}: ${(await res.text()).slice(0, 160)}`;
-        if (res.status === 429) break;
-      }
+      const res = await fetch(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(productInput) });
+      return res.ok ? null : `${res.status}: ${(await res.text()).slice(0, 120)}`;
     } catch (err) {
-      if (!firstError) firstError = err instanceof Error ? err.message : String(err);
+      return err instanceof Error ? err.message : String(err);
     }
+  };
+
+  // Parallel insert pool — dramatically faster than serial (47/run → whole batch).
+  let synced = 0;
+  let firstError: string | undefined;
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < rows.length) {
+      const err = await insertOne(rows[cursor++]);
+      if (err) { if (!firstError) firstError = err; } else synced++;
+    }
+  };
+  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+
+  // Chain the next page if this one was full (more products remain).
+  const more = (data ?? []).length === BATCH;
+  if (more) {
+    await db.from('seo_tasks').insert({ task_type: 'merchant-sync', priority: 1, payload: { offset: offset + BATCH } });
   }
 
-  return { eligible: rows.length, synced, dataSource: ds.name, ...(firstError ? { firstError } : {}) };
+  return { offset, synced, more, dataSource: ds.name, ...(firstError ? { firstError } : {}) };
 };
