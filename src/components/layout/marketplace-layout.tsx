@@ -170,8 +170,13 @@ function MarketplaceLayoutContent({
                     </a>
                   </li>
                   <li>
-                    <a href="#" className="hover:text-gray-900 transition-colors">
-                      Contact Us
+                    <a href="/return-policy" className="hover:text-gray-900 transition-colors">
+                      Return policy
+                    </a>
+                  </li>
+                  <li>
+                    <a href="mailto:support@yellowjersey.com.au" className="hover:text-gray-900 transition-colors">
+                      Contact us
                     </a>
                   </li>
                 </ul>

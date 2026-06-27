@@ -51,6 +51,7 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
             <Link href="/sell-your-bike" className="hover:text-zinc-900">Sell your bike</Link>
             <Link href="/guides" className="hover:text-zinc-900">Guides</Link>
             <Link href="/home2" className="hover:text-zinc-900">For bike shops</Link>
+            <Link href="/return-policy" className="hover:text-zinc-900">Return policy</Link>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-4 border-t border-black/[0.06] pt-5">
             <Image src="/yjlogo.svg" alt="Yellow Jersey" width={120} height={18} className="h-4 w-auto opacity-80" />
