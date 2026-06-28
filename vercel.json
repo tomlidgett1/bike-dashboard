@@ -46,11 +46,11 @@
     },
     {
       "path": "/api/cron/seo-orchestrator",
-      "schedule": "0 * * * *"
+      "schedule": "0 16 * * *"
     },
     {
       "path": "/api/cron/seo-worker",
-      "schedule": "*/5 * * * *"
+      "schedule": "*/15 * * * *"
     }
   ]
 }
