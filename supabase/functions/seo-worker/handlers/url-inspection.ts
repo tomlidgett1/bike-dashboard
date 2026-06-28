@@ -70,8 +70,18 @@ export const urlInspection: Handler = async (_task, { db, site }) => {
     }
   }
 
+  // Inspect in parallel with a hard time budget so the task always finishes
+  // within the edge-function limit (40 serial Google calls overran it and left
+  // the task stuck 'running'). The URL Inspection API allows 600/min.
+  const toInspect = urls.slice(0, PER_RUN);
+  const startedAt = Date.now();
+  const TIME_BUDGET_MS = 35_000;
+  const CONCURRENCY = 5;
   let inspected = 0;
-  for (const url of urls.slice(0, PER_RUN)) {
+  let rateLimited = false;
+  let cursor = 0;
+
+  const inspectOne = async (url: string) => {
     try {
       const res = await fetch('https://searchconsole.googleapis.com/v1/urlInspection/index:inspect', {
         method: 'POST',
@@ -79,8 +89,8 @@ export const urlInspection: Handler = async (_task, { db, site }) => {
         body: JSON.stringify({ inspectionUrl: url, siteUrl: siteProperty }),
       });
       if (!res.ok) {
-        if (res.status === 429) break;
-        continue;
+        if (res.status === 429) rateLimited = true;
+        return;
       }
       const data = await res.json();
       const r = data?.inspectionResult?.indexStatusResult ?? {};
@@ -100,7 +110,14 @@ export const urlInspection: Handler = async (_task, { db, site }) => {
     } catch (err) {
       console.warn('[url-inspection]', err instanceof Error ? err.message : String(err));
     }
-  }
+  };
 
-  return { inspected, budget: PER_RUN, blog_urls: (blogPosts ?? []).length };
+  const drain = async () => {
+    while (cursor < toInspect.length && !rateLimited && Date.now() - startedAt < TIME_BUDGET_MS) {
+      await inspectOne(toInspect[cursor++]);
+    }
+  };
+  await Promise.all(Array.from({ length: CONCURRENCY }, drain));
+
+  return { inspected, budget: PER_RUN, blog_urls: (blogPosts ?? []).length, rateLimited };
 };
