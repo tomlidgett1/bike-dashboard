@@ -43,6 +43,14 @@
     {
       "path": "/api/cron/blog-agent",
       "schedule": "0 20,21 * * *"
+    },
+    {
+      "path": "/api/cron/seo-orchestrator",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/seo-worker",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
