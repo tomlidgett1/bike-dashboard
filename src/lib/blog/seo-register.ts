@@ -61,6 +61,36 @@ export async function syncAllPublishedBlogPostsToSeo(supabase: SupabaseClient): 
   return synced;
 }
 
+/**
+ * Push freshly published content to Google NOW instead of waiting for the daily
+ * SEO run: enqueue a sitemap re-submit + URL inspection (blog posts are inspected
+ * first) and kick the seo-worker so it processes immediately. Best-effort — it
+ * never blocks publishing, and the daily run is the fallback.
+ */
+export async function nudgeSeoAfterBlogPublish(supabase: SupabaseClient): Promise<void> {
+  try {
+    await supabase.from('seo_tasks').insert([
+      { task_type: 'sitemap', priority: 1, payload: { source: 'blog-publish' } },
+      { task_type: 'url-inspection', priority: 1, payload: { source: 'blog-publish' } },
+    ]);
+
+    const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (base && key) {
+      // Kick the worker; it runs to completion on Supabase even though we only
+      // wait long enough to dispatch the request.
+      await fetch(`${base}/functions/v1/seo-worker`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+        body: JSON.stringify({ trigger: 'blog-publish' }),
+        signal: AbortSignal.timeout(3000),
+      }).catch(() => {});
+    }
+  } catch (err) {
+    console.error('[Blog SEO] nudge failed:', err instanceof Error ? err.message : String(err));
+  }
+}
+
 export function blogPostCanonical(slug: string): string {
   return absoluteUrl(`/blog/${slug}`);
 }

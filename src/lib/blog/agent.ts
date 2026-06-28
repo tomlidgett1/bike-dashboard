@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { slugify } from '@/lib/seo/site';
 import { BLOG_POST_JSON_SCHEMA } from './schema';
 import { sanitizeBlogCredit, sanitizeBlogTags, sanitizeBlogText } from './sanitize';
-import { registerBlogPostForSeo, syncAllPublishedBlogPostsToSeo } from './seo-register';
+import { registerBlogPostForSeo, syncAllPublishedBlogPostsToSeo, nudgeSeoAfterBlogPublish } from './seo-register';
 import type { BlogAgentRun, GeneratedBlogPost } from './types';
 
 const MODEL = 'gpt-5.5';
@@ -418,6 +418,9 @@ export async function executeBlogAgentRun({
     } catch {
       // revalidatePath only works in Next server context
     }
+
+    // Sitemap is now fresh → push it to Google + inspect the new post right away.
+    await nudgeSeoAfterBlogPublish(supabase);
 
     const durationMs = Date.now() - startedAt;
     const { data: updatedRun, error: updateError } = await supabase
