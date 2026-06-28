@@ -36,24 +36,13 @@ export const urlInspection: Handler = async (_task, { db, site }) => {
 
   const urls: string[] = [];
   const seen = new Set<string>();
+  const add = (u: string) => { if (!seen.has(u)) { seen.add(u); urls.push(u); } };
 
-  for (const p of (pages ?? []) as Array<{ url: string; canonical_url: string | null }>) {
-    const absolute = p.canonical_url || `${site}${p.url}`;
-    if (!seen.has(absolute)) {
-      seen.add(absolute);
-      urls.push(absolute);
-    }
-  }
+  // Blog posts FIRST — small, high-value set. With a per-task time budget,
+  // whatever is last can get skipped; blog must never be the thing that's skipped.
+  for (const post of (blogPosts ?? []) as Array<{ slug: string }>) add(`${site}/blog/${post.slug}`);
 
-  for (const post of (blogPosts ?? []) as Array<{ slug: string }>) {
-    const absolute = `${site}/blog/${post.slug}`;
-    if (!seen.has(absolute)) {
-      seen.add(absolute);
-      urls.push(absolute);
-    }
-  }
-
-  // Also pick up blog rows registered in seo_pages (deduped above).
+  // Blog rows registered in seo_pages (deduped above).
   const { data: blogSeoPages } = await db
     .from('seo_pages')
     .select('url, canonical_url')
@@ -61,13 +50,13 @@ export const urlInspection: Handler = async (_task, { db, site }) => {
     .eq('page_type', 'blog')
     .order('last_published_at', { ascending: false })
     .limit(BLOG_SLOTS);
-
   for (const p of (blogSeoPages ?? []) as Array<{ url: string; canonical_url: string | null }>) {
-    const absolute = p.canonical_url || `${site}${p.url}`;
-    if (!seen.has(absolute) && urls.length < PER_RUN) {
-      seen.add(absolute);
-      urls.push(absolute);
-    }
+    add(p.canonical_url || `${site}${p.url}`);
+  }
+
+  // Then the rest of the published pages.
+  for (const p of (pages ?? []) as Array<{ url: string; canonical_url: string | null }>) {
+    add(p.canonical_url || `${site}${p.url}`);
   }
 
   // Inspect in parallel with a hard time budget so the task always finishes
@@ -87,6 +76,7 @@ export const urlInspection: Handler = async (_task, { db, site }) => {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ inspectionUrl: url, siteUrl: siteProperty }),
+        signal: AbortSignal.timeout(8000), // never let one slow call hang the whole task
       });
       if (!res.ok) {
         if (res.status === 429) rateLimited = true;
