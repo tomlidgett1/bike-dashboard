@@ -4,7 +4,8 @@ import * as React from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, Settings, LogOut, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus, Mail, Loader2, SlidersHorizontal, Sparkles } from '@/components/layout/app-sidebar/dashboard-icons';
+import { Menu, X, Settings, LogOut, ChevronDown, Search, Package, Store, User, Edit, ShoppingBag, Clock, HelpCircle, Plus, Mail, Loader2, SlidersHorizontal } from '@/components/layout/app-sidebar/dashboard-icons';
+import { PenLine } from 'lucide-react';
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { InstantSearch } from "./instant-search";
@@ -666,11 +667,11 @@ export function MarketplaceHeader({
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Browse</p>
                   <nav className="space-y-1">
                     <MobileNavItem
-                      icon={Sparkles}
-                      label="For You"
-                      subtitle="Personalised picks"
+                      icon={PenLine}
+                      label="Blog"
+                      subtitle="Opinionated cycling journalism"
                       onClick={() => {
-                        router.push('/marketplace?space=for-you');
+                        router.push('/blog');
                         setMobileMenuOpen(false);
                       }}
                     />
@@ -680,15 +681,6 @@ export function MarketplaceHeader({
                       subtitle="Private sellers"
                       onClick={() => {
                         router.push('/marketplace');
-                        setMobileMenuOpen(false);
-                      }}
-                    />
-                    <MobileNavItem
-                      icon={Store}
-                      label="Bike Stores"
-                      subtitle="Products from bike shops"
-                      onClick={() => {
-                        router.push('/marketplace?space=stores');
                         setMobileMenuOpen(false);
                       }}
                     />

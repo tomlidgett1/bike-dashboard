@@ -25,21 +25,23 @@ function Column({ title, hubHref, hubLabel, items }: { title: string; hubHref: s
 }
 
 export async function SeoBrowseLinks() {
-  const [cats, brands, shops] = await Promise.all([
+  const [cats, brands, shops, blog] = await Promise.all([
     listPublishedPages(['marketplace_category', 'suburb_category'], 24),
     listPublishedPages(['brand_city'], 24),
     listPublishedPages(['store_directory', 'owned_store'], 24),
+    listPublishedPages(['blog'], 8),
   ]);
-  if (cats.length + brands.length + shops.length === 0) return null;
+  if (cats.length + brands.length + shops.length + blog.length === 0) return null;
 
   return (
     <section className="border-t border-gray-200 bg-gray-50">
       <div className="mx-auto max-w-7xl px-5 py-12 sm:px-6">
         <h2 className="mb-8 text-sm font-semibold uppercase tracking-wide text-gray-500">Browse Yellow Jersey</h2>
-        <div className="grid gap-8 sm:grid-cols-3">
+        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
           <Column title="Shop by category" hubHref="/bikes" hubLabel="All categories" items={cats} />
           <Column title="Shop by brand" hubHref="/brands" hubLabel="All brands" items={brands} />
           <Column title="Bike shops near you" hubHref="/bike-shops" hubLabel="All bike shops" items={shops} />
+          <Column title="From the blog" hubHref="/blog" hubLabel="All articles" items={blog} />
         </div>
       </div>
     </section>

@@ -249,7 +249,7 @@ export function ProductPageClient({
               <div className="min-w-0 w-[62%] bg-white pl-3 pr-4 xl:pl-4 xl:pr-6">
                 <EnhancedImageGallery {...galleryProps} />
               </div>
-              <div className="sticky top-0 min-w-0 w-[38%] shrink-0 self-start bg-white px-4 max-h-screen overflow-y-auto overscroll-contain [scrollbar-width:thin] xl:px-5">
+              <div className="sticky top-0 min-w-0 w-[38%] shrink-0 self-start bg-white px-4 max-h-screen overflow-y-auto [scrollbar-width:thin] xl:px-5">
                 {infoPanelContent}
               </div>
             </div>

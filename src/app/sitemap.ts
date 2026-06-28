@@ -31,6 +31,7 @@ const STATIC_ROUTES: Array<{
   { path: '/sell-your-bike', priority: 0.8, changeFrequency: 'monthly' },
   { path: '/used-bikes', priority: 0.8, changeFrequency: 'daily' },
   { path: '/guides', priority: 0.8, changeFrequency: 'weekly' },
+  { path: '/blog', priority: 0.85, changeFrequency: 'daily' },
   // Agent SEO hub/index pages — link into all the category/brand/shop leaves.
   { path: '/bikes', priority: 0.9, changeFrequency: 'daily' },
   { path: '/brands', priority: 0.9, changeFrequency: 'daily' },
@@ -90,6 +91,19 @@ async function fetchStoreRows(supabase: SupabaseLike): Promise<StoreRow[]> {
 // Agent-built landing pages that are live (published + indexable). The table may
 // not exist pre-migration, so any error degrades to an empty list — the sitemap
 // keeps working with the rest of the URLs.
+async function fetchBlogPosts(
+  supabase: SupabaseLike,
+): Promise<Array<{ slug: string; published_at: string | null; hero_image_url: string | null }>> {
+  const { data, error } = await supabase
+    .from('blog_posts')
+    .select('slug, published_at, hero_image_url')
+    .eq('status', 'published')
+    .order('published_at', { ascending: false })
+    .range(0, 999);
+  if (error) return [];
+  return (data ?? []) as Array<{ slug: string; published_at: string | null; hero_image_url: string | null }>;
+}
+
 async function fetchSeoPages(supabase: SupabaseLike): Promise<Array<{ url: string; last_published_at: string | null }>> {
   const { data, error } = await supabase
     .from('seo_pages')
@@ -161,9 +175,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   try {
     const supabase = createPublicSupabaseClient();
 
-    const [stores, seoPages, products] = await Promise.all([
+    const [stores, seoPages, blogPosts, products] = await Promise.all([
       fetchStoreRows(supabase),
       fetchSeoPages(supabase),
+      fetchBlogPosts(supabase),
       fetchAllRows<ProductSitemapRow>(
         'products',
         (sb, from, to) =>
@@ -190,13 +205,30 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       });
     }
 
-    // Agent-built landing pages (category/suburb/store-directory/brand/owned).
+    // Agent-built landing pages (category/suburb/store-directory/brand/owned/blog).
     for (const p of seoPages) {
       entries.push({
         url: `${SITE_URL}${p.url}`,
         lastModified: p.last_published_at ? new Date(p.last_published_at) : now,
         changeFrequency: 'weekly',
-        priority: 0.8,
+        priority: p.url.startsWith('/blog/') ? 0.75 : 0.8,
+      });
+    }
+
+    // Blog posts (also registered in seo_pages; dedupe below).
+    const seenUrls = new Set(entries.map((e) => e.url));
+    for (const post of blogPosts) {
+      const url = `${SITE_URL}/blog/${post.slug}`;
+      if (seenUrls.has(url)) continue;
+      seenUrls.add(url);
+      entries.push({
+        url,
+        lastModified: post.published_at ? new Date(post.published_at) : now,
+        changeFrequency: 'weekly',
+        priority: 0.75,
+        ...(post.hero_image_url && /^https?:\/\//i.test(post.hero_image_url)
+          ? { images: [post.hero_image_url] }
+          : {}),
       });
     }
 

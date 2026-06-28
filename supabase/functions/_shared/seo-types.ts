@@ -42,7 +42,8 @@ export type PageType =
   | 'store_directory'
   | 'owned_store'
   | 'guide'
-  | 'brand_city';
+  | 'brand_city'
+  | 'blog';
 
 export type Indexability = 'index' | 'noindex';
 export type PageStatus = 'candidate' | 'draft' | 'published' | 'retired';

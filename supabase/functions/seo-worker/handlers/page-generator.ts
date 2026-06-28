@@ -175,6 +175,7 @@ export const pageGenerator: Handler = async (task, { db }) => {
   const { data: page, error } = await db.from('seo_pages').select('*').eq('url', url).maybeSingle();
   if (error) throw new Error(error.message);
   if (!page) return { skipped: `no seo_page ${url}` };
+  if (page.page_type === 'blog') return { skipped: 'blog pages are authored by the blog agent' };
 
   const facts = await gatherFacts(db, page as SeoPageRow);
   const base = templateContent(facts);

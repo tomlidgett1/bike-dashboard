@@ -18,6 +18,7 @@ export const internalLinks: Handler = async (_task, { db }) => {
 
   let updated = 0;
   for (const page of pages) {
+    if (page.page_type === 'blog') continue;
     const place = placeOf(page);
     const links: Array<{ url: string; anchor: string }> = [];
 

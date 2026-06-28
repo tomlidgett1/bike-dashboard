@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ChevronRight, X } from '@/components/layout/app-sidebar/dashboard-icons';
 import { SolarProvider, MagicStick3, Bag, Shop } from "@solar-icons/react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
@@ -77,7 +76,7 @@ interface UnifiedFilterBarProps {
   /** Mobile Browse: filter sheet open state (FAB lives in MarketplaceHeader). */
   mobileBrowseSheetOpen?: boolean;
   onMobileBrowseSheetOpenChange?: (open: boolean) => void;
-  /** Product search active — hide category browse rows (pills, breadcrumbs). */
+  /** Product search active — hide category browse rows. */
   suppressCategoryBrowse?: boolean;
   /** Desktop space tabs are rendered by the parent (MarketplaceSpaceTabs). */
   hideDesktopSpaceTabs?: boolean;
@@ -102,32 +101,6 @@ function UberLogo({ active, className }: { active?: boolean; className?: string 
   );
 }
 
-function buildCategoryBreadcrumbs(
-  selectedLevel1: string | null,
-  selectedLevel2: string | null,
-  selectedLevel3: string | null,
-  onLevel2Change: (subcategory: string | null) => void,
-  onLevel3Change: (level3: string | null) => void,
-) {
-  const breadcrumbs: { label: string; onClick: () => void }[] = [];
-  if (selectedLevel1) {
-    breadcrumbs.push({
-      label: selectedLevel1,
-      onClick: () => {
-        onLevel2Change(null);
-        onLevel3Change(null);
-      },
-    });
-  }
-  if (selectedLevel2) {
-    breadcrumbs.push({ label: selectedLevel2, onClick: () => onLevel3Change(null) });
-  }
-  if (selectedLevel3) {
-    breadcrumbs.push({ label: selectedLevel3, onClick: () => {} });
-  }
-  return breadcrumbs;
-}
-
 export interface MarketplaceDesktopCategoryBrowseProps {
   selectedLevel1: string | null;
   selectedLevel2: string | null;
@@ -147,7 +120,7 @@ export interface MarketplaceDesktopCategoryBrowseProps {
   className?: string;
 }
 
-/** Desktop category breadcrumbs + pills — rendered inside the grey product area. */
+/** Desktop category browse — rendered inside the product area. */
 export function MarketplaceDesktopCategoryBrowse({
   selectedLevel1,
   selectedLevel2,
@@ -166,62 +139,10 @@ export function MarketplaceDesktopCategoryBrowse({
   suppressCategoryBrowse = false,
   className,
 }: MarketplaceDesktopCategoryBrowseProps) {
-  const clearAllCategories = () => {
-    onLevel1Change(null);
-    onLevel2Change(null);
-    onLevel3Change(null);
-  };
-
-  const breadcrumbs = buildCategoryBreadcrumbs(
-    selectedLevel1,
-    selectedLevel2,
-    selectedLevel3,
-    onLevel2Change,
-    onLevel3Change,
-  );
-
   if (suppressCategoryBrowse) return null;
 
   return (
-    <div className={cn("hidden sm:block space-y-3", className)}>
-      {breadcrumbs.length > 0 && (
-        <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide">
-          <button
-            type="button"
-            onClick={clearAllCategories}
-            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-gray-500 transition-colors whitespace-nowrap hover:bg-gray-100 hover:text-gray-700"
-          >
-            All categories
-          </button>
-          {breadcrumbs.map((crumb, index) => (
-            <React.Fragment key={crumb.label}>
-              <ChevronRight className="h-3 w-3 flex-shrink-0 text-gray-300" />
-              <button
-                type="button"
-                onClick={crumb.onClick}
-                disabled={index === breadcrumbs.length - 1}
-                className={cn(
-                  "flex items-center rounded-lg px-2 py-1 text-xs font-medium whitespace-nowrap transition-colors",
-                  index === breadcrumbs.length - 1
-                    ? "cursor-default bg-gray-100 text-gray-900"
-                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-800",
-                )}
-              >
-                {crumb.label}
-              </button>
-            </React.Fragment>
-          ))}
-          <button
-            type="button"
-            onClick={clearAllCategories}
-            className="ml-1 rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-            aria-label="Clear category filters"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
-
+    <div className={cn("hidden sm:block", className)}>
       <BrowseFiltersToolbar
         categoryPillsRowOnly
         selectedLevel1={selectedLevel1}
@@ -315,20 +236,6 @@ export function UnifiedFilterBar({
       router.push("/marketplace?space=for-you");
     }
   };
-
-  const clearAllCategories = () => {
-    onLevel1Change(null);
-    onLevel2Change(null);
-    onLevel3Change(null);
-  };
-
-  const breadcrumbs = buildCategoryBreadcrumbs(
-    selectedLevel1,
-    selectedLevel2,
-    selectedLevel3,
-    onLevel2Change,
-    onLevel3Change,
-  );
 
   const isOnBrowseMode = viewMode === "all";
   const isForYouMode = currentSpace === "for-you";
@@ -495,7 +402,7 @@ export function UnifiedFilterBar({
       </div>
       ) : null}
 
-      {/* Desktop: category breadcrumbs + pills (hidden when parent renders in grey product area) */}
+      {/* Desktop: category browse (hidden when parent renders in product area) */}
       {showBrowseChrome && !suppressCategoryBrowse && !hideDesktopCategoryPills && (
         <MarketplaceDesktopCategoryBrowse
           selectedLevel1={selectedLevel1}
@@ -569,44 +476,7 @@ export function UnifiedFilterBar({
                 onListingTypeChange={onListingTypeChange}
                 onClose={() => setBrowseSheetOpen(false)}
                 topSection={
-                  <div className="space-y-4 border-b border-gray-100 pb-4">
-                    {breadcrumbs.length > 0 && (
-                      <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide">
-                        <button
-                          type="button"
-                          onClick={clearAllCategories}
-                          className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-gray-500 transition-colors whitespace-nowrap hover:bg-gray-100 hover:text-gray-700"
-                        >
-                          All categories
-                        </button>
-                        {breadcrumbs.map((crumb, index) => (
-                          <React.Fragment key={crumb.label}>
-                            <ChevronRight className="h-3 w-3 flex-shrink-0 text-gray-300" />
-                            <button
-                              type="button"
-                              onClick={crumb.onClick}
-                              disabled={index === breadcrumbs.length - 1}
-                              className={cn(
-                                "flex items-center rounded-lg px-2 py-1 text-xs font-medium whitespace-nowrap transition-colors",
-                                index === breadcrumbs.length - 1
-                                  ? "cursor-default bg-gray-100 text-gray-900"
-                                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-800",
-                              )}
-                            >
-                              {crumb.label}
-                            </button>
-                          </React.Fragment>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={clearAllCategories}
-                          className="ml-1 rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-                          aria-label="Clear category filters"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    )}
+                  <div className="border-b border-gray-100 pb-4">
                     <BrowseFiltersToolbar
                       sheetMode
                       hideCategoryPills

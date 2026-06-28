@@ -24,7 +24,7 @@ export interface AgentPageContent {
 
 export interface AgentPage {
   url: string;
-  page_type: 'marketplace_category' | 'suburb_category' | 'store_directory' | 'owned_store' | 'guide' | 'brand_city';
+  page_type: 'marketplace_category' | 'suburb_category' | 'store_directory' | 'owned_store' | 'guide' | 'brand_city' | 'blog';
   title: string | null;
   meta_description: string | null;
   h1: string | null;
@@ -118,14 +118,19 @@ export interface PageLink {
 export async function listPublishedPages(types: AgentPage['page_type'][], limit = 300): Promise<PageLink[]> {
   try {
     const supabase = createPublicSupabaseClient();
-    const { data, error } = await supabase
+    const blogOnly = types.length === 1 && types[0] === 'blog';
+    let query = supabase
       .from('seo_pages')
       .select('url, title, h1, page_type, params, supply_count')
       .eq('status', 'published')
       .eq('indexability', 'index')
-      .in('page_type', types)
-      .order('supply_count', { ascending: false })
-      .limit(limit);
+      .in('page_type', types);
+
+    query = blogOnly
+      ? query.order('last_published_at', { ascending: false })
+      : query.order('supply_count', { ascending: false });
+
+    const { data, error } = await query.limit(limit);
     if (error || !data) return [];
     return data as PageLink[];
   } catch {

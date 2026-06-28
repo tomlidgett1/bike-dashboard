@@ -1269,7 +1269,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
         {/* Sentinel div for scroll tracking - invisible marker */}
         <div ref={sentinelRef} className="sm:hidden h-px" aria-hidden="true" />
 
-        <div className="min-h-0 w-full flex-1 px-2 pb-24 sm:relative sm:z-[1] sm:overflow-hidden sm:rounded-t-xl sm:border sm:border-gray-200 sm:bg-gray-50 sm:px-6 sm:pb-8">
+        <div className="min-h-0 w-full flex-1 px-2 pb-24 sm:relative sm:z-[1] sm:overflow-hidden sm:rounded-t-xl sm:border sm:border-gray-200 sm:bg-white sm:px-6 sm:pb-8">
           <div className={isForYouView ? "pt-2 pb-5 sm:pt-3 sm:pb-7" : "space-y-3 pt-4 sm:pt-5"}>
             {showDesktopBrowseFilters ? (
               <MarketplaceDesktopCategoryBrowse

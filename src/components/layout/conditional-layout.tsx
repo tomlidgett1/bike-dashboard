@@ -44,6 +44,7 @@ export function ConditionalLayout({ children }: ConditionalLayoutProps) {
   const isMarketing =
     pathname === '/sell-your-bike' ||
     pathname?.startsWith('/used-bikes') ||
+    pathname?.startsWith('/blog') ||
     false;
 
   // Don't wrap marketplace, messages, login, auth, onboarding, ecommerce-hero, mockup, v2, home, or marketing pages with dashboard layout

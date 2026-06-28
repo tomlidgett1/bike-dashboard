@@ -262,6 +262,37 @@ export function breadcrumbSchema(items: Array<{ name: string; url: string }>): J
   };
 }
 
+export function articleSchema(args: {
+  title: string;
+  description: string;
+  url: string;
+  datePublished: string;
+  dateModified?: string;
+  image?: string;
+}): Json {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: args.title,
+    description: args.description,
+    url: args.url,
+    datePublished: args.datePublished,
+    dateModified: args.dateModified ?? args.datePublished,
+    author: { '@type': 'Organization', name: 'Yellow Jersey' },
+    publisher: {
+      '@type': 'Organization',
+      name: 'Yellow Jersey',
+      logo: {
+        '@type': 'ImageObject',
+        url: absoluteUrl('/yjlogo.svg'),
+      },
+    },
+    mainEntityOfPage: { '@type': 'WebPage', '@id': args.url },
+    isPartOf: { '@type': 'Blog', name: 'Yellow Jersey Blog', url: absoluteUrl('/blog') },
+    ...(args.image ? { image: args.image } : {}),
+  };
+}
+
 /** ItemList for collection/landing pages (category, suburb, brand, directory). */
 export function itemListSchema(items: Array<{ url: string; name: string }>): Json {
   return {

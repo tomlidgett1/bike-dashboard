@@ -107,15 +107,15 @@ function DesktopHeaderPillContent() {
               Home
             </Link>
             <Link
-              href="/marketplace?space=for-you"
+              href="/blog"
               className={cn(
                 "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
-                pathname === "/marketplace" && spaceParam === "for-you"
+                pathname.startsWith("/blog")
                   ? "text-gray-900 bg-gray-100"
                   : "text-gray-700 hover:bg-gray-100"
               )}
             >
-              For You
+              Blog
             </Link>
             <Link
               href={`/marketplace/store/${profile?.user_id || user?.id}`}
@@ -274,26 +274,15 @@ function DesktopHeaderPillContent() {
                     Browse
                   </Link>
                   <Link
-                    href="/marketplace?space=for-you"
+                    href="/blog"
                     className={cn(
                       "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
-                      pathname === "/marketplace" && spaceParam === "for-you"
+                      pathname.startsWith("/blog")
                         ? "text-gray-900 bg-gray-100"
                         : "text-gray-700 hover:bg-gray-100"
                     )}
                   >
-                    For You
-                  </Link>
-                  <Link
-                    href="/marketplace?space=stores"
-                    className={cn(
-                      "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
-                      pathname === "/marketplace" && spaceParam === "stores"
-                        ? "text-gray-900 bg-gray-100"
-                        : "text-gray-700 hover:bg-gray-100"
-                    )}
-                  >
-                    Bike stores
+                    Blog
                   </Link>
                   <Link
                     href="/marketplace/help"

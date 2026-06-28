@@ -78,6 +78,7 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/bike-service') ||   // Agent SEO: service pages
     request.nextUrl.pathname.startsWith('/stores') ||         // Agent SEO: owned-store pages
     request.nextUrl.pathname.startsWith('/guides') ||         // Public SEO guides
+    request.nextUrl.pathname.startsWith('/blog') ||         // Public cycling blog
     request.nextUrl.pathname === '/return-policy' ||          // Public return policy
     request.nextUrl.pathname.startsWith('/api/marketplace') ||
     request.nextUrl.pathname === '/api/store/analytics' || // Public storefront tracking; GET still enforces auth in the route handler.
