@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { after } from 'next/server';
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server';
-import { runBlogAgent } from '@/lib/blog/agent';
+import { createBlogAgentRun, executeBlogAgentRun } from '@/lib/blog/agent';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 300;
+export const runtime = 'nodejs';
+export const maxDuration = 600;
 
-// POST /api/admin/blog/run — manually trigger the blog writer agent.
+// POST /api/admin/blog/run — queue the blog writer (returns immediately; poll status).
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -18,27 +20,49 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     customTopic = typeof body?.topic === 'string' ? body.topic.trim() : null;
   } catch {
-    // empty body is fine — agent picks topical angle
+    // empty body is fine
   }
 
   const service = createServiceRoleClient();
 
-  try {
-    const result = await runBlogAgent({
-      supabase: service,
-      trigger: 'manual',
-      customTopic,
-    });
+  const { data: activeRun } = await service
+    .from('blog_agent_runs')
+    .select('id')
+    .eq('status', 'running')
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (activeRun) {
     return NextResponse.json({
       ok: true,
-      slug: result.slug,
-      postId: result.postId,
-      runId: result.run.id,
-      topic: result.run.resolved_topic,
+      runId: activeRun.id,
+      status: 'running',
+      message: 'Agent already writing — polling existing run',
+    });
+  }
+
+  try {
+    const run = await createBlogAgentRun(service, 'manual', customTopic);
+
+    const work = executeBlogAgentRun({
+      supabase: service,
+      runId: run.id,
+      customTopic,
+    }).catch((err) => {
+      console.error('[Blog Agent] background run failed:', err);
+    });
+
+    after(() => work);
+
+    return NextResponse.json({
+      ok: true,
+      runId: run.id,
+      status: 'running',
     });
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Blog agent failed' },
+      { error: err instanceof Error ? err.message : 'Failed to start blog agent' },
       { status: 500 },
     );
   }

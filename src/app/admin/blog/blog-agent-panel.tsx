@@ -5,6 +5,28 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Loader2, Play, Sparkles } from 'lucide-react';
 
+async function pollRunUntilDone(runId: string): Promise<{
+  status: string;
+  slug?: string | null;
+  error?: string | null;
+}> {
+  const deadline = Date.now() + 8 * 60 * 1000;
+
+  while (Date.now() < deadline) {
+    const res = await fetch(`/api/admin/blog/runs/${runId}`);
+    const body = await res.json();
+    if (!res.ok) {
+      throw new Error(body.error || 'Could not check agent status');
+    }
+    if (body.status === 'completed' || body.status === 'error') {
+      return body;
+    }
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+
+  throw new Error('Agent is still writing — refresh the page in a minute to see the result');
+}
+
 export function BlogAgentPanel() {
   const [topic, setTopic] = useState('');
   const [loading, setLoading] = useState(false);
@@ -23,18 +45,27 @@ export function BlogAgentPanel() {
       const body = await res.json();
       if (!res.ok) {
         setMessage({ type: 'error', text: body.error || 'Agent failed to start' });
+        return;
+      }
+
+      const result = await pollRunUntilDone(body.runId as string);
+      if (result.status === 'error') {
+        setMessage({ type: 'error', text: result.error || 'Blog agent failed' });
       } else {
         setMessage({
           type: 'success',
-          text: body.slug
-            ? `Published · /blog/${body.slug}`
+          text: result.slug
+            ? `Published · /blog/${result.slug}`
             : 'Article published successfully',
         });
         setTopic('');
         setTimeout(() => router.refresh(), 1500);
       }
-    } catch {
-      setMessage({ type: 'error', text: 'Could not reach the blog agent' });
+    } catch (err) {
+      setMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Could not reach the blog agent',
+      });
     } finally {
       setLoading(false);
     }

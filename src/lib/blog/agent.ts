@@ -298,6 +298,7 @@ export interface RunBlogAgentOptions {
   supabase: SupabaseClient;
   trigger: 'cron' | 'manual';
   customTopic?: string | null;
+  existingRunId?: string;
 }
 
 export interface RunBlogAgentResult {
@@ -306,18 +307,12 @@ export interface RunBlogAgentResult {
   slug?: string;
 }
 
-export async function runBlogAgent({
-  supabase,
-  trigger,
-  customTopic,
-}: RunBlogAgentOptions): Promise<RunBlogAgentResult> {
-  const startedAt = Date.now();
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (!openaiKey) {
-    throw new Error('OPENAI_API_KEY is not configured');
-  }
-
-  const { data: run, error: runError } = await supabase
+export async function createBlogAgentRun(
+  supabase: SupabaseClient,
+  trigger: 'cron' | 'manual',
+  customTopic?: string | null,
+): Promise<BlogAgentRun> {
+  const { data: run, error } = await supabase
     .from('blog_agent_runs')
     .insert({
       status: 'running',
@@ -327,8 +322,49 @@ export async function runBlogAgent({
     .select()
     .single();
 
+  if (error || !run) {
+    throw new Error(error?.message || 'Failed to create agent run');
+  }
+  return run as BlogAgentRun;
+}
+
+export async function getBlogAgentRun(
+  supabase: SupabaseClient,
+  runId: string,
+): Promise<BlogAgentRun | null> {
+  const { data, error } = await supabase
+    .from('blog_agent_runs')
+    .select('*')
+    .eq('id', runId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as BlogAgentRun) ?? null;
+}
+
+/** Long-running write: research + generate + publish. Call via after() on Vercel. */
+export async function executeBlogAgentRun({
+  supabase,
+  runId,
+  customTopic,
+}: {
+  supabase: SupabaseClient;
+  runId: string;
+  customTopic?: string | null;
+}): Promise<RunBlogAgentResult> {
+  const startedAt = Date.now();
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (!openaiKey) {
+    throw new Error('OPENAI_API_KEY is not configured');
+  }
+
+  const { data: run, error: runError } = await supabase
+    .from('blog_agent_runs')
+    .select('*')
+    .eq('id', runId)
+    .single();
+
   if (runError || !run) {
-    throw new Error(runError?.message || 'Failed to create agent run');
+    throw new Error(runError?.message || 'Agent run not found');
   }
 
   const openai = new OpenAI({ apiKey: openaiKey });
@@ -393,7 +429,7 @@ export async function runBlogAgent({
         completed_at: new Date().toISOString(),
         duration_ms: durationMs,
       })
-      .eq('id', run.id)
+      .eq('id', runId)
       .select()
       .single();
 
@@ -416,9 +452,30 @@ export async function runBlogAgent({
         completed_at: new Date().toISOString(),
         duration_ms: Date.now() - startedAt,
       })
-      .eq('id', run.id);
+      .eq('id', runId);
     throw err;
   }
+}
+
+export async function runBlogAgent({
+  supabase,
+  trigger,
+  customTopic,
+  existingRunId,
+}: RunBlogAgentOptions): Promise<RunBlogAgentResult> {
+  const run = existingRunId
+    ? await getBlogAgentRun(supabase, existingRunId)
+    : await createBlogAgentRun(supabase, trigger, customTopic);
+
+  if (!run) {
+    throw new Error('Agent run not found');
+  }
+
+  return executeBlogAgentRun({
+    supabase,
+    runId: run.id,
+    customTopic,
+  });
 }
 
 export async function getPublishedPosts(supabase: SupabaseClient, limit = 50) {

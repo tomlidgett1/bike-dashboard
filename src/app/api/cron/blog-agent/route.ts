@@ -7,13 +7,15 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { after } from 'next/server';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { runBlogAgent } from '@/lib/blog/agent';
+import { createBlogAgentRun, executeBlogAgentRun } from '@/lib/blog/agent';
 import { syncAllPublishedBlogPostsToSeo } from '@/lib/blog/seo-register';
 import { isMelbourne7amWindow, melbourneDayKey } from '@/lib/blog/melbourne-time';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 300;
+export const runtime = 'nodejs';
+export const maxDuration = 600;
 
 function verifyCron(request: NextRequest): boolean {
   const authHeader = request.headers.get('authorization');
@@ -76,12 +78,18 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const result = await runBlogAgent({ supabase, trigger: 'cron' });
+    const run = await createBlogAgentRun(supabase, 'cron');
+
+    after(() =>
+      executeBlogAgentRun({ supabase, runId: run.id }).catch((err) => {
+        console.error('[CRON BLOG-AGENT] background run failed:', err);
+      }),
+    );
+
     return NextResponse.json({
       success: true,
-      slug: result.slug,
-      postId: result.postId,
-      runId: result.run.id,
+      started: true,
+      runId: run.id,
     });
   } catch (err) {
     console.error('[CRON BLOG-AGENT]', err);
