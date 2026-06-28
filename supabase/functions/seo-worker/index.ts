@@ -40,7 +40,9 @@ const HANDLERS: Record<string, Handler> = {
   'alerts': alerts,
 };
 
-const TIME_BUDGET_MS = 100_000;
+// Fits within the Vercel cron route's 60s maxDuration so the route returns
+// cleanly each tick (the */5 cadence + orchestrator kick keep the queue draining).
+const TIME_BUDGET_MS = 45_000;
 const BATCH = 4;
 
 Deno.serve(async (req) => {
