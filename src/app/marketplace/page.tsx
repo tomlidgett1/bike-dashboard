@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { MarketplacePageContent } from "./marketplace-page-content";
 import { fetchInitialStoresProducts } from "@/lib/server/fetch-initial-marketplace-products";
 import { JsonLd } from "@/components/seo/json-ld";
-import { SeoBrowseLinks } from "@/components/seo/seo-browse-links";
+import { SiteFooter } from "@/components/layout/site-footer";
 import { organizationSchema, websiteSchema } from "@/lib/seo/structured-data";
 import { SITE_DESCRIPTION, SITE_TITLE } from "@/lib/seo/site";
 
@@ -58,9 +58,7 @@ export default function MarketplacePage() {
       {/* Crawlable internal links from the highest-authority page → the agent's
           SEO hubs/leaves, so Google discovers + weights them fast (not just via
           the sitemap). Streams in separately; never blocks the product grid. */}
-      <Suspense fallback={null}>
-        <SeoBrowseLinks />
-      </Suspense>
+      <SiteFooter showSeoSections />
     </>
   );
 }
