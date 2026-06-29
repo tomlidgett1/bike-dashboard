@@ -12,6 +12,7 @@ import {
   Dollar,
 } from "@solar-icons/react";
 import { cn } from "@/lib/utils";
+import { BikeIcon, getCategoryIconName } from "@/components/ui/bike-icon";
 import {
   Select,
   SelectContent,
@@ -25,10 +26,96 @@ import {
   type SortOption,
 } from "@/components/marketplace/advanced-filters";
 import { preload } from "swr";
+import { BRAND_YELLOW } from "@/lib/constants/brand-colors";
 import { CategorySectionsNav } from "@/components/marketplace/category-sections-nav";
 import type { DynamicCategory } from "@/lib/constants/category-sections";
 
 export type { DynamicCategory };
+
+const SKELETON_WIDTHS = [88, 120, 100, 136, 96, 108];
+
+function CategoryPillsSkeleton() {
+  return (
+    <>
+      {SKELETON_WIDTHS.map((w, i) => (
+        <div
+          key={i}
+          className="h-8 sm:h-10 flex-shrink-0 rounded-full bg-gray-200 animate-pulse"
+          style={{ width: w }}
+        />
+      ))}
+    </>
+  );
+}
+
+function CategoryPillsRow({
+  categories,
+  selectedLevel1,
+  selectedLevel2,
+  selectedLevel3,
+  onCategoryClick,
+  onCategoryHover,
+  loading,
+  variant = "scroll",
+}: {
+  categories: DynamicCategory[];
+  selectedLevel1: string | null;
+  selectedLevel2: string | null;
+  selectedLevel3: string | null;
+  onCategoryClick: (level1: string) => void;
+  onCategoryHover?: (level1: string) => void;
+  loading?: boolean;
+  variant?: "scroll" | "wrap";
+}) {
+  if (loading) {
+    return variant === "wrap" ? (
+      <div className="flex flex-wrap gap-2">
+        <CategoryPillsSkeleton />
+      </div>
+    ) : (
+      <div className="flex h-8 sm:h-10 min-w-0 items-center gap-2 sm:gap-2.5 overflow-x-auto scrollbar-hide">
+        <CategoryPillsSkeleton />
+      </div>
+    );
+  }
+
+  const pills = categories.map(({ label, level1 }) => {
+    const icon = getCategoryIconName(level1);
+    const isActive = selectedLevel1 === level1 && !selectedLevel2 && !selectedLevel3;
+    return (
+      <button
+        key={level1}
+        type="button"
+        onClick={() => onCategoryClick(level1)}
+        onMouseEnter={() => onCategoryHover?.(level1)}
+        className={cn(
+          variant === "wrap"
+            ? "flex h-10 shrink-0 items-center gap-2 rounded-full border-2 px-4 text-sm font-medium transition-colors cursor-pointer"
+            : "box-border flex h-8 sm:h-10 shrink-0 items-center gap-1.5 sm:gap-2 rounded-full border sm:border-2 px-3 sm:px-4 text-[13px] sm:text-sm font-medium transition-colors cursor-pointer",
+          isActive ? "bg-white text-gray-900" : "border-gray-200 bg-white text-gray-700 hover:border-gray-300",
+        )}
+        style={isActive ? ({ borderColor: BRAND_YELLOW } as React.CSSProperties) : undefined}
+      >
+        <BikeIcon
+          iconName={icon}
+          size={20}
+          className={cn("opacity-90", variant === "wrap" ? "" : "h-4 w-4 sm:h-5 sm:w-5")}
+        />
+        {label}
+      </button>
+    );
+  });
+
+  if (variant === "wrap") {
+    return <div className="flex flex-wrap gap-2">{pills}</div>;
+  }
+
+  return (
+    <div className="flex h-8 sm:h-10 min-w-0 items-center gap-2 sm:gap-2.5 overflow-x-auto scrollbar-hide">
+      {pills}
+    </div>
+  );
+}
 
 const LOCATION_OPTIONS = [{ value: "melbourne", label: "Melbourne" }] as const;
 
@@ -581,13 +668,14 @@ export function BrowseFiltersToolbar({
     return (
       <div ref={toolbarScrollRef as React.RefObject<HTMLDivElement>} className="flex flex-col gap-4">
         {!hideCategoryPills && (
-          <CategorySectionsNav
+          <CategoryPillsRow
             categories={categories}
             selectedLevel1={selectedLevel1}
             selectedLevel2={selectedLevel2}
             selectedLevel3={selectedLevel3}
             onCategoryClick={handleCategoryClick}
             loading={categoriesLoading}
+            variant="wrap"
           />
         )}
         <div className="flex flex-col gap-3">
@@ -629,7 +717,7 @@ export function BrowseFiltersToolbar({
   if (categoryPillsRowOnly) {
     return (
       <div ref={toolbarScrollRef as React.RefObject<HTMLDivElement>} className="min-w-0">
-        <CategorySectionsNav
+        <CategoryPillsRow
           categories={categories}
           selectedLevel1={selectedLevel1}
           selectedLevel2={selectedLevel2}
