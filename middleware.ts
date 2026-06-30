@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { getAshburtonLegacyRedirect } from '@/lib/seo/legacy-ashburton-domain'
 
 export async function middleware(request: NextRequest) {
-  const ashburtonRedirect = getAshburtonLegacyRedirect(request)
+  const ashburtonRedirect = await getAshburtonLegacyRedirect(request)
   if (ashburtonRedirect) return ashburtonRedirect
 
   if (request.nextUrl.pathname === '/why-yellow-jersey') {
