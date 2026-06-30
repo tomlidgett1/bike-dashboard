@@ -1,8 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { SITE_URL } from '@/lib/seo/site'
+import { SITE_URL, storePath } from '@/lib/seo/site'
 
 /** Ashburton Cycles store owner — legacy Shopify URLs resolve against this catalogue. */
 export const ASHBURTON_CYCLES_USER_ID = '3acef09d-8b28-46e8-a0c3-45ce59c61972'
+
+/** Public storefront slug — legacy traffic with no matching product lands here. */
+export const ASHBURTON_STORE_SLUG = 'ashburton-cycles'
 
 const ASHBURTON_LEGACY_HOSTS = new Set([
   'ashburtoncycles.com.au',
@@ -23,11 +26,15 @@ export function getAshburtonLegacyRedirect(request: NextRequest): NextResponse |
   if (!isAshburtonLegacyHost(request.headers.get('host'))) return null
 
   const { pathname } = request.nextUrl
+  // Old Shopify product URLs (`/products/{handle}`) resolve to an exact Yellow
+  // Jersey product in the /products/[slug] route handler — let them through.
   if (pathname.startsWith('/products/') && pathname.length > '/products/'.length) {
     return null
   }
 
-  const destination = new URL('/marketplace', SITE_URL)
-  destination.search = request.nextUrl.search
+  // Everything else (homepage, /collections, /pages, singular /product, etc.)
+  // forwards permanently to the Ashburton storefront rather than the generic
+  // marketplace, so Google maps the old site onto the shop's own landing page.
+  const destination = new URL(storePath(ASHBURTON_STORE_SLUG), SITE_URL)
   return NextResponse.redirect(destination, 308)
 }

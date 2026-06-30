@@ -313,7 +313,10 @@ export function useMarketplaceData(
   return {
     products: data?.products ?? EMPTY_MARKETPLACE_PRODUCTS,
     pagination: data?.pagination || null,
-    isLoading: !data && !error && isLoading,
+    // Treat "no data yet" as loading — SWR's internal isLoading is false during SSR
+    // (no fetch runs on the server), which previously flashed the empty state before
+    // the client request completed.
+    isLoading: !data && !error,
     isValidating,
     error,
     mutate,

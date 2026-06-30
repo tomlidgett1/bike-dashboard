@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { MarketplacePageContent } from "./marketplace-page-content";
+import { ProductCardSkeleton } from "@/components/marketplace/product-card";
 import { fetchInitialStoresProducts } from "@/lib/server/fetch-initial-marketplace-products";
 import { JsonLd } from "@/components/seo/json-ld";
 import { SiteFooter } from "@/components/layout/site-footer";
@@ -25,8 +26,15 @@ export const metadata: Metadata = {
 
 function LoadingFallback() {
   return (
-    <div className="min-h-screen bg-white sm:bg-gray-50 flex items-center justify-center">
-      <div className="animate-pulse text-gray-400">Loading...</div>
+    <div className="min-h-screen bg-white sm:bg-gray-50">
+      <div className="mx-auto max-w-[1920px] px-2 py-4 sm:px-4 sm:py-6">
+        <div className="mb-4 h-10 w-48 animate-pulse rounded-md bg-gray-100" />
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-0.5 sm:gap-1">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <ProductCardSkeleton key={i} layout="grid" />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

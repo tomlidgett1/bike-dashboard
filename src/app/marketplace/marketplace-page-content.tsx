@@ -585,9 +585,12 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
         : []
       : accumulatedProducts;
 
-  // Only show the skeleton when there is genuinely no data yet (SWR loading AND no
-  // server-prefetched products to fall back to).
-  const loading = isLoading && products.length === 0;
+  // Show skeleton while the first fetch is in flight or revalidating with no rows yet.
+  // Never flash "no products" when data may still be loading (SSR + client hydration).
+  const expectedProductTotal = pagination?.total ?? initialPagination?.total ?? 0;
+  const loading =
+    products.length === 0 &&
+    (isLoading || isValidating || expectedProductTotal > 0);
   // localHasMore tracks whether the last paginated fetch returned more pages.
   // null = not yet paginated (fall back to SWR's first-page value).
   const [localHasMore, setLocalHasMore] = React.useState<boolean | null>(null);
@@ -1269,7 +1272,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
         {/* Sentinel div for scroll tracking - invisible marker */}
         <div ref={sentinelRef} className="sm:hidden h-px" aria-hidden="true" />
 
-        <div className="min-h-0 w-full flex-1 px-2 pb-24 sm:relative sm:z-[1] sm:overflow-hidden sm:rounded-t-xl sm:border sm:border-gray-200 sm:bg-white sm:px-6 sm:pb-8">
+        <div className="min-h-0 w-full flex-1 px-2 pb-24 sm:relative sm:z-[1] sm:overflow-hidden sm:rounded-t-xl sm:border sm:border-gray-200 sm:bg-gray-50 sm:px-6 sm:pb-8">
           <div className={isForYouView ? "pt-2 pb-5 sm:pt-3 sm:pb-7" : "space-y-3 pt-4 sm:pt-5"}>
             {showDesktopBrowseFilters ? (
               <MarketplaceDesktopCategoryBrowse

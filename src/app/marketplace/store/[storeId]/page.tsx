@@ -7,7 +7,7 @@ import {
 } from '@/lib/marketplace/public-store-profile'
 import { JsonLd } from '@/components/seo/json-ld'
 import { bikeStoreSchema, breadcrumbSchema, extractLocality } from '@/lib/seo/structured-data'
-import { SITE_NAME, absoluteUrl, storePath, storeUrl } from '@/lib/seo/site'
+import { absoluteUrl, storePath, storeUrl } from '@/lib/seo/site'
 import type { StoreProfile } from '@/lib/types/store'
 
 export const revalidate = 60
@@ -41,26 +41,32 @@ export async function generateMetadata({
 
   const canonicalId = store.slug ?? userId!
   const locality = extractLocality(store.address)
+  // Lead with the store's own brand and assert this is its official presence so
+  // Google renders the storefront as the shop's own site, not a Yellow Jersey
+  // sub-page. `title.absolute` bypasses the root `· Yellow Jersey` template, and
+  // overriding `openGraph.siteName` stops Google appending "- Yellow Jersey" to
+  // the SERP title (it inherits SITE_NAME from the root layout otherwise).
   const title = locality
-    ? `${store.store_name} — Bike shop in ${locality}`
-    : `${store.store_name} — Bike shop`
+    ? `${store.store_name} — Official Website | Bike Shop in ${locality}`
+    : `${store.store_name} — Official Website`
   const description = buildStoreDescription(store, locality)
   const image = store.cover_image_url || store.logo_url || undefined
 
   return {
-    title,
+    title: { absolute: title },
     description,
     alternates: { canonical: storePath(canonicalId) },
     openGraph: {
       type: 'website',
-      title: `${title} · ${SITE_NAME}`,
+      siteName: store.store_name,
+      title,
       description,
       url: storeUrl(canonicalId),
       images: image ? [{ url: image, alt: store.store_name }] : undefined,
     },
     twitter: {
       card: 'summary_large_image',
-      title: `${title} · ${SITE_NAME}`,
+      title,
       description,
       images: image ? [image] : undefined,
     },
