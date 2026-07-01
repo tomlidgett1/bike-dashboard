@@ -3,7 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import * as React from "react";
-import { CheckCircle2, Database, Loader2, Play, RefreshCw, RotateCcw, SlidersHorizontal, Bolt } from "@/components/layout/app-sidebar/dashboard-icons";
+import { Loader2, RotateCcw, SlidersHorizontal, Bolt } from "@/components/layout/app-sidebar/dashboard-icons";
 import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-page";
 import { ConnectLightspeedBento } from "@/components/lightspeed/connect-lightspeed-bento";
 import { Button } from "@/components/ui/button";
@@ -22,15 +22,17 @@ import {
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { useLightspeedConnection } from "@/lib/hooks/use-lightspeed-connection";
-import { MetricsHeader } from "@/components/lightspeed/metrics-header";
-import { UnifiedCategoryTable } from "@/components/lightspeed/unified-category-table";
+import { ConnectionStatusHeader } from "@/components/lightspeed/connection-status-header";
+import { StockSnapshot } from "@/components/lightspeed/stock-snapshot";
+import { SyncActivityFeed } from "@/components/lightspeed/sync-activity-feed";
+import { OnlineStoreCategoryTable } from "@/components/lightspeed/online-store-categories";
+import { DataFeedsAdvanced } from "@/components/lightspeed/data-feeds-advanced";
 import { ProductTableView } from "@/components/lightspeed/product-table-view";
 import { SyncProgressModal } from "@/components/lightspeed/sync-progress-modal";
 import { DeleteConfirmDialog } from "@/components/lightspeed/delete-confirm-dialog";
-import { InventoryLogsView } from "@/components/lightspeed/inventory-logs-view";
 import { CategoryAdjustmentsPanel } from "@/components/lightspeed/category-adjustments-panel";
 
-type ViewMode = 'categories' | 'products' | 'logs' | 'category_adjustments';
+type ViewMode = 'categories' | 'products' | 'category_adjustments';
 
 interface SyncFilters {
   minSoh: string;
@@ -184,20 +186,6 @@ interface InventoryMirrorStatus {
   in_stock_rows: number;
   latest_run: InventoryMirrorSyncRun | null;
   error?: string;
-}
-
-function formatBackfillDate(value: string | null | undefined): string {
-  if (!value) return 'Not synced';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-
-  return new Intl.DateTimeFormat('en-AU', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
 }
 
 function backfillStatusLabel(state: SalesReportBackfillState | null): string {
@@ -830,427 +818,195 @@ export default function ConnectLightspeedPage() {
   }
 
   return (
-    <DashboardFloatingPage title="Lightspeed" icon={Bolt} description="Sync inventory from your POS" flush>
+    <DashboardFloatingPage title="Lightspeed" icon={Bolt} flush>
     <>
-      {/* Metrics Header */}
-      <MetricsHeader
-        accountName={accountInfo?.name || 'Lightspeed Account'}
-        accountId={connection?.account_id || 'N/A'}
-        totalProducts={inventoryData?.totals.totalProducts || 0}
-        totalStock={inventoryData?.totals.totalStock || 0}
-        totalSynced={inventoryData?.totals.totalSynced || 0}
-        totalNotSynced={inventoryData?.totals.totalNotSynced || 0}
-        lastSyncTime={connection?.last_sync_at ? new Date(connection.last_sync_at) : null}
-        isRefreshing={loadingInventory}
-        onRefresh={fetchInventoryData}
-        onDisconnect={disconnect}
-      />
+      <div className="space-y-6 p-4 md:p-5">
+        <ConnectionStatusHeader
+          accountName={accountInfo?.name || 'Lightspeed account'}
+          accountId={connection?.account_id || 'N/A'}
+          lastSyncTime={connection?.last_sync_at ? new Date(connection.last_sync_at) : null}
+          isRefreshing={loadingInventory}
+          onRefresh={fetchInventoryData}
+          onDisconnect={disconnect}
+        />
 
-      <div className="space-y-3 border-b border-border bg-background px-6 py-3">
-        <div className="rounded-md border border-border bg-card px-4 py-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
-                <Database className="h-4 w-4 text-foreground" />
-              </div>
-              <div className="min-w-0 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-sm font-semibold">Inventory table</h2>
-                  <Badge
-                    variant={inventoryMirrorRun?.status === 'completed' ? 'default' : 'secondary'}
-                    className="rounded-md"
-                  >
-                    {inventoryMirrorRun?.status === 'completed' && <CheckCircle2 className="mr-1 h-3 w-3" />}
-                    {inventoryMirrorRun?.status ? inventoryMirrorRun.status.replace(/_/g, ' ') : 'Not synced'}
-                  </Badge>
-                </div>
-                <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
-                  <span>
-                    Rows:{' '}
-                    <span className="font-medium text-foreground">
-                      {(inventoryMirrorStatus?.total_rows ?? 0).toLocaleString()}
-                    </span>
-                  </span>
-                  <span>
-                    In stock:{' '}
-                    <span className="font-medium text-foreground">
-                      {(inventoryMirrorStatus?.in_stock_rows ?? 0).toLocaleString()}
-                    </span>
-                  </span>
-                  <span>
-                    Last sync:{' '}
-                    <span className="font-medium text-foreground">
-                      {formatBackfillDate(inventoryMirrorRun?.completed_at || inventoryMirrorRun?.started_at)}
-                    </span>
-                  </span>
-                  <span>
-                    Last diffs:{' '}
-                    <span className="font-medium text-foreground">
-                      {inventoryMirrorRun
-                        ? `${inventoryMirrorRun.rows_changed.toLocaleString()} changed, ${inventoryMirrorRun.stock_changed.toLocaleString()} stock, ${inventoryMirrorRun.price_changed.toLocaleString()} price`
-                        : 'None yet'}
-                    </span>
-                  </span>
-                  <span>
-                    Background:{' '}
-                    <span className="font-medium text-foreground">every 10 min</span>
-                  </span>
-                </div>
-                {(inventoryMirrorMessage || inventoryMirrorErrorText) && (
-                  <p className={cn(
-                    "text-xs",
-                    inventoryMirrorErrorText ? "text-red-600 dark:text-red-400" : "text-muted-foreground",
-                  )}>
-                    {inventoryMirrorErrorText || inventoryMirrorMessage}
-                  </p>
-                )}
-              </div>
-            </div>
+        <SyncActivityFeed latestRun={inventoryMirrorRun} />
 
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <Button
-                size="sm"
-                className="rounded-md"
-                onClick={runInventoryMirrorSync}
-                disabled={inventoryMirrorSyncing || loadingInventoryMirrorStatus}
-              >
-                {inventoryMirrorSyncing ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                )}
-                {inventoryMirrorSyncing ? 'Syncing...' : 'Sync inventory table'}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="rounded-md"
-                onClick={fetchInventoryMirrorStatus}
-                disabled={inventoryMirrorSyncing || loadingInventoryMirrorStatus}
-              >
-                {loadingInventoryMirrorStatus ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                )}
-                Refresh
-              </Button>
-            </div>
+        <StockSnapshot
+          productsInShop={inventoryData?.totals.totalProducts || 0}
+          inStockNow={inventoryMirrorStatus?.in_stock_rows || 0}
+          onStore={inventoryData?.totals.totalSynced || 0}
+          notOnStore={inventoryData?.totals.totalNotSynced || 0}
+        />
+
+        <section>
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-0.5">
+            <h2 className="text-base font-semibold text-foreground">Choose what&rsquo;s on your store</h2>
+            <p className="text-xs text-muted-foreground">Pick the products from your till to show in your online store.</p>
           </div>
-        </div>
 
-        <div className="rounded-md border border-border bg-card px-4 py-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary">
-                <Database className="h-4 w-4 text-foreground" />
+          <div className="overflow-hidden rounded-xl border border-border bg-card">
+            {loadingInventory ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
               </div>
-              <div className="min-w-0 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-sm font-semibold">Sales report data</h2>
-                  <Badge
-                    variant={salesReportState?.status === 'complete' ? 'default' : 'secondary'}
-                    className="rounded-md"
-                  >
-                    {salesReportState?.status === 'complete' && <CheckCircle2 className="mr-1 h-3 w-3" />}
-                    {backfillStatusLabel(salesReportState)}
-                  </Badge>
-                </div>
-                <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
-                  <span>
-                    Rows:{' '}
-                    <span className="font-medium text-foreground">
-                      {(salesReportStatus?.row_count ?? 0).toLocaleString()}
-                    </span>
-                  </span>
-                  <span>
-                    Oldest stored:{' '}
-                    <span className="font-medium text-foreground">
-                      {formatBackfillDate(salesReportStatus?.oldest_complete_time)}
-                    </span>
-                  </span>
-                  <span>
-                    Latest stored:{' '}
-                    <span className="font-medium text-foreground">
-                      {formatBackfillDate(salesReportStatus?.latest_complete_time)}
-                    </span>
-                  </span>
-                  <span>
-                    Oldest Lightspeed sale:{' '}
-                    <span className="font-medium text-foreground">
-                      {formatBackfillDate(salesReportState?.oldest_sale_at)}
-                    </span>
-                  </span>
-                  <span>
-                    Background:{' '}
-                    <span className="font-medium text-foreground">
-                      backfill every minute, recent sales every 10 min
-                    </span>
-                  </span>
-                </div>
-                {(salesReportBackfillMessage || salesReportError) && (
-                  <p className={cn(
-                    "text-xs",
-                    salesReportError ? "text-red-600 dark:text-red-400" : "text-muted-foreground",
-                  )}>
-                    {salesReportError || salesReportBackfillMessage}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
-              <Button
-                size="sm"
-                className="rounded-md"
-                onClick={() => runSalesReportBackfill(salesReportPrimaryAction)}
-                disabled={salesReportBackfillRunning || loadingSalesReportStatus}
-              >
-                {salesReportBackfillRunning ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Play className="mr-2 h-4 w-4" />
-                )}
-                {salesReportBackfillRunning ? 'Backfilling...' : salesReportPrimaryLabel}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="rounded-md"
-                onClick={fetchSalesReportBackfillStatus}
-                disabled={salesReportBackfillRunning || loadingSalesReportStatus}
-              >
-                {loadingSalesReportStatus ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                )}
-                Refresh
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content - Full width container */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {loadingInventory ? (
-          <div className="flex items-center justify-center min-h-[60vh]">
-            <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
-          </div>
-        ) : (
-          <>
-            {/* Tabs and Actions Bar - with horizontal padding only */}
-            <div className="px-6 py-4 bg-white dark:bg-card border-b border-gray-200 dark:border-gray-800">
-              <div className="flex items-center justify-between gap-3">
-                {/* Left: view tabs + synced/not-synced toggle */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  {/* View Mode Tabs */}
-                  <div className="flex items-center bg-muted p-0.5 rounded-md w-fit">
-                    <button
-                      className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                        viewMode === 'categories'
-                          ? "text-foreground bg-background shadow-xs ring-1 ring-border"
-                          : "text-muted-foreground hover:bg-muted/70"
-                      )}
-                      onClick={() => setViewMode('categories')}
-                    >
-                      By Categories
-                      {selectedCategories.size > 0 && (
-                        <Badge variant="secondary" className="rounded-md ml-1 h-5 px-1.5 text-xs">
-                          {selectedCategories.size}
-                        </Badge>
-                      )}
-                    </button>
-                    <button
-                      className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                        viewMode === 'products'
-                          ? "text-foreground bg-background shadow-xs ring-1 ring-border"
-                          : "text-muted-foreground hover:bg-muted/70"
-                      )}
-                      onClick={() => setViewMode('products')}
-                    >
-                      All Products
-                      {selectedProducts.size > 0 && (
-                        <Badge variant="secondary" className="rounded-md ml-1 h-5 px-1.5 text-xs">
-                          {selectedProducts.size}
-                        </Badge>
-                      )}
-                    </button>
-                    <button
-                      className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                        viewMode === 'logs'
-                          ? "text-foreground bg-background shadow-xs ring-1 ring-border"
-                          : "text-muted-foreground hover:bg-muted/70"
-                      )}
-                      onClick={() => setViewMode('logs')}
-                    >
-                      Logs
-                    </button>
-                    <button
-                      className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                        viewMode === 'category_adjustments'
-                          ? "text-foreground bg-background shadow-xs ring-1 ring-border"
-                          : "text-muted-foreground hover:bg-muted/70"
-                      )}
-                      onClick={() => setViewMode('category_adjustments')}
-                    >
-                      Adjust categories
-                    </button>
-                  </div>
-
-                  {/* Synced / Not Synced toggle — only for categories and products views */}
-                  {(viewMode === 'categories' || viewMode === 'products') && (
-                    <div className="flex items-center bg-muted p-0.5 rounded-md">
+            ) : (
+              <>
+                <div className="flex flex-col gap-3 border-b border-border px-4 py-3 md:px-5 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex w-fit items-center rounded-md bg-muted p-0.5">
                       <button
-                        className={cn(
-                          "px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                          (viewMode === 'products' ? productSyncFilter : categorySyncFilter) === 'not_synced'
-                            ? "text-foreground bg-background shadow-xs ring-1 ring-border"
-                            : "text-muted-foreground hover:bg-muted/70"
-                        )}
-                        onClick={() =>
-                          viewMode === 'products'
-                            ? setProductSyncFilter('not_synced')
-                            : setCategorySyncFilter('not_synced')
-                        }
+                        className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors", viewMode === 'categories' ? "bg-background text-foreground shadow-xs ring-1 ring-border" : "text-muted-foreground hover:bg-muted/70")}
+                        onClick={() => setViewMode('categories')}
                       >
-                        Not Synced
+                        By category
+                        {selectedCategories.size > 0 && (
+                          <Badge variant="secondary" className="ml-1 h-5 rounded-md px-1.5 text-xs">{selectedCategories.size}</Badge>
+                        )}
                       </button>
                       <button
-                        className={cn(
-                          "px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
-                          (viewMode === 'products' ? productSyncFilter : categorySyncFilter) === 'synced'
-                            ? "text-foreground bg-background shadow-xs ring-1 ring-border"
-                            : "text-muted-foreground hover:bg-muted/70"
-                        )}
-                        onClick={() =>
-                          viewMode === 'products'
-                            ? setProductSyncFilter('synced')
-                            : setCategorySyncFilter('synced')
-                        }
+                        className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors", viewMode === 'products' ? "bg-background text-foreground shadow-xs ring-1 ring-border" : "text-muted-foreground hover:bg-muted/70")}
+                        onClick={() => setViewMode('products')}
                       >
-                        Synced
+                        All products
+                        {selectedProducts.size > 0 && (
+                          <Badge variant="secondary" className="ml-1 h-5 rounded-md px-1.5 text-xs">{selectedProducts.size}</Badge>
+                        )}
+                      </button>
+                      <button
+                        className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors", viewMode === 'category_adjustments' ? "bg-background text-foreground shadow-xs ring-1 ring-border" : "text-muted-foreground hover:bg-muted/70")}
+                        onClick={() => setViewMode('category_adjustments')}
+                      >
+                        Tidy categories
                       </button>
                     </div>
-                  )}
+
+                    {(viewMode === 'categories' || viewMode === 'products') && (
+                      <div className="flex items-center rounded-md bg-muted p-0.5">
+                        <button
+                          className={cn("rounded-md px-3 py-1.5 text-sm font-medium transition-colors", (viewMode === 'products' ? productSyncFilter : categorySyncFilter) === 'not_synced' ? "bg-background text-foreground shadow-xs ring-1 ring-border" : "text-muted-foreground hover:bg-muted/70")}
+                          onClick={() => viewMode === 'products' ? setProductSyncFilter('not_synced') : setCategorySyncFilter('not_synced')}
+                        >
+                          Not on store yet
+                        </button>
+                        <button
+                          className={cn("rounded-md px-3 py-1.5 text-sm font-medium transition-colors", (viewMode === 'products' ? productSyncFilter : categorySyncFilter) === 'synced' ? "bg-background text-foreground shadow-xs ring-1 ring-border" : "text-muted-foreground hover:bg-muted/70")}
+                          onClick={() => viewMode === 'products' ? setProductSyncFilter('synced') : setCategorySyncFilter('synced')}
+                        >
+                          On your store
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-shrink-0 items-center gap-2">
+                    {(viewMode === 'categories' || viewMode === 'products') && (
+                      <Button variant="outline" size="sm" className="relative rounded-md" onClick={openFilterSheet}>
+                        <SlidersHorizontal className="size-4" />
+                        Filters
+                        {activeFilterCount > 0 && (
+                          <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-[10px] font-semibold text-background">{activeFilterCount}</span>
+                        )}
+                      </Button>
+                    )}
+
+                    {viewMode === 'categories' && selectedCategories.size > 0 && (
+                      <>
+                        {hasNotSyncedSelected && (
+                          <Button onClick={handleSyncSelected} size="sm" className="rounded-md">Add to store</Button>
+                        )}
+                        {hasSyncedSelected && (
+                          <Button variant="outline" size="sm" className="rounded-md" onClick={handleRemoveSelected}>Remove from store</Button>
+                        )}
+                      </>
+                    )}
+
+                    {viewMode === 'products' && selectedProducts.size > 0 && (
+                      productSyncFilter === 'synced' ? (
+                        <Button variant="outline" size="sm" className="rounded-md" onClick={() => handleDeleteProducts(Array.from(selectedProducts))}>
+                          Remove {selectedProducts.size} from store
+                        </Button>
+                      ) : (
+                        <Button onClick={handleSyncSelectedProducts} size="sm" className="rounded-md">
+                          Add {selectedProducts.size} product{selectedProducts.size !== 1 ? 's' : ''} to store
+                        </Button>
+                      )
+                    )}
+                  </div>
                 </div>
 
-                {/* Right: Action Buttons */}
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {/* Filters button — visible in categories and products views */}
-                  {(viewMode === 'categories' || viewMode === 'products') && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="relative"
-                      onClick={openFilterSheet}
-                    >
-                      <SlidersHorizontal className="size-4" />
-                      {viewMode === 'products' ? 'Filters' : 'Sync Filters'}
-                      {activeFilterCount > 0 && (
-                        <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-[10px] font-semibold text-background">
-                          {activeFilterCount}
-                        </span>
-                      )}
-                    </Button>
-                  )}
-
-                  {viewMode === 'categories' && selectedCategories.size > 0 && (
-                    <>
-                      {hasNotSyncedSelected && (
-                        <Button
-                          onClick={handleSyncSelected}
-                          size="sm"
-                        >
-                          Sync to Marketplace
-                        </Button>
-                      )}
-                      {hasSyncedSelected && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleRemoveSelected}
-                        >
-                          Remove from Marketplace
-                        </Button>
-                      )}
-                    </>
-                  )}
-
-                  {viewMode === 'products' && selectedProducts.size > 0 && (
-                    productSyncFilter === 'synced' ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDeleteProducts(Array.from(selectedProducts))}
-                      >
-                        Remove {selectedProducts.size} from Marketplace
-                      </Button>
-                    ) : (
-                      <Button
-                        onClick={handleSyncSelectedProducts}
-                        size="sm"
-                      >
-                        Sync {selectedProducts.size} product{selectedProducts.size !== 1 ? 's' : ''} to Marketplace
-                      </Button>
-                    )
+                <div className="max-h-[34rem] overflow-auto">
+                  {viewMode === 'categories' ? (
+                    <OnlineStoreCategoryTable
+                      categories={inventoryData?.categories || []}
+                      selectedCategories={selectedCategories}
+                      onCategoryToggle={handleCategoryToggle}
+                      expandedCategory={expandedCategory}
+                      onCategoryExpand={setExpandedCategory}
+                      syncFilter={categorySyncFilter}
+                    />
+                  ) : viewMode === 'products' ? (
+                    <ProductTableView
+                      products={(productSyncFilter === 'synced' ? (inventoryData?.synced.products ?? []) : (inventoryData?.notSynced.products ?? [])).map((p) => ({
+                        id: p.id,
+                        itemId: p.itemId,
+                        name: p.name ?? 'Unnamed product',
+                        sku: p.sku ?? '',
+                        modelYear: p.modelYear ?? '',
+                        categoryId: p.categoryId ?? '',
+                        price: p.price ?? 0,
+                        totalQoh: p.totalQoh ?? 0,
+                        totalSellable: p.totalSellable ?? 0,
+                        isSynced: productSyncFilter === 'synced',
+                      }))}
+                      selectedProducts={selectedProducts}
+                      onProductToggle={handleProductToggle}
+                      onSelectAll={handleSelectAllProducts}
+                      onClearAll={handleClearAllProducts}
+                      onDeleteProducts={handleDeleteProducts}
+                      syncFilters={syncFilters}
+                      activeFilterCount={activeFilterCount}
+                      onOpenFilters={openFilterSheet}
+                    />
+                  ) : (
+                    <CategoryAdjustmentsPanel onCategoriesChanged={fetchInventoryData} />
                   )}
                 </div>
-              </div>
-            </div>
+              </>
+            )}
+          </div>
+        </section>
 
-            {/* Table Container - Full width, scrollable */}
-            <div className="flex-1 overflow-auto bg-background">
-              {viewMode === 'categories' ? (
-                <UnifiedCategoryTable
-                  categories={inventoryData?.categories || []}
-                  selectedCategories={selectedCategories}
-                  onCategoryToggle={handleCategoryToggle}
-                  expandedCategory={expandedCategory}
-                  onCategoryExpand={setExpandedCategory}
-                  syncFilter={categorySyncFilter}
-                />
-              ) : viewMode === 'products' ? (
-                <ProductTableView
-                  products={
-                    (productSyncFilter === 'synced'
-                      ? (inventoryData?.synced.products ?? [])
-                      : (inventoryData?.notSynced.products ?? [])
-                    ).map((p) => ({
-	                      id: p.id,
-	                      itemId: p.itemId,
-	                      name: p.name ?? 'Unnamed product',
-	                      sku: p.sku ?? '',
-	                      modelYear: p.modelYear ?? '',
-	                      categoryId: p.categoryId ?? '',
-	                      price: p.price ?? 0,
-	                      totalQoh: p.totalQoh ?? 0,
-	                      totalSellable: p.totalSellable ?? 0,
-	                      isSynced: productSyncFilter === 'synced',
-                    }))
-                  }
-                  selectedProducts={selectedProducts}
-                  onProductToggle={handleProductToggle}
-                  onSelectAll={handleSelectAllProducts}
-                  onClearAll={handleClearAllProducts}
-                  onDeleteProducts={handleDeleteProducts}
-                  syncFilters={syncFilters}
-                  activeFilterCount={activeFilterCount}
-                  onOpenFilters={openFilterSheet}
-                />
-              ) : viewMode === 'category_adjustments' ? (
-                <CategoryAdjustmentsPanel onCategoriesChanged={fetchInventoryData} />
-              ) : (
-                <InventoryLogsView />
-              )}
-            </div>
-          </>
-        )}
+        <DataFeedsAdvanced
+          inventory={{
+            totalRows: inventoryMirrorStatus?.total_rows ?? 0,
+            inStockRows: inventoryMirrorStatus?.in_stock_rows ?? 0,
+            lastSyncAt: inventoryMirrorRun?.completed_at || inventoryMirrorRun?.started_at || null,
+            isComplete: inventoryMirrorRun?.status === 'completed',
+            statusLabel: inventoryMirrorRun?.status ? inventoryMirrorRun.status.replace(/_/g, ' ') : 'Not synced',
+            syncing: inventoryMirrorSyncing,
+            loadingStatus: loadingInventoryMirrorStatus,
+            message: inventoryMirrorMessage,
+            errorText: inventoryMirrorErrorText,
+            onSync: runInventoryMirrorSync,
+            onRefresh: fetchInventoryMirrorStatus,
+          }}
+          sales={{
+            rowCount: salesReportStatus?.row_count ?? 0,
+            oldestStored: salesReportStatus?.oldest_complete_time ?? null,
+            latestStored: salesReportStatus?.latest_complete_time ?? null,
+            oldestSale: salesReportState?.oldest_sale_at ?? null,
+            isComplete: salesReportState?.status === 'complete',
+            statusLabel: backfillStatusLabel(salesReportState),
+            running: salesReportBackfillRunning,
+            loadingStatus: loadingSalesReportStatus,
+            message: salesReportBackfillMessage,
+            error: salesReportError,
+            primaryLabel: salesReportPrimaryLabel,
+            onRun: () => runSalesReportBackfill(salesReportPrimaryAction),
+            onRefresh: fetchSalesReportBackfillStatus,
+          }}
+        />
       </div>
 
       {/* Sync Progress Modal */}

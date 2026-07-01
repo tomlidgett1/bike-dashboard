@@ -144,7 +144,7 @@ export function ProductTableView({
             <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-400">
               <SlidersHorizontal className="h-3.5 w-3.5 flex-shrink-0" />
               <span>
-                <span className="font-semibold">{hiddenByFilterCount.toLocaleString()}</span> product{hiddenByFilterCount !== 1 ? 's' : ''} hidden by sync filters
+                <span className="font-semibold">{hiddenByFilterCount.toLocaleString()}</span> product{hiddenByFilterCount !== 1 ? 's' : ''} hidden by your filters
               </span>
             </div>
             {onOpenFilters && (
@@ -229,7 +229,7 @@ export function ProductTableView({
                 onClick={() => handleSort('name')}
               >
                 <div className="flex items-center gap-1">
-                  Product Name
+                  Product
                   <SortIndicator field="name" />
                 </div>
               </th>
@@ -259,7 +259,7 @@ export function ProductTableView({
                 onClick={() => handleSort('stock')}
               >
                 <div className="flex items-center gap-1">
-                  Stock (SOH)
+                  Stock
                   <SortIndicator field="stock" />
                 </div>
               </th>
@@ -335,12 +335,12 @@ export function ProductTableView({
                       {product.isSynced ? (
                         <Badge variant="secondary" className="rounded-md bg-transparent text-gray-700 dark:text-gray-300 flex items-center gap-1.5 w-fit">
                           <span className="h-2 w-2 rounded-full bg-green-500" />
-                          Live
+                          On store
                         </Badge>
                       ) : (
                         <Badge variant="secondary" className="rounded-md bg-transparent text-gray-700 dark:text-gray-300 flex items-center gap-1.5 w-fit">
                           <span className="h-2 w-2 rounded-full bg-gray-400" />
-                          Not Synced
+                          Not on store
                         </Badge>
                       )}
                     </td>
