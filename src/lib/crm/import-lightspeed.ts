@@ -2,8 +2,9 @@
 //
 // Deduped by normalized (lowercase, trimmed) email per store. Re-running the
 // import merges metadata into existing contacts but NEVER clears an opt-out —
-// unsubscribes are one-way from our side. Customers flagged "noEmail" at the
-// Lightspeed POS are imported already opted out so we never mail them.
+// unsubscribes are one-way from our side. Opt-out is only set when a contact
+// uses the unsubscribe link (Lightspeed POS noEmail flags are ignored while
+// stores are starting fresh with CRM).
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { LightspeedClient } from "@/lib/services/lightspeed/lightspeed-client";
@@ -13,6 +14,7 @@ import type {
   LightspeedCustomer,
 } from "@/lib/services/lightspeed/types";
 import { normalizeEmail } from "./types";
+import { joinedAtFromCustomer } from "./enrich-contacts";
 
 export type CrmImportResult = {
   scanned: number;
@@ -63,7 +65,7 @@ type ContactRow = {
   last_name: string | null;
   phone: string | null;
   lightspeed_customer_id: string | null;
-  posNoEmail: boolean;
+  lightspeed_joined_at: string | null;
 };
 
 export async function importLightspeedContacts(
@@ -93,7 +95,7 @@ export async function importLightspeedContacts(
       last_name: cleanName(customer.lastName),
       phone: extractPhone(customer),
       lightspeed_customer_id: customer.customerID ? String(customer.customerID) : null,
-      posNoEmail: customer.Contact?.noEmail === "true",
+      lightspeed_joined_at: joinedAtFromCustomer(customer),
     };
     const existing = byEmail.get(email);
     if (!existing) {
@@ -106,7 +108,7 @@ export async function importLightspeedContacts(
         phone: existing.phone ?? candidate.phone,
         lightspeed_customer_id:
           existing.lightspeed_customer_id ?? candidate.lightspeed_customer_id,
-        posNoEmail: existing.posNoEmail || candidate.posNoEmail,
+        lightspeed_joined_at: existing.lightspeed_joined_at ?? candidate.lightspeed_joined_at,
       });
     }
   }
@@ -114,7 +116,7 @@ export async function importLightspeedContacts(
   // Split into inserts vs metadata updates against what we already have.
   const { data: existingRows, error: existingError } = await supabase
     .from("crm_contacts")
-    .select("id, email, first_name, last_name, phone, lightspeed_customer_id, opted_out")
+    .select("id, email, first_name, last_name, phone, lightspeed_customer_id, lightspeed_joined_at, opted_out")
     .eq("user_id", userId);
   if (existingError) throw new Error(`Failed to load existing contacts: ${existingError.message}`);
 
@@ -137,15 +139,13 @@ export async function importLightspeedContacts(
         last_name: candidate.last_name,
         phone: candidate.phone,
         lightspeed_customer_id: candidate.lightspeed_customer_id,
+        lightspeed_joined_at: candidate.lightspeed_joined_at,
         source: "lightspeed",
-        opted_out: candidate.posNoEmail,
-        opted_out_at: candidate.posNoEmail ? now : null,
-        opt_out_reason: candidate.posNoEmail ? "lightspeed_no_email" : null,
       });
       continue;
     }
 
-    // Merge: fill gaps, refresh the Lightspeed link, honour a new POS opt-out.
+    // Merge: fill gaps, refresh the Lightspeed link.
     const patch: Record<string, unknown> = {};
     if (candidate.first_name && candidate.first_name !== existing.first_name)
       patch.first_name = candidate.first_name;
@@ -157,11 +157,8 @@ export async function importLightspeedContacts(
       candidate.lightspeed_customer_id !== existing.lightspeed_customer_id
     )
       patch.lightspeed_customer_id = candidate.lightspeed_customer_id;
-    if (candidate.posNoEmail && !existing.opted_out) {
-      patch.opted_out = true;
-      patch.opted_out_at = now;
-      patch.opt_out_reason = "lightspeed_no_email";
-    }
+    if (candidate.lightspeed_joined_at && !existing.lightspeed_joined_at)
+      patch.lightspeed_joined_at = candidate.lightspeed_joined_at;
 
     if (Object.keys(patch).length > 0) {
       patch.updated_at = now;
@@ -180,6 +177,14 @@ export async function importLightspeedContacts(
       .from("crm_contacts")
       .upsert(chunk, { onConflict: "user_id,email", ignoreDuplicates: true });
     if (error) throw new Error(`Failed to insert contacts: ${error.message}`);
+  }
+
+  // Backfill purchase stats from the local Lightspeed sales report (best-effort).
+  try {
+    const { enrichCrmContacts } = await import("./enrich-contacts");
+    await enrichCrmContacts(supabase, userId);
+  } catch (error) {
+    console.warn("[crm] post-import enrichment failed:", error);
   }
 
   return {

@@ -50,9 +50,10 @@ type CrmMessage = {
   html: string;
   text?: string;
   headers?: Record<string, string>;
+  tags?: { name: string; value: string }[];
 };
 
-type SendResult = { to: string; success: boolean; error?: string };
+type SendResult = { to: string; success: boolean; error?: string; emailId?: string };
 
 function getFromEmail(): string | null {
   const from = Deno.env.get('CRM_FROM_EMAIL') || Deno.env.get('FROM_EMAIL') || '';
@@ -76,6 +77,9 @@ function toPayload(message: CrmMessage, fromEmail: string) {
     html: message.html,
     text: message.text,
     headers: message.headers,
+    tags: message.tags,
+    open_tracking: true,
+    click_tracking: true,
   };
 }
 
@@ -90,7 +94,8 @@ async function sendOne(apiKey: string, fromEmail: string, message: CrmMessage): 
       const body = await response.json().catch(() => ({}));
       return { to: message.to, success: false, error: body.message || `HTTP ${response.status}` };
     }
-    return { to: message.to, success: true };
+    const body = await response.json().catch(() => ({}));
+    return { to: message.to, success: true, emailId: body.id ? String(body.id) : undefined };
   } catch (error) {
     return {
       to: message.to,
@@ -113,7 +118,15 @@ async function sendAll(apiKey: string, fromEmail: string, messages: CrmMessage[]
       });
 
       if (response.ok) {
-        results.push(...chunk.map((message) => ({ to: message.to, success: true })));
+        const body = await response.json().catch(() => ({}));
+        const ids = Array.isArray(body.data) ? body.data : [];
+        results.push(
+          ...chunk.map((message, index) => ({
+            to: message.to,
+            success: true,
+            emailId: ids[index]?.id ? String(ids[index].id) : undefined,
+          })),
+        );
       } else {
         // Batch calls fail whole — fall back to individual sends so one bad
         // address doesn't sink the other 49. 429s get a breather first.

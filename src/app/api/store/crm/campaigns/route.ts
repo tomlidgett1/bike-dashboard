@@ -30,7 +30,7 @@ export async function GET() {
       supabase
         .from("crm_campaigns")
         .select(
-          "id, subject, template_key, content, sender_email, status, intended_count, sent_count, failed_count, created_at, sent_at",
+          "id, subject, template_key, content, sender_email, status, intended_count, sent_count, failed_count, delivered_count, opened_count, clicked_count, bounced_count, created_at, sent_at",
         )
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
@@ -62,8 +62,9 @@ type CreateBody = {
   subject?: string;
   templateKey?: string;
   content?: CampaignContent;
-  recipientMode?: "all" | "selected";
+  recipientMode?: "all" | "selected" | "group";
   contactIds?: string[];
+  groupId?: string;
 };
 
 export async function POST(request: NextRequest) {
@@ -81,8 +82,14 @@ export async function POST(request: NextRequest) {
     const subject = String(body.subject ?? "").trim();
     const templateKey = String(body.templateKey ?? "");
     const content = body.content ?? ({} as CampaignContent);
-    const recipientMode = body.recipientMode === "selected" ? "selected" : "all";
+    const recipientMode =
+      body.recipientMode === "selected"
+        ? "selected"
+        : body.recipientMode === "group"
+          ? "group"
+          : "all";
     const contactIds = Array.isArray(body.contactIds) ? body.contactIds : [];
+    const groupId = String(body.groupId ?? "").trim();
 
     // Guardrails — same rules the send endpoint re-checks.
     if (!subject) {
@@ -100,17 +107,39 @@ export async function POST(request: NextRequest) {
     if (recipientMode === "selected" && contactIds.length === 0) {
       return NextResponse.json({ error: "Select at least one recipient" }, { status: 400 });
     }
+    if (recipientMode === "group" && !groupId) {
+      return NextResponse.json({ error: "Select a customer group" }, { status: 400 });
+    }
 
     // Resolve recipients — eligible contacts only.
-    let contactsQuery = supabase
-      .from("crm_contacts")
-      .select("id, email, opted_out")
-      .eq("user_id", user.id);
-    if (recipientMode === "selected") {
-      contactsQuery = contactsQuery.in("id", contactIds.slice(0, 10000));
+    let candidates: { id: string; email: string; opted_out: boolean }[] = [];
+
+    if (recipientMode === "group") {
+      const { data: members, error: membersError } = await supabase
+        .from("crm_contact_group_members")
+        .select("contact_id, crm_contacts(id, email, opted_out)")
+        .eq("user_id", user.id)
+        .eq("group_id", groupId);
+      if (membersError) throw membersError;
+      candidates = (members ?? [])
+        .map((row) => {
+          const contact = row.crm_contacts;
+          if (!contact || Array.isArray(contact)) return null;
+          return contact as { id: string; email: string; opted_out: boolean };
+        })
+        .filter((contact): contact is { id: string; email: string; opted_out: boolean } => !!contact);
+    } else {
+      let contactsQuery = supabase
+        .from("crm_contacts")
+        .select("id, email, opted_out")
+        .eq("user_id", user.id);
+      if (recipientMode === "selected") {
+        contactsQuery = contactsQuery.in("id", contactIds.slice(0, 10000));
+      }
+      const { data, error: contactsError } = await contactsQuery;
+      if (contactsError) throw contactsError;
+      candidates = data ?? [];
     }
-    const { data: candidates, error: contactsError } = await contactsQuery;
-    if (contactsError) throw contactsError;
 
     let excludedOptedOut = 0;
     let excludedInvalid = 0;

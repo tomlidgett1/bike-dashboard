@@ -16,12 +16,14 @@ export interface CrmEmailMessage {
   html: string;
   text?: string;
   headers?: Record<string, string>;
+  tags?: { name: string; value: string }[];
 }
 
 export interface CrmSendResult {
   to: string;
   success: boolean;
   error?: string;
+  emailId?: string;
 }
 
 export interface CrmEmailProvider {
@@ -58,6 +60,9 @@ class ResendCrmProvider implements CrmEmailProvider {
       html: message.html,
       text: message.text,
       headers: message.headers,
+      tags: message.tags,
+      open_tracking: true,
+      click_tracking: true,
     };
   }
 
@@ -79,7 +84,8 @@ class ResendCrmProvider implements CrmEmailProvider {
           error: body.message || `HTTP ${response.status}`,
         };
       }
-      return { to: message.to, success: true };
+      const body = await response.json().catch(() => ({}));
+      return { to: message.to, success: true, emailId: body.id ? String(body.id) : undefined };
     } catch (error) {
       return {
         to: message.to,
@@ -105,7 +111,15 @@ class ResendCrmProvider implements CrmEmailProvider {
         });
 
         if (response.ok) {
-          results.push(...chunk.map((message) => ({ to: message.to, success: true })));
+          const body = await response.json().catch(() => ({}));
+          const ids = Array.isArray(body.data) ? body.data : [];
+          results.push(
+            ...chunk.map((message, index) => ({
+              to: message.to,
+              success: true,
+              emailId: ids[index]?.id ? String(ids[index].id) : undefined,
+            })),
+          );
         } else {
           // Batch calls fail whole — fall back to individual sends so one bad
           // address doesn't sink the other 49. 429s get a breather first.

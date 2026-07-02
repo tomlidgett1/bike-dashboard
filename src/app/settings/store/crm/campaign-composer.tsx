@@ -28,12 +28,20 @@ import {
   renderCampaignEmail,
   type StoreBranding,
 } from "@/lib/crm/templates";
-import type { CampaignContent, CampaignItem, CrmContact } from "@/lib/crm/types";
+import type { CampaignContent, CampaignItem, CrmContact, CrmContactGroup } from "@/lib/crm/types";
+import { EmailDesignPanel } from "./email-design-panel";
+import { EmailBuilder } from "./email-builder";
+import { LightspeedProductPicker } from "./lightspeed-product-picker";
+import { ensureCampaignDesign } from "@/lib/crm/design";
+import type { CampaignDesign } from "@/lib/crm/types";
 
 export type ComposerSeed = {
   templateKey: string | null;
   subject: string | null;
   content: CampaignContent | null;
+  /** Agent-resolved recipient IDs (may be thousands — not loaded into UI selection). */
+  agentRecipientIds?: string[];
+  agentRecipientCount?: number;
 };
 
 type Step = "template" | "customize" | "recipients" | "review";
@@ -66,7 +74,8 @@ export function CampaignComposer(props: {
 
   const eligibleSelected = selectedContacts.filter((contact) => !contact.opted_out);
   const optedOutSelected = selectedContacts.length - eligibleSelected.length;
-  const hasSelection = selectedContacts.length > 0;
+  const hasAgentAudience = (seed.agentRecipientIds?.length ?? 0) > 0;
+  const hasSelection = selectedContacts.length > 0 || hasAgentAudience;
 
   const [step, setStep] = React.useState<Step>(seed.templateKey ? "customize" : "template");
   const [templateKey, setTemplateKey] = React.useState<string | null>(seed.templateKey);
@@ -74,14 +83,28 @@ export function CampaignComposer(props: {
   const [content, setContent] = React.useState<CampaignContent>(
     seed.content ?? { title: "", body: "" },
   );
-  const [recipientMode, setRecipientMode] = React.useState<"all" | "selected">(
-    hasSelection ? "selected" : "all",
+  const [recipientMode, setRecipientMode] = React.useState<"all" | "selected" | "group">(
+    hasAgentAudience || hasSelection ? "selected" : "all",
   );
+  const [groupId, setGroupId] = React.useState<string | null>(null);
+  const [groups, setGroups] = React.useState<CrmContactGroup[]>([]);
   const [sending, setSending] = React.useState(false);
   const [sendError, setSendError] = React.useState<string | null>(null);
   const [outcome, setOutcome] = React.useState<SendOutcome | null>(null);
 
   const template = templateKey ? getCrmTemplate(templateKey) : null;
+  const design = ensureCampaignDesign(content);
+
+  React.useEffect(() => {
+    if (step !== "recipients") return;
+    void fetch("/api/store/crm/groups", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => setGroups(data.groups ?? []))
+      .catch(() => setGroups([]));
+  }, [step]);
+
+  const selectedGroup = groups.find((group) => group.id === groupId);
+  const groupEligibleCount = selectedGroup?.member_count ?? 0;
 
   const chooseTemplate = (key: string) => {
     const nextTemplate = getCrmTemplate(key);
@@ -105,12 +128,34 @@ export function CampaignComposer(props: {
       return { ...prev, items };
     });
 
-  const recipientCount = recipientMode === "all" ? eligibleCount : eligibleSelected.length;
+  const recipientCount =
+    recipientMode === "all"
+      ? eligibleCount
+      : recipientMode === "group"
+        ? groupEligibleCount
+        : hasAgentAudience
+          ? (seed.agentRecipientCount ?? seed.agentRecipientIds?.length ?? 0)
+          : eligibleSelected.length;
   const customizeValid =
     subject.trim().length > 0 &&
-    String(content.title ?? "").trim().length > 0 &&
-    String(content.body ?? "").trim().length > 0;
-  const canSend = customizeValid && Boolean(senderEmail) && recipientCount > 0 && !sending;
+    (design.mode === "builder"
+      ? (design.blocks ?? []).some((block) => {
+          if (block.type === "hero") return String(block.title ?? "").trim().length > 0;
+          if (block.type === "heading") return String(block.text ?? "").trim().length > 0;
+          if (block.type === "text") return String(block.body ?? "").trim().length > 0;
+          if (block.type === "button") return String(block.text ?? "").trim().length > 0;
+          if (block.type === "products")
+            return (block.items ?? []).some((item) => String(item.title ?? "").trim().length > 0);
+          return false;
+        })
+      : String(content.title ?? "").trim().length > 0 &&
+        String(content.body ?? "").trim().length > 0);
+  const canSend =
+    customizeValid &&
+    Boolean(senderEmail) &&
+    recipientCount > 0 &&
+    !sending &&
+    (recipientMode !== "group" || Boolean(groupId));
 
   const deferredContent = React.useDeferredValue(content);
   const deferredTemplateKey = React.useDeferredValue(templateKey);
@@ -139,8 +184,11 @@ export function CampaignComposer(props: {
           recipientMode,
           contactIds:
             recipientMode === "selected"
-              ? eligibleSelected.map((contact) => contact.id)
+              ? hasAgentAudience
+                ? seed.agentRecipientIds
+                : eligibleSelected.map((contact) => contact.id)
               : undefined,
+          groupId: recipientMode === "group" ? groupId : undefined,
         }),
       });
       const created = await createRes.json().catch(() => ({}));
@@ -221,6 +269,11 @@ export function CampaignComposer(props: {
         ) : step === "customize" && template ? (
           <div className="mx-auto flex h-full max-w-6xl flex-col gap-6 p-6 lg:flex-row">
             <div className="w-full space-y-5 lg:w-105 lg:shrink-0 lg:overflow-y-auto lg:pr-1">
+              <EmailDesignPanel content={content} onChange={setContent} />
+              {design.mode === "builder" ? (
+                <EmailBuilder content={content} onChange={setContent} />
+              ) : (
+                <>
               <Field label="Subject line" required>
                 <Input
                   value={subject}
@@ -280,10 +333,15 @@ export function CampaignComposer(props: {
                         }
                       >
                         <Plus className="mr-1 size-3.5" />
-                        Add item
+                        Add blank
                       </Button>
                     ) : null}
                   </div>
+                  <LightspeedProductPicker
+                    onSelect={(item) =>
+                      updateContent({ items: [...(content.items ?? []), item].slice(0, 4) })
+                    }
+                  />
                   {(content.items ?? []).map((item, index) => (
                     <div
                       key={index}
@@ -349,6 +407,8 @@ export function CampaignComposer(props: {
               <p className="text-xs text-muted-foreground">
                 An unsubscribe link is added to every email automatically.
               </p>
+                </>
+              )}
             </div>
 
             <div className="min-h-96 flex-1 overflow-hidden rounded-2xl border border-border/60 bg-white shadow-sm">
@@ -388,12 +448,24 @@ export function CampaignComposer(props: {
                       : ""
                   }`}
                 />
-              ) : (
-                <p className="pt-1 text-xs text-muted-foreground">
-                  Tip: select individual contacts on the Contacts tab first to target a smaller
-                  group.
-                </p>
-              )}
+              ) : null}
+              {groups.length > 0 ? (
+                <div className="space-y-2 pt-1">
+                  <p className="text-xs font-medium text-muted-foreground">Or send to a group</p>
+                  {groups.map((group) => (
+                    <RecipientOption
+                      key={group.id}
+                      active={recipientMode === "group" && groupId === group.id}
+                      onClick={() => {
+                        setRecipientMode("group");
+                        setGroupId(group.id);
+                      }}
+                      title={group.name}
+                      subtitle={`${(group.member_count ?? 0).toLocaleString()} member${(group.member_count ?? 0) === 1 ? "" : "s"} — opted-out excluded at send`}
+                    />
+                  ))}
+                </div>
+              ) : null}
             </div>
           </div>
         ) : (

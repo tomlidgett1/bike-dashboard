@@ -15,8 +15,10 @@ import {
   RefreshCw,
   Search,
   Send,
+  Sparkles,
   Trash2,
   Users,
+  Calendar,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-page";
 import { Badge } from "@/components/ui/badge";
@@ -26,12 +28,17 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { getCrmTemplate, type StoreBranding } from "@/lib/crm/templates";
-import type { CrmCampaign, CrmContact } from "@/lib/crm/types";
+import type { CrmCampaign, CrmContact, CrmContactGroup, CrmContactSort } from "@/lib/crm/types";
+import { formatAud } from "@/lib/crm/types";
 import { CampaignComposer, type ComposerSeed } from "./campaign-composer";
+import { ContactGroupFilterDropdown, ContactSortDropdown } from "./contact-sort-dropdown";
+import { ContactGroupsPanel } from "./contact-groups-panel";
+import { CrmAgentPanel } from "./crm-agent-panel";
+import { CrmAutomationPanel } from "./crm-automation-panel";
 
 type ContactStats = { total: number; optedOut: number; eligible: number };
 type ContactFilter = "all" | "opted_in" | "opted_out";
-type CrmTab = "contacts" | "campaigns";
+type CrmTab = "contacts" | "groups" | "campaigns" | "ai" | "automation";
 
 const PAGE_SIZE = 50;
 
@@ -57,13 +64,54 @@ function initials(contact: CrmContact): string {
   return contact.email.slice(0, 2).toUpperCase();
 }
 
-function formatDate(value: string | null): string {
+function formatDateTime(value: string | null): string {
   if (!value) return "—";
   return new Date(value).toLocaleDateString("en-AU", {
     day: "numeric",
     month: "short",
     year: "numeric",
   });
+}
+
+function formatRate(count: number, total: number): string {
+  if (total <= 0) return "—";
+  return `${Math.round((count / total) * 100)}%`;
+}
+
+function CampaignMetrics({ campaign }: { campaign: CrmCampaign }) {
+  const sent = campaign.sent_count;
+  const opened = campaign.opened_count ?? 0;
+  const clicked = campaign.clicked_count ?? 0;
+  const delivered = campaign.delivered_count ?? 0;
+  const bounced = campaign.bounced_count ?? 0;
+
+  const metrics = [
+    { label: "Opened", count: opened },
+    { label: "Clicked", count: clicked },
+    { label: "Delivered", count: delivered },
+    ...(bounced > 0 ? [{ label: "Bounced", count: bounced }] : []),
+  ];
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      {metrics.map((metric) => (
+        <span
+          key={metric.label}
+          className="inline-flex items-center gap-1 rounded-md border border-border/50 bg-white px-2 py-0.5 text-[11px] leading-tight"
+        >
+          <span className="text-muted-foreground">{metric.label}</span>
+          <span className="font-semibold tabular-nums text-foreground">
+            {formatRate(metric.count, sent)}
+          </span>
+          {sent > 1 ? (
+            <span className="text-muted-foreground/60">
+              ({metric.count}/{sent})
+            </span>
+          ) : null}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 const CAMPAIGN_STATUS_STYLES: Record<string, string> = {
@@ -82,6 +130,10 @@ export function CrmPageContent() {
   const [filteredCount, setFilteredCount] = React.useState(0);
   const [search, setSearch] = React.useState("");
   const [filter, setFilter] = React.useState<ContactFilter>("all");
+  const [sort, setSort] = React.useState<CrmContactSort>("recent");
+  const [groupFilterId, setGroupFilterId] = React.useState<string>("");
+  const [groups, setGroups] = React.useState<CrmContactGroup[]>([]);
+  const [enriching, setEnriching] = React.useState(false);
   const [loadingContacts, setLoadingContacts] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [selected, setSelected] = React.useState<Map<string, CrmContact>>(new Map());
@@ -112,9 +164,11 @@ export function CrmPageContent() {
         const params = new URLSearchParams({
           search,
           filter,
+          sort,
           offset: String(offset),
           limit: String(PAGE_SIZE),
         });
+        if (groupFilterId) params.set("groupId", groupFilterId);
         const res = await fetch(`/api/store/crm/contacts?${params}`, { cache: "no-store" });
         if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error || "Failed to load contacts");
         const data = await res.json();
@@ -128,8 +182,19 @@ export function CrmPageContent() {
         setLoadingMore(false);
       }
     },
-    [search, filter],
+    [search, filter, sort, groupFilterId],
   );
+
+  const loadGroups = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/store/crm/groups", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      setGroups(data.groups ?? []);
+    } catch {
+      // non-fatal
+    }
+  }, []);
 
   const loadCampaigns = React.useCallback(async () => {
     setLoadingCampaigns(true);
@@ -154,7 +219,27 @@ export function CrmPageContent() {
 
   React.useEffect(() => {
     void loadCampaigns();
-  }, [loadCampaigns]);
+    void loadGroups();
+  }, [loadCampaigns, loadGroups]);
+
+  const runEnrich = React.useCallback(async () => {
+    setEnriching(true);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/store/crm/enrich", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Enrichment failed");
+      setNotice({
+        kind: "success",
+        text: `Synced ${(data.statsUpdated ?? 0).toLocaleString()} contact${data.statsUpdated === 1 ? "" : "s"} from ${(data.salesReportLines ?? 0).toLocaleString()} sales lines${data.joinedUpdated ? ` · ${data.joinedUpdated} join dates` : ""}${data.skipped ? ` · ${data.skipped} with no sales on file` : ""}.`,
+      });
+      await loadContacts();
+    } catch (error) {
+      setNotice({ kind: "error", text: error instanceof Error ? error.message : "Enrichment failed" });
+    } finally {
+      setEnriching(false);
+    }
+  }, [loadContacts]);
 
   const runImport = React.useCallback(async () => {
     setImporting(true);
@@ -200,11 +285,13 @@ export function CrmPageContent() {
     });
   };
 
-  const openComposer = (seed?: Partial<ComposerSeed>) => {
+  const openComposer = (seed?: Partial<ComposerSeed>, agentRecipientIds?: string[]) => {
     setComposerSeed({
       templateKey: seed?.templateKey ?? null,
       subject: seed?.subject ?? null,
       content: seed?.content ?? null,
+      agentRecipientIds,
+      agentRecipientCount: agentRecipientIds?.length,
     });
   };
 
@@ -253,6 +340,10 @@ export function CrmPageContent() {
         description="Import your Lightspeed customers and send beautiful campaigns from the Yellow Jersey address."
         actions={
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => void runEnrich()} disabled={enriching}>
+              {enriching ? <Loader2 className="mr-1.5 size-4" /> : <RefreshCw className="mr-1.5 size-4" />}
+              {enriching ? "Syncing…" : "Sync Lightspeed stats"}
+            </Button>
             <Button variant="outline" size="sm" onClick={() => void runImport()} disabled={importing}>
               {importing ? <Loader2 className="mr-1.5 size-4" /> : <RefreshCw className="mr-1.5 size-4" />}
               {importing ? "Importing…" : "Import from Lightspeed"}
@@ -269,6 +360,9 @@ export function CrmPageContent() {
               {(
                 [
                   { id: "contacts", label: "Contacts", icon: Users },
+                  { id: "groups", label: "Groups", icon: Users },
+                  { id: "ai", label: "AI Campaign", icon: Sparkles },
+                  { id: "automation", label: "Automation", icon: Calendar },
                   { id: "campaigns", label: "Campaigns", icon: Letter },
                 ] as const
               ).map((entry) => (
@@ -304,8 +398,9 @@ export function CrmPageContent() {
           </div>
         }
         flush
+        scrollClassName={tab === "ai" ? "flex min-h-0 flex-1 flex-col overflow-hidden" : undefined}
       >
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className={cn("flex min-h-0 flex-1 flex-col", tab === "ai" && "h-full")}>
           {notice ? (
             <div
               className={cn(
@@ -344,6 +439,11 @@ export function CrmPageContent() {
               onSearch={setSearch}
               filter={filter}
               onFilter={setFilter}
+              sort={sort}
+              onSort={setSort}
+              groups={groups}
+              groupFilterId={groupFilterId}
+              onGroupFilter={setGroupFilterId}
               selected={selected}
               onToggle={toggleContact}
               allLoadedSelected={allLoadedSelected}
@@ -352,6 +452,25 @@ export function CrmPageContent() {
               onLoadMore={() => void loadContacts({ append: true, offset: contacts.length })}
               onCreateCampaign={() => openComposer()}
             />
+          ) : tab === "groups" ? (
+            <ContactGroupsPanel
+              selectedContactIds={Array.from(selected.keys())}
+              onGroupsChange={() => {
+                void loadGroups();
+                void loadContacts();
+              }}
+            />
+          ) : tab === "ai" ? (
+            <CrmAgentPanel
+              store={storeBranding}
+              onOpenComposer={(seed, contactIds) => openComposer(seed, contactIds)}
+              onCampaignCreated={() => {
+                setTab("campaigns");
+                void loadCampaigns();
+              }}
+            />
+          ) : tab === "automation" ? (
+            <CrmAutomationPanel />
           ) : (
             <CampaignsView
               campaigns={campaigns}
@@ -408,6 +527,11 @@ function ContactsView(props: {
   onSearch: (value: string) => void;
   filter: ContactFilter;
   onFilter: (value: ContactFilter) => void;
+  sort: CrmContactSort;
+  onSort: (value: CrmContactSort) => void;
+  groups: CrmContactGroup[];
+  groupFilterId: string;
+  onGroupFilter: (value: string) => void;
   selected: Map<string, CrmContact>;
   onToggle: (contact: CrmContact) => void;
   allLoadedSelected: boolean;
@@ -428,6 +552,11 @@ function ContactsView(props: {
     onSearch,
     filter,
     onFilter,
+    sort,
+    onSort,
+    groups,
+    groupFilterId,
+    onGroupFilter,
     selected,
     onToggle,
     allLoadedSelected,
@@ -477,7 +606,7 @@ function ContactsView(props: {
               type="button"
               onClick={() => onFilter(entry.id)}
               className={cn(
-                "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
                 filter === entry.id
                   ? "bg-zinc-900 text-white"
                   : "bg-zinc-100 text-muted-foreground hover:text-foreground",
@@ -487,6 +616,14 @@ function ContactsView(props: {
             </button>
           ))}
         </div>
+        <ContactSortDropdown value={sort} onChange={onSort} />
+        {groups.length > 0 ? (
+          <ContactGroupFilterDropdown
+            groups={groups}
+            value={groupFilterId}
+            onChange={onGroupFilter}
+          />
+        ) : null}
         <div className="ml-auto flex items-center gap-3">
           {selected.size > 0 ? (
             <>
@@ -565,10 +702,28 @@ function ContactsView(props: {
                       {name ? contact.email : contact.phone ?? ""}
                       {name && contact.phone ? ` · ${contact.phone}` : ""}
                     </p>
+                    {(contact.sale_count > 0 ||
+                      contact.total_spend > 0 ||
+                      contact.lightspeed_joined_at) && (
+                      <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80">
+                        {[
+                          contact.sale_count > 0
+                            ? `${contact.sale_count} visit${contact.sale_count === 1 ? "" : "s"}`
+                            : null,
+                          contact.total_spend > 0 ? formatAud(contact.total_spend) : null,
+                          contact.lightspeed_joined_at
+                            ? `Joined ${formatDateTime(contact.lightspeed_joined_at)}`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                    )}
                   </div>
                   {contact.opted_out ? (
                     <Badge variant="secondary" className="shrink-0 bg-zinc-100 text-zinc-500">
                       Opted out
+                      {contact.opted_out_at ? ` · ${formatDateTime(contact.opted_out_at)}` : ""}
                     </Badge>
                   ) : null}
                 </li>
@@ -643,14 +798,15 @@ function CampaignsView(props: {
           return (
             <li
               key={campaign.id}
-              className="flex items-center gap-4 border-b border-border/40 px-5 py-4"
+              className="border-b border-border/40 px-5 py-4"
             >
+              <div className="flex items-start gap-4">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <p className="truncate text-sm font-semibold text-foreground">{campaign.subject}</p>
                   <span
                     className={cn(
-                      "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium capitalize",
+                      "shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium capitalize",
                       CAMPAIGN_STATUS_STYLES[campaign.status] ?? CAMPAIGN_STATUS_STYLES.draft,
                     )}
                   >
@@ -658,13 +814,16 @@ function CampaignsView(props: {
                   </span>
                 </div>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  {template?.name ?? campaign.template_key} · {formatDate(campaign.sent_at ?? campaign.created_at)}
+                  {template?.name ?? campaign.template_key} · {formatDateTime(campaign.sent_at ?? campaign.created_at)}
                   {campaign.status === "sent" || campaign.status === "failed"
                     ? ` · ${campaign.sent_count.toLocaleString()} sent${campaign.failed_count > 0 ? `, ${campaign.failed_count} failed` : ""}`
                     : ` · ${campaign.intended_count.toLocaleString()} recipient${campaign.intended_count === 1 ? "" : "s"}`}
                 </p>
+                {(campaign.status === "sent" || campaign.status === "failed") && campaign.sent_count > 0 ? (
+                  <CampaignMetrics campaign={campaign} />
+                ) : null}
               </div>
-              <div className="flex shrink-0 items-center gap-1.5">
+              <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
                 {campaign.status === "draft" ? (
                   <>
                     <Button size="sm" onClick={() => onSendDraft(campaign)} disabled={busy}>
@@ -687,6 +846,7 @@ function CampaignsView(props: {
                     Duplicate
                   </Button>
                 )}
+              </div>
               </div>
             </li>
           );
