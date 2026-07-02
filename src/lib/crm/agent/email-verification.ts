@@ -5,6 +5,7 @@
 // every set_campaign_email call; failures go back to the model so it can
 // self-correct, and the final report renders in the specs panel.
 
+import { findMergeTagArtifacts, hasMergeTags } from "../merge-tags";
 import type { CampaignVerification, CampaignVerificationCheck } from "./chat-types";
 import type { AgentProductPick } from "./types";
 
@@ -99,6 +100,20 @@ export function verifyCampaignEmail(args: {
               .join("; "),
     });
   }
+
+  // Personalisation: {{FIRST_NAME}} is the only supported token; literal
+  // "first_name" text means a customer would see the raw placeholder.
+  const artifacts = [...findMergeTagArtifacts(html), ...findMergeTagArtifacts(args.subject)];
+  checks.push({
+    label: "Personalisation",
+    ok: artifacts.length === 0,
+    detail:
+      artifacts.length > 0
+        ? `Broken merge tag would reach customers: "${artifacts[0]}" — use {{FIRST_NAME}} exactly`
+        : hasMergeTags(html) || hasMergeTags(args.subject)
+          ? "{{FIRST_NAME}} substituted per recipient (falls back to “there”)"
+          : "No personalisation tokens used",
+  });
 
   // Email-client safety
   const hasScript = /<script/i.test(html);

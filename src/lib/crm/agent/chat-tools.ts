@@ -24,10 +24,13 @@ import type {
   CrmActivityKind,
   CrmChatEvent,
   CrmEmailTemplateSummary,
+  CrmEmailImageAttachment,
   CrmNamedAudience,
 } from "./chat-types";
+import { normalizeMergeTags } from "../merge-tags";
 import { extractImageUrls, verificationProblems, verifyCampaignEmail } from "./email-verification";
 import { runCrmLightspeedSql } from "./lightspeed-sql";
+import { CRM_AGENT_MODEL, extractOutputText, getCrmOpenAI } from "./openai";
 import { resolveAudience } from "./resolve-audience";
 import type {
   AgentComposeResult,
@@ -62,6 +65,9 @@ const AUDIENCE_RULE_TYPES = [
   "purchased_category",
   "purchased_brand",
   "purchased_keyword",
+  "not_purchased_category",
+  "not_purchased_brand",
+  "not_purchased_keyword",
   "lapsed",
   "new_members",
   "high_value",
@@ -96,12 +102,16 @@ export function seedCrmChatToolState(
   seed: {
     campaign?: AgentComposeResult | null;
     audienceRules?: AudienceRule[] | null;
+    uploadedImages?: CrmEmailImageAttachment[] | null;
   },
 ): void {
   if (seed.campaign?.content) {
     state.campaign = seed.campaign;
     const html = seed.campaign.content.design?.html ?? "";
     for (const url of extractImageUrls(html)) state.knownImageUrls.add(url);
+  }
+  for (const image of seed.uploadedImages ?? []) {
+    if (image.url) state.knownImageUrls.add(image.url);
   }
 }
 
@@ -165,6 +175,55 @@ export function buildCrmChatTools(args: {
 
   return [
     tool({
+      name: "search_web",
+      description:
+        "Search the live internet for current public information: cycling news, event dates, bike industry trends, product launches/recalls, competitor positioning, seasonal hooks, or campaign inspiration. Do NOT use this for store-specific facts, customer counts, inventory, prices, discounts, or recipient counts — those must come from CRM/Lightspeed tools. Return concise research notes with source names so the owner can see what the campaign angle is based on.",
+      parameters: z.object({
+        query: z.string().min(3).max(300).describe('Search query, e.g. "Australia cycling service trends July 2026"'),
+        purpose: z
+          .string()
+          .min(3)
+          .max(180)
+          .describe('Why this lookup helps the campaign, e.g. "Find a timely hook for a winter servicing email".'),
+      }),
+      async execute({ query, purpose }) {
+        const id = activity("web", `Searching web: ${purpose}`);
+        status("web", `Searching web: ${purpose}`);
+        try {
+          const openai = getCrmOpenAI();
+          const response = await openai.responses.create({
+            model: CRM_AGENT_MODEL,
+            instructions:
+              "You are a concise research assistant for an Australian bicycle shop email marketer. Use web search results only. Return short, practical notes with source names and URLs when available. If results are thin or uncertain, say so.",
+            tools: [
+              {
+                type: "web_search_preview" as const,
+                search_context_size: "medium" as const,
+                user_location: { type: "approximate" as const, country: "AU" },
+              },
+            ],
+            input: `Purpose: ${purpose}\nQuery: ${query}\n\nFind current public information that could help with CRM campaign strategy or copy. Keep it factual and brief.`,
+          });
+
+          const text = extractOutputText(response).trim();
+          finishActivity(id, "web", `Web: ${purpose}`, text ? "Research notes ready" : "No useful results found");
+          return {
+            status: "ok",
+            query,
+            purpose,
+            notes: text || "No useful public web results found for this query.",
+            guidance:
+              "Use this only for public context or campaign inspiration. Do not replace CRM/Lightspeed data for customer, product, price, or recipient-count claims.",
+          };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Web search failed";
+          finishActivity(id, "web", `Web: ${purpose}`, message, "error");
+          return { status: "error", query, purpose, error: message };
+        }
+      },
+    }),
+
+    tool({
       name: "run_lightspeed_sql",
       description:
         "Run one validated read-only PostgreSQL (Supabase Postgres 17) query against the store's Lightspeed mirror for analytics: sales totals, top customers, buyers of a product/brand/category, purchase recency, revenue trends, inventory, stock on hand, sale/clearance items, margins. Available tenant-scoped views: genie_lightspeed_sales_report_lines (sale lines with customer_id, customer_full_name, category, sku, description, quantity, total, cost, profit, margin_pct, complete_time) and genie_lightspeed_inventory (items with name, brand_name, category_name/category_path, supplier_name, default_price, avg_cost, total_qoh, total_sellable, is_in_stock, archived, primary_image_url). Postgres syntax only — date_trunc, to_char, coalesce, FILTER, ::casts, interval '30 days'. Never MySQL functions or backticks. Single SELECT/WITH, no semicolons or comments. Use this to ground every metric you state and to cross-check audience counts.",
@@ -192,7 +251,7 @@ export function buildCrmChatTools(args: {
     tool({
       name: "resolve_audience",
       description:
-        "Resolve the campaign audience deterministically from CRM contacts + Lightspeed sales history. THIS IS THE ONLY SOURCE OF TRUTH for recipient counts — never quote an audience size from anywhere else. Returns the exact eligible count (opted-out contacts always excluded), a per-rule funnel showing how each rule narrowed the audience, and a sample of real matched contacts. Rules combine with AND. purchased_category/brand/keyword match Lightspeed sale lines (joined via lightspeed_customer_id); pair with last_purchase_within_days to bound the window. Call again with adjusted rules if the count surprises you or the owner wants a different audience.",
+        "Resolve the campaign audience deterministically from CRM contacts + Lightspeed sales history. THIS IS THE ONLY SOURCE OF TRUTH for recipient counts — never quote an audience size from anywhere else. Returns the exact eligible count (opted-out contacts always excluded), a per-rule funnel showing how each rule narrowed the audience, and a sample of real matched contacts. Rules combine with AND. purchased_category/brand/keyword include matching buyers; not_purchased_category/brand/keyword exclude matching buyers while keeping everyone else. Pair purchase-history rules with last_purchase_within_days to bound the sales-history window (for example, not_purchased_keyword + last_purchase_within_days=28 means exclude people who bought that keyword in the last 28 days). Call again with adjusted rules if the count surprises you or the owner wants a different audience.",
       parameters: z.object({
         name: z.string().describe('Short audience name, e.g. "Lapsed Muc-Off buyers".'),
         rules: z.array(audienceRuleSchema).min(0).max(6),
@@ -417,7 +476,7 @@ export function buildCrmChatTools(args: {
     tool({
       name: "set_campaign_email",
       description:
-        "Set or replace the campaign email draft. Provide the COMPLETE production HTML email document every time (never a diff). The server sanitises it, injects the preheader, guarantees the {{UNSUBSCRIBE_URL}} link, renders it live in the owner's preview, and runs verification checks (image provenance, product rendering, subject length, size). Fix any failed checks it returns before presenting the campaign as done.",
+        "Set or replace the campaign email draft. Provide the COMPLETE production HTML email document every time (never a diff). The email must already look premium, modern, and deliberate before calling this tool: strong concept, confident typography, generous spacing, one dominant CTA, restrained palette, and email-safe execution. The server sanitises it, injects the preheader, guarantees the {{UNSUBSCRIBE_URL}} link, renders it live in the owner's preview, and runs verification checks (image provenance, product rendering, subject length, size). Fix any failed checks it returns before presenting the campaign as done.",
       parameters: z.object({
         subject: z.string().min(3).max(120),
         subject_variants: z.array(z.string()).max(2).describe("Up to 2 alternative subjects for A/B choice."),
@@ -425,8 +484,8 @@ export function buildCrmChatTools(args: {
         layout: z.enum(["classic", "minimal", "editorial"]).nullable().optional(),
         summary_title: z.string().describe("Plain-text headline for the CRM record."),
         summary_body: z.string().describe("Plain-text summary of the email for the CRM record."),
-        design_notes: z.string().describe("1-3 sentences on the design/copy choices — shown on the specs sheet."),
-        html: z.string().min(100).describe("Full HTML email document. Inline CSS, table layout, 600px max width, {{UNSUBSCRIBE_URL}} placeholder for the unsubscribe href."),
+        design_notes: z.string().describe("1-3 sentences on the design concept and why the hierarchy/CTA/audience fit the brief — shown on the specs sheet."),
+        html: z.string().min(100).describe("Full polished HTML email document. Inline CSS, table layout, 600px max width, premium retail design, generous spacing, one dominant CTA, {{UNSUBSCRIBE_URL}} placeholder for the unsubscribe href."),
         featured_product_ids: z
           .array(z.string())
           .max(8)
@@ -440,9 +499,10 @@ export function buildCrmChatTools(args: {
           .map((pid) => state.candidateProducts.get(pid))
           .filter((p): p is AgentProductPick => Boolean(p));
 
+        const normalizedHtml = normalizeMergeTags(input.html);
         const htmlWithPreheader = input.preheader
-          ? injectPreheader(input.html, input.preheader)
-          : input.html;
+          ? injectPreheader(normalizedHtml, input.preheader)
+          : normalizedHtml;
 
         const content: CampaignContent = buildHtmlCampaignContent({
           title: input.summary_title.trim() || input.subject,
@@ -454,15 +514,15 @@ export function buildCrmChatTools(args: {
 
         const finalHtml = content.design?.html ?? "";
         const verification = verifyCampaignEmail({
-          subject: input.subject,
+          subject: normalizeMergeTags(input.subject),
           html: finalHtml,
           knownImageUrls: state.knownImageUrls,
           featuredProducts: featured,
         });
 
         const subjectVariants = [
-          input.subject.trim(),
-          ...input.subject_variants.map((s) => s.trim()),
+          normalizeMergeTags(input.subject.trim()),
+          ...input.subject_variants.map((s) => normalizeMergeTags(s.trim())),
         ].filter(Boolean);
         const uniqueSubjects = [...new Set(subjectVariants)].slice(0, 3);
 

@@ -12,6 +12,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { CrmAudiencePreset, CrmScheduledCampaign } from "@/lib/crm/agent/types";
+import {
+  formatMelbourneTime,
+  melbourneLocalDateTimeToIso,
+  MELBOURNE_TIME_ZONE,
+} from "@/lib/blog/melbourne-time";
 
 export function CrmAutomationPanel() {
   const [schedules, setSchedules] = React.useState<CrmScheduledCampaign[]>([]);
@@ -62,7 +67,7 @@ export function CrmAutomationPanel() {
           prompt: prompt.trim() || undefined,
           presetId: presetId || undefined,
           scheduleType,
-          scheduledAt: new Date(scheduledAt).toISOString(),
+          scheduledAt: melbourneLocalDateTimeToIso(scheduledAt),
           autoSend,
         }),
       });
@@ -113,12 +118,15 @@ export function CrmAutomationPanel() {
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Monthly gravel promo" />
           </div>
           <div>
-            <Label className="text-xs">Run at</Label>
+            <Label className="text-xs">Run at (Melbourne time)</Label>
             <Input
               type="datetime-local"
               value={scheduledAt}
               onChange={(e) => setScheduledAt(e.target.value)}
             />
+            <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+              Times are scheduled in Melbourne time ({MELBOURNE_TIME_ZONE}).
+            </p>
           </div>
         </div>
 
@@ -199,14 +207,14 @@ export function CrmAutomationPanel() {
               <div>
                 <p className="text-sm font-medium">{schedule.name}</p>
                 <p className="text-xs text-muted-foreground">
-                  {new Date(schedule.scheduled_at).toLocaleString("en-AU")}
+                  {formatMelbourneTime(new Date(schedule.scheduled_at))}
                   {" · "}
                   {schedule.schedule_type}
                   {schedule.auto_send ? " · auto-send" : " · draft only"}
                 </p>
                 {schedule.last_run_at ? (
                   <p className="text-xs text-muted-foreground">
-                    Last run {new Date(schedule.last_run_at).toLocaleString("en-AU")}
+                    Last run {formatMelbourneTime(new Date(schedule.last_run_at))}
                   </p>
                 ) : null}
               </div>

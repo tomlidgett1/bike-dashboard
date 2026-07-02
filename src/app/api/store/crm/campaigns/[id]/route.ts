@@ -28,14 +28,16 @@ export async function GET(
         supabase
           .from("crm_campaigns")
           .select(
-            "id, subject, template_key, content, sender_email, status, intended_count, sent_count, failed_count, created_at, sent_at",
+            "id, subject, template_key, content, sender_email, status, intended_count, sent_count, failed_count, delivered_count, opened_count, clicked_count, bounced_count, created_at, sent_at",
           )
           .eq("user_id", user.id)
           .eq("id", id)
           .single(),
         supabase
           .from("crm_campaign_recipients")
-          .select("email, status, error, sent_at")
+          .select(
+            "email, status, error, sent_at, delivered_at, opened_at, clicked_at, bounced_at",
+          )
           .eq("user_id", user.id)
           .eq("campaign_id", id)
           .order("email")

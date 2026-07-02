@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processDueCrmSchedules } from "@/lib/crm/agent/automation";
 
+/** Runs every 5 minutes via Vercel cron; picks up schedules once scheduled_at (UTC) is due. */
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-async function handleCron(request: NextRequest) {
-  const cronSecret = request.headers.get("authorization");
-  const expectedSecret = process.env.CRON_SECRET;
+function verifyCron(request: NextRequest): boolean {
+  const authHeader = request.headers.get("authorization");
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && authHeader === `Bearer ${cronSecret}`) return true;
+  return request.headers.get("x-vercel-cron") === "1";
+}
 
-  if (expectedSecret && cronSecret !== `Bearer ${expectedSecret}`) {
+async function handleCron(request: NextRequest) {
+  if (!verifyCron(request)) {
     return NextResponse.json({ success: false, error: "Unauthorised" }, { status: 401 });
   }
 

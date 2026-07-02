@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Cog,
   Copy,
+  Eye,
   Letter,
   Loader2,
   Mailbox,
@@ -39,6 +40,7 @@ import { getCrmTemplate, type StoreBranding } from "@/lib/crm/templates";
 import type { CrmCampaign, CrmContact, CrmContactGroup, CrmContactSort } from "@/lib/crm/types";
 import { formatAud } from "@/lib/crm/types";
 import { CampaignComposer, type ComposerSeed } from "./campaign-composer";
+import { CampaignDetailDialog } from "./campaign-detail-dialog";
 import { ContactGroupFilterDropdown, ContactSortDropdown } from "./contact-sort-dropdown";
 import { ContactGroupsPanel } from "./contact-groups-panel";
 import { CrmAgentPanel } from "./crm-agent-panel";
@@ -393,7 +395,7 @@ export function CrmPageContent() {
           </div>
         }
         toolbar={
-          <div className="flex items-center gap-1 rounded-full bg-white p-1 shadow-sm ring-1 ring-border/60">
+          <div className="flex w-fit items-center gap-1 rounded-full bg-white p-1 shadow-sm ring-1 ring-border/60">
             {(
               [
                 { id: "contacts", label: "Contacts", icon: Users },
@@ -500,6 +502,7 @@ export function CrmPageContent() {
               campaigns={campaigns}
               loading={loadingCampaigns}
               busyCampaignId={busyCampaignId}
+              store={storeBranding}
               onNewCampaign={() => openComposer()}
               onDuplicate={(campaign) =>
                 openComposer({
@@ -790,12 +793,22 @@ function CampaignsView(props: {
   campaigns: CrmCampaign[];
   loading: boolean;
   busyCampaignId: string | null;
+  store: StoreBranding;
   onNewCampaign: () => void;
   onDuplicate: (campaign: CrmCampaign) => void;
   onDeleteDraft: (campaignId: string) => void;
   onSendDraft: (campaign: CrmCampaign) => void;
 }) {
-  const { campaigns, loading, busyCampaignId, onNewCampaign, onDuplicate, onDeleteDraft, onSendDraft } = props;
+  const { campaigns, loading, busyCampaignId, store, onNewCampaign, onDuplicate, onDeleteDraft, onSendDraft } = props;
+  const [detailCampaign, setDetailCampaign] = React.useState<CrmCampaign | null>(null);
+  const [detailTab, setDetailTab] = React.useState<"email" | "recipients">("email");
+  const [detailOpen, setDetailOpen] = React.useState(false);
+
+  const openDetail = (campaign: CrmCampaign, tab: "email" | "recipients") => {
+    setDetailCampaign(campaign);
+    setDetailTab(tab);
+    setDetailOpen(true);
+  };
 
   if (loading) {
     return (
@@ -828,68 +841,96 @@ function CampaignsView(props: {
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <ul>
-        {campaigns.map((campaign) => {
-          const template = getCrmTemplate(campaign.template_key);
-          const busy = busyCampaignId === campaign.id;
-          return (
-            <li
-              key={campaign.id}
-              className="border-b border-border/40 px-5 py-4"
-            >
-              <div className="flex items-start gap-4">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="truncate text-sm font-semibold text-foreground">{campaign.subject}</p>
-                  <span
-                    className={cn(
-                      "shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium capitalize",
-                      CAMPAIGN_STATUS_STYLES[campaign.status] ?? CAMPAIGN_STATUS_STYLES.draft,
-                    )}
-                  >
-                    {campaign.status}
-                  </span>
-                </div>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {template?.name ?? campaign.template_key} · {formatDateTime(campaign.sent_at ?? campaign.created_at)}
-                  {campaign.status === "sent" || campaign.status === "failed"
-                    ? ` · ${campaign.sent_count.toLocaleString()} sent${campaign.failed_count > 0 ? `, ${campaign.failed_count} failed` : ""}`
-                    : ` · ${campaign.intended_count.toLocaleString()} recipient${campaign.intended_count === 1 ? "" : "s"}`}
-                </p>
-                {(campaign.status === "sent" || campaign.status === "failed") && campaign.sent_count > 0 ? (
-                  <CampaignMetrics campaign={campaign} />
-                ) : null}
-              </div>
-              <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
-                {campaign.status === "draft" ? (
-                  <>
-                    <Button size="sm" onClick={() => onSendDraft(campaign)} disabled={busy}>
-                      {busy ? <Loader2 className="mr-1.5 size-3.5" /> : <Send className="mr-1.5 size-3.5" />}
-                      Send
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onDeleteDraft(campaign.id)}
-                      disabled={busy}
-                      aria-label="Delete draft"
+    <>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <ul>
+          {campaigns.map((campaign) => {
+            const template = getCrmTemplate(campaign.template_key);
+            const busy = busyCampaignId === campaign.id;
+            const isSentLike =
+              campaign.status === "sent" || campaign.status === "failed" || campaign.status === "sending";
+            return (
+              <li
+                key={campaign.id}
+                className="border-b border-border/40 px-5 py-4"
+              >
+                <div className="flex items-start gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-sm font-semibold text-foreground">{campaign.subject}</p>
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium capitalize",
+                        CAMPAIGN_STATUS_STYLES[campaign.status] ?? CAMPAIGN_STATUS_STYLES.draft,
+                      )}
                     >
-                      <Trash2 className="size-4 text-muted-foreground" />
-                    </Button>
-                  </>
-                ) : (
-                  <Button variant="outline" size="sm" onClick={() => onDuplicate(campaign)}>
-                    <Copy className="mr-1.5 size-3.5" />
-                    Duplicate
-                  </Button>
-                )}
-              </div>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+                      {campaign.status}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {template?.name ?? campaign.template_key} · {formatDateTime(campaign.sent_at ?? campaign.created_at)}
+                    {campaign.status === "sent" || campaign.status === "failed"
+                      ? ` · ${campaign.sent_count.toLocaleString()} sent${campaign.failed_count > 0 ? `, ${campaign.failed_count} failed` : ""}`
+                      : ` · ${campaign.intended_count.toLocaleString()} recipient${campaign.intended_count === 1 ? "" : "s"}`}
+                  </p>
+                  {(campaign.status === "sent" || campaign.status === "failed") && campaign.sent_count > 0 ? (
+                    <CampaignMetrics campaign={campaign} />
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
+                  {campaign.status === "draft" ? (
+                    <>
+                      <Button variant="outline" size="sm" onClick={() => openDetail(campaign, "email")}>
+                        <Eye className="mr-1.5 size-3.5" />
+                        Preview
+                      </Button>
+                      <Button size="sm" onClick={() => onSendDraft(campaign)} disabled={busy}>
+                        {busy ? <Loader2 className="mr-1.5 size-3.5" /> : <Send className="mr-1.5 size-3.5" />}
+                        Send
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onDeleteDraft(campaign.id)}
+                        disabled={busy}
+                        aria-label="Delete draft"
+                      >
+                        <Trash2 className="size-4 text-muted-foreground" />
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button variant="outline" size="sm" onClick={() => openDetail(campaign, "email")}>
+                        <Eye className="mr-1.5 size-3.5" />
+                        View
+                      </Button>
+                      {isSentLike ? (
+                        <Button variant="outline" size="sm" onClick={() => openDetail(campaign, "recipients")}>
+                          <Users className="mr-1.5 size-3.5" />
+                          Recipients
+                        </Button>
+                      ) : null}
+                      <Button variant="outline" size="sm" onClick={() => onDuplicate(campaign)}>
+                        <Copy className="mr-1.5 size-3.5" />
+                        Duplicate
+                      </Button>
+                    </>
+                  )}
+                </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+
+      <CampaignDetailDialog
+        campaign={detailCampaign}
+        store={store}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        initialTab={detailTab}
+      />
+    </>
   );
 }

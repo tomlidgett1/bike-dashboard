@@ -20,30 +20,37 @@ import {
   Layers,
   Loader2,
   Monitor,
+  MousePointerClick,
   PanelRightClose,
   PanelRightOpen,
-  Search,
   Send,
   Smartphone,
-  Sparkles,
   Users,
-  Wand2,
   X,
 } from "@/components/layout/app-sidebar/dashboard-icons";
+import {
+  DesignModeEmailPreview,
+  formatDesignTargetPrompt,
+  VisualEditUserBubble,
+  type EmailPreviewDesignSelection,
+} from "@/app/settings/store/crm/email-preview-design";
 import { HomeV2ChatInput } from "@/components/genie/homev2-chat-input";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import {
+  AudienceMembersDialog,
+  SeeAllCustomersButton,
+} from "@/app/settings/store/crm/audience-members-dialog";
 import { cn } from "@/lib/utils";
 import {
   genieProgressShimmerClassName,
   genieProgressShimmerStyle,
 } from "@/lib/genie/shimmer";
 import { renderGenieMarkdown } from "@/lib/genie/render-markdown";
-import { renderCampaignEmail, type StoreBranding } from "@/lib/crm/templates";
-import type { CampaignContent } from "@/lib/crm/types";
+import { applyMergeTags } from "@/lib/crm/merge-tags";
+import { buildPremadeTemplates, isPremadeTemplateId } from "@/lib/crm/premade-templates";
+import { type StoreBranding } from "@/lib/crm/templates";
 import { formatAud } from "@/lib/crm/types";
 import type { AgentComposeResult, AgentProductPick } from "@/lib/crm/agent/types";
 import type {
@@ -51,16 +58,26 @@ import type {
   CrmChatActivity,
   CrmChatEvent,
   CrmChatMessage,
+  CrmEmailImageAttachment,
   CrmEmailTemplateRecord,
   CrmNamedAudience,
 } from "@/lib/crm/agent/chat-types";
 import type { ComposerSeed } from "./campaign-composer";
+import {
+  melbourneLocalDateTimeToIso,
+  MELBOURNE_TIME_ZONE,
+} from "@/lib/blog/melbourne-time";
 
-const PREVIEW_UNSUBSCRIBE_PLACEHOLDER = "https://yellowjersey.store/unsubscribe?token=preview";
 const SPECS_COLLAPSED_KEY = "crm-agent-specs-collapsed";
 
 type TranscriptItem =
-  | { id: string; kind: "user"; content: string }
+  | {
+      id: string;
+      kind: "user";
+      content: string;
+      designSelections?: EmailPreviewDesignSelection[];
+      uploadedImages?: CrmEmailImageAttachment[];
+    }
   | { id: string; kind: "assistant"; content: string }
   | { id: string; kind: "activities"; activities: CrmChatActivity[] };
 
@@ -103,9 +120,12 @@ export function CrmAgentPanel(props: {
   const [suggestions, setSuggestions] = React.useState<string[]>([]);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState<string | null>(null);
+  const [uploadedImages, setUploadedImages] = React.useState<CrmEmailImageAttachment[]>([]);
+  const [uploadingImage, setUploadingImage] = React.useState(false);
 
   // Verified campaign state (only ever set from agent tool events)
   const [audience, setAudience] = React.useState<CrmNamedAudience | null>(null);
+  const [excludedContactIds, setExcludedContactIds] = React.useState<Set<string>>(() => new Set());
   const [products, setProducts] = React.useState<AgentProductPick[]>([]);
   const [campaign, setCampaign] = React.useState<AgentComposeResult | null>(null);
   const [verification, setVerification] = React.useState<CampaignVerification | null>(null);
@@ -121,8 +141,12 @@ export function CrmAgentPanel(props: {
 
   // Preview + send
   const [previewMode, setPreviewMode] = React.useState<"desktop" | "mobile">("desktop");
+  const [previewDesignMode, setPreviewDesignMode] = React.useState(false);
   const [specsCollapsed, setSpecsCollapsed] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
+  const [testEmail, setTestEmail] = React.useState("");
+  const [sendingTest, setSendingTest] = React.useState(false);
+  const [testResult, setTestResult] = React.useState<{ kind: "success" | "error"; text: string } | null>(null);
   const [sendPlan, setSendPlan] = React.useState<SendPlan>({
     mode: "draft",
     scheduledAt: "",
@@ -135,7 +159,23 @@ export function CrmAgentPanel(props: {
   const chatScrollRef = React.useRef<HTMLDivElement>(null);
   const templatesRef = React.useRef<HTMLDivElement>(null);
 
+  const premadeTemplates = React.useMemo(() => buildPremadeTemplates(store), [store]);
+
   const hasStarted = transcript.length > 0;
+
+  const effectiveContactIds = React.useMemo(
+    () => audience?.contactIds.filter((id) => !excludedContactIds.has(id)) ?? [],
+    [audience, excludedContactIds],
+  );
+
+  const toggleAudienceContact = React.useCallback((contactId: string, included: boolean) => {
+    setExcludedContactIds((prev) => {
+      const next = new Set(prev);
+      if (included) next.delete(contactId);
+      else next.add(contactId);
+      return next;
+    });
+  }, []);
 
   const loadTemplates = React.useCallback(async () => {
     try {
@@ -225,6 +265,7 @@ export function CrmAgentPanel(props: {
           break;
         case "audience":
           setAudience(event.audience);
+          setExcludedContactIds(new Set());
           break;
         case "products":
           setProducts(event.products);
@@ -233,6 +274,7 @@ export function CrmAgentPanel(props: {
           setCampaign(event.campaign);
           setVerification(event.verification ?? null);
           setSelectedSubject(0);
+          setPreviewDesignMode(false);
           setSendPlan((plan) =>
             plan.scheduleName.trim()
               ? plan
@@ -261,15 +303,58 @@ export function CrmAgentPanel(props: {
     setLiveStatus(null);
   }, []);
 
-  const runAgent = async (text?: string) => {
-    const trimmed = (text ?? prompt).trim();
-    if (!trimmed || running) return;
+  const uploadEmailImage = React.useCallback(async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      setError("Please attach an image file.");
+      return;
+    }
+
+    setUploadingImage(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/store/crm/agent/upload-image", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? "Image upload failed");
+      if (!data?.image?.url) throw new Error("Image upload did not return a URL");
+      setUploadedImages((prev) => [...prev, data.image as CrmEmailImageAttachment]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Image upload failed");
+    } finally {
+      setUploadingImage(false);
+    }
+  }, []);
+
+  const runAgent = async (
+    text?: string,
+    options?: {
+      designSelections?: EmailPreviewDesignSelection[];
+      uploadedImages?: CrmEmailImageAttachment[];
+    },
+  ) => {
+    const imagesForTurn = options?.uploadedImages ?? uploadedImages;
+    const displayText =
+      (text ?? prompt).trim() ||
+      (imagesForTurn.length > 0 ? "Use the attached image in this email." : "");
+    if (!displayText || running) return;
+
+    const designSelections = options?.designSelections ?? [];
+    const agentText =
+      designSelections.length > 0
+        ? formatDesignTargetPrompt(designSelections, displayText)
+        : displayText;
 
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
     setPrompt("");
+    setUploadedImages([]);
+    setPreviewDesignMode(false);
     setRunning(true);
     setError(null);
     setSuccess(null);
@@ -281,11 +366,27 @@ export function CrmAgentPanel(props: {
       .filter((item): item is Extract<TranscriptItem, { kind: "user" | "assistant" }> =>
         item.kind === "user" || item.kind === "assistant",
       )
-      .map((item) => ({ role: item.kind, content: item.content }));
+      .map((item) => ({
+        role: item.kind,
+        content:
+          item.kind === "user" && item.designSelections?.length
+            ? formatDesignTargetPrompt(item.designSelections, item.content)
+            : item.kind === "user" && item.uploadedImages?.length
+              ? `${item.content}\n\n[Uploaded image assets]\n${item.uploadedImages
+                  .map((image, index) => `${index + 1}. ${image.name}: ${image.url}`)
+                  .join("\n")}`
+            : item.content,
+      }));
 
     setTranscript((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), kind: "user", content: trimmed },
+      {
+        id: crypto.randomUUID(),
+        kind: "user",
+        content: displayText,
+        designSelections: designSelections.length > 0 ? designSelections : undefined,
+        uploadedImages: imagesForTurn.length > 0 ? imagesForTurn : undefined,
+      },
       { id: crypto.randomUUID(), kind: "activities", activities: [] },
     ]);
 
@@ -297,12 +398,13 @@ export function CrmAgentPanel(props: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: [...history, { role: "user", content: trimmed }],
+          messages: [...history, { role: "user", content: agentText }],
           state: {
             campaign,
             audienceRules: audience?.rules ?? null,
             audienceName: audience?.name ?? null,
             audienceCount: audience?.count ?? null,
+            uploadedImages: imagesForTurn,
             appliedTemplateName,
           },
         }),
@@ -352,14 +454,18 @@ export function CrmAgentPanel(props: {
     setCampaign(applied);
     setVerification(null);
     setSelectedSubject(0);
+    setPreviewDesignMode(false);
     setTemplatesOpen(false);
     appliedTemplateRef.current = template.name;
+    const isPremade = isPremadeTemplateId(template.id);
     setTranscript((prev) => [
       ...prev,
       {
         id: crypto.randomUUID(),
         kind: "assistant",
-        content: `Loaded your “${template.name}” template into the preview. Tell me what to change — copy, products, or who it should go to.`,
+        content: isPremade
+          ? `Loaded the “${template.name}” template into the preview. Tell me your offer, dates, and audience and I'll make it yours.`
+          : `Loaded your “${template.name}” template into the preview. Tell me what to change: copy, products, or who it should go to.`,
       },
     ]);
   };
@@ -396,8 +502,8 @@ export function CrmAgentPanel(props: {
 
   const createDraft = async () => {
     if (!campaign) return;
-    if (!audience || audience.contactIds.length === 0) {
-      setError("No verified audience yet — ask the agent who this should go to first.");
+    if (!audience || effectiveContactIds.length === 0) {
+      setError("No verified audience yet. Ask the agent who this should go to first.");
       return;
     }
     setCreating(true);
@@ -416,7 +522,7 @@ export function CrmAgentPanel(props: {
             name: sendPlan.scheduleName.trim() || subject,
             prompt: firstUser?.kind === "user" ? firstUser.content : subject,
             scheduleType: sendPlan.scheduleType,
-            scheduledAt: new Date(sendPlan.scheduledAt).toISOString(),
+            scheduledAt: melbourneLocalDateTimeToIso(sendPlan.scheduledAt),
             autoSend: sendPlan.autoSend,
           }),
         });
@@ -432,7 +538,7 @@ export function CrmAgentPanel(props: {
           subject,
           templateKey: campaign.templateKey,
           content: campaign.content,
-          contactIds: audience.contactIds,
+          contactIds: effectiveContactIds,
         }),
       });
       const data = await res.json();
@@ -463,8 +569,40 @@ export function CrmAgentPanel(props: {
     const subject = campaign.subjectVariants[selectedSubject] ?? campaign.subject;
     onOpenComposer(
       { templateKey: campaign.templateKey, subject, content: campaign.content },
-      audience?.contactIds ?? [],
+      effectiveContactIds,
     );
+  };
+
+  const sendTest = async () => {
+    if (!campaign || !testEmail.trim() || sendingTest) return;
+    setSendingTest(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/store/crm/campaigns/test-send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: testEmail.trim(),
+          subject: campaign.subjectVariants[selectedSubject] ?? campaign.subject,
+          templateKey: campaign.templateKey,
+          content: campaign.content,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? "Test send failed");
+      setTestResult({ kind: "success", text: `Test sent to ${data.to ?? testEmail.trim()}` });
+    } catch (err) {
+      setTestResult({
+        kind: "error",
+        text: err instanceof Error ? err.message : "Test send failed",
+      });
+    } finally {
+      setSendingTest(false);
+    }
+  };
+
+  const runVisualEdit = (selections: EmailPreviewDesignSelection[], text: string) => {
+    void runAgent(text, { designSelections: selections });
   };
 
   return (
@@ -486,6 +624,12 @@ export function CrmAgentPanel(props: {
         onSuggestion={(text) => void runAgent(text)}
         onApplyTemplate={applyTemplate}
         chatScrollRef={chatScrollRef}
+        uploadedImages={uploadedImages}
+        uploadingImage={uploadingImage}
+        onImageSelected={(file) => void uploadEmailImage(file)}
+        onRemoveUploadedImage={(id) =>
+          setUploadedImages((prev) => prev.filter((image) => image.id !== id))
+        }
       />
 
       <PreviewColumn
@@ -496,7 +640,11 @@ export function CrmAgentPanel(props: {
         selectedSubject={selectedSubject}
         previewMode={previewMode}
         onPreviewModeChange={setPreviewMode}
+        previewDesignMode={previewDesignMode}
+        onPreviewDesignModeChange={setPreviewDesignMode}
+        onSubmitVisualEdit={runVisualEdit}
         templates={templates}
+        premadeTemplates={premadeTemplates}
         templatesOpen={templatesOpen}
         templatesRef={templatesRef}
         onTemplatesOpenChange={setTemplatesOpen}
@@ -507,12 +655,16 @@ export function CrmAgentPanel(props: {
         onTemplateNameChange={setTemplateNameDraft}
         onSaveTemplate={() => void saveTemplate()}
         savingTemplate={savingTemplate}
+        previewFirstName={audience?.sample[0]?.first_name ?? null}
       />
 
       <SpecsColumn
         collapsed={specsCollapsed}
         onToggleCollapsed={toggleSpecsCollapsed}
         audience={audience}
+        selectedCount={effectiveContactIds.length}
+        excludedContactIds={excludedContactIds}
+        onToggleContact={toggleAudienceContact}
         products={products}
         campaign={campaign}
         verification={verification}
@@ -524,6 +676,11 @@ export function CrmAgentPanel(props: {
         creating={creating}
         onCreateDraft={() => void createDraft()}
         onOpenComposer={openInComposer}
+        testEmail={testEmail}
+        onTestEmailChange={setTestEmail}
+        onSendTest={() => void sendTest()}
+        sendingTest={sendingTest}
+        testResult={testResult}
       />
     </div>
   );
@@ -533,51 +690,112 @@ export function CrmAgentPanel(props: {
 // Chat column
 // ============================================================
 
-const ACTIVITY_ICONS: Record<CrmChatActivity["kind"], React.ComponentType<{ className?: string }>> = {
-  sql: Search,
-  audience: Users,
-  customers: Users,
-  products: Sparkles,
-  compose: Wand2,
-  template: Layers,
-  verify: CheckCircle2,
-};
+function ActivityRow({
+  activity,
+  running,
+}: {
+  activity: CrmChatActivity;
+  running: boolean;
+}) {
+  const isRunning = activity.status === "running" && running;
+  const isError = activity.status === "error";
+
+  return (
+    <div className="flex items-start gap-2.5">
+      <div
+        className={cn(
+          "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md",
+          isError ? "bg-amber-50" : "bg-gray-100",
+        )}
+      >
+        {isError ? (
+          <AlertTriangle className="size-3 shrink-0 text-amber-600" />
+        ) : isRunning ? (
+          <Loader2 className="size-3 shrink-0 animate-spin text-gray-500" />
+        ) : (
+          <Check className="size-3 shrink-0 text-gray-600" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p
+          className={cn(
+            "text-xs font-medium leading-snug text-foreground",
+            isRunning && genieProgressShimmerClassName,
+          )}
+          style={isRunning ? genieProgressShimmerStyle : undefined}
+        >
+          {activity.label}
+        </p>
+        {activity.detail ? (
+          <p
+            className={cn(
+              "mt-0.5 text-[11px] leading-snug",
+              isError ? "text-amber-600" : "text-muted-foreground",
+            )}
+          >
+            {activity.detail}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 function ActivityFeed({ activities, running }: { activities: CrmChatActivity[]; running: boolean }) {
+  const [expanded, setExpanded] = React.useState(false);
+
   if (activities.length === 0) return null;
+
+  const latest = activities[activities.length - 1]!;
+  const earlier = activities.slice(0, -1);
+  const hasMore = earlier.length > 0;
+
   return (
-    <div className="space-y-1.5 rounded-xl border border-border/50 bg-gray-50/70 px-3 py-2.5">
-      {activities.map((activity) => {
-        const Icon = ACTIVITY_ICONS[activity.kind] ?? Search;
-        const isRunning = activity.status === "running" && running;
-        return (
-          <div key={activity.id} className="flex items-start gap-2 text-xs leading-snug">
-            {activity.status === "error" ? (
-              <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
-            ) : isRunning ? (
-              <Icon className="mt-0.5 size-3.5 shrink-0 text-gray-400" />
-            ) : (
-              <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-500" />
+    <div
+      className={cn(
+        "relative rounded-md border border-border/40 bg-white px-3 py-2.5",
+        hasMore && "pr-9",
+      )}
+    >
+      {hasMore ? (
+        <button
+          type="button"
+          onClick={() => setExpanded((open) => !open)}
+          aria-label={expanded ? "Hide earlier steps" : `Show all ${activities.length} steps`}
+          aria-expanded={expanded}
+          className="absolute right-2 top-1/2 flex h-6 -translate-y-1/2 items-center gap-0.5 rounded-md px-1.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-50 hover:text-foreground"
+        >
+          {activities.length}
+          <ChevronDown
+            className={cn(
+              "h-3 w-3 text-gray-400 transition-transform duration-200",
+              expanded && "rotate-180",
             )}
-            <div className="min-w-0 flex-1">
-              <span
-                className={cn(
-                  "font-medium",
-                  isRunning ? genieProgressShimmerClassName : "text-foreground",
-                )}
-                style={isRunning ? genieProgressShimmerStyle : undefined}
-              >
-                {activity.label}
-              </span>
-              {activity.detail ? (
-                <span className={cn("ml-1.5", activity.status === "error" ? "text-amber-600" : "text-muted-foreground")}>
-                  {activity.detail}
-                </span>
-              ) : null}
-            </div>
-          </div>
-        );
-      })}
+          />
+        </button>
+      ) : null}
+
+      <div className="space-y-2">
+        <AnimatePresence initial={false}>
+          {expanded ? (
+            <motion.div
+              key="earlier-activities"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+              className="overflow-hidden"
+            >
+              <div className="space-y-2 border-b border-border/30 pb-2">
+                {earlier.map((activity) => (
+                  <ActivityRow key={activity.id} activity={activity} running={running} />
+                ))}
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+        <ActivityRow activity={latest} running={running} />
+      </div>
     </div>
   );
 }
@@ -586,9 +804,81 @@ function AssistantMessage({ content }: { content: string }) {
   const html = React.useMemo(() => renderGenieMarkdown(content, { compact: true }), [content]);
   return (
     <div
-      className="max-w-[95%] text-sm leading-relaxed text-foreground [&_p]:mb-1.5 [&_p:last-child]:mb-0"
+      className="genie-chat-selectable genie-chat-prose max-w-[95%] cursor-text text-sm leading-relaxed text-foreground [&_p]:mb-1.5 [&_p:last-child]:mb-0"
+      dir="ltr"
+      style={{ unicodeBidi: "isolate" }}
       dangerouslySetInnerHTML={{ __html: html }}
     />
+  );
+}
+
+function UploadedImagePreview({
+  image,
+  onRemove,
+}: {
+  image: CrmEmailImageAttachment;
+  onRemove?: () => void;
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-2 rounded-md border border-border/60 bg-white p-1.5">
+      <img
+        src={image.url}
+        alt={image.name}
+        className="size-10 shrink-0 rounded-md object-cover"
+      />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-medium text-foreground">{image.name}</p>
+        {image.width && image.height ? (
+          <p className="text-[11px] text-muted-foreground">
+            {image.width} × {image.height}
+          </p>
+        ) : null}
+      </div>
+      {onRemove ? (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground"
+          aria-label={`Remove ${image.name}`}
+        >
+          <X className="size-3.5" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function ImageAttachmentAccessory({
+  images,
+  uploading,
+  onRemove,
+}: {
+  images: CrmEmailImageAttachment[];
+  uploading: boolean;
+  onRemove: (id: string) => void;
+}) {
+  if (images.length === 0 && !uploading) return null;
+
+  return (
+    <div className="space-y-2">
+      {images.length > 0 ? (
+        <div className="grid gap-1.5">
+          {images.map((image) => (
+            <UploadedImagePreview
+              key={image.id}
+              image={image}
+              onRemove={() => onRemove(image.id)}
+            />
+          ))}
+        </div>
+      ) : null}
+      {uploading ? (
+        <div className="flex items-center gap-2 rounded-md border border-border/60 bg-white px-2.5 py-2 text-xs text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" />
+          Uploading image…
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -609,6 +899,10 @@ function ChatColumn(props: {
   onSuggestion: (text: string) => void;
   onApplyTemplate: (template: CrmEmailTemplateRecord) => void;
   chatScrollRef: React.RefObject<HTMLDivElement | null>;
+  uploadedImages: CrmEmailImageAttachment[];
+  uploadingImage: boolean;
+  onImageSelected: (file: File) => void;
+  onRemoveUploadedImage: (id: string) => void;
 }) {
   const {
     hasStarted,
@@ -627,18 +921,23 @@ function ChatColumn(props: {
     onSuggestion,
     onApplyTemplate,
     chatScrollRef,
+    uploadedImages,
+    uploadingImage,
+    onImageSelected,
+    onRemoveUploadedImage,
   } = props;
 
   return (
     <aside className="flex w-[min(380px,32%)] shrink-0 flex-col border-r border-border/60 bg-white">
       <div className="shrink-0 border-b border-border/40 px-4 py-3">
         <p className="text-sm font-semibold text-foreground">AI Campaign</p>
-        <p className="text-xs text-muted-foreground">
-          Your marketing director — knows your customers, sales, and stock
-        </p>
+        <p className="text-xs text-muted-foreground">Type your request below</p>
       </div>
 
-      <div ref={chatScrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      <div
+        ref={chatScrollRef}
+        className="genie-chat-selectable min-h-0 flex-1 overflow-y-auto px-4 py-4"
+      >
         {!hasStarted ? (
           <EmptyState
             templates={templates}
@@ -649,9 +948,35 @@ function ChatColumn(props: {
           <div className="space-y-3.5">
             {transcript.map((item) => {
               if (item.kind === "user") {
+                if (item.designSelections?.length) {
+                  return (
+                    <div key={item.id} className="flex justify-end">
+                      <VisualEditUserBubble
+                        content={item.content}
+                        selections={item.designSelections}
+                      />
+                    </div>
+                  );
+                }
                 return (
                   <div key={item.id} className="flex justify-end">
-                    <div className="max-w-[92%] rounded-[18px] bg-primary px-3.5 py-2 text-sm leading-snug text-primary-foreground">
+                    <div className="genie-chat-selectable genie-chat-bubble-user max-w-[92%] cursor-text rounded-[18px] bg-primary px-3.5 py-2 text-sm leading-snug text-primary-foreground">
+                      {item.uploadedImages?.length ? (
+                        <div className="mb-2 grid gap-1.5">
+                          {item.uploadedImages.map((image) => (
+                            <div
+                              key={image.id}
+                              className="overflow-hidden rounded-md bg-white/15 ring-1 ring-white/20"
+                            >
+                              <img
+                                src={image.url}
+                                alt={image.name}
+                                className="max-h-36 w-full object-cover"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                       <span className="whitespace-pre-wrap">{item.content}</span>
                     </div>
                   </div>
@@ -716,12 +1041,21 @@ function ChatColumn(props: {
             onChange={onPromptChange}
             onSubmit={onSubmit}
             onStop={onStop}
-            placeholder={
-              hasStarted
-                ? "Reply, refine, or ask anything…"
-                : "e.g. 20% off Muc-Off for anyone who bought it before"
-            }
+            placeholder={hasStarted ? "Refine or follow up" : "Describe your campaign"}
             showDisclaimer={false}
+            onFileSelected={onImageSelected}
+            fileAccept="image/jpeg,image/png,image/webp,image/avif"
+            fileButtonLabel="Attach image for this email"
+            canSubmitWithoutText={uploadedImages.length > 0}
+            inputAccessory={
+              uploadedImages.length > 0 || uploadingImage ? (
+                <ImageAttachmentAccessory
+                  images={uploadedImages}
+                  uploading={uploadingImage}
+                  onRemove={onRemoveUploadedImage}
+                />
+              ) : undefined
+            }
           />
         </div>
       </div>
@@ -736,13 +1070,6 @@ function EmptyState(props: {
 }) {
   return (
     <div className="space-y-5">
-      <div>
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          Tell me what you want to achieve and I&apos;ll dig into your Lightspeed data, pick the
-          right customers, and design the email — or ask me anything about your customers first.
-        </p>
-      </div>
-
       <div className="space-y-1.5">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Try one of these
@@ -799,7 +1126,11 @@ function PreviewColumn(props: {
   selectedSubject: number;
   previewMode: "desktop" | "mobile";
   onPreviewModeChange: (mode: "desktop" | "mobile") => void;
+  previewDesignMode: boolean;
+  onPreviewDesignModeChange: (active: boolean) => void;
+  onSubmitVisualEdit: (selections: EmailPreviewDesignSelection[], text: string) => void;
   templates: CrmEmailTemplateRecord[];
+  premadeTemplates: CrmEmailTemplateRecord[];
   templatesOpen: boolean;
   templatesRef: React.RefObject<HTMLDivElement | null>;
   onTemplatesOpenChange: (open: boolean) => void;
@@ -810,6 +1141,7 @@ function PreviewColumn(props: {
   onTemplateNameChange: (v: string) => void;
   onSaveTemplate: () => void;
   savingTemplate: boolean;
+  previewFirstName: string | null;
 }) {
   const {
     store,
@@ -819,7 +1151,11 @@ function PreviewColumn(props: {
     selectedSubject,
     previewMode,
     onPreviewModeChange,
+    previewDesignMode,
+    onPreviewDesignModeChange,
+    onSubmitVisualEdit,
     templates,
+    premadeTemplates,
     templatesOpen,
     templatesRef,
     onTemplatesOpenChange,
@@ -830,8 +1166,14 @@ function PreviewColumn(props: {
     onTemplateNameChange,
     onSaveTemplate,
     savingTemplate,
+    previewFirstName,
   } = props;
-  const subject = campaign?.subjectVariants[selectedSubject] ?? campaign?.subject ?? "";
+  const subject = applyMergeTags(
+    campaign?.subjectVariants[selectedSubject] ?? campaign?.subject ?? "",
+    { firstName: previewFirstName },
+  );
+  const toolbarControl =
+    "inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2.5 text-xs font-medium transition-colors";
 
   return (
     <main className="flex min-w-0 flex-1 flex-col bg-gray-100/70">
@@ -843,12 +1185,12 @@ function PreviewColumn(props: {
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <div className="flex items-center rounded-lg border border-border/60 p-0.5">
+          <div className="flex h-8 items-center rounded-lg border border-border/60 p-0.5">
             <button
               type="button"
               onClick={() => onPreviewModeChange("desktop")}
               className={cn(
-                "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                "flex h-full items-center rounded-md px-2.5 text-xs font-medium transition-colors",
                 previewMode === "desktop"
                   ? "bg-zinc-900 text-white"
                   : "text-muted-foreground hover:text-foreground",
@@ -861,7 +1203,7 @@ function PreviewColumn(props: {
               type="button"
               onClick={() => onPreviewModeChange("mobile")}
               className={cn(
-                "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                "flex h-full items-center rounded-md px-2.5 text-xs font-medium transition-colors",
                 previewMode === "mobile"
                   ? "bg-zinc-900 text-white"
                   : "text-muted-foreground hover:text-foreground",
@@ -872,11 +1214,28 @@ function PreviewColumn(props: {
             </button>
           </div>
 
+          {campaign ? (
+            <button
+              type="button"
+              onClick={() => onPreviewDesignModeChange(!previewDesignMode)}
+              className={cn(
+                toolbarControl,
+                previewDesignMode
+                  ? "border-zinc-900 bg-zinc-900 text-white"
+                  : "border-border/60 text-foreground hover:bg-gray-50",
+              )}
+              aria-pressed={previewDesignMode}
+            >
+              <MousePointerClick className="size-3.5" />
+              Pick element
+            </button>
+          ) : null}
+
           <div ref={templatesRef} className="relative">
             <button
               type="button"
               onClick={() => onTemplatesOpenChange(!templatesOpen)}
-              className="inline-flex items-center gap-1 rounded-lg border border-border/60 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-gray-50"
+              className={cn(toolbarControl, "border-border/60 text-foreground hover:bg-gray-50")}
             >
               <Layers className="size-3.5" />
               Templates
@@ -891,15 +1250,18 @@ function PreviewColumn(props: {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -4 }}
                   transition={{ duration: 0.15 }}
-                  className="absolute right-0 top-full z-20 mt-1 w-72 overflow-hidden rounded-xl border border-border/60 bg-white shadow-lg"
+                  className="absolute right-0 top-full z-20 mt-1 w-80 overflow-hidden rounded-xl border border-border/60 bg-white shadow-lg"
                 >
-                  {templates.length === 0 ? (
-                    <p className="px-3.5 py-3 text-xs text-muted-foreground">
-                      No saved templates yet. Build a design you like, then hit “Save as template”.
+                  <div className="max-h-96 overflow-y-auto py-1">
+                    <p className="px-3.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Your templates
                     </p>
-                  ) : (
-                    <div className="max-h-72 overflow-y-auto py-1">
-                      {templates.map((template) => (
+                    {templates.length === 0 ? (
+                      <p className="px-3.5 pb-2 text-xs text-muted-foreground">
+                        Nothing saved yet. Build a design you like, then hit “Save as template”.
+                      </p>
+                    ) : (
+                      templates.map((template) => (
                         <button
                           key={template.id}
                           type="button"
@@ -912,9 +1274,24 @@ function PreviewColumn(props: {
                             {template.use_count > 0 ? ` · used ${template.use_count}×` : ""}
                           </p>
                         </button>
-                      ))}
-                    </div>
-                  )}
+                      ))
+                    )}
+
+                    <p className="border-t border-border/40 px-3.5 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      Pre-made designs
+                    </p>
+                    {premadeTemplates.map((template) => (
+                      <button
+                        key={template.id}
+                        type="button"
+                        onClick={() => onApplyTemplate(template)}
+                        className="w-full px-3.5 py-2.5 text-left transition-colors hover:bg-gray-50"
+                      >
+                        <p className="truncate text-sm font-medium text-foreground">{template.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">{template.description}</p>
+                      </button>
+                    ))}
+                  </div>
                 </motion.div>
               ) : null}
             </AnimatePresence>
@@ -974,11 +1351,15 @@ function PreviewColumn(props: {
             )}
           >
             <InboxChrome store={store} subject={subject} mode={previewMode} />
-            <CampaignEmailPreview
+            <DesignModeEmailPreview
               templateKey={campaign.templateKey}
               content={campaign.content}
               store={store}
               className="min-h-[480px] flex-1"
+              previewFirstName={previewFirstName}
+              designModeActive={previewDesignMode}
+              onDesignModeActiveChange={onPreviewDesignModeChange}
+              onSubmitVisualEdit={onSubmitVisualEdit}
             />
           </div>
         ) : running ? (
@@ -995,16 +1376,10 @@ function PreviewColumn(props: {
             </span>
           </div>
         ) : (
-          <div className="flex h-full items-center justify-center">
-            <div className="max-w-sm rounded-2xl border border-dashed border-border/70 bg-white/60 px-8 py-10 text-center">
-              <Wand2 className="mx-auto size-6 text-gray-300" />
-              <p className="mt-3 text-sm font-medium text-foreground">Your email renders here</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {hasStarted
-                  ? "The live HTML design will appear as soon as the agent composes it."
-                  : "Start the conversation on the left — real HTML, real products, real prices."}
-              </p>
-            </div>
+          <div className="flex h-full items-center justify-center px-6">
+            <p className="text-sm text-muted-foreground">
+              {hasStarted ? "Your email will appear here." : "Start chatting to preview your email."}
+            </p>
           </div>
         )}
       </div>
@@ -1053,6 +1428,9 @@ function SpecsColumn(props: {
   collapsed: boolean;
   onToggleCollapsed: () => void;
   audience: CrmNamedAudience | null;
+  selectedCount: number;
+  excludedContactIds: Set<string>;
+  onToggleContact: (contactId: string, included: boolean) => void;
   products: AgentProductPick[];
   campaign: AgentComposeResult | null;
   verification: CampaignVerification | null;
@@ -1064,9 +1442,55 @@ function SpecsColumn(props: {
   creating: boolean;
   onCreateDraft: () => void;
   onOpenComposer: () => void;
+  testEmail: string;
+  onTestEmailChange: (v: string) => void;
+  onSendTest: () => void;
+  sendingTest: boolean;
+  testResult: { kind: "success" | "error"; text: string } | null;
 }) {
-  const { audience, products, campaign, verification, collapsed, onToggleCollapsed } = props;
+  const {
+    audience,
+    selectedCount,
+    excludedContactIds,
+    onToggleContact,
+    products,
+    campaign,
+    verification,
+    running,
+    selectedSubject,
+    onSelectSubject,
+    sendPlan,
+    onSendPlanChange,
+    creating,
+    onCreateDraft,
+    onOpenComposer,
+    collapsed,
+    onToggleCollapsed,
+    testEmail,
+    onTestEmailChange,
+    onSendTest,
+    sendingTest,
+    testResult,
+  } = props;
+
   const empty = !audience && !campaign;
+  const failedChecks = verification?.checks.filter((check) => !check.ok) ?? [];
+  const selectedSubjectText =
+    campaign?.subjectVariants[selectedSubject] ?? campaign?.subject ?? "";
+  const [membersOpen, setMembersOpen] = React.useState(false);
+  const [confirmSendNow, setConfirmSendNow] = React.useState(false);
+
+  React.useEffect(() => {
+    setConfirmSendNow(false);
+  }, [sendPlan.mode, selectedCount, campaign?.subject]);
+
+  const handlePrimarySendAction = React.useCallback(() => {
+    if (sendPlan.mode === "send_now" && !confirmSendNow) {
+      setConfirmSendNow(true);
+      return;
+    }
+    onCreateDraft();
+  }, [confirmSendNow, onCreateDraft, sendPlan.mode]);
 
   return (
     <aside
@@ -1094,8 +1518,8 @@ function SpecsColumn(props: {
         ) : (
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-foreground">Campaign specs</p>
-              <p className="text-xs text-muted-foreground">Verified audience, products, and checks</p>
+              <p className="text-sm font-semibold text-foreground">Campaign</p>
+              <p className="text-xs text-muted-foreground">Who gets it, and when</p>
             </div>
             <button
               type="button"
@@ -1121,276 +1545,408 @@ function SpecsColumn(props: {
             className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
           >
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        {empty ? (
-          <p className="text-sm text-muted-foreground">
-            Everything here is verified against your real data as the agent works — exact recipient
-            counts, the rule-by-rule audience funnel, featured products, and email quality checks.
-          </p>
-        ) : (
-          <div className="space-y-5">
-            {audience ? (
-              <SpecSection title={audience.name ? `Recipients — ${audience.name}` : "Recipients"}>
-                <div className="flex items-center gap-2">
-                  <Users className="size-4 text-gray-500" />
-                  <span className="text-sm font-semibold">
-                    {audience.count.toLocaleString()} recipient{audience.count === 1 ? "" : "s"}
-                  </span>
-                  <Badge variant="secondary" className="rounded-md text-[10px] uppercase tracking-wide">
-                    Verified
-                  </Badge>
-                </div>
-
-                {audience.funnel && audience.funnel.length > 0 ? (
-                  <div className="mt-2.5 space-y-0 rounded-lg border border-border/40 bg-gray-50/60 px-3 py-2">
-                    {audience.funnel.map((step, index) => (
-                      <div
-                        key={`${step.label}-${index}`}
-                        className={cn(
-                          "flex items-baseline justify-between gap-2 py-1.5",
-                          index > 0 && "border-t border-border/30",
-                        )}
-                      >
+              {empty ? (
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  Recipients, subject, and send update here as you go.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-4">
+                  {/* ——— Summary ——— */}
+                  <div className="rounded-xl border border-border/50 bg-gray-50/60 p-3.5">
+                    {audience ? (
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-border/50">
+                          <Users className="size-4 text-gray-500" />
+                        </div>
                         <div className="min-w-0">
-                          <p className="truncate text-xs font-medium text-foreground">{step.label}</p>
-                          {step.detail ? (
-                            <p className="truncate text-[11px] text-muted-foreground">{step.detail}</p>
-                          ) : null}
+                          <p className="text-lg font-semibold leading-tight tabular-nums text-foreground">
+                            {selectedCount.toLocaleString()}
+                            <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                              recipient{selectedCount === 1 ? "" : "s"}
+                            </span>
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {audience.name ?? "Matched audience"} · verified
+                            {excludedContactIds.size > 0
+                              ? ` · ${excludedContactIds.size.toLocaleString()} excluded`
+                              : ""}
+                          </p>
                         </div>
-                        <span className="shrink-0 text-xs font-semibold tabular-nums text-foreground">
-                          {step.count.toLocaleString()}
-                        </span>
                       </div>
-                    ))}
-                  </div>
-                ) : null}
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        No audience yet. Ask the agent who this should go to.
+                      </p>
+                    )}
 
-                {audience.sample.length > 0 ? (
-                  <div className="mt-2.5">
-                    <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                      Sample of actual recipients
-                    </p>
-                    <ul className="space-y-1.5">
-                      {audience.sample.slice(0, 5).map((contact) => (
-                        <li key={contact.id} className="rounded-md bg-gray-50 px-2.5 py-1.5 text-xs">
-                          <p className="font-medium text-foreground">
-                            {[contact.first_name, contact.last_name].filter(Boolean).join(" ") || contact.email}
+                    {campaign ? (
+                      <div className={cn(audience && "mt-3 border-t border-border/40 pt-3")}>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                            Subject
                           </p>
-                          <p className="text-muted-foreground">
-                            {formatAud(contact.total_spend)} lifetime · {contact.sale_count} visit
-                            {contact.sale_count === 1 ? "" : "s"}
-                          </p>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-
-                {audience.sort ? (
-                  <p className="mt-2 text-[11px] text-muted-foreground">{audience.sort.label}</p>
-                ) : null}
-              </SpecSection>
-            ) : null}
-
-            {products.length > 0 ? (
-              <SpecSection title={`Featured products (${products.length})`}>
-                <ul className="space-y-1.5">
-                  {products.map((product, index) => (
-                    <li
-                      key={`${product.productId ?? product.title}-${index}`}
-                      className="flex items-center gap-2.5 rounded-md border border-border/40 px-2.5 py-2"
-                    >
-                      {product.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={product.imageUrl}
-                          alt=""
-                          className="size-10 shrink-0 rounded-md border border-border/30 bg-white object-contain"
-                        />
-                      ) : (
-                        <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-gray-100 text-[10px] text-muted-foreground">
-                          No img
-                        </div>
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-medium text-foreground">{product.title}</p>
-                        <p className="truncate text-[11px] text-muted-foreground">
-                          {product.price}
-                          {product.originalPrice ? (
-                            <span className="ml-1 line-through">{product.originalPrice}</span>
+                          {campaign.subjectVariants.length > 1 ? (
+                            <div className="flex gap-1">
+                              {campaign.subjectVariants.map((_, index) => (
+                                <button
+                                  key={index}
+                                  type="button"
+                                  onClick={() => onSelectSubject(index)}
+                                  aria-label={`Subject option ${index + 1}`}
+                                  className={cn(
+                                    "flex size-5 items-center justify-center rounded-md text-[10px] font-semibold transition-colors",
+                                    selectedSubject === index
+                                      ? "bg-zinc-900 text-white"
+                                      : "bg-white text-muted-foreground ring-1 ring-border/50 hover:text-foreground",
+                                  )}
+                                >
+                                  {String.fromCharCode(65 + index)}
+                                </button>
+                              ))}
+                            </div>
                           ) : null}
-                          {product.badge ? <span className="ml-1 font-semibold text-red-600">{product.badge}</span> : null}
+                        </div>
+                        <p className="mt-1 text-sm font-medium leading-snug text-foreground">
+                          {selectedSubjectText}
                         </p>
                       </div>
-                    </li>
-                  ))}
-                </ul>
-              </SpecSection>
-            ) : null}
-
-            {verification ? (
-              <SpecSection title="Quality checks">
-                <ul className="space-y-1.5">
-                  {verification.checks.map((check) => (
-                    <li key={check.label} className="flex items-start gap-2 text-xs">
-                      {check.ok ? (
-                        <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-500" />
-                      ) : (
-                        <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
-                      )}
-                      <div className="min-w-0">
-                        <span className="font-medium text-foreground">{check.label}</span>
-                        {check.detail ? (
-                          <span className="ml-1 text-muted-foreground">{check.detail}</span>
-                        ) : null}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </SpecSection>
-            ) : null}
-
-            {campaign && campaign.subjectVariants.length > 0 ? (
-              <SpecSection title="Subject line">
-                <div className="flex flex-col gap-1.5">
-                  {campaign.subjectVariants.map((subject, index) => (
-                    <button
-                      key={`${subject}-${index}`}
-                      type="button"
-                      onClick={() => props.onSelectSubject(index)}
-                      className={cn(
-                        "rounded-md border px-2.5 py-2 text-left text-xs transition-colors",
-                        props.selectedSubject === index
-                          ? "border-zinc-900 bg-zinc-50 font-medium"
-                          : "border-border/50 hover:bg-gray-50",
-                      )}
-                    >
-                      {subject}
-                    </button>
-                  ))}
-                </div>
-              </SpecSection>
-            ) : null}
-
-            {campaign?.reasoning ? (
-              <SpecSection title="Design notes">
-                <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
-                  {campaign.reasoning}
-                </p>
-              </SpecSection>
-            ) : null}
-
-            {campaign ? (
-              <SpecSection title="Send timing">
-                <div className="flex flex-col gap-1.5">
-                  {(
-                    [
-                      { id: "draft", label: "Save as draft" },
-                      { id: "send_now", label: "Send immediately" },
-                      { id: "schedule", label: "Schedule" },
-                    ] as const
-                  ).map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => props.onSendPlanChange((plan) => ({ ...plan, mode: option.id }))}
-                      className={cn(
-                        "rounded-md border px-2.5 py-2 text-left text-xs transition-colors",
-                        props.sendPlan.mode === option.id
-                          ? "border-zinc-900 bg-zinc-50 font-medium"
-                          : "border-border/50 hover:bg-gray-50",
-                      )}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-
-                {props.sendPlan.mode === "schedule" ? (
-                  <div className="mt-3 space-y-2">
-                    <div>
-                      <Label className="text-xs">Schedule name</Label>
-                      <Input
-                        value={props.sendPlan.scheduleName}
-                        onChange={(e) =>
-                          props.onSendPlanChange((plan) => ({ ...plan, scheduleName: e.target.value }))
-                        }
-                        className="mt-1 h-8 text-xs"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Send at</Label>
-                      <Input
-                        type="datetime-local"
-                        value={props.sendPlan.scheduledAt}
-                        onChange={(e) =>
-                          props.onSendPlanChange((plan) => ({ ...plan, scheduledAt: e.target.value }))
-                        }
-                        className="mt-1 h-8 text-xs"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Repeat</Label>
-                      <select
-                        value={props.sendPlan.scheduleType}
-                        onChange={(e) =>
-                          props.onSendPlanChange((plan) => ({
-                            ...plan,
-                            scheduleType: e.target.value as SendPlan["scheduleType"],
-                          }))
-                        }
-                        className="mt-1 h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
-                      >
-                        <option value="once">Once</option>
-                        <option value="weekly">Weekly</option>
-                        <option value="monthly">Monthly</option>
-                      </select>
-                    </div>
-                    <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Checkbox
-                        checked={props.sendPlan.autoSend}
-                        onCheckedChange={(checked) =>
-                          props.onSendPlanChange((plan) => ({ ...plan, autoSend: checked === true }))
-                        }
-                      />
-                      Auto-send without manual approval
-                    </label>
+                    ) : null}
                   </div>
-                ) : null}
-              </SpecSection>
-            ) : null}
 
-            {campaign ? (
-              <div className="space-y-2 border-t border-border/40 pt-4">
-                <Button
-                  size="sm"
-                  className="w-full"
-                  onClick={props.onCreateDraft}
-                  disabled={props.creating || props.running}
-                >
-                  {props.creating ? (
-                    <Loader2 className="mr-1.5 size-4 animate-spin" />
-                  ) : (
-                    <Send className="mr-1.5 size-4" />
-                  )}
-                  {props.sendPlan.mode === "send_now"
-                    ? `Send to ${audience ? audience.count.toLocaleString() : "…"} recipient${audience?.count === 1 ? "" : "s"}`
-                    : props.sendPlan.mode === "schedule"
-                      ? "Schedule campaign"
-                      : "Create draft"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="w-full"
-                  onClick={props.onOpenComposer}
-                  disabled={props.running}
-                >
-                  Edit in composer
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        )}
+                  {/* ——— Send ——— */}
+                  {campaign ? (
+                    <div className="space-y-2.5">
+                      <div className="flex items-center rounded-lg bg-gray-100 p-0.5">
+                        {(
+                          [
+                            { id: "draft", label: "Draft" },
+                            { id: "send_now", label: "Send now" },
+                            { id: "schedule", label: "Schedule" },
+                          ] as const
+                        ).map((option) => (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => {
+                              setConfirmSendNow(false);
+                              onSendPlanChange((plan) => ({ ...plan, mode: option.id }));
+                            }}
+                            className={cn(
+                              "flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
+                              sendPlan.mode === option.id
+                                ? "bg-white text-foreground shadow-sm"
+                                : "text-muted-foreground hover:text-foreground",
+                            )}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {sendPlan.mode === "schedule" ? (
+                        <div className="space-y-2 rounded-md border border-border/40 p-2.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-[11px] font-medium text-muted-foreground">
+                              Schedule time
+                            </p>
+                            <span className="shrink-0 rounded-md bg-white px-2 py-0.5 text-[10px] font-medium text-foreground ring-1 ring-border/60">
+                              Melbourne, Australia
+                            </span>
+                          </div>
+                          <Input
+                            type="datetime-local"
+                            value={sendPlan.scheduledAt}
+                            onChange={(e) =>
+                              onSendPlanChange((plan) => ({ ...plan, scheduledAt: e.target.value }))
+                            }
+                            className="h-8 text-xs"
+                          />
+                          <p className="text-[11px] leading-snug text-muted-foreground">
+                            Times are scheduled in Melbourne time ({MELBOURNE_TIME_ZONE}).
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={sendPlan.scheduleType}
+                              onChange={(e) =>
+                                onSendPlanChange((plan) => ({
+                                  ...plan,
+                                  scheduleType: e.target.value as SendPlan["scheduleType"],
+                                }))
+                              }
+                              className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+                            >
+                              <option value="once">Once</option>
+                              <option value="weekly">Weekly</option>
+                              <option value="monthly">Monthly</option>
+                            </select>
+                            <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                              <Checkbox
+                                checked={sendPlan.autoSend}
+                                onCheckedChange={(checked) =>
+                                  onSendPlanChange((plan) => ({ ...plan, autoSend: checked === true }))
+                                }
+                              />
+                              Auto-send
+                            </label>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {confirmSendNow && sendPlan.mode === "send_now" ? (
+                        <div className="rounded-md border border-amber-200 bg-white p-2.5">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold text-foreground">
+                                Confirm live send
+                              </p>
+                              <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                                This will email {selectedCount.toLocaleString()} recipient
+                                {selectedCount === 1 ? "" : "s"} now. This cannot be undone.
+                              </p>
+                            </div>
+                          </div>
+                          <div className="mt-2 flex gap-1.5">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 flex-1 text-xs"
+                              onClick={() => setConfirmSendNow(false)}
+                              disabled={creating}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="h-8 flex-1 bg-amber-600 text-xs text-white hover:bg-amber-700"
+                              onClick={handlePrimarySendAction}
+                              disabled={creating || running || !audience || selectedCount === 0}
+                            >
+                              {creating ? (
+                                <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                              ) : (
+                                <Send className="mr-1.5 size-3.5" />
+                              )}
+                              Confirm send
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Button
+                          size="sm"
+                          className="w-full"
+                          onClick={handlePrimarySendAction}
+                          disabled={creating || running || !audience || selectedCount === 0}
+                        >
+                          {creating ? (
+                            <Loader2 className="mr-1.5 size-4 animate-spin" />
+                          ) : (
+                            <Send className="mr-1.5 size-4" />
+                          )}
+                          {sendPlan.mode === "send_now"
+                            ? `Send to ${audience ? selectedCount.toLocaleString() : "…"} recipient${selectedCount === 1 ? "" : "s"}`
+                            : sendPlan.mode === "schedule"
+                              ? "Schedule campaign"
+                              : "Save as draft"}
+                        </Button>
+                      )}
+
+                      <div className="flex gap-1.5">
+                        <Input
+                          type="email"
+                          value={testEmail}
+                          onChange={(e) => onTestEmailChange(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") onSendTest();
+                          }}
+                          placeholder="you@email.com"
+                          className="h-8 flex-1 text-xs"
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 shrink-0 text-xs"
+                          onClick={onSendTest}
+                          disabled={sendingTest || !testEmail.trim()}
+                        >
+                          {sendingTest ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            "Send test"
+                          )}
+                        </Button>
+                      </div>
+                      {testResult ? (
+                        <p
+                          className={cn(
+                            "flex items-center gap-1 text-[11px]",
+                            testResult.kind === "success" ? "text-emerald-600" : "text-red-600",
+                          )}
+                        >
+                          {testResult.kind === "success" ? (
+                            <Check className="size-3" />
+                          ) : (
+                            <AlertTriangle className="size-3" />
+                          )}
+                          {testResult.text}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {/* ——— Details (collapsed by default) ——— */}
+                  <div className="border-t border-border/40">
+                    {audience && (audience.funnel?.length || audience.sample.length > 0) ? (
+                      <AccordionSection title="How this audience was built">
+                        {audience.funnel && audience.funnel.length > 0 ? (
+                          <div className="rounded-lg bg-gray-50/70 px-2.5 py-1">
+                            {audience.funnel.map((step, index) => (
+                              <div
+                                key={`${step.label}-${index}`}
+                                className={cn(
+                                  "flex items-baseline justify-between gap-2 py-1.5",
+                                  index > 0 && "border-t border-border/30",
+                                )}
+                              >
+                                <div className="min-w-0">
+                                  <p className="truncate text-xs text-foreground">{step.label}</p>
+                                  {step.detail ? (
+                                    <p className="truncate text-[11px] text-muted-foreground">{step.detail}</p>
+                                  ) : null}
+                                </div>
+                                <span className="shrink-0 text-xs font-semibold tabular-nums text-foreground">
+                                  {step.count.toLocaleString()}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                        {audience.sample.length > 0 ? (
+                          <ul className="mt-2 space-y-1">
+                            {audience.sample.slice(0, 4).map((contact) => (
+                              <li
+                                key={contact.id}
+                                className="flex items-baseline justify-between gap-2 text-xs"
+                              >
+                                <span className="truncate text-foreground">
+                                  {[contact.first_name, contact.last_name].filter(Boolean).join(" ") ||
+                                    contact.email}
+                                </span>
+                                <span className="shrink-0 text-[11px] text-muted-foreground">
+                                  {formatAud(contact.total_spend)} · {contact.sale_count} visit
+                                  {contact.sale_count === 1 ? "" : "s"}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        {audience.sort ? (
+                          <p className="mt-2 text-[11px] text-muted-foreground">{audience.sort.label}</p>
+                        ) : null}
+                        <SeeAllCustomersButton
+                          count={audience.count}
+                          excludedCount={excludedContactIds.size}
+                          onClick={() => setMembersOpen(true)}
+                        />
+                      </AccordionSection>
+                    ) : null}
+
+                    {audience ? (
+                      <AudienceMembersDialog
+                        open={membersOpen}
+                        onOpenChange={setMembersOpen}
+                        audienceName={audience.name}
+                        totalCount={audience.count}
+                        selectedCount={selectedCount}
+                        excludedContactIds={excludedContactIds}
+                        onToggleContact={onToggleContact}
+                        rules={audience.rules}
+                      />
+                    ) : null}
+
+                    {products.length > 0 ? (
+                      <AccordionSection title={`Featured products (${products.length})`}>
+                        <ul className="space-y-1.5">
+                          {products.map((product, index) => (
+                            <li
+                              key={`${product.productId ?? product.title}-${index}`}
+                              className="flex items-center gap-2.5"
+                            >
+                              {product.imageUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={product.imageUrl}
+                                  alt=""
+                                  className="size-9 shrink-0 rounded-md border border-border/30 bg-white object-contain"
+                                />
+                              ) : (
+                                <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-gray-100 text-[9px] text-muted-foreground">
+                                  No img
+                                </div>
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-xs text-foreground">{product.title}</p>
+                                <p className="truncate text-[11px] text-muted-foreground">
+                                  {product.price}
+                                  {product.originalPrice ? (
+                                    <span className="ml-1 line-through">{product.originalPrice}</span>
+                                  ) : null}
+                                  {product.badge ? (
+                                    <span className="ml-1 font-semibold text-red-600">{product.badge}</span>
+                                  ) : null}
+                                </p>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </AccordionSection>
+                    ) : null}
+
+                    {verification ? (
+                      <AccordionSection
+                        title="Quality checks"
+                        hint={
+                          failedChecks.length === 0
+                            ? "All passed"
+                            : `${failedChecks.length} to fix`
+                        }
+                        hintTone={failedChecks.length === 0 ? "ok" : "warn"}
+                        defaultOpen={failedChecks.length > 0}
+                      >
+                        <ul className="space-y-1.5">
+                          {verification.checks.map((check) => (
+                            <li key={check.label} className="flex items-start gap-2 text-xs">
+                              {check.ok ? (
+                                <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-500" />
+                              ) : (
+                                <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+                              )}
+                              <div className="min-w-0">
+                                <span className="text-foreground">{check.label}</span>
+                                {check.detail ? (
+                                  <span className="ml-1 text-muted-foreground">{check.detail}</span>
+                                ) : null}
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </AccordionSection>
+                    ) : null}
+
+                  </div>
+
+                  {campaign ? (
+                    <button
+                      type="button"
+                      onClick={onOpenComposer}
+                      disabled={running}
+                      className="self-start text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
+                    >
+                      Edit manually in composer
+                    </button>
+                  ) : null}
+                </div>
+              )}
             </div>
           </motion.div>
         ) : null}
@@ -1399,55 +1955,58 @@ function SpecsColumn(props: {
   );
 }
 
-function SpecSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section>
-      <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</h4>
-      {children}
-    </section>
-  );
-}
-
-// ============================================================
-// Email HTML preview iframe
-// ============================================================
-
-function CampaignEmailPreview({
-  templateKey,
-  content,
-  store,
-  className,
-}: {
-  templateKey: string;
-  content: CampaignContent;
-  store: StoreBranding;
-  className?: string;
+function AccordionSection(props: {
+  title: string;
+  hint?: string;
+  hintTone?: "ok" | "warn";
+  defaultOpen?: boolean;
+  children: React.ReactNode;
 }) {
-  const deferredContent = React.useDeferredValue(content);
-  const previewHtml = React.useMemo(
-    () =>
-      renderCampaignEmail({
-        templateKey,
-        content: deferredContent,
-        store,
-        unsubscribeUrl: PREVIEW_UNSUBSCRIBE_PLACEHOLDER,
-      }).html,
-    [templateKey, deferredContent, store],
-  );
-
+  const [open, setOpen] = React.useState(props.defaultOpen ?? false);
   return (
-    <div
-      className={cn(
-        "overflow-hidden rounded-b-xl border border-border/60 bg-white shadow-sm",
-        className,
-      )}
-    >
-      <iframe
-        title="Campaign email preview"
-        sandbox="allow-same-origin"
-        srcDoc={previewHtml}
-        className="h-full min-h-[480px] w-full bg-white"
-      />
-    </div>
+    <section className="border-b border-border/40">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex w-full items-center justify-between gap-2 py-2.5 text-left"
+      >
+        <span className="text-xs font-medium text-foreground">{props.title}</span>
+        <span className="flex shrink-0 items-center gap-1.5">
+          {props.hint ? (
+            <span
+              className={cn(
+                "text-[11px]",
+                props.hintTone === "ok"
+                  ? "text-emerald-600"
+                  : props.hintTone === "warn"
+                    ? "text-amber-600"
+                    : "text-muted-foreground",
+              )}
+            >
+              {props.hint}
+            </span>
+          ) : null}
+          <ChevronDown
+            className={cn(
+              "size-3.5 text-muted-foreground transition-transform duration-200",
+              open && "rotate-180",
+            )}
+          />
+        </span>
+      </button>
+      <AnimatePresence initial={false}>
+        {open ? (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: [0.04, 0.62, 0.23, 0.98] }}
+            className="overflow-hidden"
+          >
+            <div className="pb-3">{props.children}</div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </section>
   );
 }

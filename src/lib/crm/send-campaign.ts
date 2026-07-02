@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getCrmEmailProvider, type CrmEmailMessage } from "@/lib/crm/email-provider";
 import { renderCampaignEmail } from "@/lib/crm/templates";
 import { getStoredCampaignHtml } from "@/lib/crm/campaign-html";
+import { applyMergeTags } from "@/lib/crm/merge-tags";
 import { normalizeEmail, type CampaignContent } from "@/lib/crm/types";
 import { SITE_URL } from "@/lib/seo/site";
 
@@ -131,13 +132,14 @@ export async function sendCrmCampaign(
         unsubscribeUrl,
         openTrackingUrl,
       });
+      const firstName = recipient.contact?.first_name ?? null;
       toSend.push({
         rowId: recipient.id,
         message: {
           to: email,
-          subject,
-          html,
-          text,
+          subject: applyMergeTags(subject, { firstName }),
+          html: applyMergeTags(html, { firstName }),
+          text: text ? applyMergeTags(text, { firstName }) : text,
           headers: {
             "List-Unsubscribe": `<${SITE_URL}/api/crm/unsubscribe?token=${token}>`,
             "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",

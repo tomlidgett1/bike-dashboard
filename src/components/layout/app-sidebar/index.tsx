@@ -75,8 +75,8 @@ const NAV: NavGroup[] = [
     label: "Store",
     items: [
       { title: "Home", href: "/settings/store/home", icon: HomeSmile, exact: true },
-      { title: "Actions", href: "/settings/store/actions", icon: Widget, exact: true },
-      { title: "Products", href: "/products", icon: Box },
+      { title: "To Do", href: "/settings/store/actions", icon: Widget, exact: true },
+      { title: "Product Catalogue", href: "/products", icon: Box },
       {
         title: "Storefront",
         icon: Shop,

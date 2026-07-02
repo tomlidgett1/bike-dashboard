@@ -21,7 +21,7 @@ export async function createCampaignFromAgent(
   const subject = String(input.subject ?? "").trim();
   const templateKey = String(input.templateKey ?? "");
   const content = input.content;
-  const contactIds = input.contactIds.slice(0, 10000);
+  const contactIds = input.contactIds;
 
   if (!subject) throw new Error("Subject is required");
   if (!getCrmTemplate(templateKey)) throw new Error("Unknown template");
@@ -30,15 +30,21 @@ export async function createCampaignFromAgent(
   }
   if (contactIds.length === 0) throw new Error("No recipients");
 
-  const { data: contacts, error: contactsError } = await supabase
-    .from("crm_contacts")
-    .select("id, email, opted_out")
-    .eq("user_id", userId)
-    .in("id", contactIds);
-  if (contactsError) throw contactsError;
+  const contacts: Array<{ id: string; email: string; opted_out: boolean }> = [];
+  const fetchBatchSize = 500;
+  for (let offset = 0; offset < contactIds.length; offset += fetchBatchSize) {
+    const batch = contactIds.slice(offset, offset + fetchBatchSize);
+    const { data, error: contactsError } = await supabase
+      .from("crm_contacts")
+      .select("id, email, opted_out")
+      .eq("user_id", userId)
+      .in("id", batch);
+    if (contactsError) throw contactsError;
+    contacts.push(...(data ?? []));
+  }
 
   const eligible: { id: string; email: string }[] = [];
-  for (const contact of contacts ?? []) {
+  for (const contact of contacts) {
     if (contact.opted_out) continue;
     const email = normalizeEmail(contact.email);
     if (!email) continue;

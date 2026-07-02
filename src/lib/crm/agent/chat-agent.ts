@@ -53,6 +53,10 @@ function statusForCrmTool(toolName: string, args?: Record<string, unknown>): { p
       const purpose = argText("purpose");
       return { phase: "sql", text: purpose ? `Lightspeed SQL: ${clip(purpose, 90)}` : "Querying Lightspeed data" };
     }
+    case "search_web": {
+      const query = argText("query");
+      return { phase: "web", text: query ? `Searching web: ${clip(query, 86)}` : "Searching the web" };
+    }
     case "resolve_audience": {
       const name = argText("name");
       return { phase: "audience", text: name ? `Resolving audience: ${clip(name, 80)}` : "Resolving audience with exact counts" };
@@ -110,6 +114,7 @@ export async function runCrmChatAgent(args: {
     seedCrmChatToolState(state, {
       campaign: args.clientState?.campaign ?? null,
       audienceRules: args.clientState?.audienceRules ?? null,
+      uploadedImages: args.clientState?.uploadedImages ?? null,
     });
 
     const tools = buildCrmChatTools({ supabase, userId, context, state, emit });

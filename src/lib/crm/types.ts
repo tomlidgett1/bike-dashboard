@@ -60,6 +60,17 @@ export type CrmCampaign = {
   sent_at: string | null;
 };
 
+export type CrmCampaignRecipient = {
+  email: string;
+  status: string;
+  error: string | null;
+  sent_at: string | null;
+  delivered_at: string | null;
+  opened_at: string | null;
+  clicked_at: string | null;
+  bounced_at: string | null;
+};
+
 export type CampaignItem = {
   title: string;
   subtitle?: string;

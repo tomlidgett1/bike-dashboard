@@ -15,6 +15,9 @@ export type AudienceRuleType =
   | "purchased_category"
   | "purchased_brand"
   | "purchased_keyword"
+  | "not_purchased_category"
+  | "not_purchased_brand"
+  | "not_purchased_keyword"
   | "lapsed"
   | "new_members"
   | "high_value";
@@ -54,6 +57,10 @@ export type AudiencePreviewContact = {
   sale_count: number;
   last_purchase_at: string | null;
   lightspeed_joined_at: string | null;
+};
+
+export type AudienceMemberWithReason = AudiencePreviewContact & {
+  reason: string;
 };
 
 export type AudienceFunnelStep = {

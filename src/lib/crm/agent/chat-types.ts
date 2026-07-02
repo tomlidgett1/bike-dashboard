@@ -19,8 +19,17 @@ export type CrmChatMessage = {
   content: string;
 };
 
+export type CrmEmailImageAttachment = {
+  id: string;
+  url: string;
+  name: string;
+  width?: number | null;
+  height?: number | null;
+};
+
 export type CrmActivityKind =
   | "sql"
+  | "web"
   | "audience"
   | "customers"
   | "products"
@@ -84,6 +93,8 @@ export type CrmChatClientState = {
   audienceRules?: AudienceRule[] | null;
   audienceName?: string | null;
   audienceCount?: number | null;
+  /** User-uploaded images for the current turn. These URLs are verified for email use. */
+  uploadedImages?: CrmEmailImageAttachment[] | null;
   /** Set when the user applied a saved template client-side since the last turn. */
   appliedTemplateName?: string | null;
 };

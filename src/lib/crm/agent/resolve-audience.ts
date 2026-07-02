@@ -6,7 +6,8 @@ import { contactToPreview } from "./types";
 import type { CrmContact } from "../types";
 
 const SAMPLE_SIZE = 8;
-const MAX_AUDIENCE = 10000;
+/** PostgREST returns at most 1000 rows per request — page through the full list. */
+const CONTACT_PAGE_SIZE = 1000;
 
 type ContactRow = {
   id: string;
@@ -32,6 +33,57 @@ function ruleNumber(rule: AudienceRule, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+function purchaseSearchTerms(value: string | undefined): string[] {
+  return String(value ?? "")
+    .split(/\s+(?:or|and)\s+|[,|/;]/i)
+    .map((term) => term.replace(/[%_(),]/g, "").trim())
+    .filter(Boolean);
+}
+
+function isPurchaseIncludeRule(rule: AudienceRule): boolean {
+  return (
+    rule.type === "purchased_category" ||
+    rule.type === "purchased_brand" ||
+    rule.type === "purchased_keyword"
+  );
+}
+
+function isPurchaseExcludeRule(rule: AudienceRule): boolean {
+  return (
+    rule.type === "not_purchased_category" ||
+    rule.type === "not_purchased_brand" ||
+    rule.type === "not_purchased_keyword"
+  );
+}
+
+function isPurchaseHistoryRule(rule: AudienceRule): boolean {
+  return isPurchaseIncludeRule(rule) || isPurchaseExcludeRule(rule);
+}
+
+async function fetchAllCrmContacts(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<ContactRow[]> {
+  const rows: ContactRow[] = [];
+
+  for (let offset = 0; ; offset += CONTACT_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("crm_contacts")
+      .select(
+        "id, email, first_name, last_name, opted_out, lightspeed_customer_id, lightspeed_joined_at, last_purchase_at, total_spend, sale_count",
+      )
+      .eq("user_id", userId)
+      .range(offset, offset + CONTACT_PAGE_SIZE - 1);
+    if (error) throw error;
+
+    const page = (data ?? []) as ContactRow[];
+    rows.push(...page);
+    if (page.length < CONTACT_PAGE_SIZE) break;
+  }
+
+  return rows;
+}
+
 async function customerIdsFromSalesFilter(
   supabase: SupabaseClient,
   userId: string,
@@ -48,15 +100,22 @@ async function customerIdsFromSalesFilter(
   if (filter.withinDays) {
     query = query.gte("complete_time", daysAgo(filter.withinDays).toISOString());
   }
-  if (filter.category) {
-    query = query.ilike("category", `%${filter.category.replace(/[%_]/g, "")}%`);
+  const orClauses: string[] = [];
+  for (const term of purchaseSearchTerms(filter.category)) {
+    orClauses.push(`category.ilike.%${term}%`);
   }
-  if (filter.brand) {
-    query = query.ilike("description", `%${filter.brand.replace(/[%_]/g, "")}%`);
+  for (const term of purchaseSearchTerms(filter.brand)) {
+    orClauses.push(`description.ilike.%${term}%`);
   }
-  if (filter.keyword) {
-    const kw = filter.keyword.replace(/[%_]/g, "");
-    query = query.or(`description.ilike.%${kw}%,sku.ilike.%${kw}%,category.ilike.%${kw}%`);
+  for (const term of purchaseSearchTerms(filter.keyword)) {
+    orClauses.push(
+      `description.ilike.%${term}%`,
+      `sku.ilike.%${term}%`,
+      `category.ilike.%${term}%`,
+    );
+  }
+  if (orClauses.length > 0) {
+    query = query.or(orClauses.join(","));
   }
 
   const ids = new Set<string>();
@@ -242,19 +301,47 @@ export async function resolveAudience(
   rules: AudienceRule[],
   maxRecipients?: number | null,
 ): Promise<AudienceResolution> {
+  const built = await buildEligibleAudience(supabase, userId, rules, maxRecipients);
+
+  const sample: AudiencePreviewContact[] = built.selected
+    .slice(0, SAMPLE_SIZE)
+    .map((c) => contactRowToPreview(c));
+
+  return {
+    contactIds: built.selected.map((c) => c.id),
+    count: built.selected.length,
+    sample,
+    rules: built.rules,
+    excludedOptedOut: built.excludedOptedOut,
+    sort: built.sort,
+    funnel: built.funnel,
+  };
+}
+
+export type EligibleAudienceBuild = {
+  selected: ContactRow[];
+  rules: AudienceRule[];
+  purchaseRules: AudienceRule[];
+  excludedOptedOut: number;
+  sort: AudienceResolution["sort"];
+  funnel: NonNullable<AudienceResolution["funnel"]>;
+};
+
+export async function buildEligibleAudience(
+  supabase: SupabaseClient,
+  userId: string,
+  rules: AudienceRule[],
+  maxRecipients?: number | null,
+): Promise<EligibleAudienceBuild> {
   const funnel: NonNullable<AudienceResolution["funnel"]> = [];
-  const purchaseRules = rules.filter(
-    (r) =>
-      r.type === "purchased_category" ||
-      r.type === "purchased_brand" ||
-      r.type === "purchased_keyword",
-  );
+  const purchaseRules = rules.filter(isPurchaseIncludeRule);
+  const excludedPurchaseRules = rules.filter(isPurchaseExcludeRule);
+  const hasPurchaseHistoryRules = rules.some(isPurchaseHistoryRule);
+  const withinRule = rules.find((r) => r.type === "last_purchase_within_days");
+  const withinDays = withinRule ? ruleNumber(withinRule, 1825) : undefined;
 
   let purchaseCustomerIds: Set<string> | null = null;
   for (const rule of purchaseRules) {
-    const withinRule = rules.find((r) => r.type === "last_purchase_within_days");
-    const withinDays = withinRule ? ruleNumber(withinRule, 1825) : undefined;
-
     const ids = await customerIdsFromSalesFilter(supabase, userId, {
       category: rule.type === "purchased_category" ? String(rule.value ?? "") : undefined,
       brand: rule.type === "purchased_brand" ? String(rule.value ?? "") : undefined,
@@ -267,15 +354,21 @@ export async function resolveAudience(
       : ids;
   }
 
-  const { data: allContacts, error } = await supabase
-    .from("crm_contacts")
-    .select(
-      "id, email, first_name, last_name, opted_out, lightspeed_customer_id, lightspeed_joined_at, last_purchase_at, total_spend, sale_count",
-    )
-    .eq("user_id", userId);
-  if (error) throw error;
+  let excludedPurchaseCustomerIds: Set<string> | null = null;
+  for (const rule of excludedPurchaseRules) {
+    const ids = await customerIdsFromSalesFilter(supabase, userId, {
+      category: rule.type === "not_purchased_category" ? String(rule.value ?? "") : undefined,
+      brand: rule.type === "not_purchased_brand" ? String(rule.value ?? "") : undefined,
+      keyword: rule.type === "not_purchased_keyword" ? String(rule.value ?? "") : undefined,
+      withinDays,
+    });
 
-  const rows = (allContacts ?? []) as ContactRow[];
+    excludedPurchaseCustomerIds = excludedPurchaseCustomerIds
+      ? new Set([...excludedPurchaseCustomerIds, ...ids])
+      : ids;
+  }
+
+  const rows = await fetchAllCrmContacts(supabase, userId);
   funnel.push({ label: "All contacts", count: rows.length });
   let excludedOptedOut = 0;
   let eligible = rows.filter((c) => {
@@ -302,11 +395,26 @@ export async function resolveAudience(
     });
   }
 
+  if (excludedPurchaseCustomerIds) {
+    eligible = eligible.filter(
+      (c) =>
+        !c.lightspeed_customer_id ||
+        !excludedPurchaseCustomerIds!.has(String(c.lightspeed_customer_id)),
+    );
+    funnel.push({
+      label:
+        excludedPurchaseRules
+          .map((r) => r.label || `${r.type}: ${r.value ?? ""}`)
+          .join(" + ") || "Excluded purchase history",
+      detail: `${excludedPurchaseCustomerIds.size.toLocaleString()} matching Lightspeed customer IDs excluded`,
+      count: eligible.length,
+    });
+  }
+
   const nonPurchaseRules = rules.filter(
     (r) =>
-      r.type !== "purchased_category" &&
-      r.type !== "purchased_brand" &&
-      r.type !== "purchased_keyword",
+      !isPurchaseHistoryRule(r) &&
+      !(hasPurchaseHistoryRules && r.type === "last_purchase_within_days"),
   );
   eligible = applyRules(eligible, nonPurchaseRules, (rule, remaining) => {
     funnel.push({
@@ -319,12 +427,11 @@ export async function resolveAudience(
   const sort = resolveAudienceSort(rules);
   eligible = sortAudience(eligible, sort);
 
-  const cap = maxRecipients && maxRecipients > 0 ? Math.min(maxRecipients, MAX_AUDIENCE) : MAX_AUDIENCE;
-  const selected = eligible.slice(0, cap);
-  const contactIds = selected.map((c) => c.id);
-  if (selected.length < eligible.length) {
+  const selected =
+    maxRecipients && maxRecipients > 0 ? eligible.slice(0, maxRecipients) : eligible;
+  if (maxRecipients && maxRecipients > 0 && selected.length < eligible.length) {
     funnel.push({
-      label: `Capped at ${cap.toLocaleString()} recipients`,
+      label: `Capped at ${maxRecipients.toLocaleString()} recipients`,
       detail: sort?.label,
       count: selected.length,
     });
@@ -332,30 +439,27 @@ export async function resolveAudience(
 
   // Sample MUST come from the capped selection — sampling the uncapped pool
   // makes the specs sheet show contacts who won't actually receive the email.
-  const sample: AudiencePreviewContact[] = selected
-    .slice(0, SAMPLE_SIZE)
-    .map((c) =>
-      contactToPreview({
-        ...c,
-        phone: null,
-        lightspeed_customer_id: c.lightspeed_customer_id,
-        source: "lightspeed",
-        opted_out: false,
-        opted_out_at: null,
-        opt_out_reason: null,
-        enriched_at: null,
-        created_at: "",
-        updated_at: "",
-      } as CrmContact),
-    );
-
   return {
-    contactIds,
-    count: contactIds.length,
-    sample,
+    selected,
     rules,
+    purchaseRules,
     excludedOptedOut,
     sort,
     funnel,
   };
+}
+
+function contactRowToPreview(c: ContactRow): AudiencePreviewContact {
+  return contactToPreview({
+    ...c,
+    phone: null,
+    lightspeed_customer_id: c.lightspeed_customer_id,
+    source: "lightspeed",
+    opted_out: false,
+    opted_out_at: null,
+    opt_out_reason: null,
+    enriched_at: null,
+    created_at: "",
+    updated_at: "",
+  } as CrmContact);
 }
