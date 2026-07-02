@@ -16,6 +16,7 @@ import {
   HomeSmile,
   Letter,
   Gallery,
+  Mailbox,
   MagicStick3,
   Settings,
   Shop,
@@ -100,6 +101,7 @@ const NAV: NavGroup[] = [
     items: [
       { title: "Nest", href: "/settings/store/nest", icon: ChatRound, exact: true },
       { title: "Customer inquiries", href: "/settings/store/customer-inquiries", icon: Letter, exact: true },
+      { title: "Email CRM", href: "/settings/store/crm", icon: Mailbox, exact: true },
       { title: "Test Tom", href: "/settings/store/test-tom", icon: Soundwave, exact: true },
     ],
   },

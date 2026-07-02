@@ -80,6 +80,9 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/guides') ||         // Public SEO guides
     request.nextUrl.pathname.startsWith('/blog') ||         // Public cycling blog
     request.nextUrl.pathname === '/return-policy' ||          // Public return policy
+    request.nextUrl.pathname === '/unsubscribe' ||            // CRM email opt-out confirmation (token-authorised)
+    request.nextUrl.pathname === '/api/crm/unsubscribe' ||    // RFC 8058 one-click unsubscribe
+
     request.nextUrl.pathname.startsWith('/api/marketplace') ||
     request.nextUrl.pathname === '/api/store/analytics' || // Public storefront tracking; GET still enforces auth in the route handler.
     request.nextUrl.pathname.startsWith('/api/stripe') ||  // Stripe webhooks
