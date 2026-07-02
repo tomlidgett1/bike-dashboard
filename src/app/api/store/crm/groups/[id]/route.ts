@@ -33,7 +33,8 @@ async function loadGroupMembers(
       .range(offset, offset + 999);
     if (membersError) throw membersError;
     for (const row of data ?? []) {
-      const contact = row.crm_contacts as GroupMemberRow | null;
+      const raw = row.crm_contacts as unknown;
+      const contact = (Array.isArray(raw) ? raw[0] : raw) as GroupMemberRow | null | undefined;
       if (contact) members.push(contact);
     }
     if (!data || data.length < 1000) break;
