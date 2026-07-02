@@ -567,8 +567,8 @@ function ChatColumn(props: {
             onStop={props.onStop}
             placeholder={
               props.hasStarted
-                ? "e.g. make the headline bolder, add more urgency…"
-                : "e.g. gravel riders — new bikes in stock"
+                ? "Make headline more urgent"
+                : "Find gravel bike buyers"
             }
             showDisclaimer={false}
           />

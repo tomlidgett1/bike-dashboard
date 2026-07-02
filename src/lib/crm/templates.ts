@@ -8,6 +8,7 @@ import type { CampaignContent, CampaignItem } from "./types";
 import { ensureCampaignDesign } from "./design";
 import type { CampaignDesignColors } from "./design";
 import { renderBuilderEmail } from "./email-builder-render";
+import { renderStoredHtmlCampaign } from "./campaign-html";
 import {
   renderCampaignItemImageBlock,
   renderCampaignItemPriceHtml,
@@ -312,6 +313,13 @@ export function renderCampaignEmail(args: {
   openTrackingUrl?: string;
 }): { html: string; text: string } {
   const design = ensureCampaignDesign(args.content);
+  if (design.mode === "html") {
+    return renderStoredHtmlCampaign({
+      content: args.content,
+      unsubscribeUrl: args.unsubscribeUrl,
+      openTrackingUrl: args.openTrackingUrl,
+    });
+  }
   if (design.mode === "builder") {
     const built = renderBuilderEmail({
       design,

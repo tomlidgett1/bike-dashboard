@@ -74,13 +74,23 @@ export function defaultBuilderBlocks(): EmailBlock[] {
 
 export function ensureCampaignDesign(content: CampaignContent): CampaignDesign {
   if (content.design) {
-    return {
+    const base = {
       ...defaultCampaignDesign(content.design.layout ?? "classic"),
       ...content.design,
       colors: {
         ...DEFAULT_DESIGN_COLORS,
         ...content.design.colors,
       },
+    };
+    if (content.design.mode === "html") {
+      return {
+        ...base,
+        mode: "html",
+        html: content.design.html ?? "",
+      };
+    }
+    return {
+      ...base,
       blocks: content.design.blocks?.length ? content.design.blocks : defaultBuilderBlocks(),
     };
   }

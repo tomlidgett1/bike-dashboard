@@ -3,6 +3,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getCrmEmailProvider, type CrmEmailMessage } from "@/lib/crm/email-provider";
 import { renderCampaignEmail } from "@/lib/crm/templates";
+import { getStoredCampaignHtml } from "@/lib/crm/campaign-html";
 import { normalizeEmail, type CampaignContent } from "@/lib/crm/types";
 import { SITE_URL } from "@/lib/seo/site";
 
@@ -61,7 +62,9 @@ export async function sendCrmCampaign(
   const subject = String(campaign.subject ?? "").trim();
   const content = (campaign.content ?? {}) as CampaignContent;
   if (!subject) throw new Error("Subject is empty");
-  if (!String(content.title ?? "").trim() || !String(content.body ?? "").trim()) {
+  const storedHtml = getStoredCampaignHtml(content);
+  const hasHtml = Boolean(storedHtml?.trim());
+  if (!hasHtml && (!String(content.title ?? "").trim() || !String(content.body ?? "").trim())) {
     throw new Error("Email body content is empty");
   }
 

@@ -337,7 +337,6 @@ export function CrmPageContent() {
       <DashboardFloatingPage
         title="Email CRM"
         icon={Mailbox}
-        description="Import your Lightspeed customers and send beautiful campaigns from the Yellow Jersey address."
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => void runEnrich()} disabled={enriching}>

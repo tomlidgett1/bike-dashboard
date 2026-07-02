@@ -1,14 +1,14 @@
-// Step 4: Compose campaign copy + builder blocks via GPT-5.5.
+// Step 4: Compose campaign as direct HTML via GPT-5.5.
 
 import type { AgentComposeResult, AgentProductPick, CrmAgentBrief } from "./types";
 import type { StoreAgentContext } from "./types";
 import { COMPOSE_INSTRUCTIONS } from "./prompts";
 import { COMPOSE_JSON_SCHEMA } from "./schemas";
 import { CRM_AGENT_MODEL, extractOutputText, getCrmOpenAI, parseJsonFromModel } from "./openai";
-import { buildCampaignContent, modelBlocksToEmailBlocks } from "./build-blocks";
+import { buildHtmlCampaignContent } from "../campaign-html";
 import { SITE_URL } from "@/lib/seo/site";
 
-type ComposeModelOutput = {
+type HtmlCampaignModelOutput = {
   subject: string;
   subject_variants: string[];
   title: string;
@@ -17,54 +17,29 @@ type ComposeModelOutput = {
   cta_url: string;
   footer_text: string;
   reasoning: string;
-  blocks: Array<{
-    type: string;
-    title?: string;
-    text?: string;
-    body?: string;
-    align?: "left" | "center";
-    button_text?: string;
-    url?: string;
-    image_url?: string;
-    alt?: string;
-    height?: number;
-  }>;
+  html: string;
 };
 
-export function applyComposeModelOutput(
-  parsed: ComposeModelOutput,
+export function applyHtmlCampaignOutput(
+  parsed: HtmlCampaignModelOutput,
   brief: CrmAgentBrief,
   products: AgentProductPick[],
   context: StoreAgentContext,
   userId: string,
-  layoutOverride?: CrmAgentBrief["layout_preference"],
 ): AgentComposeResult {
   const marketplaceUrl = `${SITE_URL}/marketplace?store=${userId}`;
-  const heroImage = products.find((p) => p.imageUrl)?.imageUrl;
-  const blocks = modelBlocksToEmailBlocks(parsed.blocks ?? [], products, heroImage);
-
-  const hasProductBlock = blocks.some((b) => b.type === "products");
-  if (products.length > 0 && !hasProductBlock) {
-    blocks.push({
-      id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `products-${Date.now()}`,
-      type: "products",
-      items: products,
-      layout: "card",
-    });
-  }
   const ctaUrl = String(parsed.cta_url ?? "").trim() || marketplaceUrl;
-  const layout = layoutOverride ?? brief.layout_preference;
+  const layout = brief.layout_preference;
 
-  const content = buildCampaignContent({
+  const content = buildHtmlCampaignContent({
     title: String(parsed.title ?? brief.campaign_goal).trim(),
     body: String(parsed.body ?? "").trim(),
+    html: parsed.html,
     ctaText: String(parsed.cta_text ?? "Shop now").trim(),
     ctaUrl,
     footerText: String(parsed.footer_text ?? `— ${context.storeName}`).trim(),
     layout,
-    blocks,
-    products,
-    heroImageUrl: heroImage,
+    items: products.length > 0 ? products : undefined,
   });
 
   const subjectVariants = [
@@ -81,7 +56,7 @@ export function applyComposeModelOutput(
     subjectVariants: uniqueSubjects.length > 1 ? uniqueSubjects : [subject, `${subject} — don't miss out`],
     templateKey,
     content,
-    reasoning: String(parsed.reasoning ?? "Campaign composed from brief and audience."),
+    reasoning: String(parsed.reasoning ?? "Campaign composed as HTML email."),
   };
 }
 
@@ -108,13 +83,14 @@ export async function composeCampaign(
     text: {
       format: {
         type: "json_schema",
-        name: "crm_campaign",
+        name: "crm_campaign_html",
         strict: true,
         schema: COMPOSE_JSON_SCHEMA,
       },
     },
     input: JSON.stringify({
       store_name: context.storeName,
+      store_logo_url: context.logoUrl,
       brief,
       audience_count: audienceCount,
       products: products.map((p) => ({
@@ -124,19 +100,24 @@ export async function composeCampaign(
         original_price: p.originalPrice,
         badge: p.badge,
         on_sale: p.onSale,
+        image_url: p.imageUrl,
         url: p.url,
       })),
       promotion: brief.promo,
       style_profile: context.styleProfile,
       performance_hints: performanceHints(context),
       default_cta_url: marketplaceUrl,
+      unsubscribe_placeholder: "{{UNSUBSCRIBE_URL}}",
     }),
   });
 
-  const parsed = parseJsonFromModel<ComposeModelOutput>(extractOutputText(response));
-  if (!parsed) {
-    throw new Error("Failed to compose campaign from model");
+  const parsed = parseJsonFromModel<HtmlCampaignModelOutput>(extractOutputText(response));
+  if (!parsed?.html?.trim()) {
+    throw new Error("Failed to compose campaign HTML from model");
   }
 
-  return applyComposeModelOutput(parsed, brief, products, context, userId);
+  return applyHtmlCampaignOutput(parsed, brief, products, context, userId);
 }
+
+// Legacy export kept for refine imports that may reference the name
+export { applyHtmlCampaignOutput as applyComposeModelOutput };

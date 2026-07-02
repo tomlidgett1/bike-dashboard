@@ -68,14 +68,18 @@ export function HomeV2ChatInput({
       <div
         className={cn(
           "flex w-full gap-1 rounded-full px-2",
-          header ? "relative h-9 items-center py-0" : "items-end py-2",
-          !header && (compact ? "min-h-[56px]" : "min-h-[60px]"),
+          header
+            ? "relative h-9 items-center py-0"
+            : cn(
+                onFileSelected ? "items-end py-2" : "items-center py-2",
+                compact ? "min-h-[56px]" : "min-h-[60px]",
+              ),
           floating
             ? "border-0 bg-transparent shadow-none"
             : "border border-gray-200 bg-white shadow-sm",
         )}
       >
-        {!header ? (
+        {!header && onFileSelected ? (
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
@@ -83,8 +87,8 @@ export function HomeV2ChatInput({
               "mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-700 transition-colors",
               floating ? "hover:bg-gray-200/80" : "hover:bg-gray-100",
             )}
-            aria-label={onFileSelected ? "Attach a supplier invoice PDF" : "Add"}
-            title={onFileSelected ? "Attach a supplier invoice PDF" : undefined}
+            aria-label="Attach a supplier invoice PDF"
+            title="Attach a supplier invoice PDF"
           >
             <Plus className="h-5 w-5" />
           </button>
@@ -153,7 +157,12 @@ export function HomeV2ChatInput({
               }}
               rows={1}
               placeholder={placeholderLabel}
-              className="max-h-[132px] min-h-[36px] flex-1 resize-none border-0 bg-transparent px-1 py-2 text-[15px] leading-snug text-foreground outline-none placeholder:text-gray-500"
+              className={cn(
+                "max-h-[132px] flex-1 resize-none border-0 bg-transparent text-[15px] text-foreground outline-none placeholder:text-gray-500",
+                onFileSelected
+                  ? "min-h-[36px] px-1 py-2 leading-snug"
+                  : "min-h-9 px-2 py-0 leading-9",
+              )}
             />
           )}
         </div>
@@ -172,7 +181,7 @@ export function HomeV2ChatInput({
           }}
           className={cn(
             "flex shrink-0 items-center justify-center rounded-full transition-colors",
-            header ? "h-7 w-7" : "mb-0.5 h-9 w-9",
+            header ? "h-7 w-7" : cn("h-9 w-9", onFileSelected && "mb-0.5"),
             canAct ? "bg-gray-900 text-white hover:bg-gray-800" : "bg-gray-200 text-gray-400",
           )}
           aria-label={queueMode ? "Add to queue" : isRunning ? "Stop response" : "Send message"}

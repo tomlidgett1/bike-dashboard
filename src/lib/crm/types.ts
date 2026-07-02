@@ -87,7 +87,8 @@ export type EmailBlock =
   | { id: string; type: "divider" };
 
 export type CampaignDesign = {
-  mode: "template" | "builder";
+  /** template = legacy template renderer; builder = block editor; html = agent-owned HTML document */
+  mode: "template" | "builder" | "html";
   layout: "classic" | "minimal" | "editorial";
   colors: {
     hero: string;
@@ -98,6 +99,8 @@ export type CampaignDesign = {
     buttonText: string;
   };
   blocks?: EmailBlock[];
+  /** Full email HTML document when mode is "html". Uses {{UNSUBSCRIBE_URL}} placeholder. */
+  html?: string;
 };
 
 export type CampaignContent = {

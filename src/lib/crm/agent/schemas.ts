@@ -112,7 +112,7 @@ export const COMPOSE_JSON_SCHEMA = {
     "cta_url",
     "footer_text",
     "reasoning",
-    "blocks",
+    "html",
   ],
   properties: {
     subject: { type: "string" },
@@ -123,10 +123,7 @@ export const COMPOSE_JSON_SCHEMA = {
     cta_url: { type: "string" },
     footer_text: { type: "string" },
     reasoning: { type: "string" },
-    blocks: {
-      type: "array",
-      items: BLOCK_ITEM_SCHEMA,
-    },
+    html: { type: "string" },
   },
 } as const;
 
@@ -146,7 +143,7 @@ export const REFINE_JSON_SCHEMA = {
     "footer_text",
     "reasoning",
     "assistant_summary",
-    "blocks",
+    "html",
   ],
   properties: {
     update_audience: { type: "boolean" },
@@ -192,10 +189,7 @@ export const REFINE_JSON_SCHEMA = {
     footer_text: { type: "string" },
     reasoning: { type: "string" },
     assistant_summary: { type: "string" },
-    blocks: {
-      type: "array",
-      items: BLOCK_ITEM_SCHEMA,
-    },
+    html: { type: "string" },
   },
 } as const;
 
