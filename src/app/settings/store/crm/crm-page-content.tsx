@@ -8,6 +8,7 @@ import * as React from "react";
 import {
   AlertTriangle,
   CheckCircle2,
+  Cog,
   Copy,
   Letter,
   Loader2,
@@ -24,8 +25,15 @@ import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-pa
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useSidebar } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { getCrmTemplate, type StoreBranding } from "@/lib/crm/templates";
 import type { CrmCampaign, CrmContact, CrmContactGroup, CrmContactSort } from "@/lib/crm/types";
@@ -123,6 +131,20 @@ const CAMPAIGN_STATUS_STYLES: Record<string, string> = {
 
 export function CrmPageContent() {
   const [tab, setTab] = React.useState<CrmTab>("contacts");
+  const { open, setOpen, isMobile, openMobile, setOpenMobile } = useSidebar();
+
+  const handleTabChange = React.useCallback(
+    (nextTab: CrmTab) => {
+      setTab(nextTab);
+      if (nextTab !== "ai") return;
+      if (isMobile) {
+        if (openMobile) setOpenMobile(false);
+        return;
+      }
+      if (open) setOpen(false);
+    },
+    [isMobile, open, openMobile, setOpen, setOpenMobile],
+  );
 
   // Contacts
   const [contacts, setContacts] = React.useState<CrmContact[]>([]);
@@ -339,14 +361,31 @@ export function CrmPageContent() {
         icon={Mailbox}
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => void runEnrich()} disabled={enriching}>
-              {enriching ? <Loader2 className="mr-1.5 size-4" /> : <RefreshCw className="mr-1.5 size-4" />}
-              {enriching ? "Syncing…" : "Sync Lightspeed stats"}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => void runImport()} disabled={importing}>
-              {importing ? <Loader2 className="mr-1.5 size-4" /> : <RefreshCw className="mr-1.5 size-4" />}
-              {importing ? "Importing…" : "Import from Lightspeed"}
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon-sm" aria-label="CRM settings">
+                  <Cog className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52 rounded-md">
+                <DropdownMenuItem onClick={() => void runEnrich()} disabled={enriching}>
+                  {enriching ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-4" />
+                  )}
+                  {enriching ? "Syncing…" : "Sync Lightspeed stats"}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void runImport()} disabled={importing}>
+                  {importing ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-4" />
+                  )}
+                  {importing ? "Importing…" : "Import from Lightspeed"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button size="sm" onClick={() => openComposer()} disabled={(stats?.eligible ?? 0) === 0 && selected.size === 0}>
               <Send className="mr-1.5 size-4" />
               New campaign
@@ -354,46 +393,31 @@ export function CrmPageContent() {
           </div>
         }
         toolbar={
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-1 rounded-full bg-white p-1 shadow-sm ring-1 ring-border/60">
-              {(
-                [
-                  { id: "contacts", label: "Contacts", icon: Users },
-                  { id: "groups", label: "Groups", icon: Users },
-                  { id: "ai", label: "AI Campaign", icon: Sparkles },
-                  { id: "automation", label: "Automation", icon: Calendar },
-                  { id: "campaigns", label: "Campaigns", icon: Letter },
-                ] as const
-              ).map((entry) => (
-                <button
-                  key={entry.id}
-                  type="button"
-                  onClick={() => setTab(entry.id)}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
-                    tab === entry.id
-                      ? "bg-zinc-900 text-white"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <entry.icon className="size-3.5" />
-                  {entry.label}
-                </button>
-              ))}
-            </div>
-            {stats ? (
-              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                <span>
-                  <span className="font-semibold text-foreground">{stats.total.toLocaleString()}</span> contacts
-                </span>
-                <span>
-                  <span className="font-semibold text-foreground">{stats.eligible.toLocaleString()}</span> subscribed
-                </span>
-                <span>
-                  <span className="font-semibold text-foreground">{stats.optedOut.toLocaleString()}</span> opted out
-                </span>
-              </div>
-            ) : null}
+          <div className="flex items-center gap-1 rounded-full bg-white p-1 shadow-sm ring-1 ring-border/60">
+            {(
+              [
+                { id: "contacts", label: "Contacts", icon: Users },
+                { id: "groups", label: "Groups", icon: Users },
+                { id: "ai", label: "AI Campaign", icon: Sparkles },
+                { id: "automation", label: "Automation", icon: Calendar },
+                { id: "campaigns", label: "Campaigns", icon: Letter },
+              ] as const
+            ).map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                onClick={() => handleTabChange(entry.id)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
+                  tab === entry.id
+                    ? "bg-zinc-900 text-white"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <entry.icon className="size-3.5" />
+                {entry.label}
+              </button>
+            ))}
           </div>
         }
         flush
@@ -428,6 +452,7 @@ export function CrmPageContent() {
           {tab === "contacts" ? (
             <ContactsView
               contacts={contacts}
+              stats={stats}
               loading={loadingContacts}
               loadingMore={loadingMore}
               filteredCount={filteredCount}
@@ -516,6 +541,7 @@ export function CrmPageContent() {
 
 function ContactsView(props: {
   contacts: CrmContact[];
+  stats: ContactStats | null;
   loading: boolean;
   loadingMore: boolean;
   filteredCount: number;
@@ -541,6 +567,7 @@ function ContactsView(props: {
 }) {
   const {
     contacts,
+    stats,
     loading,
     loadingMore,
     filteredCount,
@@ -641,6 +668,18 @@ function ContactsView(props: {
                 Email selected
               </Button>
             </>
+          ) : stats ? (
+            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+              <span>
+                <span className="font-semibold text-foreground">{stats.total.toLocaleString()}</span> contacts
+              </span>
+              <span>
+                <span className="font-semibold text-foreground">{stats.eligible.toLocaleString()}</span> subscribed
+              </span>
+              <span>
+                <span className="font-semibold text-foreground">{stats.optedOut.toLocaleString()}</span> opted out
+              </span>
+            </div>
           ) : (
             <span className="text-xs text-muted-foreground">
               {filteredCount.toLocaleString()} contact{filteredCount === 1 ? "" : "s"}

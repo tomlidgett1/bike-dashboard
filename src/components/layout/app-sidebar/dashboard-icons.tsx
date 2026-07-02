@@ -495,6 +495,7 @@ export const Merge = RoundTransferHorizontal;
 export const Navigation = StreetsNavigation;
 export const PanelLeft = Sidebar;
 export const PanelLeftClose = SidebarMinimalistic;
+export { PanelRightClose, PanelRightOpen } from "lucide-react";
 export const Share2 = ShareCircle;
 export const Shirt = TShirt;
 export const ShoppingCart = Cart;

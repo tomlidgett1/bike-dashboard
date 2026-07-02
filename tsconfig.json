@@ -42,7 +42,9 @@
     ".next-profile/types/**/*.ts",
     ".next-profile/dev/types/**/*.ts",
     ".next-redesign/types/**/*.ts",
-    ".next-redesign/dev/types/**/*.ts"
+    ".next-redesign/dev/types/**/*.ts",
+    ".next-preview-b/types/**/*.ts",
+    ".next-preview-b/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

@@ -56,6 +56,12 @@ export type AudiencePreviewContact = {
   lightspeed_joined_at: string | null;
 };
 
+export type AudienceFunnelStep = {
+  label: string;
+  detail?: string;
+  count: number;
+};
+
 export type AudienceResolution = {
   contactIds: string[];
   count: number;
@@ -66,6 +72,8 @@ export type AudienceResolution = {
     label: string;
     fields: string[];
   };
+  /** How each rule narrowed the audience — the specs sheet renders this verbatim. */
+  funnel?: AudienceFunnelStep[];
 };
 
 export type AgentProductPick = CampaignItem & {

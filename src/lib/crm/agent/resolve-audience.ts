@@ -74,9 +74,12 @@ async function customerIdsFromSalesFilter(
   return ids;
 }
 
-function applyRules(contacts: ContactRow[], rules: AudienceRule[]): ContactRow[] {
+function applyRules(
+  contacts: ContactRow[],
+  rules: AudienceRule[],
+  onStep?: (rule: AudienceRule, remaining: number) => void,
+): ContactRow[] {
   let result = [...contacts];
-  const now = Date.now();
 
   for (const rule of rules) {
     switch (rule.type) {
@@ -145,6 +148,7 @@ function applyRules(contacts: ContactRow[], rules: AudienceRule[]): ContactRow[]
       default:
         break;
     }
+    onStep?.(rule, result.length);
   }
 
   return result;
@@ -238,6 +242,7 @@ export async function resolveAudience(
   rules: AudienceRule[],
   maxRecipients?: number | null,
 ): Promise<AudienceResolution> {
+  const funnel: NonNullable<AudienceResolution["funnel"]> = [];
   const purchaseRules = rules.filter(
     (r) =>
       r.type === "purchased_category" ||
@@ -271,6 +276,7 @@ export async function resolveAudience(
   if (error) throw error;
 
   const rows = (allContacts ?? []) as ContactRow[];
+  funnel.push({ label: "All contacts", count: rows.length });
   let excludedOptedOut = 0;
   let eligible = rows.filter((c) => {
     if (c.opted_out) {
@@ -279,11 +285,21 @@ export async function resolveAudience(
     }
     return true;
   });
+  funnel.push({
+    label: "Subscribed (not opted out)",
+    detail: excludedOptedOut > 0 ? `${excludedOptedOut.toLocaleString()} opted out excluded` : undefined,
+    count: eligible.length,
+  });
 
   if (purchaseCustomerIds) {
     eligible = eligible.filter(
       (c) => c.lightspeed_customer_id && purchaseCustomerIds!.has(String(c.lightspeed_customer_id)),
     );
+    funnel.push({
+      label: purchaseRules.map((r) => r.label || `${r.type}: ${r.value ?? ""}`).join(" + ") || "Purchase history match",
+      detail: `${purchaseCustomerIds.size.toLocaleString()} matching Lightspeed customer IDs in sales history`,
+      count: eligible.length,
+    });
   }
 
   const nonPurchaseRules = rules.filter(
@@ -292,15 +308,31 @@ export async function resolveAudience(
       r.type !== "purchased_brand" &&
       r.type !== "purchased_keyword",
   );
-  eligible = applyRules(eligible, nonPurchaseRules);
+  eligible = applyRules(eligible, nonPurchaseRules, (rule, remaining) => {
+    funnel.push({
+      label: rule.label || rule.type.replaceAll("_", " "),
+      detail: rule.value != null && rule.value !== "" ? `value: ${String(rule.value)}` : undefined,
+      count: remaining,
+    });
+  });
 
   const sort = resolveAudienceSort(rules);
   eligible = sortAudience(eligible, sort);
 
   const cap = maxRecipients && maxRecipients > 0 ? Math.min(maxRecipients, MAX_AUDIENCE) : MAX_AUDIENCE;
-  const contactIds = eligible.slice(0, cap).map((c) => c.id);
+  const selected = eligible.slice(0, cap);
+  const contactIds = selected.map((c) => c.id);
+  if (selected.length < eligible.length) {
+    funnel.push({
+      label: `Capped at ${cap.toLocaleString()} recipients`,
+      detail: sort?.label,
+      count: selected.length,
+    });
+  }
 
-  const sample: AudiencePreviewContact[] = eligible
+  // Sample MUST come from the capped selection — sampling the uncapped pool
+  // makes the specs sheet show contacts who won't actually receive the email.
+  const sample: AudiencePreviewContact[] = selected
     .slice(0, SAMPLE_SIZE)
     .map((c) =>
       contactToPreview({
@@ -324,5 +356,6 @@ export async function resolveAudience(
     rules,
     excludedOptedOut,
     sort,
+    funnel,
   };
 }

@@ -45,12 +45,17 @@ export function HomeV2ChatInput({
   const canAct = isRunning || hasText;
   const placeholderLabel = isRunning ? "Queue another prompt..." : placeholder;
   const showShimmerPlaceholder = Boolean(header && placeholderShimmerOnHover && !hasText);
+  const [isMultiline, setIsMultiline] = React.useState(false);
 
   React.useEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea || header) return;
     textarea.style.height = "auto";
-    textarea.style.height = `${Math.min(textarea.scrollHeight, compact ? 132 : 160)}px`;
+    const maxHeight = compact ? 132 : 160;
+    const scrollHeight = textarea.scrollHeight;
+    const nextHeight = Math.min(scrollHeight, maxHeight);
+    textarea.style.height = `${nextHeight}px`;
+    setIsMultiline(scrollHeight > 44 || value.includes("\n"));
   }, [compact, header, value]);
 
   return (
@@ -67,11 +72,12 @@ export function HomeV2ChatInput({
     >
       <div
         className={cn(
-          "flex w-full gap-1 rounded-full px-2",
+          "flex w-full gap-1 px-2",
           header
-            ? "relative h-9 items-center py-0"
+            ? "relative h-9 items-center rounded-full py-0"
             : cn(
-                onFileSelected ? "items-end py-2" : "items-center py-2",
+                onFileSelected || isMultiline ? "items-end py-2" : "items-center py-2",
+                isMultiline ? "rounded-2xl" : "rounded-full",
                 compact ? "min-h-[56px]" : "min-h-[60px]",
               ),
           floating
@@ -158,10 +164,8 @@ export function HomeV2ChatInput({
               rows={1}
               placeholder={placeholderLabel}
               className={cn(
-                "max-h-[132px] flex-1 resize-none border-0 bg-transparent text-[15px] text-foreground outline-none placeholder:text-gray-500",
-                onFileSelected
-                  ? "min-h-[36px] px-1 py-2 leading-snug"
-                  : "min-h-9 px-2 py-0 leading-9",
+                "max-h-[132px] min-h-[36px] flex-1 resize-none border-0 bg-transparent px-2 py-2 text-[15px] leading-snug text-foreground outline-none placeholder:text-gray-500",
+                onFileSelected && "px-1",
               )}
             />
           )}
@@ -181,7 +185,7 @@ export function HomeV2ChatInput({
           }}
           className={cn(
             "flex shrink-0 items-center justify-center rounded-full transition-colors",
-            header ? "h-7 w-7" : cn("h-9 w-9", onFileSelected && "mb-0.5"),
+            header ? "h-7 w-7" : cn("h-9 w-9", (onFileSelected || isMultiline) && "mb-0.5"),
             canAct ? "bg-gray-900 text-white hover:bg-gray-800" : "bg-gray-200 text-gray-400",
           )}
           aria-label={queueMode ? "Add to queue" : isRunning ? "Stop response" : "Send message"}
