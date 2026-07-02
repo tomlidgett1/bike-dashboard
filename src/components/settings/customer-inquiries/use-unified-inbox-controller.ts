@@ -2,6 +2,8 @@
 
 import * as React from "react";
 import {
+  deriveNestChannel,
+  deriveNestChannelFromMessages,
   filterNestCustomerChats,
   sanitiseNestConversationsResponse,
   type NestConversationDetail,
@@ -9,6 +11,7 @@ import {
   type NestConversationMessage,
   type NestConversationsResponse,
 } from "@/lib/nest/types";
+import type { InboxChannel } from "./channel-meta";
 import {
   buildStubNestConversation,
   getCachedNestThread,
@@ -60,15 +63,32 @@ import {
   relativeTime,
   senderName,
 } from "./parts";
+import {
+  AlertCircle,
+  Archive,
+  Inbox,
+} from "@/components/layout/app-sidebar/dashboard-icons";
+import { GmailLogo } from "@/components/genie/gmail-logo";
+import { NestLogo } from "@/components/genie/nest-logo";
 
-export type InboxTab =
-  | "needs_action"
-  | "all"
-  | "ready"
-  | "responded"
-  | "ignored"
-  | "gmail"
-  | "nest";
+type InboxTabIcon = React.ComponentType<{ className?: string }>;
+
+// JSX is not allowed in a .ts module — build these icons with createElement.
+function GmailInboxTabIcon() {
+  return React.createElement(GmailLogo, {
+    className: "h-3 w-auto max-w-4 shrink-0 object-contain",
+  });
+}
+
+function NestInboxTabIcon() {
+  return React.createElement(NestLogo, {
+    className: "h-3 w-3 shrink-0 rounded-full object-cover",
+  });
+}
+
+export type InboxStatusTab = "needs_action" | "all" | "closed";
+
+export type InboxSourceTab = "all" | "gmail" | "nest";
 
 export type InboxSource = "gmail" | "nest";
 
@@ -90,18 +110,21 @@ export type UnifiedInboxRow = {
   intentLabel: string | null;
   threadCount: number;
   nestMissedCall: boolean;
+  channel: InboxChannel;
   gmailItem?: CustomerInquiryListItem;
   nestItem?: NestConversationListItem;
 };
 
-export const INBOX_TABS: Array<{ id: InboxTab; label: string }> = [
-  { id: "needs_action", label: "Needs Action" },
-  { id: "all", label: "All" },
-  { id: "ready", label: "Ready" },
-  { id: "responded", label: "Responded" },
-  { id: "ignored", label: "Closed" },
-  { id: "gmail", label: "Gmail" },
-  { id: "nest", label: "Nest" },
+export const INBOX_STATUS_TABS: Array<{ id: InboxStatusTab; label: string; icon: InboxTabIcon }> = [
+  { id: "needs_action", label: "Needs action", icon: AlertCircle },
+  { id: "all", label: "All", icon: Inbox },
+  { id: "closed", label: "Closed", icon: Archive },
+];
+
+export const INBOX_SOURCE_TABS: Array<{ id: InboxSourceTab; label: string; icon: InboxTabIcon }> = [
+  { id: "all", label: "All", icon: Inbox },
+  { id: "gmail", label: "Gmail", icon: GmailInboxTabIcon },
+  { id: "nest", label: "Nest", icon: NestInboxTabIcon },
 ];
 
 function gmailStatusMeta(status: CustomerInquiryStatus): {
@@ -201,9 +224,14 @@ async function fetchNestList(): Promise<NestConversationListItem[]> {
 
 const nestThreadFetchInFlight = new Map<string, Promise<NestConversationDetail | null>>();
 
-export async function fetchNestThreadDetail(chatId: string): Promise<NestConversationDetail | null> {
-  const cached = getCachedNestThread(chatId);
-  if (cached) return cached;
+export async function fetchNestThreadDetail(
+  chatId: string,
+  options?: { force?: boolean },
+): Promise<NestConversationDetail | null> {
+  if (!options?.force) {
+    const cached = getCachedNestThread(chatId);
+    if (cached) return cached;
+  }
 
   const pending = nestThreadFetchInFlight.get(chatId);
   if (pending) return pending;
@@ -242,6 +270,7 @@ function gmailRow(item: CustomerInquiryListItem): UnifiedInboxRow {
     intentLabel: intentLabel(item.intent),
     threadCount: item.thread_message_count,
     nestMissedCall: false,
+    channel: "email",
     gmailItem: item,
     isUnread: isGmailInquiryUnread(item),
     ...meta,
@@ -250,22 +279,30 @@ function gmailRow(item: CustomerInquiryListItem): UnifiedInboxRow {
   };
 }
 
+const NEST_CHANNEL_SUBJECTS: Record<Exclude<InboxChannel, "email">, string> = {
+  website_chat: "Website chat",
+  missed_call: "Missed call",
+  store_outreach: "Store message",
+};
+
 function nestRow(chat: NestConversationListItem): UnifiedInboxRow {
   const closedAt = readNestCloseMap()[chat.chatId] ?? null;
   const meta = nestStatusMeta(chat, closedAt);
   const name = nestDisplayTitle(chat);
+  const channel = chat.channel ?? deriveNestChannel(chat);
   return {
     key: `nest:${chat.chatId}`,
     source: "nest",
     nestChatId: chat.chatId,
     customerName: name,
     customerContact: chat.participantHandle?.trim() || "—",
-    subject: chat.triggeredByTwilio ? "Missed call" : "Nest message",
+    subject: NEST_CHANNEL_SUBJECTS[channel],
     preview: chat.preview?.trim() || "No preview",
     receivedAt: chat.lastMessageAt,
-    intentLabel: chat.triggeredByTwilio ? "Missed call" : "SMS",
+    intentLabel: null,
     threadCount: 0,
-    nestMissedCall: Boolean(chat.triggeredByTwilio),
+    nestMissedCall: channel === "missed_call",
+    channel,
     nestItem: chat,
     ...meta,
   };
@@ -300,30 +337,25 @@ function matchesSearch(row: UnifiedInboxRow, query: string): boolean {
   return inboxRowSearchHaystack(row).includes(q);
 }
 
-function matchesTab(row: UnifiedInboxRow, tab: InboxTab): boolean {
+function matchesStatusTab(row: UnifiedInboxRow, tab: InboxStatusTab): boolean {
   switch (tab) {
     case "needs_action":
       return row.needsAction;
-    case "all":
-      return true;
-    case "ready":
-      return row.source === "gmail" && row.gmailItem?.status === "draft_ready";
-    case "responded":
-      return row.statusTone === "responded";
-    case "ignored":
+    case "closed":
       return row.statusTone === "ignored";
-    case "gmail":
-      return row.source === "gmail";
-    case "nest":
-      return row.source === "nest";
     default:
       return true;
   }
 }
 
+function matchesSourceTab(row: UnifiedInboxRow, tab: InboxSourceTab): boolean {
+  return tab === "all" || row.source === tab;
+}
+
 export function useUnifiedInboxController() {
   const c = useInquiriesController({ deferListLoad: true });
-  const [inboxTab, setInboxTab] = React.useState<InboxTab>("needs_action");
+  const [statusTab, setStatusTab] = React.useState<InboxStatusTab>("needs_action");
+  const [sourceTab, setSourceTab] = React.useState<InboxSourceTab>("all");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [nestChats, setNestChats] = React.useState<NestConversationListItem[]>(() => {
     const cached = loadUnifiedInboxFromStorage();
@@ -449,24 +481,37 @@ export function useUnifiedInboxController() {
   }, [c.inquiries, nestChats, nestConfigured, readTick]);
 
   const filteredRows = React.useMemo(
-    () => allRows.filter((row) => matchesTab(row, inboxTab) && matchesSearch(row, searchQuery)),
-    [allRows, inboxTab, searchQuery],
+    () =>
+      allRows.filter(
+        (row) =>
+          matchesStatusTab(row, statusTab) &&
+          matchesSourceTab(row, sourceTab) &&
+          matchesSearch(row, searchQuery),
+      ),
+    [allRows, statusTab, sourceTab, searchQuery],
   );
 
   const searchActive = searchQuery.trim().length > 0;
 
-  const tabCounts = React.useMemo(() => {
-    const counts: Record<InboxTab, number> = {
-      needs_action: allRows.filter((r) => r.needsAction).length,
-      all: allRows.length,
-      ready: allRows.filter((r) => matchesTab(r, "ready")).length,
-      responded: allRows.filter((r) => matchesTab(r, "responded")).length,
-      ignored: allRows.filter((r) => matchesTab(r, "ignored")).length,
-      gmail: allRows.filter((r) => r.source === "gmail").length,
-      nest: allRows.filter((r) => r.source === "nest").length,
+  const statusCounts = React.useMemo(() => {
+    const sourceRows = allRows.filter((row) => matchesSourceTab(row, sourceTab));
+    const counts: Record<InboxStatusTab, number> = {
+      needs_action: sourceRows.filter((row) => row.needsAction).length,
+      all: sourceRows.length,
+      closed: sourceRows.filter((row) => matchesStatusTab(row, "closed")).length,
     };
     return counts;
-  }, [allRows]);
+  }, [allRows, sourceTab]);
+
+  const sourceCounts = React.useMemo(() => {
+    const statusRows = allRows.filter((row) => matchesStatusTab(row, statusTab));
+    const counts: Record<InboxSourceTab, number> = {
+      all: statusRows.length,
+      gmail: statusRows.filter((row) => row.source === "gmail").length,
+      nest: statusRows.filter((row) => row.source === "nest").length,
+    };
+    return counts;
+  }, [allRows, statusTab]);
 
   const selectedRow = React.useMemo(
     () => allRows.find((row) => row.key === selectedKey) ?? null,
@@ -480,6 +525,40 @@ export function useUnifiedInboxController() {
   setSelectedIdRef.current = setSelectedId;
 
   const nestThreadLoadKeyRef = React.useRef<string | null>(null);
+
+  const nestDetailRef = React.useRef<NestConversationDetail | null>(null);
+  React.useEffect(() => {
+    nestDetailRef.current = nestDetail;
+  }, [nestDetail]);
+
+  /**
+   * Replace the open thread with a fresh server copy, keeping any optimistic
+   * messages (negative ids) the server hasn't confirmed yet.
+   */
+  const applyFreshNestThread = React.useCallback(
+    (conversation: NestConversationDetail, listChat?: NestConversationListItem) => {
+      const prev = nestDetailRef.current;
+      let next = mergeNestThreadFromList(conversation, listChat);
+      if (prev && prev.chatId === conversation.chatId) {
+        const pending = prev.messages.filter(
+          (message) =>
+            message.id < 0 &&
+            !next.messages.some(
+              (serverMessage) =>
+                serverMessage.role === message.role && serverMessage.content === message.content,
+            ),
+        );
+        if (pending.length > 0) {
+          next = { ...next, messages: [...next.messages, ...pending] };
+        }
+      }
+      setCachedNestThread(next);
+      setNestDetail((current) =>
+        current && current.chatId !== conversation.chatId ? current : next,
+      );
+    },
+    [],
+  );
 
   React.useEffect(() => {
     if (!selectedKey) {
@@ -551,10 +630,12 @@ export function useUnifiedInboxController() {
 
     let cancelled = false;
 
-    void fetchNestThreadDetail(chatId)
+    // Always revalidate against the server so incoming customer replies show
+    // up even when a stale thread is cached.
+    void fetchNestThreadDetail(chatId, { force: true })
       .then((conversation) => {
         if (cancelled || !conversation) return;
-        setNestDetail(mergeNestThreadFromList(conversation, listChat));
+        applyFreshNestThread(conversation, listChat);
       })
       .catch(() => {})
       .finally(() => {
@@ -564,7 +645,45 @@ export function useUnifiedInboxController() {
     return () => {
       cancelled = true;
     };
-  }, [selectedKey, selectedRow?.source, selectedRow?.nestChatId, selectedRow?.gmailId, nestChats]);
+  }, [
+    selectedKey,
+    selectedRow?.source,
+    selectedRow?.nestChatId,
+    selectedRow?.gmailId,
+    nestChats,
+    applyFreshNestThread,
+  ]);
+
+  const selectedNestChatId =
+    selectedRow?.source === "nest" ? (selectedRow.nestChatId ?? null) : null;
+
+  // Poll the open Nest conversation so customer replies appear without a
+  // manual refresh — mirrors the dedicated Nest messages page.
+  React.useEffect(() => {
+    if (!selectedNestChatId) return;
+    const chatId = selectedNestChatId;
+    const interval = window.setInterval(() => {
+      if (document.hidden) return;
+      void fetchNestThreadDetail(chatId, { force: true })
+        .then((conversation) => {
+          if (conversation) applyFreshNestThread(conversation);
+        })
+        .catch(() => {});
+    }, 5_000);
+    return () => window.clearInterval(interval);
+  }, [selectedNestChatId, applyFreshNestThread]);
+
+  // Keep the list fresh in the background so new enquiries and replies
+  // surface without hitting Refresh.
+  React.useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.hidden) return;
+      fetchUnifiedInbox()
+        .then(applyUnifiedPayload)
+        .catch(() => {});
+    }, 30_000);
+    return () => window.clearInterval(interval);
+  }, [applyUnifiedPayload]);
 
   const handleRefreshAll = React.useCallback(async () => {
     setRefreshing(true);
@@ -646,7 +765,9 @@ export function useUnifiedInboxController() {
         const hasTemp = base.messages.some((item) => item.id === tempId);
         const messages = hasTemp
           ? base.messages.map((item) => (item.id === tempId ? message : item))
-          : [...base.messages, message];
+          : base.messages.some((item) => item.id === message.id)
+            ? base.messages
+            : [...base.messages, message];
         const next = { ...base, messages };
         setCachedNestThread(next);
         return next;
@@ -689,6 +810,7 @@ export function useUnifiedInboxController() {
       hasManualMessages: true,
       latestManualMessageAt: message.createdAt,
       source: "customer",
+      channel: "store_outreach",
     };
     setNestChats((prev) =>
       [listItem, ...prev.filter((chat) => chat.chatId !== chatId)].sort(
@@ -709,7 +831,10 @@ export function useUnifiedInboxController() {
     setSelectedKey(`nest:${chatId}`);
   }, []);
 
-  const needsActionCount = tabCounts.needs_action;
+  const needsActionCount = React.useMemo(
+    () => allRows.filter((row) => row.needsAction).length,
+    [allRows],
+  );
 
   const handleCloseSelectedCase = React.useCallback(async () => {
     if (!selectedRow) return;
@@ -790,6 +915,22 @@ export function useUnifiedInboxController() {
     return resolveNestConversationPhone(selectedRow.nestItem, nestDetail?.messages);
   }, [selectedRow, nestDetail?.messages]);
 
+  // The list-level channel is a heuristic until the thread is cached; once the
+  // open conversation's messages are loaded, classify from the first message.
+  const selectedChannel: InboxChannel | null = React.useMemo(() => {
+    if (!selectedRow) return null;
+    if (selectedRow.source === "gmail") return "email";
+    if (!selectedRow.nestItem) return selectedRow.channel;
+    if (
+      nestDetail &&
+      nestDetail.chatId === selectedRow.nestChatId &&
+      nestDetail.messages.length > 0
+    ) {
+      return deriveNestChannelFromMessages(selectedRow.nestItem, nestDetail.messages);
+    }
+    return selectedRow.channel;
+  }, [selectedRow, nestDetail]);
+
   React.useEffect(() => {
     setNestLightspeedContext(undefined);
     setNestLightspeedLoading(false);
@@ -856,12 +997,15 @@ export function useUnifiedInboxController() {
 
   return {
     ...c,
-    inboxTab,
-    setInboxTab,
+    statusTab,
+    setStatusTab,
+    sourceTab,
+    setSourceTab,
     searchQuery,
     setSearchQuery,
     searchActive,
-    tabCounts,
+    statusCounts,
+    sourceCounts,
     allRows,
     filteredRows,
     selectedKey,
@@ -889,6 +1033,7 @@ export function useUnifiedInboxController() {
     handleReopenSelectedNestCase,
     selectedNestClosed,
     selectedNestPhone,
+    selectedChannel,
     nestLightspeedContext,
     nestLightspeedLoading,
     ensureNestLightspeedContext,

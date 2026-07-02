@@ -476,7 +476,7 @@ export function buildCrmChatTools(args: {
     tool({
       name: "set_campaign_email",
       description:
-        "Set or replace the campaign email draft. Provide the COMPLETE production HTML email document every time (never a diff). The email must already look premium, modern, and deliberate before calling this tool: strong concept, confident typography, generous spacing, one dominant CTA, restrained palette, and email-safe execution. The server sanitises it, injects the preheader, guarantees the {{UNSUBSCRIBE_URL}} link, renders it live in the owner's preview, and runs verification checks (image provenance, product rendering, subject length, size). Fix any failed checks it returns before presenting the campaign as done.",
+        "Set or replace the campaign email draft. Provide the COMPLETE production HTML document every time (never a diff). The email must look premium on desktop AND mobile (~390px): viewport meta, fluid 600px wrapper, @media (max-width:600px) rules that stack columns and full-width CTAs. Strong concept, confident typography, generous spacing, one dominant CTA, restrained palette, email-safe inline CSS. Verification includes mobile layout checks — fix failures before presenting as done.",
       parameters: z.object({
         subject: z.string().min(3).max(120),
         subject_variants: z.array(z.string()).max(2).describe("Up to 2 alternative subjects for A/B choice."),
@@ -485,7 +485,7 @@ export function buildCrmChatTools(args: {
         summary_title: z.string().describe("Plain-text headline for the CRM record."),
         summary_body: z.string().describe("Plain-text summary of the email for the CRM record."),
         design_notes: z.string().describe("1-3 sentences on the design concept and why the hierarchy/CTA/audience fit the brief — shown on the specs sheet."),
-        html: z.string().min(100).describe("Full polished HTML email document. Inline CSS, table layout, 600px max width, premium retail design, generous spacing, one dominant CTA, {{UNSUBSCRIBE_URL}} placeholder for the unsubscribe href."),
+        html: z.string().min(100).describe("Full polished HTML email document. Table layout, fluid max-width 600px wrapper, inline CSS + head <style> with @media (max-width:600px) for mobile stacking/full-width CTAs, viewport meta, premium retail design, {{UNSUBSCRIBE_URL}} unsubscribe href."),
         featured_product_ids: z
           .array(z.string())
           .max(8)

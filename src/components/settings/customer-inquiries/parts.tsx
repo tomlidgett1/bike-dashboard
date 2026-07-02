@@ -284,34 +284,138 @@ function gmailThreadMessages(detail: CustomerInquiryDetail) {
   ];
 }
 
-/** Flat email thread — no nested cards or repeated subject lines. */
+function dayKey(value: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toDateString();
+}
+
+function dayLabel(value: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return "Today";
+  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return date.toLocaleDateString("en-AU", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    ...(date.getFullYear() !== today.getFullYear() ? { year: "numeric" } : {}),
+  });
+}
+
+function timeOnly(value: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString("en-AU", { hour: "numeric", minute: "2-digit" });
+}
+
+const GMAIL_CLAMP_THRESHOLD = 420;
+
+function GmailMessageBody({
+  body,
+  clampable,
+  emphasised,
+}: {
+  body: string;
+  clampable: boolean;
+  emphasised: boolean;
+}) {
+  const [expanded, setExpanded] = React.useState(false);
+  const shouldClamp = clampable && !expanded && body.length > GMAIL_CLAMP_THRESHOLD;
+
+  return (
+    <div>
+      <p
+        className={cn(
+          "whitespace-pre-wrap text-[13px] leading-relaxed",
+          emphasised ? "text-gray-800" : "text-gray-600",
+          shouldClamp && "line-clamp-5",
+        )}
+      >
+        {body || "—"}
+      </p>
+      {clampable && body.length > GMAIL_CLAMP_THRESHOLD ? (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1.5 text-[12px] font-medium text-gray-500 hover:text-gray-800"
+        >
+          {expanded ? "Show less" : "Show full message"}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Conversation-style email thread: customer messages sit left with an avatar,
+ * shop replies sit right on a tinted card, with day separators between groups.
+ * Older messages clamp so the newest exchange stays in view.
+ */
 export function GmailInquiryThread({ detail }: { detail: CustomerInquiryDetail }) {
   const messages = gmailThreadMessages(detail);
 
   return (
-    <div className="divide-y divide-gray-100">
-      {messages.map((message) => {
+    <div className="space-y-4">
+      {messages.map((message, index) => {
         const isShop = message.role === "shop";
         const isLatestCustomer = Boolean(message.is_latest_customer);
+        const isLast = index === messages.length - 1;
+        const prev = messages[index - 1];
+        const showDay =
+          index === 0 || dayKey(message.received_at) !== dayKey(prev?.received_at ?? null);
+        const day = dayLabel(message.received_at);
+
         return (
-          <article key={message.message_id} className="space-y-2 py-6 first:pt-0 last:pb-0">
-            <div className="flex items-baseline justify-between gap-3">
-              <p className="text-sm font-medium text-gray-900">
-                {isShop ? "You" : message.from_name}
-              </p>
-              <time className="shrink-0 text-xs text-gray-400">
-                {message.date_label || fullTime(message.received_at)}
-              </time>
-            </div>
-            <p
-              className={cn(
-                "whitespace-pre-wrap text-[13px] leading-relaxed text-gray-600",
-                isLatestCustomer && messages.length > 1 && "text-gray-800",
-              )}
-            >
-              {message.body || "—"}
-            </p>
-          </article>
+          <React.Fragment key={message.message_id}>
+            {showDay && day ? (
+              <div className="flex items-center gap-3 py-1" aria-hidden>
+                <span className="h-px flex-1 bg-gray-100" />
+                <span className="text-[11px] font-medium text-gray-400">{day}</span>
+                <span className="h-px flex-1 bg-gray-100" />
+              </div>
+            ) : null}
+
+            <article className={cn("flex gap-2.5", isShop ? "justify-end" : "justify-start")}>
+              {!isShop ? <Avatar name={message.from_name || "Customer"} size="sm" /> : null}
+              <div className={cn("min-w-0 max-w-[min(88%,34rem)]", isShop && "flex flex-col items-end")}>
+                <div
+                  className={cn(
+                    "flex items-baseline gap-2 px-1 pb-1",
+                    isShop && "flex-row-reverse",
+                  )}
+                >
+                  <p className="truncate text-[12px] font-medium text-gray-700">
+                    {isShop ? "You" : message.from_name}
+                  </p>
+                  <time className="shrink-0 text-[11px] text-gray-400">
+                    {timeOnly(message.received_at) || message.date_label || ""}
+                  </time>
+                </div>
+                <div
+                  className={cn(
+                    "rounded-xl border px-3.5 py-2.5",
+                    isShop
+                      ? "rounded-tr-sm border-amber-200/70 bg-amber-50/70"
+                      : "rounded-tl-sm border-gray-200 bg-white",
+                    isLatestCustomer && messages.length > 1 && "border-gray-300 shadow-sm",
+                  )}
+                >
+                  <GmailMessageBody
+                    body={message.body}
+                    clampable={!isLast && !isLatestCustomer && messages.length > 1}
+                    emphasised={isLatestCustomer && messages.length > 1}
+                  />
+                </div>
+              </div>
+            </article>
+          </React.Fragment>
         );
       })}
     </div>
@@ -601,7 +705,7 @@ export function ReplyComposer({
       <div
         className={cn(
           "flex items-center justify-between gap-3",
-          isPanel ? "px-5 pt-4" : "border-b border-gray-100 px-4 py-3",
+          isPanel ? "px-5 pt-3" : "border-b border-gray-100 px-4 py-3",
         )}
       >
         <p className="text-sm font-medium text-gray-900">Reply</p>
@@ -622,13 +726,16 @@ export function ReplyComposer({
         </Button>
       </div>
 
-      <div className={cn(isPanel ? "px-5 pb-4 pt-2" : "p-4")}>
+      <div className={cn(isPanel ? "px-5 pb-3 pt-2" : "p-4")}>
         <textarea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           disabled={locked || ignored}
-          rows={isPanel ? 8 : 12}
-          className="block min-h-[140px] max-h-[280px] w-full resize-y rounded-md bg-gray-50 px-3.5 py-3 text-[13px] leading-relaxed text-gray-800 outline-none ring-1 ring-gray-200 transition-shadow focus:bg-white focus:ring-gray-300 disabled:text-gray-500"
+          rows={isPanel ? 4 : 12}
+          className={cn(
+            "block max-h-[280px] w-full resize-y rounded-md bg-gray-50 px-3.5 py-3 text-[13px] leading-relaxed text-gray-800 outline-none ring-1 ring-gray-200 transition-shadow focus:bg-white focus:ring-gray-300 disabled:text-gray-500",
+            isPanel ? "min-h-[88px]" : "min-h-[140px]",
+          )}
           placeholder="Draft reply will appear once processing completes."
         />
 

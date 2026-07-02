@@ -5,6 +5,7 @@
 // → Review → Send. The composer lives in campaign-composer.tsx.
 
 import * as React from "react";
+import { motion } from "framer-motion";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -18,6 +19,7 @@ import {
   Search,
   Send,
   Sparkles,
+  Tag,
   Trash2,
   Users,
   Calendar,
@@ -48,7 +50,61 @@ import { CrmAutomationPanel } from "./crm-automation-panel";
 
 type ContactStats = { total: number; optedOut: number; eligible: number };
 type ContactFilter = "all" | "opted_in" | "opted_out";
-type CrmTab = "contacts" | "groups" | "campaigns" | "ai" | "automation";
+type CrmSection = "create" | "people" | "activity";
+type PeopleTab = "contacts" | "groups";
+type ActivityTab = "campaigns" | "automation";
+
+function CrmNavTabs<T extends string>({
+  items,
+  value,
+  onChange,
+  size = "lg",
+}: {
+  items: readonly { id: T; label: string; icon: React.ComponentType<{ className?: string }> }[];
+  value: T;
+  onChange: (id: T) => void;
+  size?: "sm" | "lg";
+}) {
+  const compact = size === "sm";
+  const indicatorLayoutId = React.useId();
+
+  return (
+    <div className="flex w-fit items-center rounded-full bg-gray-100 p-0.5">
+      {items.map((entry) => {
+        const isActive = value === entry.id;
+
+        return (
+          <button
+            key={entry.id}
+            type="button"
+            onClick={() => onChange(entry.id)}
+            className={cn(
+              "relative flex items-center gap-1.5 rounded-full font-medium",
+              compact ? "px-2.5 py-1.5 text-xs" : "px-3.5 py-1.5 text-sm",
+              isActive ? "text-gray-800" : "text-gray-600 hover:bg-gray-200/70",
+            )}
+          >
+            {isActive && (
+              <motion.div
+                layoutId={`crm-nav-tab-${indicatorLayoutId}`}
+                className="absolute inset-0 rounded-full bg-white shadow-sm"
+                transition={{
+                  type: "spring",
+                  bounce: 0.2,
+                  duration: 0.4,
+                }}
+              />
+            )}
+            <span className="relative z-10 flex items-center gap-1.5">
+              <entry.icon className={compact ? "h-3 w-3" : "size-[15px]"} />
+              {entry.label}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 const PAGE_SIZE = 50;
 
@@ -131,14 +187,37 @@ const CAMPAIGN_STATUS_STYLES: Record<string, string> = {
   failed: "bg-red-50 text-red-700",
 };
 
+const CRM_SECTIONS = [
+  { id: "create", label: "Create", icon: Sparkles },
+  { id: "people", label: "People", icon: Users },
+  { id: "activity", label: "Activity", icon: Letter },
+] as const satisfies readonly { id: CrmSection; label: string; icon: typeof Sparkles }[];
+
+const PEOPLE_TABS = [
+  { id: "contacts", label: "Contacts", icon: Users },
+  { id: "groups", label: "Groups", icon: Tag },
+] as const satisfies readonly { id: PeopleTab; label: string; icon: React.ComponentType<{ className?: string }> }[];
+
+const ACTIVITY_TABS = [
+  { id: "campaigns", label: "Campaigns", icon: Letter },
+  { id: "automation", label: "Automation", icon: Calendar },
+] as const satisfies readonly { id: ActivityTab; label: string; icon: typeof Letter }[];
+
 export function CrmPageContent() {
-  const [tab, setTab] = React.useState<CrmTab>("contacts");
+  const [section, setSection] = React.useState<CrmSection>("create");
+  const [peopleTab, setPeopleTab] = React.useState<PeopleTab>("contacts");
+  const [activityTab, setActivityTab] = React.useState<ActivityTab>("campaigns");
   const { open, setOpen, isMobile, openMobile, setOpenMobile } = useSidebar();
 
-  const handleTabChange = React.useCallback(
-    (nextTab: CrmTab) => {
-      setTab(nextTab);
-      if (nextTab !== "ai") return;
+  const goToCampaigns = React.useCallback(() => {
+    setSection("activity");
+    setActivityTab("campaigns");
+  }, []);
+
+  const handleSectionChange = React.useCallback(
+    (nextSection: CrmSection) => {
+      setSection(nextSection);
+      if (nextSection !== "create") return;
       if (isMobile) {
         if (openMobile) setOpenMobile(false);
         return;
@@ -359,13 +438,13 @@ export function CrmPageContent() {
   return (
     <>
       <DashboardFloatingPage
-        title="Email CRM"
+        title="Outreach"
         icon={Mailbox}
         actions={
           <div className="flex items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon-sm" aria-label="CRM settings">
+                <Button variant="outline" size="icon-sm" aria-label="Outreach settings">
                   <Cog className="size-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -395,37 +474,31 @@ export function CrmPageContent() {
           </div>
         }
         toolbar={
-          <div className="flex w-fit items-center gap-1 rounded-full bg-white p-1 shadow-sm ring-1 ring-border/60">
-            {(
-              [
-                { id: "contacts", label: "Contacts", icon: Users },
-                { id: "groups", label: "Groups", icon: Users },
-                { id: "ai", label: "AI Campaign", icon: Sparkles },
-                { id: "automation", label: "Automation", icon: Calendar },
-                { id: "campaigns", label: "Campaigns", icon: Letter },
-              ] as const
-            ).map((entry) => (
-              <button
-                key={entry.id}
-                type="button"
-                onClick={() => handleTabChange(entry.id)}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
-                  tab === entry.id
-                    ? "bg-zinc-900 text-white"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <entry.icon className="size-3.5" />
-                {entry.label}
-              </button>
-            ))}
+          <div className="flex flex-col gap-2.5">
+            <CrmNavTabs items={CRM_SECTIONS} value={section} onChange={handleSectionChange} />
+            {section === "people" ? (
+              <CrmNavTabs
+                size="sm"
+                items={PEOPLE_TABS}
+                value={peopleTab}
+                onChange={setPeopleTab}
+              />
+            ) : section === "activity" ? (
+              <CrmNavTabs
+                size="sm"
+                items={ACTIVITY_TABS}
+                value={activityTab}
+                onChange={setActivityTab}
+              />
+            ) : null}
           </div>
         }
         flush
-        scrollClassName={tab === "ai" ? "flex min-h-0 flex-1 flex-col overflow-hidden" : undefined}
+        scrollClassName={
+          section === "create" ? "flex min-h-0 flex-1 flex-col overflow-hidden" : undefined
+        }
       >
-        <div className={cn("flex min-h-0 flex-1 flex-col", tab === "ai" && "h-full")}>
+        <div className={cn("flex min-h-0 flex-1 flex-col", section === "create" && "h-full")}>
           {notice ? (
             <div
               className={cn(
@@ -451,7 +524,7 @@ export function CrmPageContent() {
             </div>
           ) : null}
 
-          {tab === "contacts" ? (
+          {section === "people" && peopleTab === "contacts" ? (
             <ContactsView
               contacts={contacts}
               stats={stats}
@@ -478,26 +551,27 @@ export function CrmPageContent() {
               onLoadMore={() => void loadContacts({ append: true, offset: contacts.length })}
               onCreateCampaign={() => openComposer()}
             />
-          ) : tab === "groups" ? (
+          ) : section === "people" && peopleTab === "groups" ? (
             <ContactGroupsPanel
               selectedContactIds={Array.from(selected.keys())}
               onGroupsChange={() => {
                 void loadGroups();
                 void loadContacts();
               }}
+              onEmailGroup={(contactIds) => openComposer(undefined, contactIds)}
             />
-          ) : tab === "ai" ? (
+          ) : section === "create" ? (
             <CrmAgentPanel
               store={storeBranding}
               onOpenComposer={(seed, contactIds) => openComposer(seed, contactIds)}
               onCampaignCreated={() => {
-                setTab("campaigns");
+                goToCampaigns();
                 void loadCampaigns();
               }}
             />
-          ) : tab === "automation" ? (
+          ) : section === "activity" && activityTab === "automation" ? (
             <CrmAutomationPanel />
-          ) : (
+          ) : section === "activity" ? (
             <CampaignsView
               campaigns={campaigns}
               loading={loadingCampaigns}
@@ -514,7 +588,7 @@ export function CrmPageContent() {
               onDeleteDraft={(campaignId) => void deleteDraft(campaignId)}
               onSendDraft={(campaign) => void sendDraft(campaign)}
             />
-          )}
+          ) : null}
         </div>
       </DashboardFloatingPage>
 
@@ -529,7 +603,7 @@ export function CrmPageContent() {
           onSent={() => {
             setComposerSeed(null);
             setSelected(new Map());
-            setTab("campaigns");
+            goToCampaigns();
             void loadCampaigns();
           }}
         />
@@ -541,6 +615,23 @@ export function CrmPageContent() {
 // ============================================================
 // Contacts
 // ============================================================
+
+const AVATAR_PALETTE = [
+  "bg-sky-100 text-sky-700",
+  "bg-emerald-100 text-emerald-700",
+  "bg-amber-100 text-amber-700",
+  "bg-violet-100 text-violet-700",
+  "bg-rose-100 text-rose-700",
+  "bg-teal-100 text-teal-700",
+  "bg-indigo-100 text-indigo-700",
+  "bg-orange-100 text-orange-700",
+] as const;
+
+function avatarPalette(email: string): string {
+  let hash = 0;
+  for (let i = 0; i < email.length; i++) hash = (hash * 31 + email.charCodeAt(i)) | 0;
+  return AVATAR_PALETTE[Math.abs(hash) % AVATAR_PALETTE.length];
+}
 
 function ContactsView(props: {
   contacts: CrmContact[];
@@ -598,8 +689,8 @@ function ContactsView(props: {
   if (!loading && !hasAnyContacts && !search && filter === "all") {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-20 text-center">
-        <div className="flex size-14 items-center justify-center rounded-full bg-primary">
-          <Users className="size-6 text-primary-foreground" />
+        <div className="flex size-14 items-center justify-center rounded-2xl bg-gray-100">
+          <Users className="size-6 text-gray-400" />
         </div>
         <div>
           <h3 className="text-base font-semibold text-foreground">No contacts yet</h3>
@@ -618,77 +709,95 @@ function ContactsView(props: {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border/60 px-5 py-3">
-        <div className="relative w-full max-w-xs">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(event) => onSearch(event.target.value)}
-            placeholder="Search by name or email"
-            className="h-9 rounded-full pl-9"
-          />
+      {/* Toolbar */}
+      <div className="space-y-2.5 border-b border-border/60 px-4 py-3 md:px-5">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-0 flex-1 basis-56">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(event) => onSearch(event.target.value)}
+              placeholder="Search by name or email"
+              className="h-9 w-full rounded-full pl-9"
+            />
+          </div>
+          {stats ? (
+            <div className="hidden shrink-0 items-center gap-1.5 lg:flex">
+              {[
+                { value: stats.total, label: "contacts" },
+                { value: stats.eligible, label: "subscribed" },
+                { value: stats.optedOut, label: "opted out" },
+              ].map((item) => (
+                <span
+                  key={item.label}
+                  className="inline-flex items-baseline gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs"
+                >
+                  <span className="font-semibold tabular-nums text-foreground">
+                    {item.value.toLocaleString()}
+                  </span>
+                  <span className="text-muted-foreground">{item.label}</span>
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
-        <div className="flex items-center gap-1">
-          {FILTERS.map((entry) => (
-            <button
-              key={entry.id}
-              type="button"
-              onClick={() => onFilter(entry.id)}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                filter === entry.id
-                  ? "bg-zinc-900 text-white"
-                  : "bg-zinc-100 text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {entry.label}
-            </button>
-          ))}
+
+        <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex shrink-0 items-center rounded-lg bg-gray-100 p-0.5">
+            {FILTERS.map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                onClick={() => onFilter(entry.id)}
+                className={cn(
+                  "shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  filter === entry.id
+                    ? "bg-white text-gray-800 shadow-sm"
+                    : "text-gray-600 hover:bg-gray-200/70",
+                )}
+              >
+                {entry.label}
+              </button>
+            ))}
+          </div>
+          <ContactSortDropdown value={sort} onChange={onSort} />
+          {groups.length > 0 ? (
+            <ContactGroupFilterDropdown
+              groups={groups}
+              value={groupFilterId}
+              onChange={onGroupFilter}
+            />
+          ) : null}
+          <span className="ml-auto shrink-0 text-xs text-muted-foreground lg:hidden">
+            {filteredCount.toLocaleString()} contact{filteredCount === 1 ? "" : "s"}
+          </span>
         </div>
-        <ContactSortDropdown value={sort} onChange={onSort} />
-        {groups.length > 0 ? (
-          <ContactGroupFilterDropdown
-            groups={groups}
-            value={groupFilterId}
-            onChange={onGroupFilter}
-          />
-        ) : null}
-        <div className="ml-auto flex items-center gap-3">
-          {selected.size > 0 ? (
-            <>
-              <span className="text-sm text-muted-foreground">
-                <span className="font-semibold text-foreground">{selected.size}</span> selected
+
+        {selected.size > 0 ? (
+          <div className="flex flex-col gap-2 rounded-lg bg-zinc-900 px-3 py-2 text-white sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-sm">
+                <span className="font-semibold tabular-nums">{selected.size}</span> selected
               </span>
               <button
                 type="button"
                 onClick={onClearSelection}
-                className="text-xs font-medium text-muted-foreground underline-offset-2 hover:underline"
+                className="text-xs font-medium text-white/70 underline-offset-2 hover:text-white hover:underline"
               >
                 Clear
               </button>
-              <Button size="sm" onClick={onCreateCampaign}>
-                <Send className="mr-1.5 size-3.5" />
-                Email selected
-              </Button>
-            </>
-          ) : stats ? (
-            <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <span>
-                <span className="font-semibold text-foreground">{stats.total.toLocaleString()}</span> contacts
-              </span>
-              <span>
-                <span className="font-semibold text-foreground">{stats.eligible.toLocaleString()}</span> subscribed
-              </span>
-              <span>
-                <span className="font-semibold text-foreground">{stats.optedOut.toLocaleString()}</span> opted out
-              </span>
             </div>
-          ) : (
-            <span className="text-xs text-muted-foreground">
-              {filteredCount.toLocaleString()} contact{filteredCount === 1 ? "" : "s"}
-            </span>
-          )}
-        </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="w-full bg-white text-zinc-900 hover:bg-white/90 sm:w-auto"
+              onClick={onCreateCampaign}
+            >
+              <Send className="mr-1.5 size-3.5" />
+              Email selected
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       {loading ? (
@@ -703,14 +812,24 @@ function ContactsView(props: {
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="flex items-center gap-3 border-b border-border/40 px-5 py-2">
+          {/* Column header */}
+          <div className="sticky top-0 z-[1] flex items-center gap-3 border-b border-border/40 bg-white/95 px-4 py-2 backdrop-blur-sm md:px-5">
             <Checkbox
               checked={allLoadedSelected}
               onCheckedChange={onToggleAll}
               aria-label="Select all eligible contacts on this page"
             />
-            <span className="text-xs text-muted-foreground">
-              Select all eligible on this page
+            <span className="min-w-0 flex-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Customer
+            </span>
+            <span className="hidden w-20 text-right text-[11px] font-medium uppercase tracking-wide text-muted-foreground md:block">
+              Spend
+            </span>
+            <span className="hidden w-14 text-right text-[11px] font-medium uppercase tracking-wide text-muted-foreground md:block">
+              Visits
+            </span>
+            <span className="hidden w-24 text-right text-[11px] font-medium uppercase tracking-wide text-muted-foreground lg:block">
+              Last purchase
             </span>
           </div>
           <ul>
@@ -721,9 +840,9 @@ function ContactsView(props: {
                 <li
                   key={contact.id}
                   className={cn(
-                    "flex items-center gap-3 border-b border-border/40 px-5 py-3 transition-colors",
-                    isSelected && "bg-primary/5",
-                    contact.opted_out && "opacity-60",
+                    "flex items-center gap-3 border-b border-border/40 px-4 py-2.5 transition-colors hover:bg-gray-50/60 md:px-5",
+                    isSelected && "bg-primary/5 hover:bg-primary/5",
+                    contact.opted_out && "opacity-55",
                   )}
                 >
                   <Checkbox
@@ -732,41 +851,56 @@ function ContactsView(props: {
                     onCheckedChange={() => onToggle(contact)}
                     aria-label={`Select ${contact.email}`}
                   />
-                  <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-xs font-semibold text-zinc-600">
+                  <div
+                    className={cn(
+                      "flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                      avatarPalette(contact.email),
+                    )}
+                  >
                     {initials(contact)}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {name || contact.email}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-medium text-foreground">
+                        {name || contact.email}
+                      </p>
+                      {contact.opted_out ? (
+                        <Badge
+                          variant="secondary"
+                          className="shrink-0 bg-zinc-100 px-1.5 py-0 text-[10px] text-zinc-500"
+                        >
+                          Opted out
+                        </Badge>
+                      ) : null}
+                    </div>
                     <p className="truncate text-xs text-muted-foreground">
                       {name ? contact.email : contact.phone ?? ""}
                       {name && contact.phone ? ` · ${contact.phone}` : ""}
                     </p>
-                    {(contact.sale_count > 0 ||
-                      contact.total_spend > 0 ||
-                      contact.lightspeed_joined_at) && (
-                      <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80">
-                        {[
-                          contact.sale_count > 0
-                            ? `${contact.sale_count} visit${contact.sale_count === 1 ? "" : "s"}`
-                            : null,
-                          contact.total_spend > 0 ? formatAud(contact.total_spend) : null,
-                          contact.lightspeed_joined_at
-                            ? `Joined ${formatDateTime(contact.lightspeed_joined_at)}`
-                            : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </p>
-                    )}
+                    {/* Mobile metrics */}
+                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground/80 md:hidden">
+                      {[
+                        contact.total_spend > 0 ? formatAud(contact.total_spend) : null,
+                        contact.sale_count > 0
+                          ? `${contact.sale_count} visit${contact.sale_count === 1 ? "" : "s"}`
+                          : null,
+                        contact.last_purchase_at
+                          ? `Last ${formatDateTime(contact.last_purchase_at)}`
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
                   </div>
-                  {contact.opted_out ? (
-                    <Badge variant="secondary" className="shrink-0 bg-zinc-100 text-zinc-500">
-                      Opted out
-                      {contact.opted_out_at ? ` · ${formatDateTime(contact.opted_out_at)}` : ""}
-                    </Badge>
-                  ) : null}
+                  <span className="hidden w-20 text-right text-sm tabular-nums text-foreground md:block">
+                    {contact.total_spend > 0 ? formatAud(contact.total_spend) : "—"}
+                  </span>
+                  <span className="hidden w-14 text-right text-sm tabular-nums text-muted-foreground md:block">
+                    {contact.sale_count > 0 ? contact.sale_count : "—"}
+                  </span>
+                  <span className="hidden w-24 text-right text-xs text-muted-foreground lg:block">
+                    {contact.last_purchase_at ? formatDateTime(contact.last_purchase_at) : "—"}
+                  </span>
                 </li>
               );
             })}

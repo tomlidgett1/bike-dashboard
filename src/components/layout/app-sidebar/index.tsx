@@ -7,20 +7,14 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   AltArrowRight,
   Bag,
-  Bolt,
   Box,
-  ChatRound,
   Database,
-  Delivery,
   Help,
   HomeSmile,
   Letter,
-  Gallery,
   Mailbox,
-  MagicStick3,
   Settings,
   Shop,
-  Soundwave,
   Tag,
   TestTube,
   Widget,
@@ -51,6 +45,7 @@ import { NavUser } from "./nav-user";
 import { SidebarLightspeedStatus } from "./sidebar-lightspeed-status";
 import { SidebarViewStoreLink } from "./sidebar-view-store-link";
 import { SidebarCollapseTrigger } from "./sidebar-collapse-trigger";
+import { LightspeedSidebarIcon } from "@/components/genie/lightspeed-logo";
 import { cn } from "@/lib/utils";
 import { useCustomerInquiriesNeedsActionCount } from "@/lib/hooks/use-customer-inquiries-needs-action-count";
 import { useStoreOpenActionsCount } from "@/lib/hooks/use-store-open-actions-count";
@@ -93,16 +88,13 @@ const NAV: NavGroup[] = [
           { title: "Titles", href: "/settings/store/titles" },
         ],
       },
-      { title: "Product Optimise", href: "/optimize", icon: MagicStick3 },
     ],
   },
   {
     label: "Customer service",
     items: [
-      { title: "Nest", href: "/settings/store/nest", icon: ChatRound, exact: true },
       { title: "Customer inquiries", href: "/settings/store/customer-inquiries", icon: Letter, exact: true },
-      { title: "Email CRM", href: "/settings/store/crm", icon: Mailbox, exact: true },
-      { title: "Test Tom", href: "/settings/store/test-tom", icon: Soundwave, exact: true },
+      { title: "Outreach", href: "/settings/store/crm", icon: Mailbox, exact: true },
     ],
   },
   {
@@ -121,11 +113,9 @@ const NAV: NavGroup[] = [
   {
     label: "Operations",
     items: [
-      { title: "Uber Direct", href: "/settings/uber", icon: Delivery },
       { title: "Data", href: "/settings/data", icon: Database },
       { title: "Test", href: "/settings/test", icon: TestTube, exact: true },
-      { title: "Lightspeed", href: "/connect-lightspeed", icon: Bolt },
-      { title: "Test new images", href: "/settings/test-new-images", icon: Gallery, exact: true },
+      { title: "Lightspeed", href: "/connect-lightspeed", icon: LightspeedSidebarIcon },
     ],
   },
 ];

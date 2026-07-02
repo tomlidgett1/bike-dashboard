@@ -8,12 +8,12 @@ import { SettingsManagerLoading } from "@/components/settings/settings-manager-l
 
 const CrmPageContent = nextDynamic(
   () => import("./crm-page-content").then((mod) => mod.CrmPageContent),
-  { ssr: false, loading: () => <SettingsManagerLoading className="m-6 min-h-72" /> },
+  { ssr: false, loading: () => <SettingsManagerLoading fullPage /> },
 );
 
 export default function StoreCrmPage() {
   return (
-    <Suspense fallback={<SettingsManagerLoading className="m-6 min-h-72" />}>
+    <Suspense fallback={<SettingsManagerLoading fullPage />}>
       <CrmPageContent />
     </Suspense>
   );

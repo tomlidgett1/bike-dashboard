@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import Link from "next/link";
 import {
   Archive,
+  ChatRound,
   Inbox,
   Loader2,
   Mail,
@@ -28,10 +30,12 @@ import {
   CustomerEnquiriesPageHeader,
   storeSettingsHeaderActionClass,
 } from "@/components/settings/actions-page-header";
-import { InboxFilterTabs } from "@/components/settings/customer-inquiries/inbox-filter-tabs";
-import { InquirySlidePanel } from "@/components/settings/customer-inquiries/inquiry-slide-panel";
-import { UnifiedInboxTable } from "@/components/settings/customer-inquiries/unified-inbox-table";
+import { EnquiriesNavTabs } from "@/components/settings/customer-inquiries/enquiries-nav-tabs";
+import { EnquiryConversationList } from "@/components/settings/customer-inquiries/enquiry-conversation-list";
+import { EnquiryConversationPane } from "@/components/settings/customer-inquiries/enquiry-conversation-pane";
 import {
+  INBOX_SOURCE_TABS,
+  INBOX_STATUS_TABS,
   useUnifiedInboxController,
   type UnifiedInboxController,
 } from "@/components/settings/customer-inquiries/use-unified-inbox-controller";
@@ -103,35 +107,81 @@ function CustomerEnquiriesFilterBar({
   c: UnifiedInboxController;
   onCloseAll: () => void;
 }) {
+  const statusItems = INBOX_STATUS_TABS.map((tab) => ({
+    ...tab,
+    count: c.statusCounts[tab.id],
+  }));
+
   return (
-    <div className="flex shrink-0 flex-col gap-2.5 rounded-t-xl border-b border-border/60 bg-gray-50 px-4 py-3 md:px-5">
-      <div className="relative w-full sm:max-w-xs">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-        <Input
-          type="search"
-          value={c.searchQuery}
-          onChange={(event) => c.setSearchQuery(event.target.value)}
-          placeholder="Search name, email, subject…"
-          className="rounded-md border-gray-300 bg-white pl-9"
-        />
+    <div className="flex shrink-0 flex-wrap items-center gap-2.5 rounded-t-xl border-b border-border/60 bg-gray-50 px-4 py-3 md:px-5">
+      <EnquiriesNavTabs items={statusItems} value={c.statusTab} onChange={c.setStatusTab} />
+      {c.needsActionCount > 0 ? (
+        <button
+          type="button"
+          onClick={onCloseAll}
+          disabled={c.closingCases}
+          className={cn(
+            "relative ml-auto inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-gray-200/80 bg-white px-3.5 py-1.5 text-sm font-medium text-gray-800 shadow-sm transition-colors hover:bg-gray-50",
+            c.closingCases && "cursor-not-allowed opacity-50 hover:bg-white",
+          )}
+        >
+          {c.closingCases ? (
+            <Loader2 className="size-[15px] shrink-0 animate-spin" />
+          ) : (
+            <Archive className="size-[15px] shrink-0" />
+          )}
+          Close all
+          <span className="rounded-full bg-gray-100 px-1.5 py-0 text-[10px] font-semibold tabular-nums text-gray-600">
+            {c.needsActionCount}
+          </span>
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function EnquiriesSplitView({ c }: { c: UnifiedInboxController }) {
+  const hasSelection = Boolean(c.selectedKey && c.selectedRow);
+  const sourceItems = INBOX_SOURCE_TABS.map((tab) => ({
+    ...tab,
+    count: c.sourceCounts[tab.id],
+  }));
+
+  return (
+    <div className="flex min-h-0 flex-1">
+      <div
+        className={cn(
+          "w-full min-w-0 flex-col md:flex md:w-[340px] md:shrink-0 md:border-r md:border-border/60 lg:w-[380px]",
+          hasSelection ? "hidden" : "flex",
+        )}
+      >
+        <div className="shrink-0 space-y-2 border-b border-gray-100 px-3 py-2.5">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+            <Input
+              type="search"
+              value={c.searchQuery}
+              onChange={(event) => c.setSearchQuery(event.target.value)}
+              placeholder="Search name, email, subject…"
+              className="h-8 rounded-md border-gray-200 bg-white pl-8 text-sm"
+            />
+          </div>
+          <EnquiriesNavTabs
+            size="sm"
+            items={sourceItems}
+            value={c.sourceTab}
+            onChange={c.setSourceTab}
+          />
+        </div>
+        <EnquiryConversationList c={c} />
       </div>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <InboxFilterTabs value={c.inboxTab} onChange={c.setInboxTab} counts={c.tabCounts} />
-        {c.needsActionCount > 0 ? (
-          <button
-            type="button"
-            onClick={onCloseAll}
-            disabled={c.closingCases}
-            className={storeSettingsHeaderActionClass(false, c.closingCases)}
-          >
-            {c.closingCases ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Archive className="h-3.5 w-3.5" />
-            )}
-            Close all ({c.needsActionCount})
-          </button>
-        ) : null}
+      <div
+        className={cn(
+          "min-w-0 flex-1 flex-col md:flex",
+          hasSelection ? "flex" : "hidden",
+        )}
+      >
+        <EnquiryConversationPane c={c} />
       </div>
     </div>
   );
@@ -140,6 +190,13 @@ function CustomerEnquiriesFilterBar({
 function CustomerEnquiriesHeaderActions({ c }: { c: UnifiedInboxController }) {
   return (
     <>
+      <Link
+        href="/settings/store/nest"
+        className={storeSettingsHeaderActionClass()}
+      >
+        <ChatRound className="size-[15px]" />
+        Nest
+      </Link>
       {c.gmailConfigured && !c.gmailConnected ? (
         <button
           type="button"
@@ -148,9 +205,9 @@ function CustomerEnquiriesHeaderActions({ c }: { c: UnifiedInboxController }) {
           className={storeSettingsHeaderActionClass(false, c.connecting)}
         >
           {c.connecting ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <Loader2 className="size-[15px] animate-spin" />
           ) : (
-            <Mail className="h-3.5 w-3.5" />
+            <Mail className="size-[15px]" />
           )}
           Connect Gmail
         </button>
@@ -162,9 +219,9 @@ function CustomerEnquiriesHeaderActions({ c }: { c: UnifiedInboxController }) {
         className={storeSettingsHeaderActionClass(false, c.refreshing)}
       >
         {c.refreshing ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          <Loader2 className="size-[15px] animate-spin" />
         ) : (
-          <RefreshCw className="h-3.5 w-3.5" />
+          <RefreshCw className="size-[15px]" />
         )}
         Refresh
       </button>
@@ -257,11 +314,9 @@ export function StoreCustomerInquiriesPanel() {
       <FloatingCardPageBody>
         <FloatingCard>
           <CustomerEnquiriesFilterBar c={c} onCloseAll={() => setCloseAllOpen(true)} />
-          <UnifiedInboxTable c={c} />
+          <EnquiriesSplitView c={c} />
         </FloatingCard>
       </FloatingCardPageBody>
-
-      <InquirySlidePanel c={c} />
 
       {c.sendConfirmOpen ? (
         <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">

@@ -1,8 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type {
-  NestConversationDetail,
-  NestConversationListItem,
-  NestConversationMessage,
+import {
+  deriveNestChannel,
+  type NestConversationDetail,
+  type NestConversationListItem,
+  type NestConversationMessage,
+  type NestFirstMessageHint,
 } from "@/lib/nest/types";
 
 type ConversationRow = {
@@ -80,7 +82,70 @@ export async function loadNestChatsFromSupabase(
     return [];
   }
 
-  return (data ?? []).map((row) => rowToListItem(row as ConversationRow));
+  const chats = (data ?? []).map((row) => rowToListItem(row as ConversationRow));
+  return annotateNestChatChannels(supabase, userId, chats);
+}
+
+type FirstMessageRow = {
+  chat_id: string;
+  role: string;
+  handle: string | null;
+  created_at: string;
+  source: string | null;
+};
+
+/**
+ * Earliest cached message per chat, from YJ's own store_nest_messages mirror.
+ * Only the columns needed to classify the channel are fetched.
+ */
+async function loadNestFirstMessageHints(
+  supabase: SupabaseClient,
+  userId: string,
+  chatIds: string[],
+): Promise<Map<string, NestFirstMessageHint>> {
+  if (chatIds.length === 0) return new Map();
+
+  const { data, error } = await supabase
+    .from("store_nest_messages")
+    .select("chat_id, role, handle, created_at, source:metadata->>source")
+    .eq("user_id", userId)
+    .in("chat_id", chatIds)
+    .order("created_at", { ascending: true })
+    .limit(10000);
+
+  if (error) {
+    console.error("[nest-inbox-supabase] first message hints failed:", error.message);
+    return new Map();
+  }
+
+  const hints = new Map<string, NestFirstMessageHint>();
+  for (const row of (data ?? []) as FirstMessageRow[]) {
+    if (hints.has(row.chat_id)) continue;
+    hints.set(row.chat_id, {
+      role: row.role,
+      handle: row.handle,
+      source: row.source,
+    });
+  }
+  return hints;
+}
+
+/** Attach the derived channel (website chat / missed call / store outreach) to each chat. */
+export async function annotateNestChatChannels(
+  supabase: SupabaseClient,
+  userId: string,
+  chats: NestConversationListItem[],
+): Promise<NestConversationListItem[]> {
+  if (chats.length === 0) return chats;
+  const hints = await loadNestFirstMessageHints(
+    supabase,
+    userId,
+    chats.map((chat) => chat.chatId),
+  );
+  return chats.map((chat) => ({
+    ...chat,
+    channel: deriveNestChannel(chat, hints.get(chat.chatId) ?? null),
+  }));
 }
 
 export async function loadNestThreadSyncState(

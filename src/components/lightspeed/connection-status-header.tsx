@@ -13,6 +13,7 @@ interface ConnectionStatusHeaderProps {
   isRefreshing?: boolean;
   onRefresh?: () => void;
   onDisconnect?: () => void;
+  showActions?: boolean;
 }
 
 function formatRelative(date: Date | null): string {
@@ -34,6 +35,7 @@ export function ConnectionStatusHeader({
   isRefreshing,
   onRefresh,
   onDisconnect,
+  showActions = true,
 }: ConnectionStatusHeaderProps) {
   return (
     <section className="rounded-xl border border-border bg-card p-4 md:p-5">
@@ -56,6 +58,7 @@ export function ConnectionStatusHeader({
           </div>
         </div>
 
+        {showActions ? (
         <div className="flex shrink-0 items-center gap-2">
           <Button variant="outline" size="sm" className="rounded-md" onClick={onRefresh} disabled={isRefreshing}>
             <RefreshCw className={cn("mr-2 h-4 w-4", isRefreshing && "animate-spin")} />
@@ -65,6 +68,7 @@ export function ConnectionStatusHeader({
             Disconnect
           </Button>
         </div>
+        ) : null}
       </div>
 
       <div className="mt-3 flex items-start gap-2 border-t border-border pt-3 text-sm text-muted-foreground">

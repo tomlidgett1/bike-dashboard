@@ -9,8 +9,40 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+type GroupMemberRow = {
+  id: string;
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
+  opted_out: boolean;
+};
+
+async function loadGroupMembers(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  groupId: string,
+): Promise<GroupMemberRow[]> {
+  const members: GroupMemberRow[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error: membersError } = await supabase
+      .from("crm_contact_group_members")
+      .select("contact_id, crm_contacts(id, email, first_name, last_name, opted_out)")
+      .eq("user_id", userId)
+      .eq("group_id", groupId)
+      .order("contact_id")
+      .range(offset, offset + 999);
+    if (membersError) throw membersError;
+    for (const row of data ?? []) {
+      const contact = row.crm_contacts as GroupMemberRow | null;
+      if (contact) members.push(contact);
+    }
+    if (!data || data.length < 1000) break;
+  }
+  return members;
+}
+
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -34,15 +66,34 @@ export async function GET(
       return NextResponse.json({ error: "Group not found" }, { status: 404 });
     }
 
-    const { data: members } = await supabase
-      .from("crm_contact_group_members")
-      .select("contact_id, crm_contacts(id, email, first_name, last_name, opted_out)")
-      .eq("user_id", user.id)
-      .eq("group_id", id);
+    const search = request.nextUrl.searchParams.get("search")?.trim().toLowerCase() ?? "";
+    const offset = Math.max(0, Number.parseInt(request.nextUrl.searchParams.get("offset") ?? "0", 10) || 0);
+    const limitParam = request.nextUrl.searchParams.get("limit");
+    const limit =
+      limitParam == null ? null : Math.min(200, Math.max(1, Number.parseInt(limitParam, 10) || 50));
+
+    const allMembers = await loadGroupMembers(supabase, user.id, id);
+
+    const filtered = search
+      ? allMembers.filter((member) => {
+          const haystack = [member.first_name, member.last_name, member.email]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          return haystack.includes(search);
+        })
+      : allMembers;
+
+    if (limit == null) {
+      return NextResponse.json({ group, members: filtered, total: filtered.length });
+    }
 
     return NextResponse.json({
       group,
-      members: (members ?? []).map((row) => row.crm_contacts).filter(Boolean),
+      members: filtered.slice(offset, offset + limit),
+      total: filtered.length,
+      offset,
+      limit,
     });
   } catch (error) {
     console.error("[crm] group detail failed:", error);

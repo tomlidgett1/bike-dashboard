@@ -134,6 +134,20 @@ export function getStoredCampaignHtml(content: CampaignContent): string | null {
   return null;
 }
 
+/** Replace `<body>` inner HTML while preserving document shell and attrs. */
+export function replaceCampaignHtmlBody(fullHtml: string, bodyInnerHtml: string): string {
+  const sanitized = sanitizeCampaignHtml(bodyInnerHtml);
+  if (!sanitized) return fullHtml;
+
+  const bodyMatch = fullHtml.match(/<body([^>]*)>[\s\S]*<\/body>/i);
+  if (!bodyMatch) {
+    return wrapEmailDocument(sanitized, "Campaign");
+  }
+
+  const attrs = bodyMatch[1] ?? "";
+  return fullHtml.replace(/<body[^>]*>[\s\S]*<\/body>/i, `<body${attrs}>${sanitized}</body>`);
+}
+
 export function renderStoredHtmlCampaign(args: {
   content: CampaignContent;
   unsubscribeUrl: string;

@@ -7,6 +7,7 @@ import {
   GENIE_LIGHTSPEED_SQL_VIEW,
 } from "@/lib/genie/agent/sql-constants";
 import type { CrmChatClientState } from "./chat-types";
+import { CRM_EMAIL_MOBILE_STANDARD_PROMPT } from "./mobile-email-standard";
 import type { StoreAgentContext } from "./types";
 
 const STORE_TIME_ZONE = "Australia/Brisbane";
@@ -84,10 +85,11 @@ Audience rule semantics (rules AND together):
 The first draft must already feel premium, modern, and deliberate. The owner should not need to say "make it 10x more professional".
 
 Technical requirements:
-- Complete <!DOCTYPE html> document, table-based layout, max-width 600px centred, inline CSS only. No <script>, no forms, no external stylesheets. Email-safe font stack: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif.
+- Complete <!DOCTYPE html> document, table-based layout, max-width 600px centred. Inline CSS on elements plus one \`<style>\` block in \`<head>\` for mobile @media rules. No \`<script>\`, forms, or linked external stylesheets. Email-safe font stack: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif.
 - Include a preheader (pass it as the preheader param, injected automatically). Unsubscribe link href must be exactly {{UNSUBSCRIBE_URL}}.
 - Personalisation: the ONLY merge token is {{FIRST_NAME}} (exact, double braces, uppercase). It falls back to "there", so greetings must work with both. Never write literal first_name, [name], or other placeholder syntax.
-- Mobile-first, single column by default. Body font 16-18px, line-height 1.45-1.6, CTA tap target at least 44px tall. Use robust inline CSS and graceful fallbacks.
+
+${CRM_EMAIL_MOBILE_STANDARD_PROMPT}
 
 Visual direction:
 - Use one clear creative concept per email, not a stack of random sections. The layout should have a strong visual rhythm: eyebrow, hero headline, concise value statement, offer/proof module, CTA, supporting detail, footer.
@@ -107,6 +109,7 @@ Final quality check before set_campaign_email:
 - Can a busy customer understand the offer in 3 seconds?
 - Does the design look intentional and premium without needing another "make it more pro" prompt?
 - Is there one dominant CTA and one dominant message?
+- Does it look polished on mobile (~390px) as well as desktop — stacked columns, full-width CTA, scaled headlines, no horizontal scroll?
 - Are all store-specific claims backed by tools or the owner's request?
 
 Subjects under 60 chars, specific and concrete beats clever. Provide 2 variants. Footer: store name, "You're receiving this because you're a customer" line, unsubscribe.

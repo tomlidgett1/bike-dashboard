@@ -298,6 +298,7 @@ export async function GET() {
       if (existing) {
         existing.syncedProducts = cat.productCount
         existing.totalProducts = existing.notSyncedProducts + cat.productCount
+        existing.products = [...existing.products, ...cat.products]
         existing.syncStatus = existing.notSyncedProducts > 0 ? 'partial' : 'fully_synced'
         existing.autoSyncEnabled = prefs?.isEnabled || false
         existing.lastSyncedAt = prefs?.lastSyncedAt || null

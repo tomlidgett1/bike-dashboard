@@ -25,6 +25,7 @@ const CRUMBS: Record<string, { section: string; page: string }> = {
     section: "Customer service",
     page: "Customer inquiries",
   },
+  "/settings/store/crm": { section: "Customer service", page: "Outreach" },
   "/settings/my-listings": { section: "Marketplace", page: "My listings" },
   "/settings/drafts": { section: "Marketplace", page: "Drafts" },
   "/settings/purchases": { section: "Marketplace", page: "Orders" },

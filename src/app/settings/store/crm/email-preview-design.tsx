@@ -3,7 +3,8 @@
 import * as React from "react";
 import { MousePointerClick } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
-import { applyMergeTags } from "@/lib/crm/merge-tags";
+import { applyMergeTags, restoreMergeTags } from "@/lib/crm/merge-tags";
+import { getStoredCampaignHtml, htmlToPlainText, replaceCampaignHtmlBody } from "@/lib/crm/campaign-html";
 import { renderCampaignEmail, type StoreBranding } from "@/lib/crm/templates";
 import type { CampaignContent } from "@/lib/crm/types";
 
@@ -17,6 +18,22 @@ export type EmailPreviewDesignSelection = {
   htmlSnippet: string;
 };
 
+export type EmailInlineEditState = {
+  label: string;
+  tagName: string;
+  fontFamily: string;
+  fontSize: number;
+  color: string;
+  isImage: boolean;
+};
+
+export type EmailPreviewEditorHandle = {
+  applyStyles: (styles: Partial<Pick<EmailInlineEditState, "fontFamily" | "fontSize" | "color">>) => void;
+  finishEdit: () => void;
+  cancelEdit: () => void;
+  deleteElement: () => void;
+};
+
 const DESIGN_MODE_SCRIPT = `<script>
 (function () {
   var active = false;
@@ -26,8 +43,13 @@ const DESIGN_MODE_SCRIPT = `<script>
   var popupInput = null;
   var popupChips = null;
   var anchorEl = null;
+  var clickTimer = null;
+  var editingEl = null;
+  var editingOriginalHtml = null;
   var HOVER = "crm-design-hover";
   var SELECTED = "crm-design-selected";
+  var EDITING = "crm-design-editing";
+  var EDITABLE_TAGS = { P: 1, H1: 1, H2: 1, H3: 1, H4: 1, A: 1, SPAN: 1, TD: 1, TH: 1, LI: 1, STRONG: 1, EM: 1, DIV: 1, BUTTON: 1 };
 
   function injectStyles() {
     if (document.getElementById("crm-design-styles")) return;
@@ -36,6 +58,7 @@ const DESIGN_MODE_SCRIPT = `<script>
     style.textContent =
       "." + HOVER + " { outline: 2px solid #2563eb !important; outline-offset: 2px !important; cursor: crosshair !important; }" +
       "." + SELECTED + " { outline: 2px solid #18181b !important; outline-offset: 2px !important; }" +
+      "." + EDITING + " { outline: 2px solid #2563eb !important; outline-offset: 2px !important; cursor: text !important; }" +
       "#crm-design-popup { position: fixed; z-index: 2147483647; width: min(280px, calc(100vw - 16px)); padding: 8px; background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; box-shadow: 0 10px 25px rgba(0,0,0,0.12); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }" +
       "#crm-design-popup-chips { display: none; margin-bottom: 6px; font-size: 11px; line-height: 1.3; color: #6b7280; }" +
       "#crm-design-popup-chips.is-visible { display: block; }" +
@@ -67,9 +90,240 @@ const DESIGN_MODE_SCRIPT = `<script>
   }
 
   function cleanup() {
+    cancelInlineEdit(false);
     clearHover();
     clearSelectedAll();
     removePopup();
+  }
+
+  function isDesignUi(el) {
+    if (!(el instanceof Element)) return false;
+    if (popupEl && popupEl.contains(el)) return true;
+    return false;
+  }
+
+  function findInteractiveAncestor(el) {
+    var node = el;
+    while (node && node !== document.body) {
+      if (!(node instanceof Element)) break;
+      if (node.tagName === "A" || node.tagName === "BUTTON") return node;
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  function onPreventPreviewNavigation(event) {
+    if (isDesignUi(event.target)) return;
+    var el = event.target;
+    if (!(el instanceof Element)) return;
+    if (!findInteractiveAncestor(el)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function disableInteractiveNavigation(el) {
+    if (!(el instanceof Element)) return;
+    if (el.tagName === "A") {
+      el.dataset.crmEditHref = el.getAttribute("href") || "";
+      el.removeAttribute("href");
+      el.removeAttribute("target");
+    }
+    if (el.tagName === "BUTTON") {
+      el.dataset.crmEditDisabled = el.disabled ? "1" : "0";
+      el.disabled = true;
+    }
+  }
+
+  function restoreInteractiveNavigation(el) {
+    if (!(el instanceof Element)) return;
+    if (el.tagName === "A" && el.dataset.crmEditHref != null) {
+      if (el.dataset.crmEditHref) el.setAttribute("href", el.dataset.crmEditHref);
+      else el.removeAttribute("href");
+      delete el.dataset.crmEditHref;
+    }
+    if (el.tagName === "BUTTON" && el.dataset.crmEditDisabled != null) {
+      el.disabled = el.dataset.crmEditDisabled === "1";
+      delete el.dataset.crmEditDisabled;
+    }
+  }
+
+  function findEditableTarget(el) {
+    var node = el;
+    while (node && node !== document.body) {
+      if (!(node instanceof Element)) {
+        node = node.parentElement;
+        continue;
+      }
+      if (node.tagName === "IMG") return node;
+      if (node.tagName === "A" || node.tagName === "BUTTON") {
+        var label = (node.innerText || node.textContent || "").replace(/\\s+/g, " ").trim();
+        if (label) return node;
+      }
+      if (EDITABLE_TAGS[node.tagName]) {
+        var text = (node.innerText || node.textContent || "").replace(/\\s+/g, " ").trim();
+        if (text) return node;
+      }
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  function stripDesignArtifactsFromBody() {
+    var clone = document.body.cloneNode(true);
+    clone.querySelectorAll("script").forEach(function (node) { node.remove(); });
+    clone.querySelectorAll("#crm-design-popup").forEach(function (node) {
+      node.remove();
+    });
+    clone.querySelectorAll("." + HOVER + ", ." + SELECTED + ", ." + EDITING).forEach(function (node) {
+      node.classList.remove(HOVER, SELECTED, EDITING);
+    });
+    clone.querySelectorAll("[contenteditable='true']").forEach(function (node) {
+      node.removeAttribute("contenteditable");
+    });
+    return clone.innerHTML;
+  }
+
+  function publishBodyHtml() {
+    parent.postMessage(
+      { type: "crm-email-direct-edit", payload: { bodyHtml: stripDesignArtifactsFromBody() } },
+      "*",
+    );
+  }
+
+  function rgbToHex(value) {
+    if (!value) return "#18181b";
+    var trimmed = String(value).trim();
+    if (trimmed.charAt(0) === "#") {
+      if (trimmed.length === 4) {
+        return "#" + trimmed.charAt(1) + trimmed.charAt(1) + trimmed.charAt(2) + trimmed.charAt(2) + trimmed.charAt(3) + trimmed.charAt(3);
+      }
+      return trimmed.slice(0, 7);
+    }
+    var match = trimmed.match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/);
+    if (!match) return "#18181b";
+    function hex(n) {
+      var h = Number(n).toString(16);
+      return h.length === 1 ? "0" + h : h;
+    }
+    return "#" + hex(match[1]) + hex(match[2]) + hex(match[3]);
+  }
+
+  function parseFontSizePx(value) {
+    var num = parseFloat(value);
+    if (isNaN(num)) return 16;
+    return Math.round(num);
+  }
+
+  function getElementEditState(el) {
+    var computed = window.getComputedStyle(el);
+    return {
+      label: labelFor(el),
+      tagName: el.tagName.toLowerCase(),
+      fontFamily: computed.fontFamily || "",
+      fontSize: parseFontSizePx(computed.fontSize),
+      color: rgbToHex(computed.color),
+      isImage: el.tagName === "IMG",
+    };
+  }
+
+  function notifyInlineEditStart(el) {
+    parent.postMessage({ type: "crm-email-inline-edit-start", payload: getElementEditState(el) }, "*");
+  }
+
+  function notifyInlineEditEnd() {
+    parent.postMessage({ type: "crm-email-inline-edit-end" }, "*");
+  }
+
+  function applyInlineStyles(styles) {
+    if (!editingEl || !styles) return;
+    if (styles.fontFamily) editingEl.style.fontFamily = styles.fontFamily;
+    if (styles.fontSize) editingEl.style.fontSize = String(styles.fontSize) + "px";
+    if (styles.color) editingEl.style.color = styles.color;
+  }
+
+  function cancelInlineEdit(restore, silent) {
+    if (!editingEl) return;
+    var el = editingEl;
+    el.removeEventListener("keydown", onInlineEditKeyDown);
+    restoreInteractiveNavigation(el);
+    el.contentEditable = "false";
+    el.classList.remove(EDITING);
+    if (restore && editingOriginalHtml != null) {
+      el.outerHTML = editingOriginalHtml;
+    }
+    editingEl = null;
+    editingOriginalHtml = null;
+    if (!silent) notifyInlineEditEnd();
+  }
+
+  function finishInlineEdit() {
+    if (!editingEl) return;
+    var el = editingEl;
+    el.removeEventListener("keydown", onInlineEditKeyDown);
+    el.contentEditable = "false";
+    el.classList.remove(EDITING);
+    restoreInteractiveNavigation(el);
+    editingEl = null;
+    editingOriginalHtml = null;
+    publishBodyHtml();
+    notifyInlineEditEnd();
+  }
+
+  function deleteInlineElement() {
+    if (!editingEl) return;
+    var el = editingEl;
+    el.removeEventListener("keydown", onInlineEditKeyDown);
+    restoreInteractiveNavigation(el);
+    el.contentEditable = "false";
+    el.classList.remove(EDITING);
+    editingEl = null;
+    editingOriginalHtml = null;
+    el.remove();
+    publishBodyHtml();
+    notifyInlineEditEnd();
+  }
+
+  function startInlineEdit(el) {
+    if (!el || editingEl === el) return;
+    cancelInlineEdit(true, true);
+    removePopup();
+    clearHover();
+    clearSelectedAll();
+
+    injectStyles();
+    editingEl = el;
+    editingOriginalHtml = el.outerHTML;
+    el.classList.add(EDITING);
+    disableInteractiveNavigation(el);
+    notifyInlineEditStart(el);
+
+    if (el.tagName === "IMG") return;
+
+    el.contentEditable = "true";
+    el.addEventListener("keydown", onInlineEditKeyDown);
+
+    window.requestAnimationFrame(function () {
+      if (!editingEl) return;
+      editingEl.focus();
+      try {
+        document.execCommand("selectAll", false, null);
+      } catch (err) {
+        // non-fatal
+      }
+    });
+  }
+
+  function onInlineEditKeyDown(event) {
+    if (!editingEl) return;
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      finishInlineEdit();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelInlineEdit(true);
+    }
   }
 
   function cssPath(el) {
@@ -212,10 +466,10 @@ const DESIGN_MODE_SCRIPT = `<script>
   }
 
   function onMouseOver(event) {
-    if (!active) return;
+    if (!active || editingEl) return;
     var el = event.target;
     if (!(el instanceof Element) || el.tagName === "HTML" || el.tagName === "BODY") return;
-    if (popupEl && popupEl.contains(el)) return;
+    if (isDesignUi(el)) return;
     if (el === hoverEl) return;
     clearHover();
     hoverEl = el;
@@ -230,11 +484,20 @@ const DESIGN_MODE_SCRIPT = `<script>
     if (!active) return;
     var el = event.target;
     if (!(el instanceof Element) || el.tagName === "HTML" || el.tagName === "BODY") return;
-    if (popupEl && popupEl.contains(el)) return;
+    if (isDesignUi(el)) return;
     event.preventDefault();
     event.stopPropagation();
     clearHover();
 
+    if (clickTimer) clearTimeout(clickTimer);
+    var shiftKey = event.shiftKey;
+    clickTimer = window.setTimeout(function () {
+      clickTimer = null;
+      handleDesignClick({ shiftKey: shiftKey }, el);
+    }, 220);
+  }
+
+  function handleDesignClick(event, el) {
     if (event.shiftKey) {
       var index = selectedElements.indexOf(el);
       if (index >= 0) {
@@ -259,6 +522,26 @@ const DESIGN_MODE_SCRIPT = `<script>
     showPopup(el);
   }
 
+  function onDoubleClick(event) {
+    if (clickTimer) {
+      clearTimeout(clickTimer);
+      clickTimer = null;
+    }
+    var el = event.target;
+    if (!(el instanceof Element) || el.tagName === "HTML" || el.tagName === "BODY") return;
+    if (isDesignUi(el)) return;
+
+    var target = findEditableTarget(el);
+    if (!target) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    removePopup();
+    clearHover();
+    clearSelectedAll();
+    startInlineEdit(target);
+  }
+
   function setActive(next) {
     active = !!next;
     injectStyles();
@@ -270,11 +553,18 @@ const DESIGN_MODE_SCRIPT = `<script>
   window.addEventListener("message", function (event) {
     var data = event.data || {};
     if (data.type === "crm-design-mode-set") setActive(!!data.active);
+    if (data.type === "crm-email-inline-edit-apply-styles") applyInlineStyles(data.payload || {});
+    if (data.type === "crm-email-inline-edit-finish") finishInlineEdit();
+    if (data.type === "crm-email-inline-edit-cancel") cancelInlineEdit(true);
+    if (data.type === "crm-email-inline-edit-delete") deleteInlineElement();
   });
 
   document.addEventListener("mouseover", onMouseOver, true);
   document.addEventListener("mouseout", onMouseOut, true);
+  document.addEventListener("mousedown", onPreventPreviewNavigation, true);
+  document.addEventListener("click", onPreventPreviewNavigation, true);
   document.addEventListener("click", onClick, true);
+  document.addEventListener("dblclick", onDoubleClick, true);
 })();
 </script>`;
 
@@ -330,25 +620,58 @@ export function VisualEditUserBubble(props: {
   );
 }
 
-export function DesignModeEmailPreview({
-  templateKey,
-  content,
-  store,
-  className,
-  previewFirstName,
-  designModeActive,
-  onDesignModeActiveChange,
-  onSubmitVisualEdit,
-}: {
-  templateKey: string;
+export function patchCampaignHtmlBody(args: {
   content: CampaignContent;
-  store: StoreBranding;
-  className?: string;
+  bodyHtml: string;
   previewFirstName?: string | null;
-  designModeActive: boolean;
-  onDesignModeActiveChange: (active: boolean) => void;
-  onSubmitVisualEdit: (selections: EmailPreviewDesignSelection[], text: string) => void;
-}) {
+}): CampaignContent | null {
+  const stored = getStoredCampaignHtml(args.content);
+  if (!stored) return null;
+
+  const restoredBody = restoreMergeTags(args.bodyHtml, { firstName: args.previewFirstName });
+  const nextHtml = replaceCampaignHtmlBody(stored, restoredBody);
+
+  return {
+    ...args.content,
+    body: htmlToPlainText(nextHtml).slice(0, 4000),
+    design: {
+      ...args.content.design!,
+      html: nextHtml,
+    },
+  };
+}
+
+export const DesignModeEmailPreview = React.forwardRef<
+  EmailPreviewEditorHandle,
+  {
+    templateKey: string;
+    content: CampaignContent;
+    store: StoreBranding;
+    className?: string;
+    previewFirstName?: string | null;
+    designModeActive: boolean;
+    onDesignModeActiveChange: (active: boolean) => void;
+    onSubmitVisualEdit: (selections: EmailPreviewDesignSelection[], text: string) => void;
+    onDirectHtmlEdit?: (bodyHtml: string) => void;
+    onInlineEditStart?: (state: EmailInlineEditState) => void;
+    onInlineEditEnd?: () => void;
+  }
+>(function DesignModeEmailPreview(
+  {
+    templateKey,
+    content,
+    store,
+    className,
+    previewFirstName,
+    designModeActive,
+    onDesignModeActiveChange,
+    onSubmitVisualEdit,
+    onDirectHtmlEdit,
+    onInlineEditStart,
+    onInlineEditEnd,
+  },
+  ref,
+) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
   const deferredContent = React.useDeferredValue(content);
 
@@ -372,26 +695,61 @@ export function DesignModeEmailPreview({
     iframeRef.current?.contentWindow?.postMessage({ type: "crm-design-mode-set", active }, "*");
   }, []);
 
+  const postToIframe = React.useCallback((type: string, payload?: Record<string, unknown>) => {
+    iframeRef.current?.contentWindow?.postMessage({ type, payload }, "*");
+  }, []);
+
+  React.useImperativeHandle(
+    ref,
+    () => ({
+      applyStyles: (styles) => postToIframe("crm-email-inline-edit-apply-styles", styles),
+      finishEdit: () => postToIframe("crm-email-inline-edit-finish"),
+      cancelEdit: () => postToIframe("crm-email-inline-edit-cancel"),
+      deleteElement: () => postToIframe("crm-email-inline-edit-delete"),
+    }),
+    [postToIframe],
+  );
+
   React.useEffect(() => {
     syncDesignMode(designModeActive);
   }, [designModeActive, previewHtml, syncDesignMode]);
 
   React.useEffect(() => {
     const onMessage = (event: MessageEvent) => {
-      if (event.data?.type !== "crm-email-edit-submit") return;
-      const payload = event.data.payload as {
-        selections?: EmailPreviewDesignSelection[];
-        text?: string;
-      };
-      const selections = payload?.selections ?? [];
-      const text = payload?.text?.trim() ?? "";
-      if (!text || selections.length === 0) return;
-      onSubmitVisualEdit(selections, text);
-      onDesignModeActiveChange(false);
+      if (event.data?.type === "crm-email-edit-submit") {
+        const payload = event.data.payload as {
+          selections?: EmailPreviewDesignSelection[];
+          text?: string;
+        };
+        const selections = payload?.selections ?? [];
+        const text = payload?.text?.trim() ?? "";
+        if (!text || selections.length === 0) return;
+        onSubmitVisualEdit(selections, text);
+        onDesignModeActiveChange(false);
+        return;
+      }
+
+      if (event.data?.type === "crm-email-inline-edit-start") {
+        const payload = event.data.payload as EmailInlineEditState | undefined;
+        if (payload) onInlineEditStart?.(payload);
+        return;
+      }
+
+      if (event.data?.type === "crm-email-inline-edit-end") {
+        onInlineEditEnd?.();
+        return;
+      }
+
+      if (event.data?.type === "crm-email-direct-edit") {
+        const bodyHtml = (event.data.payload as { bodyHtml?: string } | undefined)?.bodyHtml?.trim();
+        if (!bodyHtml || !onDirectHtmlEdit) return;
+        onDirectHtmlEdit(bodyHtml);
+        return;
+      }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [onDesignModeActiveChange, onSubmitVisualEdit]);
+  }, [onDesignModeActiveChange, onDirectHtmlEdit, onInlineEditEnd, onInlineEditStart, onSubmitVisualEdit]);
 
   return (
     <div
@@ -403,9 +761,13 @@ export function DesignModeEmailPreview({
     >
       {designModeActive ? (
         <div className="border-b border-border/40 bg-gray-50 px-3 py-1.5 text-center text-xs text-muted-foreground">
-          Click an element to edit · Shift+click to add more · Enter to send
+          Click an element to edit with AI · Shift+click to add more · Double-click text to edit directly
         </div>
-      ) : null}
+      ) : (
+        <div className="border-b border-border/40 bg-gray-50 px-3 py-1.5 text-center text-xs text-muted-foreground">
+          Double-click any text to edit · Format in the panel on the right
+        </div>
+      )}
       <iframe
         ref={iframeRef}
         title="Campaign email preview"
@@ -416,4 +778,4 @@ export function DesignModeEmailPreview({
       />
     </div>
   );
-}
+});

@@ -25,6 +25,12 @@ export type CrmContactGroup = {
   name: string;
   description: string | null;
   member_count?: number;
+  /** Smart groups carry audience rules and can be refreshed against live data. */
+  is_smart?: boolean;
+  rules?: unknown[] | null;
+  reason?: string | null;
+  source?: "manual" | "ai";
+  last_refreshed_at?: string | null;
   created_at: string;
   updated_at: string;
 };

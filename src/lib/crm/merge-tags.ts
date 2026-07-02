@@ -43,6 +43,16 @@ export function applyMergeTags(
   return normalizeMergeTags(value).replaceAll(CANONICAL_TAG, firstName);
 }
 
+/** Undo preview personalisation before persisting iframe edits back to stored HTML. */
+export function restoreMergeTags(
+  value: string,
+  fields: { firstName?: string | null },
+): string {
+  const firstName = String(fields.firstName ?? "").trim();
+  if (!firstName || firstName === FIRST_NAME_FALLBACK) return value;
+  return value.replaceAll(firstName, CANONICAL_TAG);
+}
+
 export function hasMergeTags(value: string): boolean {
   return normalizeMergeTags(value).includes(CANONICAL_TAG);
 }

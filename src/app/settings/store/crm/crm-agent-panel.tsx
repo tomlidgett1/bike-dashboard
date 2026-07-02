@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Layers,
+  Lightbulb,
   Loader2,
   Monitor,
   MousePointerClick,
@@ -31,9 +32,13 @@ import {
 import {
   DesignModeEmailPreview,
   formatDesignTargetPrompt,
+  patchCampaignHtmlBody,
   VisualEditUserBubble,
+  type EmailInlineEditState,
+  type EmailPreviewEditorHandle,
   type EmailPreviewDesignSelection,
 } from "@/app/settings/store/crm/email-preview-design";
+import { EmailElementEditPanel } from "@/app/settings/store/crm/email-element-edit-panel";
 import { HomeV2ChatInput } from "@/components/genie/homev2-chat-input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -142,6 +147,8 @@ export function CrmAgentPanel(props: {
   // Preview + send
   const [previewMode, setPreviewMode] = React.useState<"desktop" | "mobile">("desktop");
   const [previewDesignMode, setPreviewDesignMode] = React.useState(false);
+  const [inlineEdit, setInlineEdit] = React.useState<EmailInlineEditState | null>(null);
+  const previewEditorRef = React.useRef<EmailPreviewEditorHandle>(null);
   const [specsCollapsed, setSpecsCollapsed] = React.useState(false);
   const [creating, setCreating] = React.useState(false);
   const [testEmail, setTestEmail] = React.useState("");
@@ -162,6 +169,7 @@ export function CrmAgentPanel(props: {
   const premadeTemplates = React.useMemo(() => buildPremadeTemplates(store), [store]);
 
   const hasStarted = transcript.length > 0;
+  const showStudio = hasStarted || running;
 
   const effectiveContactIds = React.useMemo(
     () => audience?.contactIds.filter((id) => !excludedContactIds.has(id)) ?? [],
@@ -605,8 +613,60 @@ export function CrmAgentPanel(props: {
     void runAgent(text, { designSelections: selections });
   };
 
+  const handleDirectHtmlEdit = React.useCallback(
+    (bodyHtml: string) => {
+      setCampaign((prev) => {
+        if (!prev) return prev;
+        const nextContent = patchCampaignHtmlBody({
+          content: prev.content,
+          bodyHtml,
+          previewFirstName: audience?.sample[0]?.first_name ?? null,
+        });
+        if (!nextContent) return prev;
+        return { ...prev, content: nextContent };
+      });
+    },
+    [audience],
+  );
+
   return (
-    <div className="flex h-full min-h-0 flex-1 overflow-hidden">
+    <AnimatePresence mode="wait">
+      {!showStudio ? (
+        <motion.div
+          key="create-landing"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.25, ease: "easeOut" }}
+          className="flex h-full min-h-0 flex-1 overflow-hidden"
+        >
+          <CreateLandingView
+            prompt={prompt}
+            running={running}
+            templates={templates}
+            uploadedImages={uploadedImages}
+            uploadingImage={uploadingImage}
+            error={error}
+            onPromptChange={setPrompt}
+            onSubmit={() => void runAgent()}
+            onStop={stopAgent}
+            onSuggestion={(text) => void runAgent(text)}
+            onApplyTemplate={applyTemplate}
+            onImageSelected={(file) => void uploadEmailImage(file)}
+            onRemoveUploadedImage={(id) =>
+              setUploadedImages((prev) => prev.filter((image) => image.id !== id))
+            }
+          />
+        </motion.div>
+      ) : (
+        <motion.div
+          key="create-studio"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.25, ease: "easeOut" }}
+          className="flex h-full min-h-0 flex-1 overflow-hidden"
+        >
       <ChatColumn
         hasStarted={hasStarted}
         transcript={transcript}
@@ -617,12 +677,10 @@ export function CrmAgentPanel(props: {
         error={error}
         success={success}
         prompt={prompt}
-        templates={templates}
         onPromptChange={setPrompt}
         onSubmit={() => void runAgent()}
         onStop={stopAgent}
         onSuggestion={(text) => void runAgent(text)}
-        onApplyTemplate={applyTemplate}
         chatScrollRef={chatScrollRef}
         uploadedImages={uploadedImages}
         uploadingImage={uploadingImage}
@@ -643,6 +701,7 @@ export function CrmAgentPanel(props: {
         previewDesignMode={previewDesignMode}
         onPreviewDesignModeChange={setPreviewDesignMode}
         onSubmitVisualEdit={runVisualEdit}
+        onDirectHtmlEdit={handleDirectHtmlEdit}
         templates={templates}
         premadeTemplates={premadeTemplates}
         templatesOpen={templatesOpen}
@@ -656,11 +715,27 @@ export function CrmAgentPanel(props: {
         onSaveTemplate={() => void saveTemplate()}
         savingTemplate={savingTemplate}
         previewFirstName={audience?.sample[0]?.first_name ?? null}
+        previewEditorRef={previewEditorRef}
+        onInlineEditStart={setInlineEdit}
+        onInlineEditEnd={() => setInlineEdit(null)}
+        specsCollapsed={specsCollapsed}
+        onToggleSpecsCollapsed={toggleSpecsCollapsed}
+        showSpecsPanelToggle={!inlineEdit}
       />
 
-      <SpecsColumn
-        collapsed={specsCollapsed}
-        onToggleCollapsed={toggleSpecsCollapsed}
+      {inlineEdit ? (
+        <EmailElementEditPanel
+          state={inlineEdit}
+          onChangeStyles={(styles) => {
+            previewEditorRef.current?.applyStyles(styles);
+            setInlineEdit((prev) => (prev ? { ...prev, ...styles } : null));
+          }}
+          onDone={() => previewEditorRef.current?.finishEdit()}
+          onCancel={() => previewEditorRef.current?.cancelEdit()}
+          onDelete={() => previewEditorRef.current?.deleteElement()}
+        />
+      ) : !specsCollapsed ? (
+        <SpecsColumn
         audience={audience}
         selectedCount={effectiveContactIds.length}
         excludedContactIds={excludedContactIds}
@@ -681,7 +756,116 @@ export function CrmAgentPanel(props: {
         onSendTest={() => void sendTest()}
         sendingTest={sendingTest}
         testResult={testResult}
-      />
+        />
+      ) : null}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+// ============================================================
+// Create landing — centred chat before the studio opens
+// ============================================================
+
+function CreateLandingView(props: {
+  prompt: string;
+  running: boolean;
+  templates: CrmEmailTemplateRecord[];
+  uploadedImages: CrmEmailImageAttachment[];
+  uploadingImage: boolean;
+  error: string | null;
+  onPromptChange: (value: string) => void;
+  onSubmit: () => void;
+  onStop: () => void;
+  onSuggestion: (text: string) => void;
+  onApplyTemplate: (template: CrmEmailTemplateRecord) => void;
+  onImageSelected: (file: File) => void;
+  onRemoveUploadedImage: (id: string) => void;
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto bg-[#f8fafc] px-4 py-10 sm:px-6">
+      <div className="flex w-full max-w-2xl flex-col items-center gap-6">
+        <div className="space-y-1.5 text-center">
+          <h2 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+            What would you like to send?
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Describe your campaign, audience, or offer. Genie will build the email for you.
+          </p>
+        </div>
+
+        <div className="w-full">
+          <HomeV2ChatInput
+            compact
+            value={props.prompt}
+            isRunning={props.running}
+            onChange={props.onPromptChange}
+            onSubmit={props.onSubmit}
+            onStop={props.onStop}
+            placeholder="Describe your campaign"
+            showDisclaimer={false}
+            onFileSelected={props.onImageSelected}
+            fileAccept="image/jpeg,image/png,image/webp,image/avif"
+            fileButtonLabel="Attach image for this email"
+            canSubmitWithoutText={props.uploadedImages.length > 0}
+            inputAccessory={
+              props.uploadedImages.length > 0 || props.uploadingImage ? (
+                <ImageAttachmentAccessory
+                  images={props.uploadedImages}
+                  uploading={props.uploadingImage}
+                  onRemove={props.onRemoveUploadedImage}
+                />
+              ) : undefined
+            }
+          />
+        </div>
+
+        <div className="flex w-full flex-wrap items-center justify-center gap-2">
+          <EmptyStateDropdown label="Try one of these" icon={Lightbulb}>
+            {STARTER_IDEAS.map((idea) => (
+              <button
+                key={idea.title}
+                type="button"
+                onClick={() => props.onSuggestion(idea.prompt)}
+                className="w-full rounded-md px-2 py-1.5 text-left transition-colors hover:bg-gray-100"
+              >
+                <p className="text-xs font-medium text-foreground">{idea.title}</p>
+                <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+                  {idea.prompt}
+                </p>
+              </button>
+            ))}
+          </EmptyStateDropdown>
+
+          {props.templates.length > 0 ? (
+            <EmptyStateDropdown label="Start from a saved template" icon={Layers}>
+              {props.templates.slice(0, 6).map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  onClick={() => props.onApplyTemplate(template)}
+                  className="w-full rounded-md px-2 py-1.5 text-left transition-colors hover:bg-gray-100"
+                >
+                  <span className="block truncate text-xs font-medium text-foreground">
+                    {template.name}
+                  </span>
+                  <span className="block truncate text-[11px] text-muted-foreground">
+                    {template.description || template.subject}
+                  </span>
+                </button>
+              ))}
+            </EmptyStateDropdown>
+          ) : null}
+        </div>
+
+        {props.error ? (
+          <div className="flex w-full max-w-xl items-start gap-1.5 rounded-md border border-red-200 bg-white px-3 py-2 text-xs text-red-700">
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+            {props.error}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -892,12 +1076,10 @@ function ChatColumn(props: {
   error: string | null;
   success: string | null;
   prompt: string;
-  templates: CrmEmailTemplateRecord[];
   onPromptChange: (v: string) => void;
   onSubmit: () => void;
   onStop: () => void;
   onSuggestion: (text: string) => void;
-  onApplyTemplate: (template: CrmEmailTemplateRecord) => void;
   chatScrollRef: React.RefObject<HTMLDivElement | null>;
   uploadedImages: CrmEmailImageAttachment[];
   uploadingImage: boolean;
@@ -914,12 +1096,10 @@ function ChatColumn(props: {
     error,
     success,
     prompt,
-    templates,
     onPromptChange,
     onSubmit,
     onStop,
     onSuggestion,
-    onApplyTemplate,
     chatScrollRef,
     uploadedImages,
     uploadingImage,
@@ -938,15 +1118,8 @@ function ChatColumn(props: {
         ref={chatScrollRef}
         className="genie-chat-selectable min-h-0 flex-1 overflow-y-auto px-4 py-4"
       >
-        {!hasStarted ? (
-          <EmptyState
-            templates={templates}
-            onSuggestion={onSuggestion}
-            onApplyTemplate={onApplyTemplate}
-          />
-        ) : (
-          <div className="space-y-3.5">
-            {transcript.map((item) => {
+        <div className="space-y-3.5">
+          {transcript.map((item) => {
               if (item.kind === "user") {
                 if (item.designSelections?.length) {
                   return (
@@ -1027,89 +1200,84 @@ function ChatColumn(props: {
                 {success}
               </div>
             ) : null}
-          </div>
-        )}
+        </div>
       </div>
 
-      <div className="shrink-0 border-t border-border/40 p-3">
-        <div className="rounded-2xl border border-border/60 bg-gray-50 shadow-sm">
-          <HomeV2ChatInput
-            compact
-            floating
-            value={prompt}
-            isRunning={running}
-            onChange={onPromptChange}
-            onSubmit={onSubmit}
-            onStop={onStop}
-            placeholder={hasStarted ? "Refine or follow up" : "Describe your campaign"}
-            showDisclaimer={false}
-            onFileSelected={onImageSelected}
-            fileAccept="image/jpeg,image/png,image/webp,image/avif"
-            fileButtonLabel="Attach image for this email"
-            canSubmitWithoutText={uploadedImages.length > 0}
-            inputAccessory={
-              uploadedImages.length > 0 || uploadingImage ? (
-                <ImageAttachmentAccessory
-                  images={uploadedImages}
-                  uploading={uploadingImage}
-                  onRemove={onRemoveUploadedImage}
-                />
-              ) : undefined
-            }
-          />
-        </div>
+      <div className="relative shrink-0 bg-gradient-to-t from-[#f8fafc] via-[#f8fafc] to-transparent px-4 pb-4 pt-5">
+        <HomeV2ChatInput
+          compact
+          value={prompt}
+          isRunning={running}
+          onChange={onPromptChange}
+          onSubmit={onSubmit}
+          onStop={onStop}
+          placeholder={hasStarted ? "Refine or follow up" : "Describe your campaign"}
+          showDisclaimer={false}
+          onFileSelected={onImageSelected}
+          fileAccept="image/jpeg,image/png,image/webp,image/avif"
+          fileButtonLabel="Attach image for this email"
+          canSubmitWithoutText={uploadedImages.length > 0}
+          inputAccessory={
+            uploadedImages.length > 0 || uploadingImage ? (
+              <ImageAttachmentAccessory
+                images={uploadedImages}
+                uploading={uploadingImage}
+                onRemove={onRemoveUploadedImage}
+              />
+            ) : undefined
+          }
+        />
       </div>
     </aside>
   );
 }
 
-function EmptyState(props: {
-  templates: CrmEmailTemplateRecord[];
-  onSuggestion: (text: string) => void;
-  onApplyTemplate: (template: CrmEmailTemplateRecord) => void;
+function EmptyStateDropdown(props: {
+  label: string;
+  icon?: React.ComponentType<{ className?: string }>;
+  children: React.ReactNode;
 }) {
-  return (
-    <div className="space-y-5">
-      <div className="space-y-1.5">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Try one of these
-        </p>
-        {STARTER_IDEAS.map((idea) => (
-          <button
-            key={idea.title}
-            type="button"
-            onClick={() => props.onSuggestion(idea.prompt)}
-            className="w-full rounded-xl border border-border/50 bg-white px-3.5 py-2.5 text-left transition-colors hover:border-zinc-400 hover:bg-gray-50"
-          >
-            <p className="text-sm font-medium text-foreground">{idea.title}</p>
-            <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{idea.prompt}</p>
-          </button>
-        ))}
-      </div>
+  const [isOpen, setIsOpen] = React.useState(false);
+  const Icon = props.icon;
 
-      {props.templates.length > 0 ? (
-        <div className="space-y-1.5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Start from a saved template
-          </p>
-          {props.templates.slice(0, 4).map((template) => (
-            <button
-              key={template.id}
-              type="button"
-              onClick={() => props.onApplyTemplate(template)}
-              className="flex w-full items-center gap-2.5 rounded-xl border border-border/50 bg-white px-3.5 py-2.5 text-left transition-colors hover:border-zinc-400 hover:bg-gray-50"
-            >
-              <Layers className="size-4 shrink-0 text-gray-400" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-foreground">{template.name}</span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  {template.description || template.subject}
-                </span>
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : null}
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setIsOpen((open) => !open)}
+        className={cn(
+          "flex h-9 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-4 text-xs font-medium text-foreground shadow-sm transition-colors hover:border-gray-300 hover:bg-gray-50",
+          isOpen && "border-gray-400 bg-gray-50",
+        )}
+        aria-expanded={isOpen}
+      >
+        {Icon ? <Icon className="size-3.5 shrink-0 text-gray-500" /> : null}
+        <span className="whitespace-nowrap">{props.label}</span>
+        <ChevronDown
+          className={cn(
+            "size-3.5 shrink-0 text-gray-400 transition-transform duration-200",
+            isOpen && "rotate-180",
+          )}
+        />
+      </button>
+      <AnimatePresence initial={false}>
+        {isOpen ? (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{
+              duration: 0.4,
+              ease: [0.04, 0.62, 0.23, 0.98],
+            }}
+            className="absolute left-1/2 top-[calc(100%+0.375rem)] z-10 w-[min(100vw-2rem,18rem)] -translate-x-1/2 overflow-hidden"
+          >
+            <div className="rounded-xl border border-border/60 bg-white p-0.5 shadow-lg">
+              {props.children}
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }
@@ -1129,6 +1297,13 @@ function PreviewColumn(props: {
   previewDesignMode: boolean;
   onPreviewDesignModeChange: (active: boolean) => void;
   onSubmitVisualEdit: (selections: EmailPreviewDesignSelection[], text: string) => void;
+  onDirectHtmlEdit: (bodyHtml: string) => void;
+  previewEditorRef: React.RefObject<EmailPreviewEditorHandle | null>;
+  onInlineEditStart: (state: EmailInlineEditState) => void;
+  onInlineEditEnd: () => void;
+  specsCollapsed: boolean;
+  onToggleSpecsCollapsed: () => void;
+  showSpecsPanelToggle: boolean;
   templates: CrmEmailTemplateRecord[];
   premadeTemplates: CrmEmailTemplateRecord[];
   templatesOpen: boolean;
@@ -1154,6 +1329,13 @@ function PreviewColumn(props: {
     previewDesignMode,
     onPreviewDesignModeChange,
     onSubmitVisualEdit,
+    onDirectHtmlEdit,
+    previewEditorRef,
+    onInlineEditStart,
+    onInlineEditEnd,
+    specsCollapsed,
+    onToggleSpecsCollapsed,
+    showSpecsPanelToggle,
     templates,
     premadeTemplates,
     templatesOpen,
@@ -1173,18 +1355,19 @@ function PreviewColumn(props: {
     { firstName: previewFirstName },
   );
   const toolbarControl =
-    "inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2.5 text-xs font-medium transition-colors";
+    "inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-xs font-medium transition-colors @min-[560px]/preview:px-2.5";
+  const toolbarLabel = "hidden @min-[560px]/preview:inline";
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col bg-gray-100/70">
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/40 bg-white px-4 py-2.5">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-foreground">Email preview</p>
+    <main className="@container/preview flex min-w-0 flex-1 flex-col bg-gray-100/70">
+      <div className="flex shrink-0 flex-col gap-2.5 border-b border-border/40 bg-white px-3 py-2.5 @min-[520px]/preview:flex-row @min-[520px]/preview:items-center @min-[520px]/preview:justify-between @min-[520px]/preview:gap-3 @min-[520px]/preview:px-4">
+        <div className="min-w-0 @min-[520px]/preview:flex-1">
+          <p className="truncate text-sm font-semibold text-foreground">Email preview</p>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {subject || "Designed live as the agent works"}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5 @min-[520px]/preview:max-w-[62%] @min-[520px]/preview:justify-end @min-[520px]/preview:gap-2">
           <div className="flex h-8 items-center rounded-lg border border-border/60 p-0.5">
             <button
               type="button"
@@ -1225,9 +1408,10 @@ function PreviewColumn(props: {
                   : "border-border/60 text-foreground hover:bg-gray-50",
               )}
               aria-pressed={previewDesignMode}
+              title="Pick element"
             >
-              <MousePointerClick className="size-3.5" />
-              Pick element
+              <MousePointerClick className="size-3.5 shrink-0" />
+              <span className={toolbarLabel}>Pick element</span>
             </button>
           ) : null}
 
@@ -1236,11 +1420,12 @@ function PreviewColumn(props: {
               type="button"
               onClick={() => onTemplatesOpenChange(!templatesOpen)}
               className={cn(toolbarControl, "border-border/60 text-foreground hover:bg-gray-50")}
+              title="Templates"
             >
-              <Layers className="size-3.5" />
-              Templates
+              <Layers className="size-3.5 shrink-0" />
+              <span className={toolbarLabel}>Templates</span>
               <ChevronDown
-                className={cn("h-3 w-3 transition-transform duration-200", templatesOpen && "rotate-180")}
+                className={cn("h-3 w-3 shrink-0 transition-transform duration-200", templatesOpen && "rotate-180")}
               />
             </button>
             <AnimatePresence>
@@ -1297,9 +1482,29 @@ function PreviewColumn(props: {
             </AnimatePresence>
           </div>
 
+          {showSpecsPanelToggle ? (
+            <button
+              type="button"
+              onClick={onToggleSpecsCollapsed}
+              aria-label={specsCollapsed ? "Show campaign panel" : "Hide campaign panel"}
+              title={specsCollapsed ? "Show campaign panel" : "Hide campaign panel"}
+              className={cn(
+                toolbarControl,
+                "border-border/60 text-foreground hover:bg-gray-50",
+                !specsCollapsed && "border-zinc-400 bg-gray-50",
+              )}
+            >
+              {specsCollapsed ? (
+                <PanelRightOpen className="size-3.5 shrink-0" />
+              ) : (
+                <PanelRightClose className="size-3.5 shrink-0" />
+              )}
+            </button>
+          ) : null}
+
           {campaign ? (
             showSaveTemplate ? (
-              <div className="flex items-center gap-1.5">
+              <div className="flex w-full min-w-0 flex-wrap items-center gap-1.5 @min-[520px]/preview:w-auto">
                 <Input
                   autoFocus
                   value={templateNameDraft}
@@ -1309,7 +1514,7 @@ function PreviewColumn(props: {
                     if (e.key === "Escape") onShowSaveTemplate(false);
                   }}
                   placeholder="Template name…"
-                  className="h-8 w-40 text-xs"
+                  className="h-8 min-w-0 flex-1 text-xs @min-[520px]/preview:w-40 @min-[520px]/preview:flex-none"
                 />
                 <Button
                   size="sm"
@@ -1332,10 +1537,12 @@ function PreviewColumn(props: {
               <Button
                 size="sm"
                 variant="outline"
-                className="h-8 text-xs"
+                className="h-8 shrink-0 px-2 text-xs @min-[560px]/preview:px-3"
                 onClick={() => onShowSaveTemplate(true)}
+                title="Save as template"
               >
-                Save as template
+                <span className={toolbarLabel}>Save as template</span>
+                <span className="@min-[560px]/preview:hidden">Save</span>
               </Button>
             )
           ) : null}
@@ -1352,6 +1559,7 @@ function PreviewColumn(props: {
           >
             <InboxChrome store={store} subject={subject} mode={previewMode} />
             <DesignModeEmailPreview
+              ref={previewEditorRef}
               templateKey={campaign.templateKey}
               content={campaign.content}
               store={store}
@@ -1360,6 +1568,9 @@ function PreviewColumn(props: {
               designModeActive={previewDesignMode}
               onDesignModeActiveChange={onPreviewDesignModeChange}
               onSubmitVisualEdit={onSubmitVisualEdit}
+              onDirectHtmlEdit={onDirectHtmlEdit}
+              onInlineEditStart={onInlineEditStart}
+              onInlineEditEnd={onInlineEditEnd}
             />
           </div>
         ) : running ? (
@@ -1425,8 +1636,6 @@ function InboxChrome({ store, subject, mode }: { store: StoreBranding; subject: 
 // ============================================================
 
 function SpecsColumn(props: {
-  collapsed: boolean;
-  onToggleCollapsed: () => void;
   audience: CrmNamedAudience | null;
   selectedCount: number;
   excludedContactIds: Set<string>;
@@ -1464,8 +1673,6 @@ function SpecsColumn(props: {
     creating,
     onCreateDraft,
     onOpenComposer,
-    collapsed,
-    onToggleCollapsed,
     testEmail,
     onTestEmailChange,
     onSendTest,
@@ -1493,57 +1700,15 @@ function SpecsColumn(props: {
   }, [confirmSendNow, onCreateDraft, sendPlan.mode]);
 
   return (
-    <aside
-      className={cn(
-        "flex shrink-0 flex-col overflow-hidden border-l border-border/60 bg-white transition-[width] duration-[400ms] ease-[cubic-bezier(0.04,0.62,0.23,0.98)]",
-        collapsed ? "w-10" : "w-[min(330px,28%)]",
-      )}
-    >
-      <div
-        className={cn(
-          "shrink-0 border-b border-border/40",
-          collapsed ? "flex justify-center px-1 py-3" : "px-4 py-3",
-        )}
-      >
-        {collapsed ? (
-          <button
-            type="button"
-            onClick={onToggleCollapsed}
-            aria-label="Expand campaign specs"
-            title="Show campaign specs"
-            className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground"
-          >
-            <PanelRightOpen className="size-4" />
-          </button>
-        ) : (
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-foreground">Campaign</p>
-              <p className="text-xs text-muted-foreground">Who gets it, and when</p>
-            </div>
-            <button
-              type="button"
-              onClick={onToggleCollapsed}
-              aria-label="Collapse campaign specs"
-              title="Hide campaign specs"
-              className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground"
-            >
-              <PanelRightClose className="size-4" />
-            </button>
-          </div>
-        )}
+    <aside className="flex w-[min(330px,28%)] shrink-0 flex-col overflow-hidden border-l border-border/60 bg-white">
+      <div className="shrink-0 border-b border-border/40 px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground">Campaign</p>
+          <p className="text-xs text-muted-foreground">Who gets it, and when</p>
+        </div>
       </div>
 
-      <AnimatePresence initial={false}>
-        {!collapsed ? (
-          <motion.div
-            key="specs-content"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
-            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-          >
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
               {empty ? (
                 <p className="text-sm leading-relaxed text-muted-foreground">
@@ -1948,9 +2113,7 @@ function SpecsColumn(props: {
                 </div>
               )}
             </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+      </div>
     </aside>
   );
 }

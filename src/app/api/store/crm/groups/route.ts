@@ -21,23 +21,29 @@ export async function GET() {
 
     const { data: groups, error } = await supabase
       .from("crm_contact_groups")
-      .select("id, name, description, created_at, updated_at")
+      .select("id, name, description, is_smart, rules, reason, source, last_refreshed_at, created_at, updated_at")
       .eq("user_id", user.id)
       .order("name");
 
     if (error) throw error;
 
+    // Exact count per group — a single row-fetch here silently truncates at
+    // PostgREST's 1000-row cap once groups get big, reporting 0 for the rest.
     const groupIds = (groups ?? []).map((group) => group.id);
     const counts = new Map<string, number>();
     if (groupIds.length > 0) {
-      const { data: members } = await supabase
-        .from("crm_contact_group_members")
-        .select("group_id")
-        .eq("user_id", user.id)
-        .in("group_id", groupIds);
-      for (const member of members ?? []) {
-        const id = String(member.group_id);
-        counts.set(id, (counts.get(id) ?? 0) + 1);
+      const results = await Promise.all(
+        groupIds.map((groupId) =>
+          supabase
+            .from("crm_contact_group_members")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", user.id)
+            .eq("group_id", groupId)
+            .then(({ count }) => ({ groupId, count: count ?? 0 })),
+        ),
+      );
+      for (const result of results) {
+        counts.set(String(result.groupId), result.count);
       }
     }
 

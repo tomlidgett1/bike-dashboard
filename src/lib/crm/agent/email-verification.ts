@@ -6,6 +6,7 @@
 // self-correct, and the final report renders in the specs panel.
 
 import { findMergeTagArtifacts, hasMergeTags } from "../merge-tags";
+import { verifyMobileEmailHtml } from "./mobile-email-standard";
 import type { CampaignVerification, CampaignVerificationCheck } from "./chat-types";
 import type { AgentProductPick } from "./types";
 
@@ -127,6 +128,13 @@ export function verifyCampaignEmail(args: {
         : [hasScript ? "contains <script>" : null, hasExternalCss ? "external stylesheet" : null]
             .filter(Boolean)
             .join(", "),
+  });
+
+  const mobile = verifyMobileEmailHtml(html);
+  checks.push({
+    label: "Mobile layout",
+    ok: mobile.ok,
+    detail: mobile.detail,
   });
 
   const bytes = Buffer.byteLength(html, "utf8");

@@ -35,6 +35,7 @@ import {
   Layers,
   SlidersHorizontal,
   ChevronDown,
+  Delivery,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import Image from "next/image";
 import NextDynamic from "next/dynamic";
@@ -1295,17 +1296,39 @@ export default function ProductsPage() {
           icon={Package}
           actions={
             <>
-              {stats?.variantPendingReview ? (
-                <Button variant="outline" size="sm" className="rounded-md" asChild>
-                  <Link href="/optimize/variants">
-                    <Layers className="size-4" />
-                    Review variants
-                    <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-800">
-                      {stats.variantPendingReview.toLocaleString()}
-                    </span>
-                  </Link>
-                </Button>
-              ) : null}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="group rounded-md">
+                    Tools
+                    <ChevronDown className="size-4 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52 rounded-md">
+                  <DropdownMenuItem asChild>
+                    <Link href="/optimize/variants">
+                      <Layers className="size-4" />
+                      Review variants
+                      {stats?.variantPendingReview ? (
+                        <span className="ml-auto rounded-md bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-800">
+                          {stats.variantPendingReview.toLocaleString()}
+                        </span>
+                      ) : null}
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/settings/uber">
+                      <Delivery className="size-4" />
+                      Uber Direct
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/optimize">
+                      <Wand2 className="size-4" />
+                      Product Optimise
+                    </Link>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button size="sm" className="rounded-md" onClick={openSellModal}>
                 <Plus className="size-4" />
                 Add product

@@ -3,9 +3,11 @@
 export const dynamic = "force-dynamic";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2, TestTube } from "@/components/layout/app-sidebar/dashboard-icons";
+import { Loader2, Soundwave, TestTube } from "@/components/layout/app-sidebar/dashboard-icons";
 import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-page";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserProfile } from "@/components/providers/profile-provider";
 import { LightspeedTestLab } from "@/components/settings/lightspeed-test-lab";
@@ -43,6 +45,14 @@ export default function LightspeedTestPage() {
       title="Test"
       icon={TestTube}
       description="Debug Lightspeed API calls, customer lookup scans, and connection state."
+      actions={
+        <Button variant="outline" size="sm" className="rounded-md" asChild>
+          <Link href="/settings/store/test-tom">
+            <Soundwave className="size-4" />
+            Test Tom
+          </Link>
+        </Button>
+      }
       flush
     >
       <div className="p-4 md:p-5">

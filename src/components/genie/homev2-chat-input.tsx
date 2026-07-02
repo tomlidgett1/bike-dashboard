@@ -128,7 +128,7 @@ export function HomeV2ChatInput({
           header
             ? "relative h-9 items-center rounded-full py-0"
             : cn(
-                onFileSelected || isMultiline || inputAccessory ? "items-end py-2" : "items-center py-2",
+                isMultiline ? "items-end py-2" : "items-center py-2",
                 isMultiline || inputAccessory ? "rounded-2xl" : "rounded-full",
                 compact ? "min-h-[56px]" : "min-h-[60px]",
               ),
@@ -142,7 +142,8 @@ export function HomeV2ChatInput({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             className={cn(
-              "mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-700 transition-colors",
+              "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-700 transition-colors",
+              isMultiline && "mb-0.5",
               floating ? "hover:bg-gray-200/80" : "hover:bg-gray-100",
             )}
             aria-label={fileButtonLabel}
@@ -170,9 +171,11 @@ export function HomeV2ChatInput({
             "relative min-w-0",
             header
               ? "flex h-full flex-1 items-center self-stretch"
-              : truncatePlaceholder
+              :               truncatePlaceholder
                 ? "flex min-w-0 flex-1 items-center self-center"
-                : "contents",
+                : onFileSelected
+                  ? "flex min-w-0 flex-1 items-center self-center"
+                  : "contents",
           )}
         >
           {header && showShimmerPlaceholder ? (
@@ -250,7 +253,7 @@ export function HomeV2ChatInput({
           }}
           className={cn(
             "flex shrink-0 items-center justify-center rounded-full transition-colors",
-            header ? "h-7 w-7" : cn("h-9 w-9", (onFileSelected || isMultiline) && "mb-0.5"),
+            header ? "h-7 w-7" : cn("h-9 w-9", isMultiline && "mb-0.5"),
             canAct ? "bg-gray-900 text-white hover:bg-gray-800" : "bg-gray-200 text-gray-400",
           )}
           aria-label={queueMode ? "Add to queue" : isRunning ? "Stop response" : "Send message"}

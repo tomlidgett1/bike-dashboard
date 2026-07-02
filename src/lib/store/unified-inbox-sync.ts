@@ -5,6 +5,7 @@ import {
 } from "@/lib/nest/enrich-chats-with-lightspeed";
 import { proxyNestBrandPortalRequest } from "@/lib/nest/brand-portal-client";
 import {
+  annotateNestChatChannels,
   loadNestChatsFromSupabase,
   loadNestThreadSyncState,
   touchNestSyncTimestamp,
@@ -131,7 +132,7 @@ export async function syncNestInboxFromPortal(
     });
   }
 
-  return chats;
+  return annotateNestChatChannels(supabase, userId, chats);
 }
 
 export async function syncNestThreadFromPortal(
@@ -169,6 +170,69 @@ export async function syncNestThreadFromPortal(
 
   await upsertNestThreadToSupabase(supabase, userId, brandKey, conversation, listChat);
   return conversation;
+}
+
+export type NestCronSyncSummary = {
+  stores_checked: number;
+  stores_synced: number;
+  failed: number;
+};
+
+/**
+ * Cron entry point: sync the Nest inbox for every bicycle store, independent of
+ * dashboard traffic. Nest conversation messages expire 24 hours after creation
+ * on the Nest side, so if nobody opens the dashboard within that window a
+ * customer reply is gone before it can ever be mirrored. This keeps the YJ copy
+ * (store_nest_conversations / store_nest_messages) complete.
+ */
+export async function syncNestInboxForAllStores(
+  supabase: SupabaseClient,
+): Promise<NestCronSyncSummary> {
+  const summary: NestCronSyncSummary = { stores_checked: 0, stores_synced: 0, failed: 0 };
+
+  const { data, error } = await supabase
+    .from("users")
+    .select("user_id, nest_brand_key, business_name")
+    .eq("account_type", "bicycle_store")
+    .eq("bicycle_store", true)
+    .limit(100);
+
+  if (error) {
+    console.error("[unified-inbox-sync] cron store list failed:", error.message);
+    summary.failed += 1;
+    return summary;
+  }
+
+  const { resolveStoreNestBrandKey } = await import("@/lib/nest/resolve-store-brand-key");
+
+  for (const profile of data ?? []) {
+    const userId = String(profile.user_id ?? "").trim();
+    if (!userId) continue;
+    summary.stores_checked += 1;
+
+    // Never fall through to the env default brand key here: with neither an
+    // explicit key nor a business name, the default ("ash") would mirror
+    // another store's conversations into this account.
+    if (!profile.nest_brand_key?.trim() && !profile.business_name?.trim()) continue;
+
+    const brandKey = resolveStoreNestBrandKey(profile);
+    if (!brandKey) continue;
+
+    try {
+      await syncNestInboxFromPortal(supabase, userId, brandKey, {
+        // Cron runs every couple of minutes; skip Lightspeed enrichment to stay
+        // clear of API budgets — the interactive paths enrich on demand.
+        enrichLightspeed: false,
+        syncThreads: true,
+      });
+      summary.stores_synced += 1;
+    } catch (error) {
+      summary.failed += 1;
+      console.error("[unified-inbox-sync] cron nest sync failed:", userId, error);
+    }
+  }
+
+  return summary;
 }
 
 export async function backgroundReconcileGmailThreads(

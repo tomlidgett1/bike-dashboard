@@ -123,7 +123,7 @@ export function CampaignDetailDialog(props: {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[min(90vh,860px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+      <DialogContent className="flex h-[min(90vh,860px)] max-h-[min(90vh,860px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
         <DialogHeader className="border-b border-border/60 px-5 py-4">
           <DialogTitle className="pr-8 text-base font-semibold leading-snug">
             {campaign.subject}
@@ -172,27 +172,28 @@ export function CampaignDetailDialog(props: {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {tab === "email" ? (
-            <div className="p-5">
-              <div className="overflow-hidden rounded-md border border-border/60 bg-white shadow-sm">
+            <div className="flex min-h-0 flex-1 flex-col p-5">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border/60 bg-white shadow-sm">
                 <iframe
                   title="Sent campaign email"
                   sandbox=""
                   srcDoc={previewHtml}
-                  className="h-[min(62vh,560px)] w-full bg-white"
+                  className="min-h-0 flex-1 w-full bg-white"
                 />
               </div>
             </div>
           ) : (
-            <div className="flex flex-col gap-3 p-5">
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-5">
               <Input
                 value={recipientSearch}
                 onChange={(event) => setRecipientSearch(event.target.value)}
                 placeholder="Search by email…"
-                className="h-9"
+                className="h-9 shrink-0"
               />
 
+              <div className="min-h-0 flex-1 overflow-y-auto">
               {loadingRecipients ? (
                 <div className="space-y-2">
                   {Array.from({ length: 5 }).map((_, index) => (
@@ -259,6 +260,7 @@ export function CampaignDetailDialog(props: {
                   </div>
                 </div>
               )}
+              </div>
             </div>
           )}
         </div>

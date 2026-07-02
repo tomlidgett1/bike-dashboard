@@ -39,7 +39,7 @@ const bentoShell = getBentoShellStyles("light-beige-floating");
 
 export function storeSettingsHeaderActionClass(active?: boolean, disabled?: boolean) {
   return cn(
-    "inline-flex h-8 items-center gap-1.5 rounded-md border border-gray-200/80 bg-white px-3 text-sm font-medium text-gray-950 shadow-sm transition-colors hover:bg-gray-50",
+    "inline-flex items-center gap-1.5 rounded-full border border-gray-200/80 bg-white px-3.5 py-1.5 text-sm font-medium text-gray-800 shadow-sm transition-colors hover:bg-gray-50",
     active && "border-gray-300 bg-gray-50",
     disabled && "cursor-not-allowed opacity-50 hover:bg-white",
   );
@@ -89,11 +89,11 @@ export function StoreSettingsPageHeader({
               className={headerActionButtonClassName(nestOpen, composeDisabled)}
               aria-expanded={nestOpen}
             >
-              <NestLogo className="h-3.5 w-3.5" />
+              <NestLogo className="size-[15px]" />
               New message
               <ChevronDown
                 className={cn(
-                  "h-3.5 w-3.5 text-gray-400 transition-transform duration-200",
+                  "size-[15px] text-gray-400 transition-transform duration-200",
                   nestOpen && "rotate-180",
                 )}
               />

@@ -32,27 +32,26 @@ interface OnlineStoreCategoryTableProps {
   syncFilter?: "not_synced" | "synced";
 }
 
-function StatusPill({ status, on, total }: { status: string; on: number; total: number }) {
-  if (status === "fully_synced") {
+function getInStockNotOnlineCount(products: Category["products"]) {
+  return products.filter(
+    (product) => (product.totalQoh ?? 0) > 0 && !product.isSynced,
+  ).length;
+}
+
+function StatusPill({ count }: { count: number }) {
+  if (count === 0) {
     return (
       <span className="inline-flex items-center gap-1.5 rounded-md bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-950/40 dark:text-green-400">
         <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-        All on store
+        None
       </span>
     );
   }
-  if (status === "partial") {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
-        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-        {on} of {total} on store
-      </span>
-    );
-  }
+
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-      <span className="h-1.5 w-1.5 rounded-full bg-gray-400" />
-      Not on store yet
+    <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+      {count} in stock, not online
     </span>
   );
 }
@@ -95,7 +94,6 @@ export function OnlineStoreCategoryTable({
             <th className="w-12 px-4 py-3" />
             <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">Category</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">Status</th>
-            <th className="px-4 py-3 text-center text-xs font-medium text-muted-foreground">On store / In shop</th>
             <th className="px-4 py-3 text-center text-xs font-medium text-muted-foreground">Auto-update</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">Last update</th>
             <th className="w-12 px-4 py-3" />
@@ -104,7 +102,7 @@ export function OnlineStoreCategoryTable({
         <tbody>
           {displayed.length === 0 ? (
             <tr>
-              <td colSpan={7} className="px-4 py-12 text-center text-sm text-muted-foreground">
+              <td colSpan={6} className="px-4 py-12 text-center text-sm text-muted-foreground">
                 {syncFilter === "synced"
                   ? "Nothing on your online store yet. Tick a category and choose Add to store."
                   : syncFilter === "not_synced"
@@ -116,6 +114,7 @@ export function OnlineStoreCategoryTable({
             displayed.map((category) => {
               const isSelected = selectedCategories.has(category.categoryId);
               const isExpanded = expandedCategory === category.categoryId;
+              const inStockNotOnlineCount = getInStockNotOnlineCount(category.products);
               return (
                 <React.Fragment key={category.categoryId}>
                   <tr className="border-b border-border transition-colors hover:bg-muted/40">
@@ -126,12 +125,7 @@ export function OnlineStoreCategoryTable({
                       <div className="text-sm font-medium text-foreground">{category.name}</div>
                     </td>
                     <td className="px-4 py-3">
-                      <StatusPill status={category.syncStatus} on={category.syncedProducts} total={category.totalProducts} />
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className="text-sm font-medium tabular-nums text-foreground">
-                        {category.syncedProducts} / {category.totalProducts}
-                      </span>
+                      <StatusPill count={inStockNotOnlineCount} />
                     </td>
                     <td className="px-4 py-3 text-center">
                       {category.autoSyncEnabled ? (
@@ -165,7 +159,7 @@ export function OnlineStoreCategoryTable({
 
                   {isExpanded && (
                     <tr>
-                      <td colSpan={7} className="p-0">
+                      <td colSpan={6} className="p-0">
                         <div className="border-y border-border bg-muted/30 px-6 py-3">
                           <table className="w-full">
                             <thead>
@@ -184,8 +178,18 @@ export function OnlineStoreCategoryTable({
                                   </td>
                                 </tr>
                               ) : (
-                                category.products.map((product) => (
-                                  <tr key={product.itemId} className="border-b border-border last:border-b-0">
+                                category.products.map((product) => {
+                                  const inStockNotOnline =
+                                    (product.totalQoh ?? 0) > 0 && !product.isSynced;
+
+                                  return (
+                                  <tr
+                                    key={product.itemId}
+                                    className={cn(
+                                      "border-b border-border last:border-b-0",
+                                      inStockNotOnline && "bg-amber-50/60 dark:bg-amber-950/20",
+                                    )}
+                                  >
                                     <td className="px-3 py-2 text-xs font-medium text-foreground">{product.name}</td>
                                     <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{product.sku || "—"}</td>
                                     <td className="px-3 py-2 text-center text-xs font-medium tabular-nums text-foreground">
@@ -195,17 +199,23 @@ export function OnlineStoreCategoryTable({
                                       {product.isSynced ? (
                                         <span className="inline-flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
                                           <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                                          On store
+                                          Online
+                                        </span>
+                                      ) : inStockNotOnline ? (
+                                        <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+                                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                          In stock, not online
                                         </span>
                                       ) : (
                                         <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                                           <span className="h-1.5 w-1.5 rounded-full bg-gray-400" />
-                                          Not on store
+                                          Not online
                                         </span>
                                       )}
                                     </td>
                                   </tr>
-                                ))
+                                  );
+                                })
                               )}
                             </tbody>
                           </table>
