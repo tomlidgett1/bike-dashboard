@@ -22,8 +22,6 @@ export type CrmTemplate = {
   supportsItems: boolean;
   /** "row" = compact thumbnail list, "card" = large stacked image cards. */
   itemLayout: "row" | "card";
-  /** Centre the header block (announcement-style templates). */
-  centered: boolean;
   defaults: { subject: string; content: CampaignContent };
 };
 
@@ -35,7 +33,6 @@ export const CRM_TEMPLATES: CrmTemplate[] = [
     eyebrow: "Just landed",
     supportsItems: true,
     itemLayout: "row",
-    centered: false,
     defaults: {
       subject: "New arrivals in store this week",
       content: {
@@ -56,7 +53,6 @@ export const CRM_TEMPLATES: CrmTemplate[] = [
     eyebrow: "Featured bikes",
     supportsItems: true,
     itemLayout: "card",
-    centered: false,
     defaults: {
       subject: "Three bikes we think you'll love",
       content: {
@@ -77,7 +73,6 @@ export const CRM_TEMPLATES: CrmTemplate[] = [
     eyebrow: "Store news",
     supportsItems: false,
     itemLayout: "row",
-    centered: true,
     defaults: {
       subject: "An update from the store",
       content: {
@@ -97,7 +92,6 @@ export const CRM_TEMPLATES: CrmTemplate[] = [
     eyebrow: "Bike service",
     supportsItems: false,
     itemLayout: "row",
-    centered: false,
     defaults: {
       subject: "Is your bike due for a service?",
       content: {
@@ -117,7 +111,6 @@ export const CRM_TEMPLATES: CrmTemplate[] = [
     eyebrow: "Newsletter",
     supportsItems: true,
     itemLayout: "row",
-    centered: false,
     defaults: {
       subject: "News from the store",
       content: {
@@ -139,16 +132,30 @@ export function getCrmTemplate(key: string): CrmTemplate | null {
 
 // ============================================================
 // Rendering
+//
+// Matches the design system of the transactional emails in
+// supabase/functions/_shared/email-templates/ (purchase confirmation, offers):
+// dark #0a0a0a hero with a 900-weight uppercase headline, #F5C518 yellow
+// accents, white content section with hairline list rows, square yellow CTA,
+// dark footer. Branding is the STORE's (logo + name); Yellow Jersey appears
+// only as "Powered by Yellow Jersey" in the footer.
 // ============================================================
 
+export type StoreBranding = {
+  name: string;
+  logoUrl?: string | null;
+};
+
 const COLORS = {
-  page: "#f4f4f5",
-  card: "#ffffff",
-  accent: "#ffde59",
-  ink: "#18181b",
-  bodyText: "#52525b",
-  faint: "#a1a1aa",
-  divider: "#f0f0f1",
+  dark: "#0a0a0a",
+  yellow: "#F5C518",
+  yellowInk: "#3d3000",
+  ink: "#111827",
+  body: "#6b7280",
+  rowText: "#374151",
+  hairline: "#f3f4f6",
+  badgeBg: "#f9f9f7",
+  footerText: "#6b6b6b",
 };
 
 const FONT =
@@ -170,35 +177,35 @@ function safeUrl(value: string | undefined): string | null {
   return escapeHtml(url);
 }
 
-function paragraphs(body: string, centered: boolean): string {
+function paragraphs(body: string): string {
   return body
     .split(/\n{2,}/)
     .map((block) => block.trim())
     .filter(Boolean)
     .map(
       (block) =>
-        `<p style="margin:0 0 16px;font-size:15px;line-height:1.65;color:${COLORS.bodyText};${centered ? "text-align:center;" : ""}">${escapeHtml(block).replace(/\n/g, "<br/>")}</p>`,
+        `<p style="margin:0 0 16px;font-family:${FONT};font-size:15px;line-height:1.65;color:${COLORS.body};">${escapeHtml(block).replace(/\n/g, "<br/>")}</p>`,
     )
     .join("");
 }
 
-function renderCta(content: CampaignContent, centered: boolean): string {
+/** Square yellow CTA — identical idiom to the transactional emails. */
+function renderCta(content: CampaignContent): string {
   const url = safeUrl(content.ctaUrl);
   const text = String(content.ctaText ?? "").trim();
   if (!url || !text) return "";
   return `
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="${centered ? "center" : "left"}" style="margin:8px 0 8px;">
-      <tr>
-        <td style="border-radius:9999px;background:${COLORS.ink};">
-          <a href="${url}" target="_blank" style="display:inline-block;padding:13px 30px;font-family:${FONT};font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:9999px;">${escapeHtml(text)}</a>
-        </td>
-      </tr>
-    </table>`;
+        <table cellpadding="0" cellspacing="0"><tr>
+          <td style="background:${COLORS.yellow};">
+            <a href="${url}" target="_blank" style="display:inline-block;font-family:${FONT};color:${COLORS.dark};text-decoration:none;padding:15px 40px;font-size:14px;font-weight:900;letter-spacing:2px;text-transform:uppercase;">${escapeHtml(text)} &#8594;</a>
+          </td>
+        </tr></table>`;
 }
 
-function renderItemsRow(items: CampaignItem[]): string {
+/** Hairline list rows — same idiom as "Items in this order". */
+function renderItemsRow(items: CampaignItem[], sectionLabel: string): string {
   const rows = items
-    .map((item, index) => {
+    .map((item) => {
       const title = String(item.title ?? "").trim();
       if (!title) return "";
       const img = safeUrl(item.imageUrl);
@@ -206,36 +213,34 @@ function renderItemsRow(items: CampaignItem[]): string {
       const subtitle = String(item.subtitle ?? "").trim();
       const price = String(item.price ?? "").trim();
       const titleHtml = url
-        ? `<a href="${url}" target="_blank" style="color:${COLORS.ink};text-decoration:none;">${escapeHtml(title)}</a>`
+        ? `<a href="${url}" target="_blank" style="color:${COLORS.rowText};text-decoration:none;">${escapeHtml(title)}</a>`
         : escapeHtml(title);
       return `
-        <tr>
-          <td style="padding:16px 0;${index > 0 ? `border-top:1px solid ${COLORS.divider};` : ""}">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-              <tr>
-                ${
-                  img
-                    ? `<td width="92" valign="top" style="padding-right:16px;">
-                        ${url ? `<a href="${url}" target="_blank">` : ""}<img src="${img}" width="92" height="92" alt="${escapeHtml(title)}" style="display:block;width:92px;height:92px;object-fit:cover;border-radius:12px;background:${COLORS.page};"/>${url ? "</a>" : ""}
-                      </td>`
-                    : ""
-                }
-                <td valign="middle">
-                  <p style="margin:0 0 3px;font-family:${FONT};font-size:15px;font-weight:600;color:${COLORS.ink};line-height:1.4;">${titleHtml}</p>
-                  ${subtitle ? `<p style="margin:0 0 3px;font-family:${FONT};font-size:13px;color:${COLORS.bodyText};line-height:1.5;">${escapeHtml(subtitle)}</p>` : ""}
-                  ${price ? `<p style="margin:0;font-family:${FONT};font-size:14px;font-weight:600;color:${COLORS.ink};">${escapeHtml(price)}</p>` : ""}
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>`;
+          <tr><td style="padding:12px 0;border-top:1px solid ${COLORS.hairline};">
+            <table width="100%" cellpadding="0" cellspacing="0"><tr>
+              ${
+                img
+                  ? `<td width="48" valign="middle" style="padding-right:14px;">${url ? `<a href="${url}" target="_blank">` : ""}<img src="${img}" width="48" height="48" alt="${escapeHtml(title)}" style="display:block;width:48px;height:48px;object-fit:cover;border-radius:4px;background:${COLORS.hairline};"/>${url ? "</a>" : ""}</td>`
+                  : ""
+              }
+              <td valign="middle">
+                <p style="margin:0;font-family:${FONT};font-size:14px;color:${COLORS.rowText};font-weight:600;">${titleHtml}</p>
+                ${subtitle ? `<p style="margin:2px 0 0;font-family:${FONT};font-size:12px;color:${COLORS.body};">${escapeHtml(subtitle)}</p>` : ""}
+              </td>
+              ${price ? `<td align="right" valign="middle"><p style="margin:0;font-family:${FONT};font-size:14px;color:${COLORS.ink};font-weight:700;">${escapeHtml(price)}</p></td>` : ""}
+            </tr></table>
+          </td></tr>`;
     })
     .join("");
   if (!rows) return "";
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 12px;">${rows}</table>`;
+  return `
+        <p style="margin:0 0 14px;font-family:${FONT};font-size:11px;font-weight:800;color:${COLORS.ink};text-transform:uppercase;letter-spacing:1.5px;">${escapeHtml(sectionLabel)}</p>
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:32px;">${rows}
+        </table>`;
 }
 
-function renderItemsCard(items: CampaignItem[]): string {
+/** Large image showcase — product-image idiom (full width, 4px radius). */
+function renderItemsCard(items: CampaignItem[], sectionLabel: string): string {
   const cards = items
     .map((item) => {
       const title = String(item.title ?? "").trim();
@@ -248,101 +253,117 @@ function renderItemsCard(items: CampaignItem[]): string {
         ? `<a href="${url}" target="_blank" style="color:${COLORS.ink};text-decoration:none;">${escapeHtml(title)}</a>`
         : escapeHtml(title);
       return `
-        <tr>
-          <td style="padding:0 0 20px;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid ${COLORS.divider};border-radius:16px;">
-              ${
-                img
-                  ? `<tr><td>${url ? `<a href="${url}" target="_blank">` : ""}<img src="${img}" width="518" alt="${escapeHtml(title)}" style="display:block;width:100%;height:auto;border-radius:15px 15px 0 0;background:${COLORS.page};"/>${url ? "</a>" : ""}</td></tr>`
-                  : ""
-              }
-              <tr>
-                <td style="padding:16px 20px 18px;">
-                  <p style="margin:0 0 3px;font-family:${FONT};font-size:16px;font-weight:600;color:${COLORS.ink};line-height:1.4;">${titleHtml}</p>
-                  ${subtitle ? `<p style="margin:0 0 5px;font-family:${FONT};font-size:13px;color:${COLORS.bodyText};line-height:1.5;">${escapeHtml(subtitle)}</p>` : ""}
-                  ${price ? `<p style="margin:0;font-family:${FONT};font-size:15px;font-weight:700;color:${COLORS.ink};">${escapeHtml(price)}</p>` : ""}
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>`;
+          <tr><td style="padding:0 0 32px;">
+            ${
+              img
+                ? `${url ? `<a href="${url}" target="_blank">` : ""}<img src="${img}" width="520" alt="${escapeHtml(title)}" style="display:block;width:100%;max-height:340px;object-fit:cover;border-radius:4px;" />${url ? "</a>" : ""}`
+                : ""
+            }
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px;"><tr>
+              <td valign="top">
+                <p style="margin:0;font-family:${FONT};font-size:16px;color:${COLORS.ink};font-weight:800;letter-spacing:-0.3px;">${titleHtml}</p>
+                ${subtitle ? `<p style="margin:3px 0 0;font-family:${FONT};font-size:13px;color:${COLORS.body};">${escapeHtml(subtitle)}</p>` : ""}
+              </td>
+              ${price ? `<td align="right" valign="top"><p style="margin:0;font-family:${FONT};font-size:18px;color:${COLORS.ink};font-weight:900;letter-spacing:-0.5px;">${escapeHtml(price)}</p></td>` : ""}
+            </tr></table>
+          </td></tr>`;
     })
     .join("");
   if (!cards) return "";
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 0;">${cards}</table>`;
+  return `
+        <p style="margin:0 0 18px;font-family:${FONT};font-size:11px;font-weight:800;color:${COLORS.ink};text-transform:uppercase;letter-spacing:1.5px;">${escapeHtml(sectionLabel)}</p>
+        <table width="100%" cellpadding="0" cellspacing="0">${cards}
+        </table>`;
+}
+
+/** Store identity for the dark hero: logo (white circle) or initial + name. */
+function renderStoreIdentity(store: StoreBranding): string {
+  const name = String(store.name ?? "").trim() || "Your Bike Store";
+  const logo = safeUrl(store.logoUrl ?? undefined);
+  const initial = escapeHtml(name.charAt(0).toUpperCase());
+  const mark = logo
+    ? `<img src="${logo}" width="40" height="40" alt="${escapeHtml(name)}" style="display:block;border-radius:50%;background:#ffffff;object-fit:cover;" />`
+    : `<table cellpadding="0" cellspacing="0"><tr><td style="width:40px;height:40px;background:${COLORS.yellow};border-radius:50%;text-align:center;line-height:40px;font-family:${FONT};font-size:16px;font-weight:900;color:${COLORS.dark};">${initial}</td></tr></table>`;
+  return `
+        <table cellpadding="0" cellspacing="0" style="margin-bottom:40px;"><tr>
+          <td style="padding-right:12px;">${mark}</td>
+          <td><p style="margin:0;font-family:${FONT};font-size:14px;font-weight:800;color:#ffffff;letter-spacing:2px;text-transform:uppercase;">${escapeHtml(name)}</p></td>
+        </tr></table>`;
 }
 
 export function renderCampaignEmail(args: {
   templateKey: string;
   content: CampaignContent;
+  /** Store branding shown in the hero + footer. */
+  store: StoreBranding;
   /** Per-recipient unsubscribe link. Pass a placeholder for previews. */
   unsubscribeUrl: string;
 }): { html: string; text: string } {
   const template = getCrmTemplate(args.templateKey) ?? CRM_TEMPLATES[4];
-  const { content } = args;
-  const centered = template.centered;
-  const align = centered ? "center" : "left";
+  const { content, store } = args;
 
+  const storeName = String(store.name ?? "").trim() || "Your Bike Store";
   const title = String(content.title ?? "").trim();
   const hero = safeUrl(content.heroImageUrl);
   const footerText = String(content.footerText ?? "").trim();
   const items = template.supportsItems ? content.items ?? [] : [];
   const itemsHtml =
-    template.itemLayout === "card" ? renderItemsCard(items) : renderItemsRow(items);
+    template.itemLayout === "card"
+      ? renderItemsCard(items, template.eyebrow)
+      : renderItemsRow(items, template.eyebrow);
   const unsubscribeHref = escapeHtml(args.unsubscribeUrl);
+
+  // The transactional heroes use short 3-word headlines at 64px; campaign
+  // titles are free text, so scale down as they get longer.
+  const headlineSize = title.length <= 18 ? "56px" : title.length <= 34 ? "44px" : "34px";
 
   const html = `<!DOCTYPE html>
 <html lang="en">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<meta name="color-scheme" content="light"/>
-<title>${escapeHtml(title)}</title>
-</head>
-<body style="margin:0;padding:0;background:${COLORS.page};-webkit-text-size-adjust:100%;">
-  <div style="display:none;max-height:0;overflow:hidden;">${escapeHtml(String(content.body ?? "").slice(0, 140))}</div>
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${COLORS.page};">
-    <tr>
-      <td align="center" style="padding:32px 16px 40px;">
-        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:${COLORS.card};border-radius:20px;overflow:hidden;">
-          <tr><td style="height:6px;background:${COLORS.accent};font-size:0;line-height:0;">&nbsp;</td></tr>
-          <tr>
-            <td align="${align}" style="padding:32px 40px 0;">
-              <p style="margin:0;font-family:${FONT};font-size:12px;font-weight:700;letter-spacing:4px;color:${COLORS.ink};">YELLOW JERSEY</p>
-            </td>
-          </tr>
-          ${
-            hero
-              ? `<tr><td style="padding:24px 40px 0;"><img src="${hero}" width="520" alt="" style="display:block;width:100%;height:auto;border-radius:14px;background:${COLORS.page};"/></td></tr>`
-              : ""
-          }
-          <tr>
-            <td align="${align}" style="padding:28px 40px 0;">
-              <p style="margin:0 0 10px;font-family:${FONT};font-size:11px;font-weight:600;letter-spacing:2.5px;text-transform:uppercase;color:${COLORS.faint};">${escapeHtml(template.eyebrow)}</p>
-              <h1 style="margin:0 0 14px;font-family:${FONT};font-size:28px;line-height:1.25;font-weight:700;color:${COLORS.ink};letter-spacing:-0.02em;">${escapeHtml(title)}</h1>
-              <div style="font-family:${FONT};">${paragraphs(String(content.body ?? ""), centered)}</div>
-              ${renderCta(content, centered)}
-            </td>
-          </tr>
-          ${itemsHtml ? `<tr><td style="padding:8px 40px 0;">${itemsHtml}</td></tr>` : ""}
-          <tr><td style="padding:28px 40px 0;"><div style="border-top:1px solid ${COLORS.divider};font-size:0;line-height:0;">&nbsp;</div></td></tr>
-          <tr>
-            <td align="center" style="padding:4px 40px 32px;">
-              ${footerText ? `<p style="margin:0 0 8px;font-family:${FONT};font-size:12px;line-height:1.6;color:${COLORS.faint};">${escapeHtml(footerText)}</p>` : ""}
-              <p style="margin:0;font-family:${FONT};font-size:12px;line-height:1.6;color:${COLORS.faint};">
-                <a href="${unsubscribeHref}" target="_blank" style="color:${COLORS.faint};text-decoration:underline;">Unsubscribe</a>
-                &nbsp;·&nbsp; Sent by Yellow Jersey
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><meta name="color-scheme" content="light"><title>${escapeHtml(title)}</title></head>
+<body style="margin:0;padding:0;background:${COLORS.dark};font-family:${FONT};">
+<div style="display:none;max-height:0;overflow:hidden;">${escapeHtml(String(content.body ?? "").slice(0, 140))}</div>
+<table width="100%" cellpadding="0" cellspacing="0" style="background:${COLORS.dark};padding:0;">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+
+      <!-- Hero -->
+      <tr><td style="background:${COLORS.dark};padding:48px 40px 0;">
+        ${renderStoreIdentity(store)}
+        <p style="margin:0 0 12px;font-family:${FONT};font-size:11px;color:${COLORS.yellow};letter-spacing:5px;text-transform:uppercase;font-weight:700;">${escapeHtml(template.eyebrow)}</p>
+        <h1 style="margin:0;font-family:${FONT};font-size:${headlineSize};font-weight:900;color:#ffffff;line-height:0.98;letter-spacing:-2px;text-transform:uppercase;">${escapeHtml(title)}</h1>
+      </td></tr>
+
+      <!-- Hero image -->
+      ${
+        hero
+          ? `<tr><td style="background:${COLORS.dark};padding:32px 40px 0;line-height:0;font-size:0;">
+        <img src="${hero}" width="520" style="display:block;width:100%;max-height:340px;object-fit:cover;border-radius:4px;" alt="" />
+      </td></tr>`
+          : ""
+      }
+      <tr><td style="background:${COLORS.dark};height:40px;font-size:0;line-height:0;">&nbsp;</td></tr>
+
+      <!-- White content -->
+      <tr><td style="background:#ffffff;padding:36px 40px;">
+        ${paragraphs(String(content.body ?? ""))}
+        ${itemsHtml ? `<div style="margin-top:16px;">${itemsHtml}</div>` : ""}
+        <div style="margin-top:16px;">${renderCta(content)}</div>
+      </td></tr>
+
+      <!-- Footer -->
+      <tr><td style="background:${COLORS.dark};padding:24px 40px;">
+        ${footerText ? `<p style="margin:0 0 8px;font-family:${FONT};font-size:11px;color:${COLORS.footerText};text-align:center;line-height:1.6;">${escapeHtml(footerText)}</p>` : ""}
+        <p style="margin:0;font-family:${FONT};font-size:11px;color:${COLORS.footerText};text-align:center;text-transform:uppercase;letter-spacing:1px;">${escapeHtml(storeName)} &nbsp;&#183;&nbsp; <a href="${unsubscribeHref}" target="_blank" style="color:#9ca3af;text-decoration:underline;">Unsubscribe</a></p>
+        <p style="margin:8px 0 0;font-family:${FONT};font-size:10px;color:#3d3d3d;text-align:center;letter-spacing:0.5px;">Powered by Yellow Jersey</p>
+      </td></tr>
+
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
 
   const textLines = [
+    storeName,
     title,
     "",
     String(content.body ?? "").trim(),
@@ -356,6 +377,7 @@ export function renderCampaignEmail(args: {
     "",
     footerText,
     `Unsubscribe: ${args.unsubscribeUrl}`,
+    "Powered by Yellow Jersey",
   ].filter((line) => line !== null);
 
   return { html, text: textLines.join("\n") };

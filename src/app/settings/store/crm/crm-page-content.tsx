@@ -25,7 +25,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { getCrmTemplate } from "@/lib/crm/templates";
+import { getCrmTemplate, type StoreBranding } from "@/lib/crm/templates";
 import type { CrmCampaign, CrmContact } from "@/lib/crm/types";
 import { CampaignComposer, type ComposerSeed } from "./campaign-composer";
 
@@ -89,6 +89,10 @@ export function CrmPageContent() {
   // Campaigns
   const [campaigns, setCampaigns] = React.useState<CrmCampaign[]>([]);
   const [senderEmail, setSenderEmail] = React.useState<string | null>(null);
+  const [storeBranding, setStoreBranding] = React.useState<StoreBranding>({
+    name: "Your Bike Store",
+    logoUrl: null,
+  });
   const [loadingCampaigns, setLoadingCampaigns] = React.useState(true);
   const [busyCampaignId, setBusyCampaignId] = React.useState<string | null>(null);
 
@@ -135,6 +139,7 @@ export function CrmPageContent() {
       const data = await res.json();
       setCampaigns(data.campaigns ?? []);
       setSenderEmail(data.senderEmail ?? null);
+      if (data.store?.name) setStoreBranding(data.store);
     } catch {
       // non-fatal; the campaigns tab shows its own empty state
     } finally {
@@ -371,6 +376,7 @@ export function CrmPageContent() {
         <CampaignComposer
           seed={composerSeed}
           senderEmail={senderEmail}
+          store={storeBranding}
           eligibleCount={stats?.eligible ?? 0}
           selectedContacts={Array.from(selected.values())}
           onClose={() => setComposerSeed(null)}

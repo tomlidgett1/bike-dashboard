@@ -398,3 +398,10 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/seo-worker/deno.json"
 entrypoint = "./functions/seo-worker/index.ts"
+
+# Internal-only: the Next.js CRM send route calls this with the service-role
+# key (the function also string-compares the bearer, since it can send email).
+[functions.crm-send-campaign-emails]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/crm-send-campaign-emails/index.ts"

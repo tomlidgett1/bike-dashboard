@@ -58,12 +58,12 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
   }
 
-  const provider = getCrmEmailProvider();
+  const provider = await getCrmEmailProvider();
   if (!provider) {
     return NextResponse.json(
       {
         error:
-          "Email sending is not configured. Set RESEND_API_KEY and CRM_FROM_EMAIL (see docs/CRM_EMAIL.md).",
+          "Email sending is not configured. Check the crm-send-campaign-emails edge function and its RESEND_API_KEY / FROM_EMAIL secrets (see docs/CRM_EMAIL.md).",
       },
       { status: 409 },
     );
@@ -109,6 +109,17 @@ export async function POST(
   }
 
   try {
+    // Store branding for the email hero + footer.
+    const { data: storeRow } = await supabase
+      .from("users")
+      .select("business_name, name, logo_url")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const store = {
+      name: storeRow?.business_name || storeRow?.name || "Your Bike Store",
+      logoUrl: storeRow?.logo_url ?? null,
+    };
+
     // Load all pending recipients with their contact's opt-out + token.
     const pending: PendingRecipient[] = [];
     for (let offset = 0; ; offset += 1000) {
@@ -146,6 +157,7 @@ export async function POST(
       const { html, text } = renderCampaignEmail({
         templateKey: campaign.template_key,
         content,
+        store,
         unsubscribeUrl,
       });
       toSend.push({

@@ -5,20 +5,34 @@ HTML campaigns, and sending them from the Yellow Jersey email address — with
 opt-outs enforced end to end. Lives at **/settings/store/crm** (store owners
 only). No open/click/pixel tracking, by design.
 
+## Sending architecture
+
+Campaign sending runs through the **`crm-send-campaign-emails` Supabase edge
+function** (deployed), which shares `RESEND_API_KEY` and `FROM_EMAIL` with the
+transactional emails — those secrets live in Supabase edge secrets, not in the
+Next.js environment. The Next send route renders the per-recipient HTML and
+posts finished messages to the edge function; the edge function authenticates,
+batches (50/call via Resend's batch API, individual fallback), and sends.
+
+Auth between Next and the edge function is the repo-standard
+`x-internal-secret: INTERNAL_EDGE_SHARED_SECRET` header (user/anon JWTs are
+rejected — the function can send arbitrary email).
+
 ## Environment variables
 
-| Variable | Required | Purpose |
+| Variable | Where | Purpose |
 | --- | --- | --- |
-| `RESEND_API_KEY` | to send | Resend API key. Without it the UI works, but sending is blocked with a clear error. |
-| `CRM_FROM_EMAIL` | to send | Campaign sender, e.g. `Yellow Jersey <hello@yellowjersey.store>`. The domain must be verified in Resend. Falls back to `FROM_EMAIL` if unset. |
-| `NEXT_PUBLIC_SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | yes (already set) | The public unsubscribe endpoint updates opt-out state via the service-role client after token lookup. |
+| `RESEND_API_KEY` | Supabase edge secrets (set) | Resend API key, shared with transactional email. |
+| `FROM_EMAIL` | Supabase edge secrets (set) | Campaign sender — currently `Yellow Jersey <notifications@yellowjersey.store>`. `CRM_FROM_EMAIL` (edge secret) overrides it for campaigns only. |
+| `INTERNAL_EDGE_SHARED_SECRET` | both (set) | Authorises Next → edge function calls. |
+| `NEXT_PUBLIC_SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Next env (set) | Edge function calls + the public unsubscribe endpoint's service-role update. |
+| `RESEND_API_KEY` + `CRM_FROM_EMAIL` | Next env (optional) | Escape hatch: when both are set, sending bypasses the edge function and goes direct from the Next server. |
 
 Unsubscribe links always point at the production origin (`SITE_URL` from
 `src/lib/seo/site.ts`), so emails sent from any environment unsubscribe against
 production.
 
-Provider abstraction: `src/lib/crm/email-provider.ts`. Resend is the default
-(the app's transactional email already runs on it). To switch to SendGrid /
+Provider abstraction: `src/lib/crm/email-provider.ts`. To switch to SendGrid /
 Postmark / SES, implement `CrmEmailProvider` and return it from
 `getCrmEmailProvider()` — nothing else changes.
 
@@ -38,10 +52,14 @@ All three tables have owner-scoped RLS (`auth.uid() = user_id`); the only
 service-role writer is the unsubscribe flow.
 
 Email templates are **code, not rows** (`src/lib/crm/templates.ts`): five
-polished responsive templates (new arrivals, featured bikes, store
-announcement, service reminder, newsletter) rendered by one shared renderer.
-Campaign history stores the template key + content, so every send is
-replayable.
+templates (new arrivals, featured bikes, store announcement, service reminder,
+newsletter) rendered by one shared renderer that matches the design system of
+the transactional emails in `supabase/functions/_shared/email-templates/` —
+dark `#0a0a0a` hero, 900-weight uppercase headline, `#F5C518` yellow accents,
+square yellow CTA, dark footer. Branding is the **store's** (logo + name from
+`public.users.business_name`/`logo_url`); Yellow Jersey appears only as
+"Powered by Yellow Jersey" in the footer. Campaign history stores the template
+key + content, so every send is replayable.
 
 ## Import (Lightspeed → crm_contacts)
 

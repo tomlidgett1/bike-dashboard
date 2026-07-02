@@ -1,13 +1,14 @@
 // CRM email sending abstraction.
 //
-// The app's transactional email already runs on Resend (Supabase edge
-// functions), so Resend is the default here too. Swapping providers means
-// implementing CrmEmailProvider and returning it from getCrmEmailProvider().
+// Default path: the `crm-send-campaign-emails` Supabase edge function, which
+// shares RESEND_API_KEY / FROM_EMAIL with the transactional emails (those
+// secrets live in Supabase, not in the Next.js environment). The Next side
+// renders the per-recipient HTML; the edge function batches and sends.
 //
-// Environment variables (see docs/CRM_EMAIL.md):
-//   RESEND_API_KEY  — Resend API key (required to send)
-//   CRM_FROM_EMAIL  — sender, e.g. "Yellow Jersey <hello@yellowjersey.com.au>"
-//                     (falls back to FROM_EMAIL)
+// Override: set RESEND_API_KEY (+ CRM_FROM_EMAIL) in the Next.js environment
+// to send directly from this server instead. Swapping to SendGrid/Postmark
+// means implementing CrmEmailProvider and returning it from
+// getCrmEmailProvider(). See docs/CRM_EMAIL.md.
 
 export interface CrmEmailMessage {
   to: string;
@@ -29,15 +30,15 @@ export interface CrmEmailProvider {
   sendBatch(messages: CrmEmailMessage[]): Promise<CrmSendResult[]>;
 }
 
-/** Sender configured for CRM campaigns, or null when not set up. */
-export function getCrmFromEmail(): string | null {
-  const from = process.env.CRM_FROM_EMAIL || process.env.FROM_EMAIL || "";
-  return from.trim() || null;
-}
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// ============================================================
+// Direct Resend (env override)
+// ============================================================
 
 const RESEND_BATCH_URL = "https://api.resend.com/emails/batch";
 const RESEND_SEND_URL = "https://api.resend.com/emails";
-const BATCH_SIZE = 50;
+const RESEND_BATCH_SIZE = 50;
 
 class ResendCrmProvider implements CrmEmailProvider {
   name = "resend";
@@ -91,8 +92,8 @@ class ResendCrmProvider implements CrmEmailProvider {
   async sendBatch(messages: CrmEmailMessage[]): Promise<CrmSendResult[]> {
     const results: CrmSendResult[] = [];
 
-    for (let i = 0; i < messages.length; i += BATCH_SIZE) {
-      const chunk = messages.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < messages.length; i += RESEND_BATCH_SIZE) {
+      const chunk = messages.slice(i, i + RESEND_BATCH_SIZE);
       try {
         const response = await fetch(RESEND_BATCH_URL, {
           method: "POST",
@@ -105,19 +106,13 @@ class ResendCrmProvider implements CrmEmailProvider {
 
         if (response.ok) {
           results.push(...chunk.map((message) => ({ to: message.to, success: true })));
-        } else if (response.status === 429) {
-          // Respect rate limits, then retry this chunk individually.
-          await new Promise((resolve) => setTimeout(resolve, 1500));
-          for (const message of chunk) {
-            results.push(await this.sendOne(message));
-            await new Promise((resolve) => setTimeout(resolve, 550));
-          }
         } else {
           // Batch calls fail whole — fall back to individual sends so one bad
-          // address doesn't sink the other 49.
+          // address doesn't sink the other 49. 429s get a breather first.
+          if (response.status === 429) await wait(1500);
           for (const message of chunk) {
             results.push(await this.sendOne(message));
-            await new Promise((resolve) => setTimeout(resolve, 550));
+            await wait(550);
           }
         }
       } catch (error) {
@@ -127,23 +122,134 @@ class ResendCrmProvider implements CrmEmailProvider {
         );
       }
 
-      // Small pause between batch requests to stay under Resend's rate limit.
-      if (i + BATCH_SIZE < messages.length) {
-        await new Promise((resolve) => setTimeout(resolve, 600));
-      }
+      if (i + RESEND_BATCH_SIZE < messages.length) await wait(600);
     }
 
     return results;
   }
 }
 
+// ============================================================
+// Supabase edge function (default — shares transactional secrets)
+// ============================================================
+
+// Keep request bodies well under edge limits (~15KB html × 200 ≈ 3MB).
+const EDGE_CHUNK_SIZE = 200;
+
+function edgeConfig(): { url: string; serviceKey: string; internalSecret: string } | null {
+  const base = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  const internalSecret = process.env.INTERNAL_EDGE_SHARED_SECRET || "";
+  if (!base.trim() || !serviceKey.trim() || !internalSecret.trim()) return null;
+  return {
+    url: `${base.trim().replace(/\/$/, "")}/functions/v1/crm-send-campaign-emails`,
+    serviceKey: serviceKey.trim(),
+    internalSecret: internalSecret.trim(),
+  };
+}
+
+async function callEdge(body: unknown): Promise<{ status: number; json: Record<string, unknown> }> {
+  const config = edgeConfig();
+  if (!config) throw new Error("Supabase URL / service key / internal secret not configured");
+  const response = await fetch(config.url, {
+    method: "POST",
+    headers: {
+      // Bearer satisfies the gateway's verify_jwt; the shared secret is what
+      // the function actually authorises on.
+      Authorization: `Bearer ${config.serviceKey}`,
+      "x-internal-secret": config.internalSecret,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const json = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  return { status: response.status, json };
+}
+
+class SupabaseEdgeCrmProvider implements CrmEmailProvider {
+  name = "supabase-edge-resend";
+  fromEmail: string;
+
+  constructor(fromEmail: string) {
+    this.fromEmail = fromEmail;
+  }
+
+  async sendBatch(messages: CrmEmailMessage[]): Promise<CrmSendResult[]> {
+    const results: CrmSendResult[] = [];
+    for (let i = 0; i < messages.length; i += EDGE_CHUNK_SIZE) {
+      const chunk = messages.slice(i, i + EDGE_CHUNK_SIZE);
+      try {
+        const { status, json } = await callEdge({ messages: chunk });
+        const chunkResults = Array.isArray(json.results)
+          ? (json.results as CrmSendResult[])
+          : null;
+        if (status === 200 && chunkResults && chunkResults.length === chunk.length) {
+          results.push(...chunkResults);
+        } else {
+          const error = String(json.error ?? `Edge send failed (HTTP ${status})`);
+          results.push(...chunk.map((message) => ({ to: message.to, success: false, error })));
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        results.push(
+          ...chunk.map((message) => ({ to: message.to, success: false, error: errorMessage })),
+        );
+      }
+    }
+    return results;
+  }
+}
+
+// The edge config rarely changes — cache the lookup briefly so the contacts /
+// campaigns pages don't pay an extra round-trip on every request.
+let cachedEdgeSender: { fromEmail: string | null; at: number } | null = null;
+const EDGE_CONFIG_TTL_MS = 5 * 60 * 1000;
+
+async function getEdgeSenderEmail(): Promise<string | null> {
+  if (cachedEdgeSender && Date.now() - cachedEdgeSender.at < EDGE_CONFIG_TTL_MS) {
+    return cachedEdgeSender.fromEmail;
+  }
+  if (!edgeConfig()) return null;
+  try {
+    const { status, json } = await callEdge({ action: "config" });
+    const fromEmail =
+      status === 200 && json.configured ? String(json.fromEmail ?? "").trim() || null : null;
+    cachedEdgeSender = { fromEmail, at: Date.now() };
+    return fromEmail;
+  } catch (error) {
+    console.error("[crm] edge sender config lookup failed:", error);
+    // Don't cache failures for the full TTL — allow quick retry.
+    cachedEdgeSender = { fromEmail: null, at: Date.now() - EDGE_CONFIG_TTL_MS + 15_000 };
+    return null;
+  }
+}
+
+// ============================================================
+// Public API
+// ============================================================
+
+function directResendOverride(): ResendCrmProvider | null {
+  const apiKey = (process.env.RESEND_API_KEY || "").trim();
+  const fromEmail = (process.env.CRM_FROM_EMAIL || process.env.FROM_EMAIL || "").trim();
+  if (!apiKey || !fromEmail) return null;
+  return new ResendCrmProvider(apiKey, fromEmail);
+}
+
+/** Sender address campaigns will go out from, or null when nothing is set up. */
+export async function getCrmSenderEmail(): Promise<string | null> {
+  const direct = directResendOverride();
+  if (direct) return direct.fromEmail;
+  return getEdgeSenderEmail();
+}
+
 /**
- * Returns the configured provider, or null when sending isn't set up
- * (missing API key or sender address) — callers must refuse to send.
+ * Returns the configured provider, or null when sending isn't set up —
+ * callers must refuse to send.
  */
-export function getCrmEmailProvider(): CrmEmailProvider | null {
-  const fromEmail = getCrmFromEmail();
-  const apiKey = process.env.RESEND_API_KEY || "";
-  if (!fromEmail || !apiKey.trim()) return null;
-  return new ResendCrmProvider(apiKey.trim(), fromEmail);
+export async function getCrmEmailProvider(): Promise<CrmEmailProvider | null> {
+  const direct = directResendOverride();
+  if (direct) return direct;
+  const fromEmail = await getEdgeSenderEmail();
+  if (!fromEmail) return null;
+  return new SupabaseEdgeCrmProvider(fromEmail);
 }

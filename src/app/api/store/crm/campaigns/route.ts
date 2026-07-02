@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getCrmTemplate } from "@/lib/crm/templates";
-import { getCrmFromEmail } from "@/lib/crm/email-provider";
+import { getCrmSenderEmail } from "@/lib/crm/email-provider";
 import { normalizeEmail, type CampaignContent } from "@/lib/crm/types";
 
 export async function GET() {
@@ -26,19 +26,31 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
     }
 
-    const { data: campaigns, error } = await supabase
-      .from("crm_campaigns")
-      .select(
-        "id, subject, template_key, content, sender_email, status, intended_count, sent_count, failed_count, created_at, sent_at",
-      )
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(100);
+    const [{ data: campaigns, error }, { data: storeRow }, senderEmail] = await Promise.all([
+      supabase
+        .from("crm_campaigns")
+        .select(
+          "id, subject, template_key, content, sender_email, status, intended_count, sent_count, failed_count, created_at, sent_at",
+        )
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(100),
+      supabase
+        .from("users")
+        .select("business_name, name, logo_url")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      getCrmSenderEmail(),
+    ]);
     if (error) throw error;
 
     return NextResponse.json({
       campaigns: campaigns ?? [],
-      senderEmail: getCrmFromEmail(),
+      senderEmail,
+      store: {
+        name: storeRow?.business_name || storeRow?.name || "Your Bike Store",
+        logoUrl: storeRow?.logo_url ?? null,
+      },
     });
   } catch (error) {
     console.error("[crm] campaigns list failed:", error);
@@ -123,6 +135,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const senderEmail = await getCrmSenderEmail();
     const { data: campaign, error: campaignError } = await supabase
       .from("crm_campaigns")
       .insert({
@@ -130,7 +143,7 @@ export async function POST(request: NextRequest) {
         subject,
         template_key: templateKey,
         content,
-        sender_email: getCrmFromEmail(),
+        sender_email: senderEmail,
         status: "draft",
         intended_count: eligible.length,
         created_by: user.id,
@@ -162,7 +175,7 @@ export async function POST(request: NextRequest) {
       recipientCount: eligible.length,
       excludedOptedOut,
       excludedInvalid,
-      senderEmail: getCrmFromEmail(),
+      senderEmail,
     });
   } catch (error) {
     console.error("[crm] campaign create failed:", error);

@@ -26,6 +26,7 @@ import {
   CRM_TEMPLATES,
   getCrmTemplate,
   renderCampaignEmail,
+  type StoreBranding,
 } from "@/lib/crm/templates";
 import type { CampaignContent, CampaignItem, CrmContact } from "@/lib/crm/types";
 
@@ -55,12 +56,13 @@ const PREVIEW_UNSUBSCRIBE_PLACEHOLDER = "https://yellowjersey.store/unsubscribe?
 export function CampaignComposer(props: {
   seed: ComposerSeed;
   senderEmail: string | null;
+  store: StoreBranding;
   eligibleCount: number;
   selectedContacts: CrmContact[];
   onClose: () => void;
   onSent: () => void;
 }) {
-  const { seed, senderEmail, eligibleCount, selectedContacts, onClose, onSent } = props;
+  const { seed, senderEmail, store, eligibleCount, selectedContacts, onClose, onSent } = props;
 
   const eligibleSelected = selectedContacts.filter((contact) => !contact.opted_out);
   const optedOutSelected = selectedContacts.length - eligibleSelected.length;
@@ -117,9 +119,10 @@ export function CampaignComposer(props: {
     return renderCampaignEmail({
       templateKey: deferredTemplateKey,
       content: deferredContent,
+      store,
       unsubscribeUrl: PREVIEW_UNSUBSCRIBE_PLACEHOLDER,
     }).html;
-  }, [deferredTemplateKey, deferredContent]);
+  }, [deferredTemplateKey, deferredContent, store]);
 
   const send = async () => {
     if (!templateKey || !canSend) return;
@@ -214,7 +217,7 @@ export function CampaignComposer(props: {
         {outcome ? (
           <SuccessView outcome={outcome} onDone={onSent} />
         ) : step === "template" ? (
-          <TemplateStep selectedKey={templateKey} onChoose={chooseTemplate} />
+          <TemplateStep selectedKey={templateKey} store={store} onChoose={chooseTemplate} />
         ) : step === "customize" && template ? (
           <div className="mx-auto flex h-full max-w-6xl flex-col gap-6 p-6 lg:flex-row">
             <div className="w-full space-y-5 lg:w-105 lg:shrink-0 lg:overflow-y-auto lg:pr-1">
@@ -478,13 +481,14 @@ function Field(props: {
 
 function TemplateStep(props: {
   selectedKey: string | null;
+  store: StoreBranding;
   onChoose: (key: string) => void;
 }) {
   return (
     <div className="mx-auto max-w-4xl p-6 pt-10">
       <h3 className="text-lg font-semibold tracking-tight text-foreground">Choose a template</h3>
       <p className="mt-1 text-sm text-muted-foreground">
-        Every template is responsive, branded, and includes an unsubscribe link.
+        Every template carries your store branding and includes an unsubscribe link.
       </p>
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {CRM_TEMPLATES.map((template) => {
@@ -500,6 +504,7 @@ function TemplateStep(props: {
                     ]
                   : template.defaults.content.items,
             },
+            store: props.store,
             unsubscribeUrl: PREVIEW_UNSUBSCRIBE_PLACEHOLDER,
           }).html;
           return (
