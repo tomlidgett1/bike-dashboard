@@ -8,6 +8,7 @@ import { TrendingUp, Package, X, Search, Store as StoreIcon, User, Clock, Dollar
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
+import { ScrollReveal } from "@/components/marketplace/scroll-reveal";
 import { ListItemBannerSlot } from "@/components/marketplace/list-item-banner";
 import { UnifiedFilterBar, ViewMode, ListingTypeFilter as ListingTypeFilterType, MarketplaceDesktopCategoryBrowse } from "@/components/marketplace/unified-filter-bar";
 import { MarketplaceSpaceTabs } from "@/components/marketplace/marketplace-space-tabs";
@@ -1507,22 +1508,24 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                           <div className={productGridClassName}>
                             {gridProducts.map((product, index) => (
                               <React.Fragment key={product.id}>
-                                <ProductCard
-                                  product={product}
-                                  priority={index < 8}
-                                  layout="grid"
-                                  compact={!isProductSearchActive && productGridLayout === "grid8"}
-                                  isAdmin={isAdmin}
-                                  onNavigate={() => setIsNavigating(true)}
-                                  onImageDiscoveryClick={(productId) => {
-                                    const canonicalId = product.canonical_product_id || product.id;
-                                    setImageDiscoveryModal({
-                                      isOpen: true,
-                                      productId: canonicalId,
-                                      productName: product.display_name || product.description,
-                                    });
-                                  }}
-                                />
+                                <ScrollReveal>
+                                  <ProductCard
+                                    product={product}
+                                    priority={index < 8}
+                                    layout="grid"
+                                    compact={!isProductSearchActive && productGridLayout === "grid8"}
+                                    isAdmin={isAdmin}
+                                    onNavigate={() => setIsNavigating(true)}
+                                    onImageDiscoveryClick={(productId) => {
+                                      const canonicalId = product.canonical_product_id || product.id;
+                                      setImageDiscoveryModal({
+                                        isOpen: true,
+                                        productId: canonicalId,
+                                        productName: product.display_name || product.description,
+                                      });
+                                    }}
+                                  />
+                                </ScrollReveal>
                                 <ListItemBannerSlot
                                   productIndex={index}
                                   productCount={gridProducts.length}

@@ -476,6 +476,37 @@
   animation: for-you-carousel-reveal 0.58s cubic-bezier(0.04, 0.62, 0.23, 0.98) both;
 }
 
+/* Scroll-triggered reveal — products fade and rise in as they enter the viewport.
+   Compositor-only properties (opacity/transform) so large grids stay at 60fps. */
+@keyframes scroll-reveal-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 20px, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.scroll-reveal-pending {
+  opacity: 0;
+}
+
+.scroll-reveal-in {
+  animation: scroll-reveal-in 0.55s cubic-bezier(0.04, 0.62, 0.23, 0.98) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-reveal-pending {
+    opacity: 1;
+  }
+
+  .scroll-reveal-in {
+    animation: none;
+  }
+}
+
 .for-you-feed-settle {
   animation: for-you-feed-settle 0.58s cubic-bezier(0.04, 0.62, 0.23, 0.98) both;
 }

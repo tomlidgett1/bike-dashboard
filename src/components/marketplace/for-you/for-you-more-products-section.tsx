@@ -10,6 +10,7 @@ import {
 } from "@/lib/tracking/interaction-tracker";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { forYouExpandedGridClass } from "@/components/marketplace/for-you/carousel-card-width";
+import { ScrollReveal } from "@/components/marketplace/scroll-reveal";
 import { MIN_MORE_PRODUCTS } from "@/lib/for-you/constants";
 import { cn } from "@/lib/utils";
 
@@ -42,13 +43,14 @@ export function ForYouMoreProductsSection({
       </div>
       <div className={forYouExpandedGridClass(embedded)}>
         {products.map((product, index) => (
-          <ForYouMoreProductCard
-            key={product.id}
-            product={product}
-            index={index}
-            userId={userId}
-            onDismiss={onDismissProduct}
-          />
+          <ScrollReveal key={product.id}>
+            <ForYouMoreProductCard
+              product={product}
+              index={index}
+              userId={userId}
+              onDismiss={onDismissProduct}
+            />
+          </ScrollReveal>
         ))}
       </div>
     </section>
