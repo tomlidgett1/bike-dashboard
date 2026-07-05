@@ -1,5 +1,6 @@
 import type { LucideIcon } from '@/components/layout/app-sidebar/dashboard-icons';
 import { ShoppingBag, Store, Settings } from '@/components/layout/app-sidebar/dashboard-icons';
+import { DEFAULT_MARKETPLACE_SPACE } from '@/components/marketplace/space-navigator';
 
 export interface MarketplaceNavItem {
   type: "item" | "separator";
@@ -156,8 +157,17 @@ export function getMarketplaceActiveView(
   if (spaceParam === "stores" || viewParam === "stores") {
     return "stores";
   }
+  if (spaceParam === "marketplace" || viewParam === "marketplace") {
+    return "marketplace";
+  }
+  if (spaceParam === "uber" || viewParam === "uber") {
+    return "uber";
+  }
+  if (spaceParam === "for-you" || viewParam === "for-you") {
+    return "for-you";
+  }
 
-  return "marketplace";
+  return DEFAULT_MARKETPLACE_SPACE;
 }
 
 export function buildMarketplaceNavUrl(
@@ -172,9 +182,13 @@ export function buildMarketplaceNavUrl(
 
   switch (value) {
     case "marketplace":
-      return "/marketplace";
+      return DEFAULT_MARKETPLACE_SPACE === "marketplace"
+        ? "/marketplace"
+        : "/marketplace?space=marketplace";
     case "stores":
-      return "/marketplace?space=stores";
+      return DEFAULT_MARKETPLACE_SPACE === "stores"
+        ? "/marketplace"
+        : "/marketplace?space=stores";
     case "settings":
       return getMarketplaceSettingsRoute(isVerifiedStore);
     case "purchases":

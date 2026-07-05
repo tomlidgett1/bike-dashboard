@@ -43,6 +43,7 @@ function DesktopHeaderPillContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const spaceParam = searchParams.get("space");
+  const viewParam = searchParams.get("view");
   const { user } = useAuth();
   const { profile } = useUserProfile();
   const supabase = createClient();
@@ -260,13 +261,11 @@ function DesktopHeaderPillContent() {
               {showNavLinks && (
                 <>
                   <Link
-                    href="/marketplace"
+                    href="/marketplace?space=marketplace"
                     className={cn(
                       "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
                       pathname === "/marketplace" &&
-                        spaceParam !== "stores" &&
-                        spaceParam !== "uber" &&
-                        spaceParam !== "for-you"
+                        (spaceParam === "marketplace" || viewParam === "marketplace")
                         ? "text-gray-900 bg-gray-100"
                         : "text-gray-700 hover:bg-gray-100"
                     )}

@@ -11,12 +11,13 @@ import type { MarketplaceSpace } from "@/lib/types/marketplace";
 // ============================================================
 // Space Navigator
 // Navigation between marketplace "spaces":
-// - Bike Stores (default): Products from verified bike stores
+// - For You (default): Personalised discovery feed
+// - Bike Stores: Products from verified bike stores
 // - Marketplace: Private listings from individuals
 // ============================================================
 
 /** Default tab when visiting /marketplace with no ?space= param */
-export const DEFAULT_MARKETPLACE_SPACE: MarketplaceSpace = 'stores';
+export const DEFAULT_MARKETPLACE_SPACE: MarketplaceSpace = 'for-you';
 
 interface SpaceConfig {
   id: MarketplaceSpace;
@@ -210,7 +211,7 @@ export function FixedMobileSpaceNavigator({
 export function useMarketplaceSpace() {
   const searchParams = useSearchParams();
   
-  // Get current space from URL, default to Bike Stores
+  // Get current space from URL, default to For You
   const spaceParam = searchParams.get('space');
   const viewParam = searchParams.get('view');
   
@@ -231,7 +232,7 @@ export function useMarketplaceSpace() {
     params.delete('view');
     params.delete('space');
     
-    // Only add space param when not the default (Bike Stores)
+    // Only add space param when not the default (For You)
     if (newSpace !== DEFAULT_MARKETPLACE_SPACE) {
       params.set('space', newSpace);
     }

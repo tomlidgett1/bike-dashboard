@@ -6,6 +6,8 @@ import { useSearchParams, usePathname, useRouter } from "next/navigation";
 import { Package, Store, User, Clock, Settings, ShoppingBag, PanelLeftClose, PanelLeft, HelpCircle, LogOut } from '@/components/layout/app-sidebar/dashboard-icons';
 import {
   bicycleStoreNavLabels,
+  buildMarketplaceNavUrl,
+  getMarketplaceActiveView,
   getMarketplaceListingsRoute,
   getMarketplaceSettingsRoute,
   individualUserNavLabels,
@@ -142,37 +144,12 @@ function MarketplaceSidebarContent() {
     };
   }, []);
 
-  // Determine active view based on pathname and search params
-  const getActiveView = () => {
-    const path = pathname;
-    if (
-      path === "/settings" ||
-      path === "/marketplace/settings" ||
-      path.startsWith("/settings/store")
-    ) {
-      return "settings";
-    }
-    if (
-      path === "/settings/purchases" ||
-      path === "/marketplace/purchases" ||
-      path === "/settings/my-listings" ||
-      path.startsWith("/settings/my-listings/")
-    ) {
-      return "my-listings";
-    }
-    // Check if user is viewing their own store
-    const storeMatch = path.match(/^\/marketplace\/store\/(.+)$/);
-    if (storeMatch && (storeMatch[1] === profile?.user_id || storeMatch[1] === user?.id)) {
-      return "my-store";
-    }
-    // Check for space param (new) or view param (legacy)
-    const spaceParam = searchParams.get("space");
-    const viewParam = searchParams.get("view");
-    if (spaceParam === "stores" || viewParam === "stores") return "stores";
-    return "marketplace"; // Default to marketplace
-  };
-  
-  const activeView = getActiveView();
+  const activeView = getMarketplaceActiveView(
+    pathname,
+    searchParams,
+    profile?.user_id,
+    user?.id,
+  );
 
   // Check if user is a verified bicycle store
   const isVerifiedStore = profile?.account_type === 'bicycle_store' && profile?.bicycle_store === true;
@@ -238,22 +215,11 @@ function MarketplaceSidebarContent() {
     const Icon = item.icon!;
 
     const handleClick = () => {
-      let url: string;
-      if (item.value === "marketplace") {
-        // Default marketplace (private sellers)
-        url = "/marketplace";
-      } else if (item.value === "stores") {
-        // Bike Stores space
-        url = "/marketplace?space=stores";
-      } else if (item.value === "settings") {
-        url = getMarketplaceSettingsRoute(isVerifiedStore);
-      } else if (item.value === "my-listings" || item.value === "purchases") {
-        url = getMarketplaceListingsRoute();
-      } else if (item.value === "my-store") {
-        url = `/marketplace/store/${profile?.user_id || user?.id}`;
-      } else {
-        url = `/marketplace?space=${item.value}`;
-      }
+      const url = buildMarketplaceNavUrl(item.value!, {
+        isVerifiedStore,
+        profileUserId: profile?.user_id,
+        authUserId: user?.id,
+      });
       router.push(url);
     };
 
