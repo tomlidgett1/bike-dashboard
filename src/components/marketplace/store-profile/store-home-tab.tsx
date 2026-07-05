@@ -33,6 +33,7 @@ import { sortProductsSaleFirst } from "@/lib/marketplace/pricing";
 import { getHomepageIcon } from "@/components/marketplace/store-profile/homepage-icons";
 import { ServiceCard } from "@/components/marketplace/store-profile/service-card";
 import { StoreProductCard } from "@/components/marketplace/store-profile/store-product-card";
+import { ScrollReveal } from "@/components/marketplace/scroll-reveal";
 import { StoreProductCarouselScroll } from "@/components/marketplace/store-profile/store-product-carousel-scroll";
 import { type StoreAnalyticsEventType, useProductImpressions } from "@/lib/tracking/store-analytics";
 import { STORE_PAGE_CONTENT_SHELL } from "@/components/marketplace/store-profile/store-profile-chrome";
@@ -107,9 +108,9 @@ function Reveal({
   delay?: number;
 }) {
   return (
-    <div className={className}>
+    <ScrollReveal className={className}>
       {children}
-    </div>
+    </ScrollReveal>
   );
 }
 

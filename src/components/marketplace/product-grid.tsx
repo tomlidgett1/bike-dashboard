@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Loader2, Package } from '@/components/layout/app-sidebar/dashboard-icons';
 import { ProductCard } from "./product-card";
+import { ScrollReveal } from "./scroll-reveal";
 import { ListItemBannerSlot } from "./list-item-banner";
 import { Button } from "@/components/ui/button";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
@@ -105,10 +106,12 @@ export function ProductGrid({
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-1.5 sm:gap-4">
         {uniqueProducts.map((product, index) => (
           <React.Fragment key={product.id}>
-            <ProductCard
-              product={product}
-              priority={index < 8}
-            />
+            <ScrollReveal>
+              <ProductCard
+                product={product}
+                priority={index < 8}
+              />
+            </ScrollReveal>
             <ListItemBannerSlot
               productIndex={index}
               productCount={uniqueProducts.length}

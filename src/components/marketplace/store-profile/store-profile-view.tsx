@@ -37,6 +37,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { StoreProductCard } from "@/components/marketplace/store-profile/store-product-card";
+import { ScrollReveal } from "@/components/marketplace/scroll-reveal";
 import { StoreProductCarouselScroll } from "@/components/marketplace/store-profile/store-product-carousel-scroll";
 import { ListItemBannerSlot } from "@/components/marketplace/list-item-banner";
 import { BikeIcon, getCategoryIconName } from "@/components/ui/bike-icon";
@@ -49,8 +50,6 @@ import {
   type StoreTab,
 } from "@/components/marketplace/store-profile/store-profile-chrome";
 import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
-import { AtelierStorefront } from "@/components/marketplace/store-profile/atelier/atelier-storefront";
-import { useStoreDesign } from "@/components/marketplace/store-profile/atelier/use-store-design";
 import type { StoreCategoryWithProducts, StoreProfile, OpeningHours, StoreSectionWithCategories } from "@/lib/types/store";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { resolveLivePrice, sortProductsSaleFirst } from "@/lib/marketplace/pricing";
@@ -346,15 +345,17 @@ function CategoryScrollRow({
         {products.map((product, j) => (
           <React.Fragment key={product.id}>
             <div className="h-full" data-analytics-product-id={product.id}>
-              <StoreProductCard
-                product={product}
-                priority={rowIndex === 0 && j < 6}
-                inCarousel={false}
-                storeId={storeId}
-                storeName={storeName}
-                onBackgroundRemove={onBackgroundRemove}
-                backgroundRemoveBusy={backgroundRemovingIds?.has(product.id) ?? false}
-              />
+              <ScrollReveal className="h-full">
+                <StoreProductCard
+                  product={product}
+                  priority={rowIndex === 0 && j < 6}
+                  inCarousel={false}
+                  storeId={storeId}
+                  storeName={storeName}
+                  onBackgroundRemove={onBackgroundRemove}
+                  backgroundRemoveBusy={backgroundRemovingIds?.has(product.id) ?? false}
+                />
+              </ScrollReveal>
             </div>
             <ListItemBannerSlot
               productIndex={j}
@@ -698,6 +699,7 @@ function CarouselRow({
   if (cat.products.length === 0) return null;
 
   return (
+    <ScrollReveal>
     <section
       key={cat.id}
       data-store-analytics-section={`carousel:${cat.id}`}
@@ -787,6 +789,7 @@ function CarouselRow({
         backgroundRemovingIds={backgroundRemovingIds}
       />
     </section>
+    </ScrollReveal>
   );
 }
 
@@ -869,14 +872,16 @@ function ProductSearchResultsGrid({
       {products.map((product, index) => (
         <React.Fragment key={product.id}>
           <div className="h-full" data-analytics-product-id={product.id}>
-            <StoreProductCard
-              product={product}
-              priority={index < 8}
-              storeId={storeId}
-              storeName={storeName}
-              onBackgroundRemove={onBackgroundRemove}
-              backgroundRemoveBusy={backgroundRemovingIds?.has(product.id) ?? false}
-            />
+            <ScrollReveal className="h-full">
+              <StoreProductCard
+                product={product}
+                priority={index < 8}
+                storeId={storeId}
+                storeName={storeName}
+                onBackgroundRemove={onBackgroundRemove}
+                backgroundRemoveBusy={backgroundRemovingIds?.has(product.id) ?? false}
+              />
+            </ScrollReveal>
           </div>
           <ListItemBannerSlot
             productIndex={index}
@@ -1136,10 +1141,6 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
   const analyticsRootRef = React.useRef<HTMLDivElement | null>(null);
   const shouldTrackStoreAnalytics = !isOwnProfile;
   const analyticsContext = React.useMemo(() => ({ tab: activeTab }), [activeTab]);
-
-  // Storefront design toggle — a store/visitor can switch the entire look.
-  // Persisted per-store in localStorage so the choice sticks across visits.
-  const { design, setDesign } = useStoreDesign(store.id);
 
   useStorePageView(shouldTrackStoreAnalytics ? store.id : null);
   useStoreTabTracking(shouldTrackStoreAnalytics ? store.id : null, activeTab, shouldTrackStoreAnalytics);
@@ -1563,12 +1564,6 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
 
   const actionButtons = (
     <>
-      <HeroAction
-        icon={LayoutGrid}
-        label="Studio"
-        onClick={() => setDesign("atelier")}
-        title="Switch to the Studio storefront design"
-      />
       {isOwnProfile && !previewMode && (
         <HeroAction
           icon={Settings}
@@ -1591,24 +1586,6 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
   const storeContentShell = immersive
     ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12"
     : STORE_PAGE_CONTENT_SHELL;
-
-  // ── Alternative storefront design ──────────────────────────
-  // When a store/visitor picks the Atelier design from the header tab,
-  // render the entire alternative storefront instead of the classic chrome.
-  // `hydrated` guards against SSR/CSR markup mismatch on first paint.
-  if (design === "atelier") {
-    return (
-      <AtelierStorefront
-        store={store}
-        isOwnProfile={isOwnProfile}
-        onSwitchDesign={() => setDesign("classic")}
-        activeTab={activeTab}
-        onTabSelect={setActiveTab}
-        hoursOpen={hoursOpen}
-        onHoursOpenChange={setHoursOpen}
-      />
-    );
-  }
 
   return (
     <div ref={analyticsRootRef} className={cn("min-h-screen overflow-x-hidden bg-gray-50", immersive && "pt-14")}>
