@@ -11,6 +11,7 @@ import {
   type PublicMarketplaceCardRow,
 } from '@/lib/marketplace/public-card-feed'
 import { filterVisibleMarketplaceStoreProducts } from '@/lib/marketplace/hidden-stores'
+import { fetchStoreFeedBrowseRows } from '@/lib/marketplace/store-feed-browse'
 
 // Uses the plain (cookie-free) Supabase client so this fetch is compatible
 // with ISR / static caching — no dynamic functions like cookies() are called.
@@ -111,6 +112,43 @@ const EMPTY: InitialMarketplaceData = {
 export async function fetchInitialStoresProducts(): Promise<InitialMarketplaceData> {
   try {
     const supabase = createPublicSupabaseClient()
+
+    try {
+      const { rows: browseRows, poolExhausted } = await fetchStoreFeedBrowseRows(
+        supabase,
+        {},
+        MARKETPLACE_INITIAL_PAGE_SIZE,
+      )
+
+      const products = filterVisibleMarketplaceStoreProducts(
+        browseRows.map(transformPublicMarketplaceCard),
+      )
+      const { data: countData } = await supabase
+        .from('public_marketplace_space_counts')
+        .select('total')
+        .eq('space', 'stores')
+        .maybeSingle()
+      const total = Number(countData?.total ?? products.length + (poolExhausted ? 1 : 0))
+
+      return {
+        products,
+        pagination: {
+          page: 1,
+          pageSize: MARKETPLACE_INITIAL_PAGE_SIZE,
+          total,
+          totalPages: Math.ceil(total / MARKETPLACE_INITIAL_PAGE_SIZE),
+          hasMore: poolExhausted || products.length < total,
+          nextCursor: products.length > 0
+            ? {
+                createdAt: products[products.length - 1].created_at,
+                id: products[products.length - 1].id,
+              }
+            : null,
+        },
+      }
+    } catch (browseError) {
+      console.warn('[initial-stores] browse feed failed, falling back:', browseError)
+    }
 
     const { data: cardRows, error: cardError } = await supabase
       .from('public_marketplace_cards')

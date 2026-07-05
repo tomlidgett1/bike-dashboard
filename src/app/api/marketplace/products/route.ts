@@ -15,6 +15,8 @@ import {
   filterVisibleMarketplaceStoreProducts,
   isHiddenMarketplaceStoreUserId,
 } from '@/lib/marketplace/hidden-stores';
+import { fetchStoreFeedBrowseRows } from '@/lib/marketplace/store-feed-browse';
+import { shouldApplyStoreFeedBrowseOrder } from '@/lib/marketplace/store-feed-order';
 
 // ============================================================
 // Marketplace Products API - Public Endpoint
@@ -159,6 +161,69 @@ async function tryGetProductsFromPublicCards(
     if (brand) query = query.ilike('brand', `%${brand}%`);
     if (excludeBicycleStores) {
       query = query.or('store_account_type.is.null,store_account_type.neq.bicycle_store');
+    }
+
+    if (
+      shouldApplyStoreFeedBrowseOrder({
+        isStoreFeed,
+        sortBy,
+        page,
+        canUseCursor,
+        search,
+        minPrice,
+        maxPrice,
+        createdAfter,
+        condition,
+        brand,
+      })
+    ) {
+      const { rows: browseRows, poolExhausted } = await fetchStoreFeedBrowseRows(
+        supabase,
+        { uberOnly, lsCategory },
+        pageSize,
+      );
+
+      const products = filterVisibleMarketplaceStoreProducts(
+        browseRows.map(transformPublicMarketplaceCard),
+      );
+      const last = products[products.length - 1];
+
+      const precomputedTotal = await getPrecomputedSpaceTotal(
+        supabase,
+        getSpaceForCount(listingType, uberOnly),
+      );
+      const total = precomputedTotal ?? products.length + (poolExhausted ? 1 : 0);
+      const totalPages = Math.ceil(total / pageSize);
+      const hasMore = poolExhausted || products.length < total;
+      const totalTime = Date.now() - startTime;
+
+      const response: MarketplaceProductsResponse = {
+        products,
+        pagination: {
+          page,
+          pageSize,
+          total,
+          totalPages,
+          hasMore,
+          nextCursor: last
+            ? {
+                createdAt: last.created_at,
+                id: last.id,
+              }
+            : null,
+        },
+      };
+
+      return NextResponse.json(response, {
+        headers: {
+          'Cache-Control': 'public, s-maxage=15, stale-while-revalidate=15',
+          'CDN-Cache-Control': 'public, s-maxage=15',
+          'Vercel-CDN-Cache-Control': 'public, s-maxage=15',
+          'Vary': 'Accept-Encoding',
+          'X-Response-Time': `${totalTime}ms`,
+          'X-Marketplace-Feed': 'public-cards-browse',
+        },
+      });
     }
 
     switch (sortBy) {
