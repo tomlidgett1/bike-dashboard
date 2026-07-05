@@ -389,9 +389,8 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     setSelectedStoreId(null);
     setSelectedStoreCategory(null);
     resetProductsForFilterChange();
-    // History API (not router.push) → instant client switch, no RSC round-trip.
-    window.history.pushState(null, '', "/marketplace");
-  }, [resetProductsForFilterChange]);
+    setSpace("stores");
+  }, [resetProductsForFilterChange, setSpace]);
 
   const handleNavigateToUber = React.useCallback(() => {
     setSelectedStoreId(null);
@@ -408,6 +407,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
       setSelectedStoreCategory(null);
       resetProductsForFilterChange();
       const params = new URLSearchParams();
+      params.set("space", "stores");
       params.set("store", storeId);
       window.history.pushState(null, '', `/marketplace?${params.toString()}`);
     },
@@ -420,11 +420,12 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
       setSelectedStoreCategory(null);
       resetProductsForFilterChange();
       const params = new URLSearchParams();
+      params.set("space", "stores");
       if (storeId) params.set("store", storeId);
       window.history.replaceState(
         null,
         '',
-        storeId ? `/marketplace?${params.toString()}` : '/marketplace',
+        `/marketplace?${params.toString()}`,
       );
     },
     [resetProductsForFilterChange]
