@@ -63,7 +63,11 @@ function mapHit(hit: SerperImageHit): BrandLogoSearchResult | null {
   };
 }
 
-async function searchSerperDirect(query: string, apiKey: string): Promise<SerperImageHit[]> {
+async function searchSerperDirect(
+  query: string,
+  apiKey: string,
+  page = 1,
+): Promise<SerperImageHit[]> {
   const response = await fetch('https://google.serper.dev/images', {
     method: 'POST',
     headers: {
@@ -73,6 +77,7 @@ async function searchSerperDirect(query: string, apiKey: string): Promise<Serper
     body: JSON.stringify({
       q: query,
       num: SERPER_NUM,
+      page,
       gl: 'au',
     }),
   });
@@ -127,16 +132,19 @@ async function searchSerperViaEdge(
 async function runSerperQuery(
   query: string,
   accessToken?: string | null,
+  page = 1,
 ): Promise<SerperImageHit[]> {
   // Match product optimise image lookup: use the Supabase edge function first
   // so we always hit the SERPER_API_KEY configured in Supabase secrets, not a
   // stale local/Vercel SERPER_API_KEY that may still be set in Next.js env.
-  const viaEdge = await searchSerperViaEdge(query, accessToken);
-  if (viaEdge.length > 0) return viaEdge;
+  if (page <= 1) {
+    const viaEdge = await searchSerperViaEdge(query, accessToken);
+    if (viaEdge.length > 0) return viaEdge;
+  }
 
   const apiKey = process.env.SERPER_API_KEY?.trim();
   if (!apiKey) return [];
-  return searchSerperDirect(query, apiKey);
+  return searchSerperDirect(query, apiKey, page);
 }
 
 export function buildBrandLogoSearchQuery(options: {
@@ -164,19 +172,23 @@ export async function searchBrandLogoImages(options: {
   query?: string | null;
   brandName?: string | null;
   accessToken?: string | null;
+  page?: number;
+  excludeUrls?: string[];
 }): Promise<{ query: string; results: BrandLogoSearchResult[] }> {
   const query = buildBrandLogoSearchQuery(options);
   if (!query) {
     return { query: '', results: [] };
   }
 
-  const hits = await runSerperQuery(query, options.accessToken);
+  const page = Math.max(1, options.page ?? 1);
+  const exclude = new Set((options.excludeUrls ?? []).map((url) => url.trim()).filter(Boolean));
+  const hits = await runSerperQuery(query, options.accessToken, page);
   const seen = new Set<string>();
   const results: BrandLogoSearchResult[] = [];
 
   for (const hit of hits) {
     const mapped = mapHit(hit);
-    if (!mapped || seen.has(mapped.url)) continue;
+    if (!mapped || seen.has(mapped.url) || exclude.has(mapped.url)) continue;
     seen.add(mapped.url);
     results.push(mapped);
     if (results.length >= MAX_RESULTS) break;

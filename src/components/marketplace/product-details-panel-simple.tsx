@@ -244,15 +244,15 @@ export function ProductDetailsPanelSimple({
         )}
       >
         {brandLogoUrl ? (
-          <div className="mb-2 lg:hidden">
+          <div className="mb-2">
             <ProductBrandLogoBadge
               logoUrl={brandLogoUrl}
               brandName={displayBrand}
             />
           </div>
         ) : null}
-        {displayBrand ? (
-          <p className="mb-1.5 hidden text-[11px] font-medium uppercase tracking-[0.08em] text-gray-400 lg:block">
+        {displayBrand && !brandLogoUrl ? (
+          <p className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-gray-400">
             {displayBrand}
           </p>
         ) : null}
