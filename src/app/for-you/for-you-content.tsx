@@ -344,7 +344,10 @@ export function ForYouFeedView({ initialFeed, hadIdentity, embedded = false }: F
     >
       {feed.carousels.length > 0 ? (
         <LayoutGroup id="for-you-feed">
-          <motion.div layout className="space-y-1">
+          {/* No `layout` here: the container grows every endless-scroll page, and a
+              FLIP animation on that growth warps the feed and yanks the scroll
+              position. Row-level morphs below still animate. */}
+          <div className="space-y-1">
             <AnimatePresence initial={false} mode="popLayout">
               {isEnhancing && (
                 <motion.div
@@ -397,7 +400,9 @@ export function ForYouFeedView({ initialFeed, hadIdentity, embedded = false }: F
               })}
             </AnimatePresence>
 
-            <motion.div layout transition={{ layout: ENHANCE_LAYOUT_TRANSITION }}>
+            {/* Plain div (no layout animation): appended pages and skeleton swaps
+                change this section's height constantly during endless scroll. */}
+            <div>
               <ForYouMoreProductsSection
                 products={moreProducts}
                 userId={user?.id}
@@ -408,8 +413,8 @@ export function ForYouFeedView({ initialFeed, hadIdentity, embedded = false }: F
               />
               {/* Endless-scroll sentinel — triggers the next page well before the bottom */}
               <div ref={sentinelRef} aria-hidden className="h-px" />
-            </motion.div>
-          </motion.div>
+            </div>
+          </div>
         </LayoutGroup>
       ) : isEnhancing ? (
         <div className="space-y-1">
