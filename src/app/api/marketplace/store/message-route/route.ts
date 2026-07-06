@@ -1,36 +1,6 @@
 import { NextResponse } from "next/server";
-
-const ROUTE_PATH = "/functions/v1/yellow-jersey-ash-route";
-
-type NestRouteResponse = {
-  ok?: boolean;
-  phoneE164?: string;
-  brandKey?: string;
-  error?: string;
-};
-
-function getNestRouteUrl(): string | null {
-  const explicitUrl = process.env.NEST_YELLOW_JERSEY_ASH_ROUTE_URL?.trim();
-  if (explicitUrl) return explicitUrl;
-
-  const supabaseUrl = process.env.NEST_SUPABASE_URL?.trim();
-  if (!supabaseUrl) return null;
-
-  return `${supabaseUrl.replace(/\/+$/, "")}${ROUTE_PATH}`;
-}
-
-function getInternalSecret(): string | null {
-  return (
-    process.env.INTERNAL_EDGE_SHARED_SECRET?.trim() ||
-    process.env.NEST_INTERNAL_EDGE_SHARED_SECRET?.trim() ||
-    process.env.NEST_SUPABASE_SECRET_KEY?.trim() ||
-    process.env.NEST_NEW_SUPABASE_SECRET_KEY?.trim() ||
-    process.env.NEST_SUPABASE_SERVICE_ROLE_KEY?.trim() ||
-    process.env.NEW_SUPABASE_SECRET_KEY?.trim() ||
-    process.env.SUPABASE_SECRET_KEY?.trim() ||
-    null
-  );
-}
+import { registerAshPhoneRoute } from "@/lib/nest/yellow-jersey-phone-routes";
+import { createServiceRoleClient } from "@/lib/supabase/server";
 
 function getPublicMessageNumber(): string | null {
   const linqBotNumber = process.env.LINQ_AGENT_BOT_NUMBERS
@@ -41,6 +11,7 @@ function getPublicMessageNumber(): string | null {
   return (
     process.env.NEST_IMESSAGE_NUMBER?.trim() ||
     process.env.NEXT_PUBLIC_NEST_IMESSAGE_NUMBER?.trim() ||
+    process.env.LINQ_VOICE_FROM?.trim() ||
     linqBotNumber ||
     null
   );
@@ -79,61 +50,38 @@ export async function POST(request: Request) {
     return json({ error: "Enter a valid mobile number." }, 400);
   }
 
-  const body = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+  const body = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
   const phone = readPhone(body.phone ?? body.phoneNumber ?? body.phone_number);
 
   if (!isPlausiblePhone(phone)) {
     return json({ error: "Enter a valid mobile number." }, 400);
   }
 
-  const nestRouteUrl = getNestRouteUrl();
-  const internalSecret = getInternalSecret();
   const messageNumber = getPublicMessageNumber();
   const messageHref = messageNumber ? toSmsHref(messageNumber) : null;
 
-  if (!nestRouteUrl || !internalSecret || !messageHref) {
-    console.error("[store-message-route] missing configuration", {
-      nestRouteUrl: Boolean(nestRouteUrl),
-      internalSecret: Boolean(internalSecret),
-      messageHref: Boolean(messageHref),
-    });
-    const error = !messageHref
-      ? "Nest iMessage number is not configured yet."
-      : "Store messaging is not configured yet.";
-    return json({ error }, 500);
+  if (!messageNumber || !messageHref) {
+    console.error("[store-message-route] missing message number configuration");
+    return json({ error: "Store messaging is not configured yet." }, 500);
   }
 
   try {
-    const response = await fetch(nestRouteUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-internal-secret": internalSecret,
-      },
-      body: JSON.stringify({ phone }),
-      cache: "no-store",
-    });
-
-    const data = await response.json().catch(() => ({})) as NestRouteResponse;
-
-    if (!response.ok || data.ok === false) {
-      return json(
-        { error: data.error || "We could not set up messaging. Try again shortly." },
-        response.status >= 400 && response.status < 500 ? 400 : 502,
-      );
-    }
+    const supabase = createServiceRoleClient();
+    const route = await registerAshPhoneRoute(supabase, phone, messageNumber);
 
     return json({
       ok: true,
-      phoneE164: data.phoneE164,
+      phoneE164: route.phoneE164,
+      brandKey: route.brandKey,
+      releasedHumanMode: route.releasedHumanMode,
       messageNumber,
       messageHref,
     });
   } catch (error) {
-    console.error(
-      "[store-message-route] Nest route request failed:",
-      error instanceof Error ? error.message : "unknown error",
-    );
-    return json({ error: "We could not set up messaging. Try again shortly." }, 502);
+    const message =
+      error instanceof Error ? error.message : "We could not set up messaging. Try again shortly.";
+    const status = message === "Enter a valid mobile number." ? 400 : 502;
+    console.error("[store-message-route] registration failed:", message);
+    return json({ error: message }, status);
   }
 }

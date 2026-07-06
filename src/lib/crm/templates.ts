@@ -293,8 +293,8 @@ function renderStoreIdentity(store: StoreBranding, colors: CampaignDesignColors,
   const initial = escapeHtml(name.charAt(0).toUpperCase());
   const heroTextColor = layout === "minimal" ? colors.text : "#ffffff";
   const mark = logo
-    ? `<img src="${logo}" width="40" height="40" alt="${escapeHtml(name)}" style="display:block;border-radius:50%;background:#ffffff;object-fit:cover;" />`
-    : `<table cellpadding="0" cellspacing="0"><tr><td style="width:40px;height:40px;background:${colors.accent};border-radius:50%;text-align:center;line-height:40px;font-family:${FONT};font-size:16px;font-weight:900;color:${colors.buttonText};">${initial}</td></tr></table>`;
+    ? `<img src="${logo}" width="72" height="72" alt="${escapeHtml(name)}" style="display:block;width:72px;height:72px;border-radius:50%;background:#ffffff;object-fit:contain;" />`
+    : `<table cellpadding="0" cellspacing="0"><tr><td style="width:72px;height:72px;background:${colors.accent};border-radius:50%;text-align:center;line-height:72px;font-family:${FONT};font-size:24px;font-weight:900;color:${colors.buttonText};">${initial}</td></tr></table>`;
   return `
         <table cellpadding="0" cellspacing="0" style="margin-bottom:40px;"><tr>
           <td style="padding-right:12px;">${mark}</td>

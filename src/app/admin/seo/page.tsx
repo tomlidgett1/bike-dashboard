@@ -411,15 +411,25 @@ export default async function SeoAgentDashboard() {
         <Card title="Held — needs attention" sub="drafts not live, and exactly why">
           {heldDrafts.length === 0 ? empty('No held drafts.') : (
             <table className="w-full text-sm">
-              <thead><tr><th className={th}>URL</th><th className={th}>Stock</th><th className={th}>Why it's held</th></tr></thead>
+              <thead><tr><th className={th}>URL</th><th className={th}>Stock</th><th className={th}>Score</th><th className={th}>Why it's held</th></tr></thead>
               <tbody className="divide-y divide-gray-50">
                 {heldDrafts.map((p: any) => {
                   const fails: string[] = p.content?.validation?.fails ?? [];
+                  const score = p.quality_score ?? 0;
+                  // No validator failures + score below 70 = the anti-spam scoring
+                  // gate is holding it, not a broken pipeline. The dominant lever
+                  // for a category page is supply_count (live listings) — GSC
+                  // demand and score are the other inputs, but supply is the one
+                  // the owner can actually move without code changes.
+                  const reason = fails.length
+                    ? fails.join('; ')
+                    : `score ${score}/100, needs 70 — add more live listings in this category to clear the bar (has ${p.supply_count})`;
                   return (
                     <tr key={p.url}>
                       <td className="px-3 py-2 font-mono text-xs text-gray-700">{p.url}</td>
                       <td className="px-3 py-2 text-gray-600">{p.supply_count}</td>
-                      <td className="px-3 py-2 text-amber-700">{fails.length ? fails.join('; ') : 'awaiting validation / promotion'}</td>
+                      <td className="px-3 py-2 text-gray-600">{score}</td>
+                      <td className="px-3 py-2 text-amber-700">{reason}</td>
                     </tr>
                   );
                 })}

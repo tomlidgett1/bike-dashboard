@@ -309,6 +309,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   const [showStickyFilters, setShowStickyFilters] = React.useState(false);
   const [isMobile, setIsMobile] = React.useState(false);
   const categoryPillsRef = React.useRef<HTMLDivElement | null>(null);
+  const forYouDesktopSentinelRef = React.useRef<HTMLDivElement | null>(null);
   const [productGridLayout, setProductGridLayout] = React.useState<
     "grid4" | "grid6" | "grid8"
   >("grid6");
@@ -1069,6 +1070,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
             onNavigateToUber={handleNavigateToUber}
             onNavigateToForYou={() => setSpace("for-you")}
             onPrefetchSpace={handlePrefetchSpace}
+            scrollSentinelRef={isForYouView ? forYouDesktopSentinelRef : categoryPillsRef}
             trailing={
               showDesktopBrowseFilters || isStoresView ? (
                 <div className="flex h-10 items-center gap-3">
@@ -1310,11 +1312,18 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
               </div>
             )}
             {isForYouView ? (
-              forYouFeed ? (
-                <ForYouFeedView initialFeed={forYouFeed} hadIdentity embedded />
-              ) : (
-                <ForYouFeedSkeletonBody embedded />
-              )
+              <>
+                <div
+                  ref={forYouDesktopSentinelRef}
+                  className="hidden sm:block h-px w-full"
+                  aria-hidden="true"
+                />
+                {forYouFeed ? (
+                  <ForYouFeedView initialFeed={forYouFeed} hadIdentity embedded />
+                ) : (
+                  <ForYouFeedSkeletonBody embedded />
+                )}
+              </>
             ) : (
               <>
             {/* Promo Banners - Marketplace and Bike Stores (hidden while searching) */}

@@ -49,8 +49,8 @@ function renderIdentity(store: StoreBranding, design: CampaignDesign): string {
   const initial = escapeHtml(name.charAt(0).toUpperCase());
   const heroText = design.layout === "minimal" ? design.colors.text : "#ffffff";
   const mark = logo
-    ? `<img src="${logo}" width="36" height="36" alt="${escapeHtml(name)}" style="display:block;width:36px;height:36px;border-radius:999px;background:#ffffff;object-fit:cover;" />`
-    : `<table cellpadding="0" cellspacing="0"><tr><td style="width:36px;height:36px;background:${design.colors.accent};border-radius:999px;text-align:center;line-height:36px;font-family:${FONT};font-size:15px;font-weight:900;color:${design.colors.buttonText};">${initial}</td></tr></table>`;
+    ? `<img src="${logo}" width="72" height="72" alt="${escapeHtml(name)}" style="display:block;width:72px;height:72px;border-radius:999px;background:#ffffff;object-fit:contain;" />`
+    : `<table cellpadding="0" cellspacing="0"><tr><td style="width:72px;height:72px;background:${design.colors.accent};border-radius:999px;text-align:center;line-height:72px;font-family:${FONT};font-size:22px;font-weight:900;color:${design.colors.buttonText};">${initial}</td></tr></table>`;
 
   return `<table cellpadding="0" cellspacing="0" style="margin-bottom:34px;"><tr>
     <td style="padding-right:12px;">${mark}</td>

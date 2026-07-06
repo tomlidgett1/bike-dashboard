@@ -1,7 +1,7 @@
 // Shared mobile email requirements for CRM agent prompts and verification.
 
 export const CRM_EMAIL_MOBILE_STANDARD_PROMPT = `## Mobile optimisation (required)
-The shop owner previews emails on desktop AND mobile (~390px). Desktop-only layouts are not acceptable — the mobile view must look deliberately designed, not a squashed desktop email.
+The shop owner previews emails on desktop AND mobile (~390px). Desktop-only layouts are not acceptable. The mobile view must look deliberately designed, not a squashed desktop email.
 
 Every HTML document MUST include:
 - \`<meta name="viewport" content="width=device-width,initial-scale=1.0">\`
@@ -13,14 +13,21 @@ Inside the mobile @media block you MUST:
 - **Stack columns**: any side-by-side cells (products, offer + image, text + CTA row) become single column — use classes like \`.stack-cell\` with \`display:block !important; width:100% !important\` and remove left padding on stacked siblings.
 - **Scale headlines**: large hero type (34–46px desktop) must reduce on mobile (typically 28–36px) so nothing overflows or wraps awkwardly.
 - **Full-width CTAs**: primary buttons \`display:block; width:100%; box-sizing:border-box; text-align:center; min-height:44px\` — never leave a narrow pill button on mobile.
-- **Tighten padding**: outer page padding ~8–12px; inner section padding ~20–24px on mobile.
+- **Tighten padding consistently**: outer page padding ~8–12px; inner section padding ~20–24px on mobile; keep 12–16px padding inside cards and around buttons so nothing feels edge-to-edge or cramped.
+- **Preserve vertical rhythm**: maintain 16–20px gaps between stacked blocks on mobile (margin or padded spacer rows), not zero-gap stacks.
 - **Fluid images**: \`img { max-width:100% !important; height:auto !important; }\` — no fixed-width images wider than the viewport.
 
-Implementation pattern (match saved premade templates):
-- Add semantic classes (\`wrapper\`, \`outer-pad\`, \`pad-x\`, \`stack\`, \`stack-cell\`, \`stack-gap\`, \`btn-a\`, \`h1-lg\`, etc.) on tables/cells and override in @media — do NOT rely on fixed pixel widths for multi-column rows alone.
-- Single-column copy blocks should already read well at 320px with 16–18px body text and line-height 1.5+.
+Desktop (600px) requirements:
+- Outer wrapper padding 28–44px; module gaps 18–28px; readable line-length with 16–18px body text.
+- Multi-column rows only when each column has enough width; otherwise default to single column even on desktop.
 
-Before calling set_campaign_email, sanity-check at 390px: no horizontal scroll, headlines fit, CTAs are thumb-sized, product grids stack vertically with comfortable spacing — not three tiny columns.`;
+Before calling set_campaign_email, sanity-check BOTH viewports:
+- **Desktop (~600px)**: balanced whitespace, aligned modules, no orphaned narrow columns, CTAs clearly separated from body copy.
+- **Mobile (~390px)**: no horizontal scroll, headlines fit, CTAs are thumb-sized and full-width, product grids stack vertically with comfortable spacing (not three tiny columns), padding never zero on text blocks.
+
+Implementation pattern (match saved premade templates):
+- Add semantic classes (\`wrapper\`, \`outer-pad\`, \`pad-x\`, \`stack\`, \`stack-cell\`, \`stack-gap\`, \`btn-a\`, \`h1-lg\`, etc.) on tables/cells and override in @media. Do NOT rely on fixed pixel widths for multi-column rows alone.
+- Single-column copy blocks should already read well at 320px with 16–18px body text and line-height 1.5+.`;
 
 export function verifyMobileEmailHtml(html: string): { ok: boolean; detail: string } {
   const hasViewport = /name\s*=\s*["']viewport["']/i.test(html);

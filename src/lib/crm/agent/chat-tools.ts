@@ -476,7 +476,7 @@ export function buildCrmChatTools(args: {
     tool({
       name: "set_campaign_email",
       description:
-        "Set or replace the campaign email draft. Provide the COMPLETE production HTML document every time (never a diff). The email must look premium on desktop AND mobile (~390px): viewport meta, fluid 600px wrapper, @media (max-width:600px) rules that stack columns and full-width CTAs. Strong concept, confident typography, generous spacing, one dominant CTA, restrained palette, email-safe inline CSS. Verification includes mobile layout checks — fix failures before presenting as done.",
+        "Set or replace the campaign email draft. Provide the COMPLETE production HTML document every time (never a diff). The email must look premium on desktop (~600px) AND mobile (~390px): viewport meta, fluid 600px wrapper, @media (max-width:600px) rules that stack columns and full-width CTAs, explicit padding on every section, comfortable vertical rhythm. Never use em dashes or en dashes in copy. Strong concept, confident typography, generous spacing, one dominant CTA, restrained palette, email-safe inline CSS. Verification includes mobile layout checks. Fix failures before presenting as done.",
       parameters: z.object({
         subject: z.string().min(3).max(120),
         subject_variants: z.array(z.string()).max(2).describe("Up to 2 alternative subjects for A/B choice."),

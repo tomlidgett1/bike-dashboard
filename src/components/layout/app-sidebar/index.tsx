@@ -15,6 +15,7 @@ import {
   Mailbox,
   Settings,
   Shop,
+  Sparkles,
   Tag,
   TestTube,
   Widget,
@@ -71,6 +72,7 @@ const NAV: NavGroup[] = [
     items: [
       { title: "Home", href: "/settings/store/home", icon: HomeSmile, exact: true },
       { title: "To Do", href: "/settings/store/actions", icon: Widget, exact: true },
+      { title: "Domestique", href: "/settings/store/domestique", icon: Sparkles, exact: true },
       { title: "Product Catalogue", href: "/products", icon: Box },
       {
         title: "Storefront",

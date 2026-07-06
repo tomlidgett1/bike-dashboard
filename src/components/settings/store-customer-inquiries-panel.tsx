@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Archive,
+  BarChart3,
   ChatRound,
   Inbox,
   Loader2,
@@ -190,6 +191,13 @@ function EnquiriesSplitView({ c }: { c: UnifiedInboxController }) {
 function CustomerEnquiriesHeaderActions({ c }: { c: UnifiedInboxController }) {
   return (
     <>
+      <Link
+        href="/settings/store/customer-inquiries/analytics"
+        className={storeSettingsHeaderActionClass()}
+      >
+        <BarChart3 className="size-[15px]" />
+        Analytics
+      </Link>
       <Link
         href="/settings/store/nest"
         className={storeSettingsHeaderActionClass()}

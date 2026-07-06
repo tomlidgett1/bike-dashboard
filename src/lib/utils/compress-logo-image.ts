@@ -1,21 +1,25 @@
 /**
  * Server-side store logo compression (Sharp).
- * Keeps logos small for fast storefront and header loading.
+ *
+ * Logos are embedded in CRM marketing emails, so the output must be
+ * email-client safe: PNG (WebP is unsupported or badly transcoded by several
+ * mobile mail clients/proxies) and square (email clients often ignore
+ * object-fit, so a non-square source gets squashed inside fixed-size slots).
  */
 
 import sharp from 'sharp';
 
 export const STORE_LOGO_MAX_DIMENSION = 512;
-export const STORE_LOGO_WEBP_QUALITY = 80;
 
 export interface CompressLogoResult {
   buffer: Buffer;
-  contentType: 'image/webp';
-  extension: 'webp';
+  contentType: 'image/png';
+  extension: 'png';
 }
 
 /**
- * Resize to fit within max dimension, convert to WebP, strip metadata.
+ * Resize to fit within max dimension, pad to a square transparent canvas,
+ * convert to PNG, strip metadata.
  */
 export async function compressLogoImage(
   input: Buffer | ArrayBuffer
@@ -27,15 +31,17 @@ export async function compressLogoImage(
     .resize({
       width: STORE_LOGO_MAX_DIMENSION,
       height: STORE_LOGO_MAX_DIMENSION,
-      fit: 'inside',
-      withoutEnlargement: true,
+      // contain pads to an exact square so email clients never distort it
+      fit: 'contain',
+      background: { r: 255, g: 255, b: 255, alpha: 0 },
+      withoutEnlargement: false,
     })
-    .webp({ quality: STORE_LOGO_WEBP_QUALITY, effort: 4 })
+    .png({ compressionLevel: 9, adaptiveFiltering: true })
     .toBuffer();
 
   return {
     buffer: optimized,
-    contentType: 'image/webp',
-    extension: 'webp',
+    contentType: 'image/png',
+    extension: 'png',
   };
 }

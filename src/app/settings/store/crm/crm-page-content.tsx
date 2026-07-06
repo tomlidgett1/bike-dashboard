@@ -5,7 +5,6 @@
 // → Review → Send. The composer lives in campaign-composer.tsx.
 
 import * as React from "react";
-import { motion } from "framer-motion";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -25,6 +24,7 @@ import {
   Calendar,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-page";
+import { SettingsNavTabs } from "@/components/settings/settings-nav-tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -53,58 +53,6 @@ type ContactFilter = "all" | "opted_in" | "opted_out";
 type CrmSection = "create" | "people" | "activity";
 type PeopleTab = "contacts" | "groups";
 type ActivityTab = "campaigns" | "automation";
-
-function CrmNavTabs<T extends string>({
-  items,
-  value,
-  onChange,
-  size = "lg",
-}: {
-  items: readonly { id: T; label: string; icon: React.ComponentType<{ className?: string }> }[];
-  value: T;
-  onChange: (id: T) => void;
-  size?: "sm" | "lg";
-}) {
-  const compact = size === "sm";
-  const indicatorLayoutId = React.useId();
-
-  return (
-    <div className="flex w-fit items-center rounded-full bg-gray-100 p-0.5">
-      {items.map((entry) => {
-        const isActive = value === entry.id;
-
-        return (
-          <button
-            key={entry.id}
-            type="button"
-            onClick={() => onChange(entry.id)}
-            className={cn(
-              "relative flex items-center gap-1.5 rounded-full font-medium",
-              compact ? "px-2.5 py-1.5 text-xs" : "px-3.5 py-1.5 text-sm",
-              isActive ? "text-gray-800" : "text-gray-600 hover:bg-gray-200/70",
-            )}
-          >
-            {isActive && (
-              <motion.div
-                layoutId={`crm-nav-tab-${indicatorLayoutId}`}
-                className="absolute inset-0 rounded-full bg-white shadow-sm"
-                transition={{
-                  type: "spring",
-                  bounce: 0.2,
-                  duration: 0.4,
-                }}
-              />
-            )}
-            <span className="relative z-10 flex items-center gap-1.5">
-              <entry.icon className={compact ? "h-3 w-3" : "size-[15px]"} />
-              {entry.label}
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 const PAGE_SIZE = 50;
 
@@ -475,20 +423,27 @@ export function CrmPageContent() {
         }
         toolbar={
           <div className="flex flex-col gap-2.5">
-            <CrmNavTabs items={CRM_SECTIONS} value={section} onChange={handleSectionChange} />
+            <SettingsNavTabs
+              items={CRM_SECTIONS}
+              value={section}
+              onChange={handleSectionChange}
+              layoutId="crm-main-tabs"
+            />
             {section === "people" ? (
-              <CrmNavTabs
+              <SettingsNavTabs
                 size="sm"
                 items={PEOPLE_TABS}
                 value={peopleTab}
                 onChange={setPeopleTab}
+                layoutId="crm-people-tabs"
               />
             ) : section === "activity" ? (
-              <CrmNavTabs
+              <SettingsNavTabs
                 size="sm"
                 items={ACTIVITY_TABS}
                 value={activityTab}
                 onChange={setActivityTab}
+                layoutId="crm-activity-tabs"
               />
             ) : null}
           </div>
