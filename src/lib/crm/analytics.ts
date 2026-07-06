@@ -28,21 +28,13 @@ function eventTimestamp(event: ResendWebhookEvent): string {
   return event.created_at ?? new Date().toISOString();
 }
 
-async function incrementCampaignCounter(
-  supabase: SupabaseClient,
-  campaignId: string,
-  field: "delivered_count" | "opened_count" | "clicked_count" | "bounced_count",
-) {
-  const { data: row } = await supabase
-    .from("crm_campaigns")
-    .select("delivered_count, opened_count, clicked_count, bounced_count")
-    .eq("id", campaignId)
-    .maybeSingle();
-  const current = Number((row as Record<string, number> | null)?.[field] ?? 0);
-  await supabase
-    .from("crm_campaigns")
-    .update({ [field]: current + 1, updated_at: new Date().toISOString() })
-    .eq("id", campaignId);
+/**
+ * Recount the denormalised campaign counters from the per-recipient timestamp
+ * columns (the source of truth). Idempotent, so concurrent webhook deliveries
+ * can never make the counters drift.
+ */
+async function recalcCampaignCounters(supabase: SupabaseClient, campaignId: string) {
+  await supabase.rpc("crm_recalc_campaign_counters", { p_campaign_id: campaignId });
 }
 
 const RECIPIENT_ID_RE =
@@ -71,11 +63,18 @@ export async function recordRecipientOpen(
   }
 
   const openedAt = at ?? new Date().toISOString();
-  await supabase
+  // Conditional update: only the first writer (pixel vs Resend webhook) sets
+  // opened_at, so a near-simultaneous pair can't double-record.
+  const { data: updated } = await supabase
     .from("crm_campaign_recipients")
     .update({ opened_at: openedAt })
-    .eq("id", recipient.id);
-  await incrementCampaignCounter(supabase, String(recipient.campaign_id), "opened_count");
+    .eq("id", recipient.id)
+    .is("opened_at", null)
+    .select("id");
+  if (!updated || updated.length === 0) {
+    return { recorded: true, reason: "already opened" };
+  }
+  await recalcCampaignCounters(supabase, String(recipient.campaign_id));
   return { recorded: true };
 }
 
@@ -108,11 +107,15 @@ export async function processResendWebhookEvent(
   switch (event.type) {
     case "email.delivered": {
       if (recipient.delivered_at) return { handled: true };
-      await supabase
+      const { data: updated } = await supabase
         .from("crm_campaign_recipients")
         .update({ delivered_at: at })
-        .eq("id", recipient.id);
-      await incrementCampaignCounter(supabase, resolvedCampaignId, "delivered_count");
+        .eq("id", recipient.id)
+        .is("delivered_at", null)
+        .select("id");
+      if (updated && updated.length > 0) {
+        await recalcCampaignCounters(supabase, resolvedCampaignId);
+      }
       return { handled: true };
     }
     case "email.opened": {
@@ -121,20 +124,28 @@ export async function processResendWebhookEvent(
     }
     case "email.clicked": {
       if (recipient.clicked_at) return { handled: true };
-      await supabase
+      const { data: updated } = await supabase
         .from("crm_campaign_recipients")
         .update({ clicked_at: at })
-        .eq("id", recipient.id);
-      await incrementCampaignCounter(supabase, resolvedCampaignId, "clicked_count");
+        .eq("id", recipient.id)
+        .is("clicked_at", null)
+        .select("id");
+      if (updated && updated.length > 0) {
+        await recalcCampaignCounters(supabase, resolvedCampaignId);
+      }
       return { handled: true };
     }
     case "email.bounced": {
       if (recipient.bounced_at) return { handled: true };
-      await supabase
+      const { data: updated } = await supabase
         .from("crm_campaign_recipients")
         .update({ bounced_at: at, status: "failed", error: "bounced" })
-        .eq("id", recipient.id);
-      await incrementCampaignCounter(supabase, resolvedCampaignId, "bounced_count");
+        .eq("id", recipient.id)
+        .is("bounced_at", null)
+        .select("id");
+      if (updated && updated.length > 0) {
+        await recalcCampaignCounters(supabase, resolvedCampaignId);
+      }
       return { handled: true };
     }
     default:

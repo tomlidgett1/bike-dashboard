@@ -99,11 +99,16 @@ function CampaignMetrics({ campaign }: { campaign: CrmCampaign }) {
   const delivered = campaign.delivered_count ?? 0;
   const bounced = campaign.bounced_count ?? 0;
 
+  // Opens and clicks are measured against delivered emails (the industry
+  // standard, matching Resend's dashboard). Fall back to sent while delivery
+  // webhooks are still arriving.
+  const engagementBase = delivered > 0 ? delivered : sent;
+
   const metrics = [
-    { label: "Opened", count: opened },
-    { label: "Clicked", count: clicked },
-    { label: "Delivered", count: delivered },
-    ...(bounced > 0 ? [{ label: "Bounced", count: bounced }] : []),
+    { label: "Opened", count: opened, total: engagementBase },
+    { label: "Clicked", count: clicked, total: engagementBase },
+    { label: "Delivered", count: delivered, total: sent },
+    ...(bounced > 0 ? [{ label: "Bounced", count: bounced, total: sent }] : []),
   ];
 
   return (
@@ -115,11 +120,11 @@ function CampaignMetrics({ campaign }: { campaign: CrmCampaign }) {
         >
           <span className="text-muted-foreground">{metric.label}</span>
           <span className="font-semibold tabular-nums text-foreground">
-            {formatRate(metric.count, sent)}
+            {formatRate(metric.count, metric.total)}
           </span>
-          {sent > 1 ? (
+          {metric.total > 1 ? (
             <span className="text-muted-foreground/60">
-              ({metric.count}/{sent})
+              ({metric.count}/{metric.total})
             </span>
           ) : null}
         </span>

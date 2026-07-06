@@ -27,8 +27,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
@@ -53,6 +51,7 @@ type AnalyticsTab =
   | "devices"
   | "search";
 type ChartGrouping = "daily" | "weekly";
+type TrafficChartMetric = "totalDistinctViewers" | "totalViews" | "productImpressions";
 
 interface AnalyticsSummary {
   storeViews: number;
@@ -222,12 +221,12 @@ const emptyDeviceBreakdown: StoreAnalyticsByDevice = {
 };
 
 const trafficChartConfig = {
-  totalViews: {
-    label: "Page views",
-    color: "var(--chart-1)",
-  },
   totalDistinctViewers: {
     label: "Distinct viewers",
+    color: "var(--chart-1)",
+  },
+  totalViews: {
+    label: "Page views",
     color: "var(--chart-2)",
   },
   productImpressions: {
@@ -235,6 +234,12 @@ const trafficChartConfig = {
     color: "var(--chart-3)",
   },
 } satisfies ChartConfig;
+
+const trafficChartMetrics: TrafficChartMetric[] = [
+  "totalDistinctViewers",
+  "totalViews",
+  "productImpressions",
+];
 
 const tabs: Array<{ value: AnalyticsTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
   { value: "overview", label: "Overview", icon: BarChart3 },
@@ -877,6 +882,8 @@ export function StoreAnalyticsManager() {
   const [days, setDays] = React.useState("30");
   const [activeTab, setActiveTab] = React.useState<AnalyticsTab>("overview");
   const [chartGrouping, setChartGrouping] = React.useState<ChartGrouping>("daily");
+  const [trafficChartMetric, setTrafficChartMetric] =
+    React.useState<TrafficChartMetric>("totalDistinctViewers");
   const [data, setData] = React.useState<AnalyticsResponse | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -1502,26 +1509,54 @@ export function StoreAnalyticsManager() {
                       {chartGrouping === "daily" ? "Daily traffic" : "Weekly traffic"}
                     </CardTitle>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Page views, distinct viewers, and impressions for the selected range.
+                      {trafficChartConfig[trafficChartMetric].label} for the selected range.
                     </p>
                   </div>
-                  <ToggleGroup
-                    type="single"
-                    value={chartGrouping}
-                    onValueChange={(value) => {
-                      if (value === "daily" || value === "weekly") setChartGrouping(value);
-                    }}
-                    size="sm"
-                    variant="outline"
-                    spacing={0}
-                  >
-                    <ToggleGroupItem value="daily" aria-label="Group by day">
-                      Day
-                    </ToggleGroupItem>
-                    <ToggleGroupItem value="weekly" aria-label="Group by week">
-                      Week
-                    </ToggleGroupItem>
-                  </ToggleGroup>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ToggleGroup
+                      type="single"
+                      value={trafficChartMetric}
+                      onValueChange={(value) => {
+                        if (
+                          value === "totalDistinctViewers" ||
+                          value === "totalViews" ||
+                          value === "productImpressions"
+                        ) {
+                          setTrafficChartMetric(value);
+                        }
+                      }}
+                      size="sm"
+                      variant="outline"
+                      spacing={0}
+                    >
+                      {trafficChartMetrics.map((metric) => (
+                        <ToggleGroupItem
+                          key={metric}
+                          value={metric}
+                          aria-label={trafficChartConfig[metric].label}
+                        >
+                          {trafficChartConfig[metric].label}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                    <ToggleGroup
+                      type="single"
+                      value={chartGrouping}
+                      onValueChange={(value) => {
+                        if (value === "daily" || value === "weekly") setChartGrouping(value);
+                      }}
+                      size="sm"
+                      variant="outline"
+                      spacing={0}
+                    >
+                      <ToggleGroupItem value="daily" aria-label="Group by day">
+                        Day
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="weekly" aria-label="Group by week">
+                        Week
+                      </ToggleGroupItem>
+                    </ToggleGroup>
+                  </div>
                 </CardHeader>
                 <CardContent className="p-4">
                   <ChartContainer config={trafficChartConfig} className="min-h-[320px] w-full">
@@ -1551,29 +1586,12 @@ export function StoreAnalyticsManager() {
                           />
                         }
                       />
-                      <ChartLegend content={<ChartLegendContent />} />
                       <Area
-                        dataKey="totalViews"
+                        dataKey={trafficChartMetric}
                         type="monotone"
-                        fill="var(--color-totalViews)"
+                        fill={`var(--color-${trafficChartMetric})`}
                         fillOpacity={0.2}
-                        stroke="var(--color-totalViews)"
-                        strokeWidth={2}
-                      />
-                      <Area
-                        dataKey="totalDistinctViewers"
-                        type="monotone"
-                        fill="var(--color-totalDistinctViewers)"
-                        fillOpacity={0.16}
-                        stroke="var(--color-totalDistinctViewers)"
-                        strokeWidth={2}
-                      />
-                      <Area
-                        dataKey="productImpressions"
-                        type="monotone"
-                        fill="var(--color-productImpressions)"
-                        fillOpacity={0.1}
-                        stroke="var(--color-productImpressions)"
+                        stroke={`var(--color-${trafficChartMetric})`}
                         strokeWidth={2}
                       />
                     </AreaChart>

@@ -940,6 +940,13 @@ function normaliseBrandKey(brandKey: string): string {
   return brandKey.trim().toLowerCase()
 }
 
+type ExistingHumanModeRow = {
+  id: string
+  chat_id: string
+  brand_key: string
+  released_at: string | null
+}
+
 async function activatePortalHumanMode(
   supabase: SupabaseClient,
   params: {
@@ -956,26 +963,84 @@ async function activatePortalHumanMode(
     botNumber: params.botNumber,
     brandKey: params.brandKey,
   })
+
   const now = new Date().toISOString()
   const brandKey = normaliseBrandKey(params.brandKey)
-  const { error } = await supabase
-    .from('linq_human_mode_threads')
-    .upsert({
-      chat_id: params.chatId,
-      recipient_handle: params.recipientHandle,
-      bot_number: params.botNumber,
-      brand_key: brandKey,
-      source: params.source,
-      activated_by: `staff@${brandKey}`,
-      activated_at: now,
-      last_staff_message_at: now,
-      released_at: null,
-      released_reason: null,
-      release_route: null,
-      release_brand_key: null,
-      metadata: params.metadata ?? {},
-    }, { onConflict: 'recipient_handle,bot_number' })
+  const payload = {
+    chat_id: params.chatId,
+    recipient_handle: params.recipientHandle,
+    bot_number: params.botNumber,
+    brand_key: brandKey,
+    source: params.source,
+    activated_by: `staff@${brandKey}`,
+    activated_at: now,
+    last_staff_message_at: now,
+    released_at: null,
+    released_reason: null,
+    release_route: null,
+    release_brand_key: null,
+    metadata: params.metadata ?? {},
+  }
 
+  const [chatLookup, recipientLookup] = await Promise.all([
+    supabase
+      .from('linq_human_mode_threads')
+      .select('id, chat_id, brand_key, released_at')
+      .eq('chat_id', params.chatId)
+      .maybeSingle<ExistingHumanModeRow>(),
+    supabase
+      .from('linq_human_mode_threads')
+      .select('id, chat_id, brand_key, released_at')
+      .eq('recipient_handle', params.recipientHandle)
+      .eq('bot_number', params.botNumber)
+      .maybeSingle<ExistingHumanModeRow>(),
+  ])
+
+  if (chatLookup.error) {
+    throw new Error(`Could not activate human-only mode: ${chatLookup.error.message}`)
+  }
+  if (recipientLookup.error) {
+    throw new Error(`Could not activate human-only mode: ${recipientLookup.error.message}`)
+  }
+
+  const existingByChat = chatLookup.data ?? null
+  const existingByRecipient = recipientLookup.data ?? null
+
+  if (
+    existingByRecipient?.released_at == null &&
+    existingByRecipient?.brand_key &&
+    normaliseBrandKey(existingByRecipient.brand_key) !== brandKey
+  ) {
+    throw new Error('This recipient is already in human-only mode for another brand.')
+  }
+
+  if (
+    existingByChat?.id &&
+    existingByRecipient?.id &&
+    existingByChat.id !== existingByRecipient.id
+  ) {
+    if (existingByRecipient.released_at == null) {
+      throw new Error('This recipient is already in human-only mode for another chat.')
+    }
+
+    const { error } = await supabase
+      .from('linq_human_mode_threads')
+      .delete()
+      .eq('id', existingByRecipient.id)
+    if (error) throw new Error(`Could not activate human-only mode: ${error.message}`)
+  }
+
+  const existing = existingByChat ?? existingByRecipient
+  if (existing?.id) {
+    const { error } = await supabase
+      .from('linq_human_mode_threads')
+      .update(payload)
+      .eq('id', existing.id)
+    if (error) throw new Error(`Could not activate human-only mode: ${error.message}`)
+    return
+  }
+
+  const { error } = await supabase.from('linq_human_mode_threads').insert(payload)
   if (error) throw new Error(`Could not activate human-only mode: ${error.message}`)
 }
 
