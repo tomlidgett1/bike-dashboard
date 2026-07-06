@@ -37,7 +37,7 @@ export async function GET() {
         .limit(100),
       supabase
         .from("users")
-        .select("business_name, name, logo_url")
+        .select("business_name, name, logo_url, email")
         .eq("user_id", user.id)
         .maybeSingle(),
       getCrmSenderEmail(),
@@ -47,6 +47,8 @@ export async function GET() {
     return NextResponse.json({
       campaigns: campaigns ?? [],
       senderEmail,
+      // Customer replies land here (Reply-To) — the shop's own address.
+      replyToEmail: normalizeEmail(storeRow?.email),
       store: {
         name: storeRow?.business_name || storeRow?.name || "Your Bike Store",
         logoUrl: storeRow?.logo_url ?? null,

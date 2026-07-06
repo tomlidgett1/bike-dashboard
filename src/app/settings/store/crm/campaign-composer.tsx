@@ -64,13 +64,15 @@ const PREVIEW_UNSUBSCRIBE_PLACEHOLDER = "https://yellowjersey.store/unsubscribe?
 export function CampaignComposer(props: {
   seed: ComposerSeed;
   senderEmail: string | null;
+  /** Where customer replies land — the shop's own email address. */
+  replyToEmail: string | null;
   store: StoreBranding;
   eligibleCount: number;
   selectedContacts: CrmContact[];
   onClose: () => void;
   onSent: () => void;
 }) {
-  const { seed, senderEmail, store, eligibleCount, selectedContacts, onClose, onSent } = props;
+  const { seed, senderEmail, replyToEmail, store, eligibleCount, selectedContacts, onClose, onSent } = props;
 
   const eligibleSelected = selectedContacts.filter((contact) => !contact.opted_out);
   const optedOutSelected = selectedContacts.length - eligibleSelected.length;
@@ -473,6 +475,7 @@ export function CampaignComposer(props: {
             subject={subject}
             templateName={template?.name ?? ""}
             senderEmail={senderEmail}
+            replyToEmail={replyToEmail}
             recipientCount={recipientCount}
             optedOutSelected={recipientMode === "selected" ? optedOutSelected : 0}
             customizeValid={customizeValid}
@@ -649,6 +652,7 @@ function ReviewStep(props: {
   subject: string;
   templateName: string;
   senderEmail: string | null;
+  replyToEmail: string | null;
   recipientCount: number;
   optedOutSelected: number;
   customizeValid: boolean;
@@ -661,6 +665,12 @@ function ReviewStep(props: {
       label: "From",
       value: props.senderEmail ?? (
         <span className="text-red-600">Not configured</span>
+      ),
+    },
+    {
+      label: "Replies go to",
+      value: props.replyToEmail ?? (
+        <span className="text-amber-600">Store email missing</span>
       ),
     },
     {

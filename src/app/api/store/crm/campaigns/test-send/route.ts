@@ -48,13 +48,14 @@ export async function POST(request: NextRequest) {
 
   const { data: storeRow } = await supabase
     .from("users")
-    .select("business_name, name, logo_url")
+    .select("business_name, name, logo_url, email")
     .eq("user_id", user.id)
     .maybeSingle();
   const store = {
     name: storeRow?.business_name || storeRow?.name || "Your Bike Store",
     logoUrl: storeRow?.logo_url ?? null,
   };
+  const replyTo = normalizeEmail(storeRow?.email) ?? undefined;
   const ownerFirstName = String(storeRow?.name ?? "").trim().split(/\s+/)[0] || null;
 
   const { html, text } = renderCampaignEmail({
@@ -70,6 +71,7 @@ export async function POST(request: NextRequest) {
       subject: `[Test] ${applyMergeTags(subject, { firstName: ownerFirstName })}`,
       html: applyMergeTags(html, { firstName: ownerFirstName }),
       text: text ? applyMergeTags(text, { firstName: ownerFirstName }) : undefined,
+      replyTo,
     },
   ]);
 

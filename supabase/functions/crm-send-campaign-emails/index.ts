@@ -49,6 +49,8 @@ type CrmMessage = {
   subject: string;
   html: string;
   text?: string;
+  /** Where customer replies land — the store's own email address. */
+  replyTo?: string;
   headers?: Record<string, string>;
   tags?: { name: string; value: string }[];
 };
@@ -76,6 +78,7 @@ function toPayload(message: CrmMessage, fromEmail: string) {
     subject: message.subject,
     html: message.html,
     text: message.text,
+    reply_to: message.replyTo,
     headers: message.headers,
     tags: message.tags,
     open_tracking: true,

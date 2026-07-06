@@ -192,6 +192,7 @@ export function CrmPageContent() {
   // Campaigns
   const [campaigns, setCampaigns] = React.useState<CrmCampaign[]>([]);
   const [senderEmail, setSenderEmail] = React.useState<string | null>(null);
+  const [replyToEmail, setReplyToEmail] = React.useState<string | null>(null);
   const [storeBranding, setStoreBranding] = React.useState<StoreBranding>({
     name: "Your Bike Store",
     logoUrl: null,
@@ -255,6 +256,7 @@ export function CrmPageContent() {
       const data = await res.json();
       setCampaigns(data.campaigns ?? []);
       setSenderEmail(data.senderEmail ?? null);
+      setReplyToEmail(data.replyToEmail ?? null);
       if (data.store?.name) setStoreBranding(data.store);
     } catch {
       // non-fatal; the campaigns tab shows its own empty state
@@ -551,6 +553,7 @@ export function CrmPageContent() {
         <CampaignComposer
           seed={composerSeed}
           senderEmail={senderEmail}
+          replyToEmail={replyToEmail}
           store={storeBranding}
           eligibleCount={stats?.eligible ?? 0}
           selectedContacts={Array.from(selected.values())}

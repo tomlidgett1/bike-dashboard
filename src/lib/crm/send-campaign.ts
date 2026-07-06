@@ -84,13 +84,17 @@ export async function sendCrmCampaign(
   try {
     const { data: storeRow } = await supabase
       .from("users")
-      .select("business_name, name, logo_url")
+      .select("business_name, name, logo_url, email")
       .eq("user_id", userId)
       .maybeSingle();
     const store = {
       name: storeRow?.business_name || storeRow?.name || "Your Bike Store",
       logoUrl: storeRow?.logo_url ?? null,
     };
+    // Replies must land in the shop's own inbox, not the shared Yellow Jersey
+    // sending address. Falls back to no Reply-To only if the store somehow has
+    // no valid email.
+    const replyTo = normalizeEmail(storeRow?.email) ?? undefined;
 
     const pending: PendingRecipient[] = [];
     for (let offset = 0; ; offset += 1000) {
@@ -140,6 +144,7 @@ export async function sendCrmCampaign(
           subject: applyMergeTags(subject, { firstName }),
           html: applyMergeTags(html, { firstName }),
           text: text ? applyMergeTags(text, { firstName }) : text,
+          replyTo,
           headers: {
             "List-Unsubscribe": `<${SITE_URL}/api/crm/unsubscribe?token=${token}>`,
             "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",

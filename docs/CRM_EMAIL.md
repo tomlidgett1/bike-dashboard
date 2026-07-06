@@ -18,6 +18,11 @@ Auth between Next and the edge function is the repo-standard
 `x-internal-secret: INTERNAL_EDGE_SHARED_SECRET` header (user/anon JWTs are
 rejected — the function can send arbitrary email).
 
+**Replies**: every campaign (and test send) sets `Reply-To` to the store's own
+email address (`public.users.email`, normalized) — replies from customers land
+in the shop's inbox, not the shared Yellow Jersey sending address. The Review
+step shows this as "Replies go to" before sending.
+
 ## Environment variables
 
 | Variable | Where | Purpose |
