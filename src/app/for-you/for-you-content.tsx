@@ -13,6 +13,7 @@ import { ForYouCarouselRow } from "@/components/marketplace/for-you/for-you-caro
 import { ForYouMoreProductsSection } from "@/components/marketplace/for-you/for-you-more-products-section";
 import { FOR_YOU_CAROUSEL_CARD_WIDTH } from "@/components/marketplace/for-you/carousel-card-width";
 import type { ForYouFeedPayload, ForYouCarousel } from "@/lib/for-you/types";
+import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import {
   genieProgressShimmerClassName,
   genieProgressShimmerStyle,
@@ -30,6 +31,26 @@ const ENHANCE_MESSAGES = [
   "Grouping bikes and gear for you…",
   "Almost ready…",
 ];
+
+// Endless scroll — how far below the viewport the next page starts loading.
+const ENDLESS_PREFETCH_MARGIN = "1200px";
+const MAX_EXCLUDE_IDS = 300;
+
+/** Top categories across the carousels — steers the endless feed's blend. */
+function topCarouselCategories(carousels: ForYouCarousel[]): string[] {
+  const counts = new Map<string, number>();
+  for (const carousel of carousels) {
+    for (const product of carousel.products) {
+      const category = product.marketplace_category?.trim();
+      if (!category) continue;
+      counts.set(category, (counts.get(category) || 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([category]) => category);
+}
 
 // ============================================================
 // For You — personalised, carousel-led discovery page
@@ -211,6 +232,7 @@ export function ForYouFeedView({ initialFeed, hadIdentity, embedded = false }: F
       ...prev,
       moreProducts: (prev.moreProducts || []).filter((p) => p.id !== productId),
     }));
+    setEndlessProducts((prev) => prev.filter((p) => p.id !== productId));
     fetch("/api/for-you/dismiss", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -219,7 +241,97 @@ export function ForYouFeedView({ initialFeed, hadIdentity, embedded = false }: F
     }).catch(() => {});
   }, []);
 
-  const moreProducts = feed.moreProducts || [];
+  // ── Endless scroll ─────────────────────────────────────────
+  // After the curated carousels + tail grid, the feed keeps going: pages of
+  // personalised-but-varied inventory stream in as the user approaches the
+  // bottom. Ordering is seeded per visit so pages never repeat products.
+  const [endlessProducts, setEndlessProducts] = React.useState<MarketplaceProduct[]>([]);
+  const [endlessLoading, setEndlessLoading] = React.useState(false);
+  const [endlessHasMore, setEndlessHasMore] = React.useState(true);
+  const endlessPageRef = React.useRef(0);
+  const endlessBusyRef = React.useRef(false);
+  const [endlessSeed] = React.useState(
+    () => `fy-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+  );
+  const sentinelRef = React.useRef<HTMLDivElement>(null);
+
+  const feedRef = React.useRef(feed);
+  feedRef.current = feed;
+  const endlessProductsRef = React.useRef(endlessProducts);
+  endlessProductsRef.current = endlessProducts;
+
+  const loadNextEndlessPage = React.useCallback(async () => {
+    if (endlessBusyRef.current) return;
+    endlessBusyRef.current = true;
+    setEndlessLoading(true);
+
+    try {
+      const currentFeed = feedRef.current;
+      const shownIds = [
+        ...currentFeed.carousels.flatMap((c) => c.products.map((p) => p.id)),
+        ...(currentFeed.moreProducts || []).map((p) => p.id),
+      ].slice(0, MAX_EXCLUDE_IDS);
+
+      const params = new URLSearchParams({
+        page: String(endlessPageRef.current + 1),
+        seed: endlessSeed,
+      });
+      const categories = topCarouselCategories(currentFeed.carousels);
+      if (categories.length > 0) params.set("categories", categories.join(","));
+      if (shownIds.length > 0) params.set("exclude", shownIds.join(","));
+
+      const res = await fetch(`/api/for-you/more?${params.toString()}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as {
+        success: boolean;
+        products?: MarketplaceProduct[];
+        hasMore?: boolean;
+      };
+      if (!data.success) throw new Error("Endless feed page failed");
+
+      const seen = new Set([
+        ...shownIds,
+        ...endlessProductsRef.current.map((p) => p.id),
+      ]);
+      const fresh = (data.products || []).filter((p) => !seen.has(p.id));
+
+      endlessPageRef.current += 1;
+      setEndlessProducts((prev) => [...prev, ...fresh]);
+      // A page of pure duplicates means the pool is exhausted even if the
+      // server thinks there's more — stop rather than loop.
+      setEndlessHasMore(Boolean(data.hasMore) && fresh.length > 0);
+    } catch {
+      // Network hiccup: allow the observer to retry on the next scroll.
+    } finally {
+      endlessBusyRef.current = false;
+      setEndlessLoading(false);
+    }
+  }, [endlessSeed]);
+
+  React.useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !endlessHasMore) return;
+    if (typeof IntersectionObserver === "undefined") return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          void loadNextEndlessPage();
+        }
+      },
+      { rootMargin: `0px 0px ${ENDLESS_PREFETCH_MARGIN} 0px`, threshold: 0 },
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+    // endlessProducts.length: reconnect after each page so the observer re-fires
+    // immediately when the sentinel is still inside the prefetch margin.
+  }, [endlessHasMore, loadNextEndlessPage, feed.carousels.length, endlessProducts.length]);
+
+  const moreProducts = React.useMemo(
+    () => [...(feed.moreProducts || []), ...endlessProducts],
+    [feed.moreProducts, endlessProducts],
+  );
   let personalisedStaggerIndex = 0;
 
   return (
@@ -291,7 +403,11 @@ export function ForYouFeedView({ initialFeed, hadIdentity, embedded = false }: F
                 userId={user?.id}
                 embedded={embedded}
                 onDismissProduct={handleDismissMoreProduct}
+                loadingMore={endlessLoading}
+                reachedEnd={!endlessHasMore && endlessProducts.length > 0}
               />
+              {/* Endless-scroll sentinel — triggers the next page well before the bottom */}
+              <div ref={sentinelRef} aria-hidden className="h-px" />
             </motion.div>
           </motion.div>
         </LayoutGroup>

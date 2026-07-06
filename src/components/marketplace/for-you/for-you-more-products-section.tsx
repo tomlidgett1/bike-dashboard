@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { X } from '@/components/layout/app-sidebar/dashboard-icons';
-import { ProductCard } from "@/components/marketplace/product-card";
+import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
 import {
   trackCarouselClick,
   trackProductImpression,
@@ -21,6 +21,10 @@ interface ForYouMoreProductsSectionProps {
   userId?: string;
   embedded?: boolean;
   onDismissProduct: (productId: string) => void;
+  /** Render skeleton cards in the grid while the next endless-scroll page loads. */
+  loadingMore?: boolean;
+  /** Show the end-of-feed cap once the endless scroll is exhausted. */
+  reachedEnd?: boolean;
 }
 
 export function ForYouMoreProductsSection({
@@ -28,8 +32,10 @@ export function ForYouMoreProductsSection({
   userId,
   embedded = false,
   onDismissProduct,
+  loadingMore = false,
+  reachedEnd = false,
 }: ForYouMoreProductsSectionProps) {
-  if (products.length < MIN_MORE_PRODUCTS) return null;
+  if (products.length < MIN_MORE_PRODUCTS && !loadingMore) return null;
 
   return (
     <section className="pt-2">
@@ -52,7 +58,19 @@ export function ForYouMoreProductsSection({
             />
           </ScrollReveal>
         ))}
+        {loadingMore &&
+          Array.from({ length: 12 }).map((_, i) => (
+            <ProductCardSkeleton key={`more-skeleton-${i}`} />
+          ))}
       </div>
+      {reachedEnd && !loadingMore && (
+        <div className="py-10 text-center">
+          <p className="text-sm font-medium text-gray-900">You&apos;re all caught up</p>
+          <p className="mt-1 text-xs text-gray-500">
+            Check back soon — new bikes and gear land every day.
+          </p>
+        </div>
+      )}
     </section>
   );
 }
