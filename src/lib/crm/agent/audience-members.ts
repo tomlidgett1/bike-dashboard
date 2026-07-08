@@ -214,6 +214,15 @@ function buildInclusionReason(
       case "high_value":
         reasons.push(`High-value customer (${formatAud(contact.total_spend)} lifetime)`);
         break;
+      case "opened_email": {
+        const days = Number(rule.value);
+        if (Number.isFinite(days) && days > 0) {
+          reasons.push(`Opened a campaign email in the last ${days} days`);
+        } else {
+          reasons.push("Opened a campaign email");
+        }
+        break;
+      }
       default:
         break;
     }

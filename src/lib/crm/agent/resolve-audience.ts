@@ -4,10 +4,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AudienceRule, AudienceResolution, AudiencePreviewContact } from "./types";
 import { contactToPreview } from "./types";
 import type { CrmContact } from "../types";
+import { fetchAllPostgrestPages, POSTGREST_PAGE_SIZE } from "../postgrest-page";
 
 const SAMPLE_SIZE = 8;
-/** PostgREST returns at most 1000 rows per request — page through the full list. */
-const CONTACT_PAGE_SIZE = 1000;
+/** PostgREST max_rows is 1000 (supabase/config.toml) — never request more or
+ *  pagination silently stops after the first capped page. */
+const CONTACT_PAGE_SIZE = POSTGREST_PAGE_SIZE;
+const ID_PAGE_SIZE = POSTGREST_PAGE_SIZE;
 
 type ContactRow = {
   id: string;
@@ -64,24 +67,18 @@ async function fetchAllCrmContacts(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<ContactRow[]> {
-  const rows: ContactRow[] = [];
-
-  for (let offset = 0; ; offset += CONTACT_PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from("crm_contacts")
-      .select(
-        "id, email, first_name, last_name, opted_out, lightspeed_customer_id, lightspeed_joined_at, last_purchase_at, total_spend, sale_count",
-      )
-      .eq("user_id", userId)
-      .range(offset, offset + CONTACT_PAGE_SIZE - 1);
-    if (error) throw error;
-
-    const page = (data ?? []) as ContactRow[];
-    rows.push(...page);
-    if (page.length < CONTACT_PAGE_SIZE) break;
-  }
-
-  return rows;
+  return fetchAllPostgrestPages({
+    fetchPage: (from, to) =>
+      supabase
+        .from("crm_contacts")
+        .select(
+          "id, email, first_name, last_name, opted_out, lightspeed_customer_id, lightspeed_joined_at, last_purchase_at, total_spend, sale_count",
+        )
+        .eq("user_id", userId)
+        .order("id", { ascending: true })
+        .range(from, to),
+    pageSize: CONTACT_PAGE_SIZE,
+  }) as Promise<ContactRow[]>;
 }
 
 async function customerIdsFromSalesFilter(
@@ -89,17 +86,6 @@ async function customerIdsFromSalesFilter(
   userId: string,
   filter: { category?: string; brand?: string; keyword?: string; withinDays?: number },
 ): Promise<Set<string>> {
-  let query = supabase
-    .from("lightspeed_sales_report_lines")
-    .select("customer_id")
-    .eq("user_id", userId)
-    .not("complete_time", "is", null)
-    .not("customer_id", "is", null)
-    .neq("customer_id", "0");
-
-  if (filter.withinDays) {
-    query = query.gte("complete_time", daysAgo(filter.withinDays).toISOString());
-  }
   const orClauses: string[] = [];
   for (const term of purchaseSearchTerms(filter.category)) {
     orClauses.push(`category.ilike.%${term}%`);
@@ -114,21 +100,64 @@ async function customerIdsFromSalesFilter(
       `category.ilike.%${term}%`,
     );
   }
-  if (orClauses.length > 0) {
-    query = query.or(orClauses.join(","));
-  }
+
+  const rows = await fetchAllPostgrestPages({
+    fetchPage: (from, to) => {
+      let query = supabase
+        .from("lightspeed_sales_report_lines")
+        .select("customer_id")
+        .eq("user_id", userId)
+        .not("complete_time", "is", null)
+        .not("customer_id", "is", null)
+        .neq("customer_id", "0")
+        .order("id", { ascending: true })
+        .range(from, to);
+
+      if (filter.withinDays) {
+        query = query.gte("complete_time", daysAgo(filter.withinDays).toISOString());
+      }
+      if (orClauses.length > 0) {
+        query = query.or(orClauses.join(","));
+      }
+      return query;
+    },
+    pageSize: ID_PAGE_SIZE,
+  });
 
   const ids = new Set<string>();
-  const pageSize = 5000;
-  let offset = 0;
-  for (let page = 0; page < 20; page++) {
-    const { data, error } = await query.range(offset, offset + pageSize - 1);
-    if (error) throw error;
-    for (const row of data ?? []) {
-      if (row.customer_id) ids.add(String(row.customer_id));
-    }
-    if (!data || data.length < pageSize) break;
-    offset += pageSize;
+  for (const row of rows) {
+    if (row.customer_id) ids.add(String(row.customer_id));
+  }
+  return ids;
+}
+
+async function contactIdsFromOpenedEmails(
+  supabase: SupabaseClient,
+  userId: string,
+  withinDays?: number,
+): Promise<Set<string>> {
+  const rows = await fetchAllPostgrestPages({
+    fetchPage: (from, to) => {
+      let query = supabase
+        .from("crm_campaign_recipients")
+        .select("contact_id")
+        .eq("user_id", userId)
+        .not("opened_at", "is", null)
+        // Order by primary key — contact_id alone is not unique across campaigns.
+        .order("id", { ascending: true })
+        .range(from, to);
+
+      if (withinDays && withinDays > 0) {
+        query = query.gte("opened_at", daysAgo(withinDays).toISOString());
+      }
+      return query;
+    },
+    pageSize: ID_PAGE_SIZE,
+  });
+
+  const ids = new Set<string>();
+  for (const row of rows) {
+    if (row.contact_id) ids.add(String(row.contact_id));
   }
   return ids;
 }
@@ -254,6 +283,13 @@ function resolveAudienceSort(rules: AudienceRule[]): AudienceResolution["sort"] 
     return {
       label: "Highest-value matching customers first",
       fields: ["crm_contacts.total_spend DESC", "crm_contacts.sale_count DESC"],
+    };
+  }
+
+  if (rules.some((rule) => rule.type === "opened_email")) {
+    return {
+      label: "Most engaged matching customers first",
+      fields: ["crm_contacts.sale_count DESC", "crm_contacts.total_spend DESC"],
     };
   }
 
@@ -384,6 +420,29 @@ export async function buildEligibleAudience(
     count: eligible.length,
   });
 
+  const openedRules = rules.filter((r) => r.type === "opened_email");
+  if (openedRules.length > 0) {
+    // Tightest window wins when multiple opened_email rules are combined.
+    const windows = openedRules
+      .map((rule) => {
+        const n = Number(rule.value);
+        return Number.isFinite(n) && n > 0 ? n : null;
+      })
+      .filter((n): n is number => n != null);
+    const withinDays = windows.length > 0 ? Math.min(...windows) : undefined;
+    const openedContactIds = await contactIdsFromOpenedEmails(supabase, userId, withinDays);
+    eligible = eligible.filter((c) => openedContactIds.has(c.id));
+    funnel.push({
+      label:
+        openedRules.map((r) => r.label || "Opened a campaign email").join(" + ") ||
+        "Opened a campaign email",
+      detail: withinDays
+        ? `${openedContactIds.size.toLocaleString()} contacts opened email in the last ${withinDays} days`
+        : `${openedContactIds.size.toLocaleString()} contacts have opened at least one campaign email`,
+      count: eligible.length,
+    });
+  }
+
   if (purchaseCustomerIds) {
     eligible = eligible.filter(
       (c) => c.lightspeed_customer_id && purchaseCustomerIds!.has(String(c.lightspeed_customer_id)),
@@ -413,6 +472,7 @@ export async function buildEligibleAudience(
 
   const nonPurchaseRules = rules.filter(
     (r) =>
+      r.type !== "opened_email" &&
       !isPurchaseHistoryRule(r) &&
       !(hasPurchaseHistoryRules && r.type === "last_purchase_within_days"),
   );

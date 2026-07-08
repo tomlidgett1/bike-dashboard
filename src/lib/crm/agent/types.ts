@@ -20,7 +20,9 @@ export type AudienceRuleType =
   | "not_purchased_keyword"
   | "lapsed"
   | "new_members"
-  | "high_value";
+  | "high_value"
+  /** Opened at least one campaign email. Optional value = within N days; omit/null = ever. */
+  | "opened_email";
 
 export type AudienceRule = {
   type: AudienceRuleType;

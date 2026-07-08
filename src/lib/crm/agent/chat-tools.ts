@@ -71,6 +71,7 @@ const AUDIENCE_RULE_TYPES = [
   "lapsed",
   "new_members",
   "high_value",
+  "opened_email",
 ] as const;
 
 const audienceRuleSchema = z.object({
@@ -78,7 +79,7 @@ const audienceRuleSchema = z.object({
   value: z
     .union([z.string(), z.number()])
     .nullable()
-    .describe("Threshold (AUD, days, count) or search term. Null for lapsed/high_value defaults."),
+    .describe("Threshold (AUD, days, count) or search term. Null for lapsed/high_value/opened_email (ever) defaults."),
   label: z.string().describe('Short human label shown on the specs sheet, e.g. "Bought Muc-Off in the last 2 years".'),
 });
 
@@ -476,7 +477,7 @@ export function buildCrmChatTools(args: {
     tool({
       name: "set_campaign_email",
       description:
-        "Set or replace the campaign email draft. Provide the COMPLETE production HTML document every time (never a diff). The email must look premium on desktop (~600px) AND mobile (~390px): viewport meta, fluid 600px wrapper, @media (max-width:600px) rules that stack columns and full-width CTAs, explicit padding on every section, comfortable vertical rhythm. Never use em dashes or en dashes in copy. Strong concept, confident typography, generous spacing, one dominant CTA, restrained palette, email-safe inline CSS. Verification includes mobile layout checks. Fix failures before presenting as done.",
+        "Set or replace the campaign email draft. Provide the COMPLETE production HTML document every time (never a diff). Art-direct like the store premades: ONE creative concept (offer lockup, poster, letter, bulletin, editorial, VIP, checklist — not a generic newsletter), oversized rhythmic headline, one accent colour, generous padding, one dominant bulletproof CTA, large verified product images when used. Desktop (~600px) AND mobile (~390px): viewport meta, fluid 600px wrapper, @media stacking + full-width CTAs. Never em/en dashes. Self-critique against the art-direction standard before calling. Fix verification failures before presenting as done.",
       parameters: z.object({
         subject: z.string().min(3).max(120),
         subject_variants: z.array(z.string()).max(2).describe("Up to 2 alternative subjects for A/B choice."),
@@ -484,8 +485,17 @@ export function buildCrmChatTools(args: {
         layout: z.enum(["classic", "minimal", "editorial"]).nullable().optional(),
         summary_title: z.string().describe("Plain-text headline for the CRM record."),
         summary_body: z.string().describe("Plain-text summary of the email for the CRM record."),
-        design_notes: z.string().describe("1-3 sentences on the design concept and why the hierarchy/CTA/audience fit the brief — shown on the specs sheet."),
-        html: z.string().min(100).describe("Full polished HTML email document. Table layout, fluid max-width 600px wrapper, inline CSS + head <style> with @media (max-width:600px) for mobile stacking/full-width CTAs, viewport meta, premium retail design, {{UNSUBSCRIBE_URL}} unsubscribe href."),
+        design_notes: z
+          .string()
+          .describe(
+            "Name the creative concept you chose (e.g. offer lockup, race bulletin, win-back letter) and 1-2 sentences on hierarchy, palette, and CTA — shown on the specs sheet.",
+          ),
+        html: z
+          .string()
+          .min(100)
+          .describe(
+            "Full art-directed HTML email. One concept, oversized headline, restrained palette, table layout, fluid max-width 600px, inline CSS + head @media (max-width:600px), viewport meta, {{UNSUBSCRIBE_URL}}. Must match premade-template quality, not a generic newsletter.",
+          ),
         featured_product_ids: z
           .array(z.string())
           .max(8)

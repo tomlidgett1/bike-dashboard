@@ -31,6 +31,7 @@ import {
 } from "@/lib/genie/shimmer";
 import type { CrmContactGroup } from "@/lib/crm/types";
 import type { AudiencePreviewContact, AudienceRule } from "@/lib/crm/agent/types";
+import { CohortBuildBar } from "./cohort-build-bar";
 import { GroupMembersDialog, ViewGroupMembersButton } from "./group-members-dialog";
 
 type SmartGroupProposal = {
@@ -91,8 +92,18 @@ export function ContactGroupsPanel(props: {
   // Refresh
   const [refreshingAll, setRefreshingAll] = React.useState(false);
   const [viewingGroup, setViewingGroup] = React.useState<CrmContactGroup | null>(null);
+  const [groupFilter, setGroupFilter] = React.useState("");
 
   const smartGroupCount = groups.filter((group) => group.is_smart).length;
+
+  const filteredGroups = React.useMemo(() => {
+    const needle = groupFilter.trim().toLowerCase();
+    if (!needle) return groups;
+    return groups.filter((group) => {
+      const haystack = `${group.name} ${group.description ?? ""} ${group.reason ?? ""}`.toLowerCase();
+      return haystack.includes(needle);
+    });
+  }, [groups, groupFilter]);
 
   const load = React.useCallback(async () => {
     try {
@@ -130,7 +141,7 @@ export function ContactGroupsPanel(props: {
       if (found.length === 0) {
         setNotice({
           kind: "error",
-          text: "No new groups to recommend right now — every strong segment already exists or is too small.",
+          text: "No new groups to recommend right now. Every strong segment already exists or is too small.",
         });
       } else {
         setProposals(found);
@@ -164,7 +175,7 @@ export function ContactGroupsPanel(props: {
       setProposals(null);
       setNotice({
         kind: "success",
-        text: `Added ${created.length} smart group${created.length === 1 ? "" : "s"} — they'll stay fresh with one tap of Refresh.`,
+        text: `Added ${created.length} smart group${created.length === 1 ? "" : "s"}. They'll stay fresh with one tap of Refresh.`,
       });
       await load();
       onGroupsChange?.();
@@ -196,8 +207,8 @@ export function ContactGroupsPanel(props: {
         kind: "success",
         text:
           results.length === 1
-            ? `“${results[0].name}” refreshed — ${results[0].count.toLocaleString()} members (${results[0].added} in, ${results[0].removed} out).`
-            : `${results.length} smart groups refreshed — ${changed} membership change${changed === 1 ? "" : "s"}.`,
+            ? `“${results[0].name}” refreshed: ${results[0].count.toLocaleString()} members (${results[0].added} in, ${results[0].removed} out).`
+            : `${results.length} smart groups refreshed: ${changed} membership change${changed === 1 ? "" : "s"}.`,
       });
       await load();
       onGroupsChange?.();
@@ -289,7 +300,7 @@ export function ContactGroupsPanel(props: {
           <div className="min-w-0">
             <h3 className="text-sm font-semibold text-foreground">Customer groups</h3>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Living segments built from your real sales data — email any group in two clicks.
+              Describe a cohort to build it, or browse living segments from your real sales data.
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -323,16 +334,35 @@ export function ContactGroupsPanel(props: {
           </div>
         </div>
 
+        <CohortBuildBar
+          disabled={recommending || accepting || refreshingAll}
+          filterQuery={groupFilter}
+          onFilterQueryChange={setGroupFilter}
+          onCreated={({ name, count }) => {
+            setGroupFilter("");
+            setNotice({
+              kind: "success",
+              text: `Created “${name}” with ${count.toLocaleString()} subscribed member${count === 1 ? "" : "s"}.`,
+            });
+            void load();
+            onGroupsChange?.();
+          }}
+          onError={(message) => setNotice({ kind: "error", text: message })}
+        />
+
         <AnimatePresence initial={false}>
           {showCreate ? (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              transition={{
+                duration: 0.4,
+                ease: [0.04, 0.62, 0.23, 0.98],
+              }}
               className="overflow-hidden"
             >
-              <div className="mt-3 flex items-center gap-2">
+              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-border/50 bg-white p-2.5">
                 <Input
                   autoFocus
                   value={newName}
@@ -341,11 +371,11 @@ export function ContactGroupsPanel(props: {
                     if (e.key === "Enter") void createGroup();
                     if (e.key === "Escape") setShowCreate(false);
                   }}
-                  placeholder="Group name, e.g. Race day crew"
+                  placeholder="Manual group name, e.g. Race day crew"
                   className="h-9 max-w-xs"
                 />
                 <Button size="sm" onClick={() => void createGroup()} disabled={creating || !newName.trim()}>
-                  {creating ? <Loader2 className="size-4 animate-spin" /> : "Create"}
+                  {creating ? <Loader2 className="size-4 animate-spin" /> : "Create empty group"}
                 </Button>
                 <button
                   type="button"
@@ -360,7 +390,11 @@ export function ContactGroupsPanel(props: {
                     Includes the {selectedContactIds.length.toLocaleString()} selected contact
                     {selectedContactIds.length === 1 ? "" : "s"}
                   </span>
-                ) : null}
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    For a named empty list. Prefer the cohort bar above for living segments.
+                  </span>
+                )}
               </div>
             </motion.div>
           ) : null}
@@ -368,24 +402,17 @@ export function ContactGroupsPanel(props: {
       </div>
 
       {notice ? (
-        <div
-          className={cn(
-            "flex items-center gap-2 border-b px-4 py-2.5 text-sm md:px-5",
-            notice.kind === "success"
-              ? "border-emerald-100 bg-emerald-50 text-emerald-800"
-              : "border-amber-100 bg-amber-50 text-amber-800",
-          )}
-        >
+        <div className="mx-4 mt-3 flex items-center gap-2 rounded-md border border-border/60 bg-white px-3.5 py-2.5 text-sm shadow-sm md:mx-5">
           {notice.kind === "success" ? (
-            <CheckCircle2 className="size-4 shrink-0" />
+            <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
           ) : (
-            <AlertTriangle className="size-4 shrink-0" />
+            <AlertTriangle className="size-4 shrink-0 text-amber-600" />
           )}
-          <span className="min-w-0 flex-1">{notice.text}</span>
+          <span className="min-w-0 flex-1 text-foreground">{notice.text}</span>
           <button
             type="button"
             onClick={() => setNotice(null)}
-            className="text-xs font-medium underline-offset-2 hover:underline"
+            className="text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
           >
             Dismiss
           </button>
@@ -426,7 +453,7 @@ export function ContactGroupsPanel(props: {
                   Recommended for you
                 </p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Built from your Lightspeed data — every count is the exact number of subscribed
+                  Built from your Lightspeed data. Every count is the exact number of subscribed
                   members today.
                 </p>
               </div>
@@ -532,14 +559,14 @@ export function ContactGroupsPanel(props: {
           </div>
         ) : groups.length === 0 && !recommending && !proposals ? (
           <div className="flex flex-col items-center justify-center gap-4 px-6 py-16 text-center">
-            <div className="flex size-14 items-center justify-center rounded-2xl bg-gray-100">
+            <div className="flex size-14 items-center justify-center rounded-md bg-gray-100">
               <Users className="size-6 text-gray-400" />
             </div>
             <div>
               <h4 className="text-sm font-semibold text-foreground">No groups yet</h4>
               <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
-                Let the AI scan your sales data and suggest ready-made segments — VIPs, lapsed
-                customers, brand fans and more — with exact member counts.
+                Type a cohort above, like “people who open my emails” or “bought Trek”, and we’ll
+                build a smart group with an exact member count. Or let AI recommend a set for you.
               </p>
             </div>
             <Button onClick={() => void runRecommend()} disabled={recommending}>
@@ -547,9 +574,17 @@ export function ContactGroupsPanel(props: {
               Recommend groups
             </Button>
           </div>
+        ) : filteredGroups.length === 0 ? (
+          <div className="rounded-md border border-border/50 bg-white px-4 py-8 text-center">
+            <p className="text-sm font-medium text-foreground">No matching groups</p>
+            <p className="mx-auto mt-1 max-w-md text-xs text-muted-foreground">
+              Nothing matches “{groupFilter.trim()}”. Press Build above to create a smart group from
+              that cohort, or clear the search to see all groups.
+            </p>
+          </div>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {groups.map((group) => {
+            {filteredGroups.map((group) => {
               const busy = busyId === group.id;
               const refreshed = relativeTime(group.last_refreshed_at);
               return (

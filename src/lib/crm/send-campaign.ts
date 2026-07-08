@@ -6,6 +6,7 @@ import { renderCampaignEmail } from "@/lib/crm/templates";
 import { getStoredCampaignHtml } from "@/lib/crm/campaign-html";
 import { applyMergeTags } from "@/lib/crm/merge-tags";
 import { normalizeEmail, type CampaignContent } from "@/lib/crm/types";
+import { fetchAllPostgrestPages, POSTGREST_PAGE_SIZE } from "@/lib/crm/postgrest-page";
 import { SITE_URL } from "@/lib/seo/site";
 
 type PendingRecipient = {
@@ -96,21 +97,20 @@ export async function sendCrmCampaign(
     // no valid email.
     const replyTo = normalizeEmail(storeRow?.email) ?? undefined;
 
-    const pending: PendingRecipient[] = [];
-    for (let offset = 0; ; offset += 1000) {
-      const { data, error } = await supabase
-        .from("crm_campaign_recipients")
-        .select("id, email, contact:crm_contacts(unsubscribe_token, opted_out, first_name)")
-        .eq("user_id", userId)
-        .eq("campaign_id", campaignId)
-        .eq("status", "pending")
-        .order("created_at")
-        .range(offset, offset + 999);
-      if (error) throw error;
-      const rows = (data ?? []) as unknown as PendingRecipient[];
-      pending.push(...rows);
-      if (rows.length < 1000) break;
-    }
+    const pending = (await fetchAllPostgrestPages({
+      fetchPage: async (from, to) => {
+        const { data, error } = await supabase
+          .from("crm_campaign_recipients")
+          .select("id, email, contact:crm_contacts(unsubscribe_token, opted_out, first_name)")
+          .eq("user_id", userId)
+          .eq("campaign_id", campaignId)
+          .eq("status", "pending")
+          .order("id", { ascending: true })
+          .range(from, to);
+        return { data: data as unknown as PendingRecipient[] | null, error };
+      },
+      pageSize: POSTGREST_PAGE_SIZE,
+    })) as PendingRecipient[];
 
     const skippedOptedOut: string[] = [];
     const skippedInvalid: string[] = [];

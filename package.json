@@ -14,6 +14,7 @@
     "test:hero-images": "tsx scripts/test-hero-image-dedup.ts",
     "test:specials": "tsx scripts/test-specials-engine.ts",
     "test:genie-orchestration": "tsx scripts/test-genie-orchestration.ts",
+    "test:metrics": "tsx scripts/test-metrics-chart.ts",
     "test:lightspeed-auth": "tsx scripts/test-lightspeed-token-manager.ts",
     "test:genie-quality": "tsx scripts/eval-genie-quality.ts",
     "test:composio-gmail": "tsx --env-file=.env.local scripts/test-composio-gmail.ts",

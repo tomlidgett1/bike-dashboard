@@ -377,16 +377,16 @@ export async function searchCatalogProducts(
     queries.push(brief.campaign_goal.trim() || "bicycle");
   }
 
-  for (const query of queries) {
-    const results = await searchCatalog(supabase, userId, query, 40);
-    for (const [id, relevance] of results) {
-      mergedScores.set(id, Math.max(mergedScores.get(id) ?? 0, relevance));
-    }
+  const searchJobs: Array<Promise<Map<string, number>>> = queries.map((query) =>
+    searchCatalog(supabase, userId, query, 40),
+  );
+  if (brief.promo.brand) {
+    searchJobs.push(searchBrandCatalog(supabase, userId, brief.promo.brand, 60));
   }
 
-  if (brief.promo.brand) {
-    const brandHits = await searchBrandCatalog(supabase, userId, brief.promo.brand, 60);
-    for (const [id, relevance] of brandHits) {
+  const searchResults = await Promise.all(searchJobs);
+  for (const results of searchResults) {
+    for (const [id, relevance] of results) {
       mergedScores.set(id, Math.max(mergedScores.get(id) ?? 0, relevance));
     }
   }

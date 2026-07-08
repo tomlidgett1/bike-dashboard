@@ -22,6 +22,7 @@ import type {
   AudiencePreviewContact,
   AudienceRule,
 } from "./agent/types";
+import { fetchAllPostgrestPages, POSTGREST_PAGE_SIZE } from "./postgrest-page";
 
 export type SmartGroupProposal = {
   key: string;
@@ -141,6 +142,13 @@ async function buildCandidates(supabase: SupabaseClient, userId: string): Promis
   ]);
 
   const candidates: Candidate[] = [
+    {
+      key: "engaged",
+      defaultName: "Engaged openers",
+      defaultDescription: "Still subscribed and have opened at least one of your campaign emails.",
+      dataHint: "subscribed contacts with at least one campaign open",
+      rules: [{ type: "opened_email", value: null as unknown as undefined, label: "Opened a campaign email" }],
+    },
     {
       key: "vip",
       defaultName: "VIP customers",
@@ -264,9 +272,10 @@ Select the most useful, diverse set (max ${MAX_PROPOSALS}) and write the shop-fa
 RULES:
 - Australian English. No emoji.
 - Only return keys from the candidates list. Never invent keys.
-- Prefer a diverse mix: value tiers, lifecycle (new/lapsed/recent), and the strongest brand/category affinities.
+- Prefer a diverse mix: engagement (openers), value tiers, lifecycle (new/lapsed/recent), and the strongest brand/category affinities.
 - Skip near-duplicates (e.g. two overlapping categories) and tiny groups unless strategically valuable.
-- name: short and punchy (≤30 chars), e.g. "Shimano riders", "VIP customers", "Workshop regulars".
+- Always include the "engaged" openers group when it has enough members — these are your warmest email audience.
+- name: short and punchy (≤30 chars), e.g. "Engaged openers", "Shimano riders", "VIP customers".
 - description: one plain line describing exactly who is in the group.
 - reason: one line on why this group is worth emailing, grounded in the member count or data hint provided.`;
 
@@ -312,11 +321,17 @@ async function curateWithLlm(
 }
 
 function fallbackSelections(verified: Array<Candidate & { count: number }>): CurationSelection[] {
-  // RFM staples first, then the biggest brand/category affinities.
+  // Engagement + RFM staples first, then the biggest brand/category affinities.
   const staples = verified.filter((candidate) => !candidate.key.includes(":"));
   const affinities = verified
     .filter((candidate) => candidate.key.includes(":"))
     .sort((a, b) => b.count - a.count);
+  const preferredOrder = ["engaged", "vip", "recent", "lapsed", "new", "frequent", "one_timers", "big_spenders"];
+  staples.sort((a, b) => {
+    const ai = preferredOrder.indexOf(a.key);
+    const bi = preferredOrder.indexOf(b.key);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
   return [...staples, ...affinities].slice(0, MAX_PROPOSALS).map((candidate) => ({
     key: candidate.key,
     name: candidate.defaultName,
@@ -334,14 +349,20 @@ export async function recommendSmartGroups(
   userId: string,
   storeName: string,
 ): Promise<SmartGroupProposal[]> {
-  const [candidates, existing] = await Promise.all([
+  const [candidates, existingRows] = await Promise.all([
     buildCandidates(supabase, userId),
-    supabase
-      .from("crm_contact_groups")
-      .select("name")
-      .eq("user_id", userId)
-      .then(({ data }) => new Set((data ?? []).map((row) => String(row.name).toLowerCase()))),
+    fetchAllPostgrestPages({
+      fetchPage: (from, to) =>
+        supabase
+          .from("crm_contact_groups")
+          .select("name")
+          .eq("user_id", userId)
+          .order("id", { ascending: true })
+          .range(from, to),
+      pageSize: POSTGREST_PAGE_SIZE,
+    }),
   ]);
+  const existing = new Set(existingRows.map((row) => String(row.name).toLowerCase()));
 
   // Verify every candidate with the same deterministic engine campaigns use —
   // the count shown IS the membership that materialises on accept.
@@ -393,18 +414,18 @@ async function syncGroupMembers(
 ): Promise<{ added: number; removed: number }> {
   const desired = new Set(contactIds);
 
-  const current = new Set<string>();
-  for (let offset = 0; ; offset += 1000) {
-    const { data, error } = await supabase
-      .from("crm_contact_group_members")
-      .select("contact_id")
-      .eq("user_id", userId)
-      .eq("group_id", groupId)
-      .range(offset, offset + 999);
-    if (error) throw error;
-    for (const row of data ?? []) current.add(String(row.contact_id));
-    if (!data || data.length < 1000) break;
-  }
+  const currentRows = await fetchAllPostgrestPages({
+    fetchPage: (from, to) =>
+      supabase
+        .from("crm_contact_group_members")
+        .select("contact_id")
+        .eq("user_id", userId)
+        .eq("group_id", groupId)
+        .order("contact_id", { ascending: true })
+        .range(from, to),
+    pageSize: POSTGREST_PAGE_SIZE,
+  });
+  const current = new Set(currentRows.map((row) => String(row.contact_id)));
 
   const toAdd = contactIds.filter((id) => !current.has(id));
   const toRemove = [...current].filter((id) => !desired.has(id));
@@ -465,6 +486,49 @@ export async function createSmartGroup(
   return { groupId: String(group.id), count: resolution.count };
 }
 
+const ENGAGED_OPENERS_NAME = "Engaged openers";
+const ENGAGED_OPENERS_RULES: AudienceRule[] = [
+  { type: "opened_email", value: null as unknown as undefined, label: "Opened a campaign email" },
+];
+
+/** Idempotent: ensure the subscribed + opened-email smart group exists and is fresh. */
+export async function ensureEngagedOpenersGroup(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<{ groupId: string; count: number; created: boolean }> {
+  const { data: existing } = await supabase
+    .from("crm_contact_groups")
+    .select("id, is_smart, rules, last_refreshed_at")
+    .eq("user_id", userId)
+    .eq("name", ENGAGED_OPENERS_NAME)
+    .maybeSingle();
+
+  if (existing?.id && existing.is_smart && Array.isArray(existing.rules)) {
+    const hasOpenedRule = (existing.rules as AudienceRule[]).some((rule) => rule.type === "opened_email");
+    if (hasOpenedRule) {
+      // Open counts keep rising after send — refresh when stale (>5 min) so the
+      // member count matches live campaign opens, not the first create snapshot.
+      const refreshedAt = existing.last_refreshed_at
+        ? new Date(String(existing.last_refreshed_at)).getTime()
+        : 0;
+      const staleMs = 5 * 60 * 1000;
+      if (!Number.isFinite(refreshedAt) || Date.now() - refreshedAt > staleMs) {
+        const refreshed = await refreshSmartGroup(supabase, userId, String(existing.id));
+        return { groupId: refreshed.groupId, count: refreshed.count, created: false };
+      }
+      return { groupId: String(existing.id), count: -1, created: false };
+    }
+  }
+
+  const result = await createSmartGroup(supabase, userId, {
+    name: ENGAGED_OPENERS_NAME,
+    description: "Still subscribed and have opened at least one of your campaign emails.",
+    reason: "Your warmest email audience: people who still get mail and actually open it.",
+    rules: ENGAGED_OPENERS_RULES,
+  });
+  return { ...result, created: true };
+}
+
 export async function refreshSmartGroup(
   supabase: SupabaseClient,
   userId: string,
@@ -503,16 +567,20 @@ export async function refreshAllSmartGroups(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<SmartGroupRefreshResult[]> {
-  const { data: groups, error } = await supabase
-    .from("crm_contact_groups")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("is_smart", true)
-    .order("name");
-  if (error) throw error;
+  const groups = await fetchAllPostgrestPages({
+    fetchPage: (from, to) =>
+      supabase
+        .from("crm_contact_groups")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("is_smart", true)
+        .order("id", { ascending: true })
+        .range(from, to),
+    pageSize: POSTGREST_PAGE_SIZE,
+  });
 
   const results: SmartGroupRefreshResult[] = [];
-  for (const group of groups ?? []) {
+  for (const group of groups) {
     results.push(await refreshSmartGroup(supabase, userId, String(group.id)));
   }
   return results;

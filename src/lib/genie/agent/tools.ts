@@ -88,6 +88,10 @@ import { getOrCreateGmailComposioSession, type ComposioSessionNotice } from '@/l
 
 import { verifyQuestionAnsweredWithJudge } from '@/lib/genie/answer-verification'
 import { buildGmailAgentContextFromMessages, buildGmailAgentContextFromPayload } from '@/lib/genie/gmail-agent-context'
+import {
+  buildMetricCatalogTools,
+  METRIC_CATALOG_TOOL_NAMES,
+} from '@/lib/metrics/metric-tools'
 
 import { STORE_TIME_ZONE, STORE_UTC_OFFSET, getStoreToday, storeDateFromDate, isGenieTracingEnabled } from './runtime'
 import {
@@ -7168,6 +7172,28 @@ function coerceSqlRows(value: unknown): SqlResultRow[] {
     ))
 }
 
+// A grouped result where every numeric metric is 0 almost always means the
+// name/category filter did not match how the store labels its items — not
+// that nothing sold. Flag it so the executor resolves real names and rechecks
+// instead of confidently answering "0".
+function sqlMetricsAllZero(rows: SqlResultRow[]): boolean {
+  if (rows.length === 0) return false
+  let sawNumeric = false
+  for (const row of rows) {
+    for (const value of Object.values(row)) {
+      const numeric = typeof value === 'number'
+        ? value
+        : typeof value === 'string' && /^-?\d+(\.\d+)?$/.test(value.trim())
+          ? Number(value)
+          : null
+      if (numeric == null) continue
+      sawNumeric = true
+      if (numeric !== 0) return false
+    }
+  }
+  return sawNumeric
+}
+
 function sqlColumnLabel(key: string): string {
   return key
     .replace(/_/g, ' ')
@@ -7540,6 +7566,8 @@ async function runLightspeedSqlQuery(
     result_preview: formatRowsForDossierPreview(rows),
   })
 
+  const allZeroMetrics = sqlMetricsAllZero(rows)
+
   return {
     source: 'lightspeed_sql_executor',
     status: 'ok',
@@ -7555,7 +7583,17 @@ async function runLightspeedSqlQuery(
     table_emitted: Boolean(table),
     pivot_table_emitted: Boolean(pivotTable),
     chart_emitted: Boolean(chart),
-    recheck_required: rows.length === 0 || limitApplied,
+    all_zero_metrics: allZeroMetrics,
+    recheck_required: rows.length === 0 || limitApplied || allZeroMetrics,
+    ...(allZeroMetrics
+      ? {
+          recheck_suggestions: [
+            'Every metric in this result is 0 — the name/category filter text almost certainly does not match how this store labels these items. Do NOT answer "0" yet.',
+            "Run a name-resolution discovery query first: SELECT description, category, COUNT(*) AS lines FROM genie_lightspeed_sales_report_lines WHERE complete_time >= (current_date - interval '18 months') AND (description ILIKE '%<broadest keyword>%' OR category ILIKE '%<broadest keyword>%') GROUP BY 1, 2 ORDER BY lines DESC LIMIT 30 — use the shortest keyword (e.g. '%servic%'), then re-filter with the exact names returned.",
+            'Alternatively call search_lightspeed_inventory with the shortest keyword to see the live item names, categories, and SKUs the store actually uses.',
+          ],
+        }
+      : {}),
   }
 }
 
@@ -9672,6 +9710,7 @@ function buildAgentTools(
   // awaitingContinuation on a within-budget not-ready verdict instead of
   // predicting "continuing lookup"; the loop labels the model's real next move.
   verifyGate: { awaitingContinuation: boolean } = { awaitingContinuation: false },
+  surface: 'default' | 'metrics' = 'default',
 ) {
   const allowedToolNames = toolNameSetForRoute(route, executionPlan?.primary_tools ?? [])
   if (userRequestsWebImages(latestUserMessage) && (route === 'web_research' || route === 'mixed')) {
@@ -10814,7 +10853,19 @@ function buildAgentTools(
     }),
   ]
 
-  return tools.filter(candidate => {
+  const metricToolSet = new Set<string>(METRIC_CATALOG_TOOL_NAMES)
+  const metricsSqlTools = new Set([
+    'run_lightspeed_sql_query',
+    'run_product_segment_timeseries',
+    'record_lightspeed_recheck',
+    'record_lightspeed_plan',
+    'search_lightspeed_inventory',
+  ])
+  const allTools = surface === 'metrics'
+    ? [...tools, ...buildMetricCatalogTools(userId, emit, visualPrefs)]
+    : tools
+
+  return allTools.filter(candidate => {
     const name = 'name' in candidate ? String(candidate.name) : ''
     if (DEPRECATED_LIGHTSPEED_ANALYTICAL_TOOL_NAMES.has(name)) return false
     if (route === 'business_analysis' && executionPlan != null && name === 'record_lightspeed_plan') {
@@ -10822,6 +10873,7 @@ function buildAgentTools(
     }
     if (!name) return true
     if (isToolExcludedForProfile(name, modelProfile)) return false
+    if (surface === 'metrics' && (metricToolSet.has(name) || metricsSqlTools.has(name))) return true
     return allowedToolNames.has(name)
   })
 }

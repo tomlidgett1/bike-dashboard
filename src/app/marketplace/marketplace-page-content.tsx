@@ -21,6 +21,7 @@ import type { MarketplaceSpace } from "@/lib/types/marketplace";
 import { AdvancedFilters, DEFAULT_ADVANCED_FILTERS, countActiveFilters, type AdvancedFiltersState } from "@/components/marketplace/advanced-filters";
 import { ImageDiscoveryModal } from "@/components/marketplace/image-discovery-modal";
 import { PromoBannerCarousel } from "@/components/marketplace/promo-banner-carousel";
+import { MarketplaceHeroBanners } from "@/components/marketplace/marketplace-hero-banners";
 import { UberExpressTabBanner } from "@/components/marketplace/uber-express-tab-banner";
 import { useUserVouchers } from "@/lib/hooks/use-user-vouchers";
 import { Button } from "@/components/ui/button";
@@ -1278,6 +1279,16 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
 
         <div className="min-h-0 w-full flex-1 px-2 pb-24 sm:relative sm:z-[1] sm:overflow-hidden sm:rounded-t-xl sm:border sm:border-gray-200 sm:bg-gray-50 sm:px-6 sm:pb-8">
           <div className={isForYouView ? "pt-2 pb-5 sm:pt-3 sm:pb-7" : "space-y-3 pt-4 sm:pt-5"}>
+            {/* Desktop hero banners — editorial mosaic above the browse grid */}
+            {!isForYouView &&
+              !isProductSearchActive &&
+              !selectedStoreId &&
+              (isMarketplaceView || isStoresView) && (
+                <MarketplaceHeroBanners
+                  className="pb-1"
+                  space={isStoresView ? "stores" : "marketplace"}
+                />
+              )}
             {showDesktopBrowseFilters ? (
               <MarketplaceDesktopCategoryBrowse
                 selectedLevel1={selectedLevel1}

@@ -3,6 +3,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { LightspeedClient } from "@/lib/services/lightspeed/lightspeed-client";
 import type { LightspeedCustomer } from "@/lib/services/lightspeed/types";
+import { fetchAllPostgrestPages, POSTGREST_PAGE_SIZE } from "./postgrest-page";
 
 export type CrmEnrichResult = {
   joinedUpdated: number;
@@ -65,19 +66,30 @@ export async function enrichJoinedDatesFromLightspeed(
     if (id && joinedAt) byCustomerId.set(id, joinedAt);
   }
 
-  const { data: contacts, error } = await supabase
-    .from("crm_contacts")
-    .select("id, lightspeed_customer_id, lightspeed_joined_at")
-    .eq("user_id", userId)
-    .not("lightspeed_customer_id", "is", null)
-    .is("lightspeed_joined_at", null);
-
-  if (error) throw new Error(`Failed to load contacts for join dates: ${error.message}`);
+  let contacts;
+  try {
+    contacts = await fetchAllPostgrestPages({
+      fetchPage: (from, to) =>
+        supabase
+          .from("crm_contacts")
+          .select("id, lightspeed_customer_id, lightspeed_joined_at")
+          .eq("user_id", userId)
+          .not("lightspeed_customer_id", "is", null)
+          .is("lightspeed_joined_at", null)
+          .order("id", { ascending: true })
+          .range(from, to),
+      pageSize: POSTGREST_PAGE_SIZE,
+    });
+  } catch (error) {
+    throw new Error(
+      `Failed to load contacts for join dates: ${error instanceof Error ? error.message : "unknown error"}`,
+    );
+  }
 
   const now = new Date().toISOString();
   let updated = 0;
 
-  for (const contact of contacts ?? []) {
+  for (const contact of contacts) {
     const customerId = String(contact.lightspeed_customer_id ?? "").trim();
     const joinedAt = byCustomerId.get(customerId);
     if (!joinedAt) continue;

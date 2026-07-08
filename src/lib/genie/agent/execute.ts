@@ -36,6 +36,8 @@ import { getActiveLessonsForUser, formatLessonsForPrompt } from '@/lib/genie/lea
 import { runDeepResearchInvestigation } from '@/lib/genie/deep-research/run-deep-research'
 import type { ComposioSessionIds, Message, RawModelDeltaEvent, StreamToolItem } from './context'
 import { compactCustomerProfileForContext, toAgentInputMessages } from './context'
+import { formatMetricCatalogForPrompt } from '@/lib/metrics/metric-catalog'
+import { buildMetricsAgentInstructions } from '@/lib/metrics/metric-tools'
 import {
   buildAgentTools,
   buildLightspeedCustomerProfile,
@@ -318,6 +320,8 @@ export interface ExecuteGenieAgentArgs {
   modelProfile?: GenieModelProfile
   /** When true, runs the multi-phase Deep Business Review instead of a normal chat turn. */
   deepResearch?: boolean
+  /** Metrics workspace uses governed metric catalog tools and analysis-first workflow. */
+  surface?: 'default' | 'metrics'
   /** Receives every SSE-shaped event ({event: 'status'|'text_delta'|...}). */
   emit: (data: object) => void
   /** Aborts the run (job cancellation or client disconnect when the caller ties it to the request). */
@@ -326,6 +330,7 @@ export interface ExecuteGenieAgentArgs {
 
 export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise<void> {
   const { supabase, userId, storeName, messages, conversationId, composioSessionIds, signal } = options
+  const surface = options.surface ?? 'default'
   const modelProfile = options.modelProfile ?? 'default'
   const models = getGenieModelConfig(modelProfile)
   const runtime = getGenieRuntimePolicy(modelProfile)
@@ -493,7 +498,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
     routerInvoked = true
     orchestrationSource = 'model'
     emit({ event: 'status', phase: 'routing', text: 'Choosing the best workflow' })
-    const orchestration = await createGenieOrchestrationDecision({
+    const orchestrationRaw = await createGenieOrchestrationDecision({
       storeName,
       userId,
       requestId,
@@ -501,6 +506,18 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
       signal,
       models,
     })
+    const orchestration =
+      surface === 'metrics' &&
+      (orchestrationRaw.route === 'casual_chat' ||
+        orchestrationRaw.route === 'unsupported' ||
+        orchestrationRaw.route === 'storefront_action')
+        ? {
+            ...orchestrationRaw,
+            route: 'business_analysis' as const,
+            needs_plan: true,
+            reason: 'Metrics workspace analytical request',
+          }
+        : orchestrationRaw
     finalRoute = orchestration.route
     const routingFraming = buildRoutingFramingMessage({
       orchestration,
@@ -774,6 +791,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
       models,
       modelProfile,
       verifyGate,
+      surface,
     )
     applyTimeBudgetToTools(agentTools, requestStartedAt, RUN_TIME_BUDGET_MS, runtime.fastAnswerPrompt)
     const agentToolNames = agentTools.map(candidate =>
@@ -816,8 +834,11 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
     // tail of the prompt. Defensive: returns '' if the table/migration is absent.
     const learnedLessons = await getActiveLessonsForUser(supabase, userId, { route: orchestration.route })
     const learnedPlaybook = formatLessonsForPrompt(learnedLessons)
+    const metricsInstructions = surface === 'metrics'
+      ? `\n\n${buildMetricsAgentInstructions()}\n\nAPPROVED METRIC CATALOG\n${formatMetricCatalogForPrompt()}`
+      : ''
     const agent = new Agent({
-      name: 'Yellow Jersey Store Agent',
+      name: surface === 'metrics' ? 'Yellow Jersey Metrics Analyst' : 'Yellow Jersey Store Agent',
       model: executorModel,
       instructions: buildSystemPrompt(
         storeName,
@@ -826,7 +847,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
         runtime.fastAnswerPrompt,
         learnedPlaybook,
         useBusinessAnalysisSynthesis,
-      ),
+      ) + metricsInstructions,
       tools: agentTools,
       modelSettings: {
         parallelToolCalls: canRunParallelTools(orchestration.route, modelProfile),

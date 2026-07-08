@@ -14,6 +14,7 @@
 # next.js
 /.next/
 /.next-preview/
+/.next-preview-b/
 /.next-redesign/
 /.next-profile/
 /.next-verify/
@@ -51,3 +52,4 @@ next-env.d.ts
 
 # Apple private key - DO NOT COMMIT
 *.p8
+.gstack/

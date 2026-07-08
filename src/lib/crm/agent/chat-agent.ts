@@ -125,7 +125,9 @@ export async function runCrmChatAgent(args: {
       instructions: buildCrmChatSystemPrompt(context),
       tools,
       modelSettings: {
-        parallelToolCalls: false,
+        // Allow independent research tools (SQL, web, lookups) to run together.
+        // Compose still waits on audience/products because the prompt orders those steps.
+        parallelToolCalls: true,
         store: false,
         reasoning: { effort: "low", summary: "auto" },
         text: { verbosity: "low" },

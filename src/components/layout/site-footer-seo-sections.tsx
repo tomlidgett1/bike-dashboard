@@ -36,7 +36,10 @@ const SEO_SECTIONS = [
   },
 ] as const;
 
-function SeoDetailsSection({
+/** How many links are visible before the "+N more" expander. */
+const VISIBLE_LINKS = 6;
+
+function SeoLinkColumn({
   title,
   hubHref,
   hubLabel,
@@ -49,43 +52,53 @@ function SeoDetailsSection({
 }) {
   if (items.length === 0) return null;
 
+  const visible = items.slice(0, VISIBLE_LINKS);
+  const overflow = items.slice(VISIBLE_LINKS);
+
+  const linkClassName =
+    "block truncate text-sm text-gray-500 transition-colors hover:text-gray-900";
+
   return (
-    <details className="group rounded-md border border-gray-200 bg-white">
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-gray-800 [&::-webkit-details-marker]:hidden">
-        <span
-          aria-hidden
-          className="text-gray-400 transition-transform duration-200 group-open:rotate-90"
+    <nav aria-label={title}>
+      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-900">
+        {title}
+      </p>
+      <ul className="mt-4 space-y-2.5">
+        {visible.map((page) => (
+          <li key={page.url}>
+            <Link href={page.url} className={linkClassName}>
+              {page.h1 || page.title}
+            </Link>
+          </li>
+        ))}
+      </ul>
+      {overflow.length > 0 && (
+        // Native details keeps the overflow links in server HTML for crawlers
+        <details className="group mt-2.5">
+          <summary className="cursor-pointer list-none text-sm text-gray-400 transition-colors hover:text-gray-600 [&::-webkit-details-marker]:hidden">
+            <span className="group-open:hidden">+{overflow.length} more</span>
+            <span className="hidden group-open:inline">Show less</span>
+          </summary>
+          <ul className="mt-2.5 space-y-2.5">
+            {overflow.map((page) => (
+              <li key={page.url}>
+                <Link href={page.url} className={linkClassName}>
+                  {page.h1 || page.title}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      <p className="mt-3">
+        <Link
+          href={hubHref}
+          className="text-sm font-medium text-gray-700 underline-offset-4 transition-colors hover:text-gray-900 hover:underline"
         >
-          ›
-        </span>
-        <span>{title}</span>
-        <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-xs font-normal text-gray-500">
-          {items.length}
-        </span>
-      </summary>
-      <div className="border-t border-gray-100 px-4 py-3">
-        <p className="mb-2">
-          <Link
-            href={hubHref}
-            className="text-xs font-medium text-gray-600 transition-colors hover:text-gray-900"
-          >
-            {hubLabel} →
-          </Link>
-        </p>
-        <ul className="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
-          {items.map((page) => (
-            <li key={page.url}>
-              <Link
-                href={page.url}
-                className="block truncate text-[13px] text-gray-500 transition-colors hover:text-gray-900"
-              >
-                {page.h1 || page.title}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </details>
+          {hubLabel} →
+        </Link>
+      </p>
+    </nav>
   );
 }
 
@@ -102,12 +115,9 @@ export async function SiteFooterSeoSections() {
   if (visible.length === 0) return null;
 
   return (
-    <nav aria-label="Browse Yellow Jersey" className="space-y-2">
-      <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
-        Explore
-      </p>
+    <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
       {visible.map((section) => (
-        <SeoDetailsSection
+        <SeoLinkColumn
           key={section.id}
           title={section.title}
           hubHref={section.hubHref}
@@ -115,6 +125,6 @@ export async function SiteFooterSeoSections() {
           items={section.items}
         />
       ))}
-    </nav>
+    </div>
   );
 }

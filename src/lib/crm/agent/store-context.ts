@@ -8,7 +8,9 @@ export async function loadStoreAgentContext(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<StoreAgentContext> {
-  const [{ data: storeRow }, { count: total }, { count: optedOut }, { data: campaigns }] =
+  // Style profile only needs storeName for a cold-start default; load it in
+  // parallel with the other reads (existing profiles ignore storeName).
+  const [{ data: storeRow }, { count: total }, { count: optedOut }, { data: campaigns }, styleProfile] =
     await Promise.all([
       supabase
         .from("users")
@@ -31,10 +33,10 @@ export async function loadStoreAgentContext(
         .eq("status", "sent")
         .order("sent_at", { ascending: false })
         .limit(8),
+      loadEmailStyleProfile(supabase, userId),
     ]);
 
   const storeName = storeRow?.business_name || storeRow?.name || "Your Bike Store";
-  const styleProfile = await loadEmailStyleProfile(supabase, userId, storeName);
   const totalCount = total ?? 0;
   const optedOutCount = optedOut ?? 0;
 

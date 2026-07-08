@@ -16,6 +16,7 @@ import {
   type BusinessRawPromptConfig,
 } from '../lib/brand-raw-prompt'
 import { pickServerEnv } from '../lib/server-env'
+import { getLinqFromNumber } from '@/lib/nest/linq-sender'
 import { getLightspeedAccess, lightspeedGetJson } from '../lib/lightspeed-portal-access'
 
 /** Inlined so the Vercel Node bundle always includes it (nested `api/lib/*` can be omitted). */
@@ -53,11 +54,7 @@ function normaliseToE164(input: string): string | null {
 }
 
 function getLinqFrom(): string | null {
-  const explicit = pickServerEnv(['LINQ_VOICE_FROM', 'LINQ_AGENT_FROM'])
-  if (explicit?.trim()) return explicit.trim()
-  const list = pickServerEnv(['LINQ_AGENT_BOT_NUMBERS'])
-  if (!list) return null
-  return list.split(/[\s,;\n]+/).map((s) => s.trim()).filter(Boolean)[0] || null
+  return getLinqFromNumber()
 }
 
 type LinqMessageResult = {
@@ -2658,7 +2655,7 @@ async function handleBrandPortalConfig(req: VercelRequest, res: VercelResponse):
           return
         }
         if (!linqFrom) {
-          res.status(503).json({ error: 'Linq sender is not configured (set LINQ_VOICE_FROM)' })
+          res.status(503).json({ error: 'Linq US sender is not configured (set LINQ_VOICE_FROM to a +1 number)' })
           return
         }
         try {
@@ -2760,7 +2757,7 @@ async function handleBrandPortalConfig(req: VercelRequest, res: VercelResponse):
 
       const linqFrom = getLinqFrom()
       if (!linqFrom) {
-        res.status(503).json({ error: 'Linq sender is not configured (set LINQ_VOICE_FROM)' })
+        res.status(503).json({ error: 'Linq US sender is not configured (set LINQ_VOICE_FROM to a +1 number)' })
         return
       }
 

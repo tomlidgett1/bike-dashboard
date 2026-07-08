@@ -14,6 +14,7 @@ import {
   Letter,
   Loader2,
   Mailbox,
+  MoreHorizontal,
   RefreshCw,
   Search,
   Send,
@@ -25,6 +26,16 @@ import {
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-page";
 import { SettingsNavTabs } from "@/components/settings/settings-nav-tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -37,6 +48,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSidebar } from "@/components/ui/sidebar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { getCrmTemplate, type StoreBranding } from "@/lib/crm/templates";
 import type { CrmCampaign, CrmContact, CrmContactGroup, CrmContactSort } from "@/lib/crm/types";
@@ -92,6 +109,66 @@ function formatRate(count: number, total: number): string {
   return `${Math.round((count / total) * 100)}%`;
 }
 
+function ratePercent(count: number, total: number): number {
+  if (total <= 0) return 0;
+  return Math.min(100, Math.round((count / total) * 100));
+}
+
+type CampaignMetricTone = "default" | "muted" | "warning" | "danger";
+
+function CampaignMetricCell({
+  label,
+  count,
+  total,
+  tone = "default",
+}: {
+  label: string;
+  count: number;
+  total: number;
+  tone?: CampaignMetricTone;
+}) {
+  const pct = ratePercent(count, total);
+  const rate = formatRate(count, total);
+  const detail =
+    total > 0 ? `${count.toLocaleString()} of ${total.toLocaleString()}` : undefined;
+  const valueClass =
+    tone === "danger"
+      ? "text-red-700"
+      : tone === "warning"
+        ? "text-amber-800"
+        : tone === "muted"
+          ? "text-muted-foreground"
+          : "text-foreground";
+  const barClass =
+    tone === "danger"
+      ? "bg-red-500/80"
+      : tone === "warning"
+        ? "bg-amber-500/70"
+        : "bg-foreground/50";
+
+  return (
+    <div className="min-w-[4.25rem]" title={detail}>
+      <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+        {label}
+      </p>
+      <p className={cn("mt-1 text-[15px] font-semibold tabular-nums leading-none", valueClass)}>
+        {rate}
+      </p>
+      {total > 0 ? (
+        <p className="mt-1 text-[11px] tabular-nums leading-none text-muted-foreground">
+          {count.toLocaleString()}
+        </p>
+      ) : null}
+      <div className="mt-2 h-0.5 w-full overflow-hidden rounded-full bg-gray-100" aria-hidden>
+        <div
+          className={cn("h-full rounded-full transition-[width] duration-300 ease-out", barClass)}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function CampaignMetrics({ campaign }: { campaign: CrmCampaign }) {
   const sent = campaign.sent_count;
   const opened = campaign.opened_count ?? 0;
@@ -103,40 +180,33 @@ function CampaignMetrics({ campaign }: { campaign: CrmCampaign }) {
   // standard, matching Resend's dashboard). Fall back to sent while delivery
   // webhooks are still arriving.
   const engagementBase = delivered > 0 ? delivered : sent;
-
-  const metrics = [
-    { label: "Opened", count: opened, total: engagementBase },
-    { label: "Clicked", count: clicked, total: engagementBase },
-    { label: "Delivered", count: delivered, total: sent },
-    ...(bounced > 0 ? [{ label: "Bounced", count: bounced, total: sent }] : []),
-  ];
+  const bounceRate = ratePercent(bounced, sent);
+  const clickTone: CampaignMetricTone =
+    engagementBase > 0 && clicked === 0 ? "muted" : "default";
+  const bounceTone: CampaignMetricTone =
+    bounceRate >= 10 ? "danger" : bounceRate >= 5 ? "warning" : "default";
 
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-      {metrics.map((metric) => (
-        <span
-          key={metric.label}
-          className="inline-flex items-center gap-1 rounded-md border border-border/50 bg-white px-2 py-0.5 text-[11px] leading-tight"
-        >
-          <span className="text-muted-foreground">{metric.label}</span>
-          <span className="font-semibold tabular-nums text-foreground">
-            {formatRate(metric.count, metric.total)}
-          </span>
-          {metric.total > 1 ? (
-            <span className="text-muted-foreground/60">
-              ({metric.count}/{metric.total})
-            </span>
-          ) : null}
-        </span>
-      ))}
+    <div className="flex items-start gap-5">
+      <CampaignMetricCell label="Open" count={opened} total={engagementBase} />
+      <CampaignMetricCell
+        label="Click"
+        count={clicked}
+        total={engagementBase}
+        tone={clickTone}
+      />
+      <CampaignMetricCell label="Inbox" count={delivered} total={sent} />
+      {bounced > 0 ? (
+        <CampaignMetricCell label="Bounce" count={bounced} total={sent} tone={bounceTone} />
+      ) : null}
     </div>
   );
 }
 
 const CAMPAIGN_STATUS_STYLES: Record<string, string> = {
   draft: "bg-zinc-100 text-zinc-600",
-  sending: "bg-blue-50 text-blue-700",
-  sent: "bg-emerald-50 text-emerald-700",
+  sending: "bg-sky-50 text-sky-800",
+  sent: "bg-emerald-50 text-emerald-800",
   failed: "bg-red-50 text-red-700",
 };
 
@@ -353,7 +423,7 @@ export function CrmPageContent() {
     });
   };
 
-  const deleteDraft = async (campaignId: string) => {
+  const deleteCampaign = async (campaignId: string) => {
     setBusyCampaignId(campaignId);
     try {
       const res = await fetch(`/api/store/crm/campaigns/${campaignId}`, { method: "DELETE" });
@@ -547,7 +617,7 @@ export function CrmPageContent() {
                   content: campaign.content,
                 })
               }
-              onDeleteDraft={(campaignId) => void deleteDraft(campaignId)}
+              onDelete={(campaignId) => void deleteCampaign(campaignId)}
               onSendDraft={(campaign) => void sendDraft(campaign)}
             />
           ) : null}
@@ -893,13 +963,14 @@ function CampaignsView(props: {
   store: StoreBranding;
   onNewCampaign: () => void;
   onDuplicate: (campaign: CrmCampaign) => void;
-  onDeleteDraft: (campaignId: string) => void;
+  onDelete: (campaignId: string) => void;
   onSendDraft: (campaign: CrmCampaign) => void;
 }) {
-  const { campaigns, loading, busyCampaignId, store, onNewCampaign, onDuplicate, onDeleteDraft, onSendDraft } = props;
+  const { campaigns, loading, busyCampaignId, store, onNewCampaign, onDuplicate, onDelete, onSendDraft } = props;
   const [detailCampaign, setDetailCampaign] = React.useState<CrmCampaign | null>(null);
   const [detailTab, setDetailTab] = React.useState<"email" | "recipients">("email");
   const [detailOpen, setDetailOpen] = React.useState(false);
+  const [pendingDelete, setPendingDelete] = React.useState<CrmCampaign | null>(null);
 
   const openDetail = (campaign: CrmCampaign, tab: "email" | "recipients") => {
     setDetailCampaign(campaign);
@@ -907,11 +978,31 @@ function CampaignsView(props: {
     setDetailOpen(true);
   };
 
+  const confirmDelete = () => {
+    if (!pendingDelete) return;
+    const id = pendingDelete.id;
+    setPendingDelete(null);
+    onDelete(id);
+  };
+
   if (loading) {
     return (
-      <div className="space-y-2 p-5">
+      <div className="space-y-0 p-0">
         {Array.from({ length: 4 }).map((_, index) => (
-          <Skeleton key={index} className="h-16 w-full rounded-xl" />
+          <div key={index} className="border-b border-border/40 px-5 py-4">
+            <div className="flex items-start gap-6">
+              <div className="min-w-0 flex-1 space-y-2">
+                <Skeleton className="h-4 w-64 rounded-md" />
+                <Skeleton className="h-3 w-40 rounded-md" />
+              </div>
+              <div className="hidden gap-5 sm:flex">
+                <Skeleton className="h-10 w-14 rounded-md" />
+                <Skeleton className="h-10 w-14 rounded-md" />
+                <Skeleton className="h-10 w-14 rounded-md" />
+              </div>
+              <Skeleton className="h-8 w-20 rounded-md" />
+            </div>
+          </div>
         ))}
       </div>
     );
@@ -937,89 +1028,241 @@ function CampaignsView(props: {
     );
   }
 
+  const deleteBusy = pendingDelete ? busyCampaignId === pendingDelete.id : false;
+  const deleteIsDraft = pendingDelete?.status === "draft";
+
   return (
     <>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <ul>
-          {campaigns.map((campaign) => {
-            const template = getCrmTemplate(campaign.template_key);
-            const busy = busyCampaignId === campaign.id;
-            const isSentLike =
-              campaign.status === "sent" || campaign.status === "failed" || campaign.status === "sending";
-            return (
-              <li
-                key={campaign.id}
-                className="border-b border-border/40 px-5 py-4"
-              >
-                <div className="flex items-start gap-4">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-sm font-semibold text-foreground">{campaign.subject}</p>
-                    <span
-                      className={cn(
-                        "shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium capitalize",
-                        CAMPAIGN_STATUS_STYLES[campaign.status] ?? CAMPAIGN_STATUS_STYLES.draft,
-                      )}
-                    >
-                      {campaign.status}
-                    </span>
-                  </div>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {template?.name ?? campaign.template_key} · {formatDateTime(campaign.sent_at ?? campaign.created_at)}
-                    {campaign.status === "sent" || campaign.status === "failed"
-                      ? ` · ${campaign.sent_count.toLocaleString()} sent${campaign.failed_count > 0 ? `, ${campaign.failed_count} failed` : ""}`
-                      : ` · ${campaign.intended_count.toLocaleString()} recipient${campaign.intended_count === 1 ? "" : "s"}`}
-                  </p>
-                  {(campaign.status === "sent" || campaign.status === "failed") && campaign.sent_count > 0 ? (
-                    <CampaignMetrics campaign={campaign} />
-                  ) : null}
-                </div>
-                <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
-                  {campaign.status === "draft" ? (
-                    <>
-                      <Button variant="outline" size="sm" onClick={() => openDetail(campaign, "email")}>
-                        <Eye className="mr-1.5 size-3.5" />
-                        Preview
-                      </Button>
-                      <Button size="sm" onClick={() => onSendDraft(campaign)} disabled={busy}>
-                        {busy ? <Loader2 className="mr-1.5 size-3.5" /> : <Send className="mr-1.5 size-3.5" />}
-                        Send
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onDeleteDraft(campaign.id)}
-                        disabled={busy}
-                        aria-label="Delete draft"
-                      >
-                        <Trash2 className="size-4 text-muted-foreground" />
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button variant="outline" size="sm" onClick={() => openDetail(campaign, "email")}>
-                        <Eye className="mr-1.5 size-3.5" />
-                        View
-                      </Button>
-                      {isSentLike ? (
-                        <Button variant="outline" size="sm" onClick={() => openDetail(campaign, "recipients")}>
-                          <Users className="mr-1.5 size-3.5" />
-                          Recipients
-                        </Button>
+      <TooltipProvider delayDuration={200}>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <ul>
+            {campaigns.map((campaign) => {
+              const template = getCrmTemplate(campaign.template_key);
+              const busy = busyCampaignId === campaign.id;
+              const isDraft = campaign.status === "draft";
+              const isSending = campaign.status === "sending";
+              const isSentLike =
+                campaign.status === "sent" ||
+                campaign.status === "failed" ||
+                campaign.status === "sending";
+              const showMetrics =
+                (campaign.status === "sent" || campaign.status === "failed") &&
+                campaign.sent_count > 0;
+              const templateName = template?.name ?? campaign.template_key;
+              const dateLabel = formatDateTime(campaign.sent_at ?? campaign.created_at);
+              const volumeLabel =
+                campaign.status === "sent" || campaign.status === "failed"
+                  ? `${campaign.sent_count.toLocaleString()} sent`
+                  : `${campaign.intended_count.toLocaleString()} recipient${
+                      campaign.intended_count === 1 ? "" : "s"
+                    }`;
+              const failedCount =
+                campaign.status === "sent" || campaign.status === "failed"
+                  ? campaign.failed_count
+                  : 0;
+
+              return (
+                <li
+                  key={campaign.id}
+                  className="border-b border-border/40 px-5 py-4 transition-colors hover:bg-gray-50/70"
+                >
+                  <div className="flex items-center gap-4 lg:gap-8">
+                    {/* Identity */}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openDetail(campaign, "email")}
+                          className="min-w-0 truncate text-left text-sm font-semibold tracking-tight text-foreground transition-colors hover:text-foreground/75"
+                        >
+                          {campaign.subject}
+                        </button>
+                        <span
+                          className={cn(
+                            "shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium capitalize",
+                            CAMPAIGN_STATUS_STYLES[campaign.status] ??
+                              CAMPAIGN_STATUS_STYLES.draft,
+                          )}
+                        >
+                          {campaign.status}
+                        </span>
+                      </div>
+
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                        <span className="truncate">{templateName}</span>
+                        <span className="text-border" aria-hidden>
+                          ·
+                        </span>
+                        <span className="shrink-0 tabular-nums">{dateLabel}</span>
+                        <span className="text-border" aria-hidden>
+                          ·
+                        </span>
+                        <span className="shrink-0 tabular-nums">{volumeLabel}</span>
+                        {failedCount > 0 ? (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-red-50 px-1.5 py-0.5 text-[11px] font-medium text-red-700">
+                            <AlertTriangle className="size-3" />
+                            {failedCount.toLocaleString()} failed
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {showMetrics ? (
+                        <div className="mt-3.5 lg:hidden">
+                          <CampaignMetrics campaign={campaign} />
+                        </div>
                       ) : null}
-                      <Button variant="outline" size="sm" onClick={() => onDuplicate(campaign)}>
-                        <Copy className="mr-1.5 size-3.5" />
-                        Duplicate
-                      </Button>
-                    </>
-                  )}
-                </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+                    </div>
+
+                    {/* Metrics */}
+                    {showMetrics ? (
+                      <div className="hidden shrink-0 lg:block">
+                        <CampaignMetrics campaign={campaign} />
+                      </div>
+                    ) : null}
+
+                    {/* Actions */}
+                    <div className="ml-auto flex shrink-0 items-center gap-1">
+                      {isDraft ? (
+                        <>
+                          <Button
+                            size="sm"
+                            onClick={() => onSendDraft(campaign)}
+                            disabled={busy}
+                          >
+                            {busy ? (
+                              <Loader2 className="mr-1.5 size-3.5" />
+                            ) : (
+                              <Send className="mr-1.5 size-3.5" />
+                            )}
+                            Send
+                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="px-2"
+                                onClick={() => openDetail(campaign, "email")}
+                                aria-label="Preview campaign"
+                              >
+                                <Eye className="size-3.5 text-muted-foreground" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Preview</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="px-2"
+                                onClick={() => setPendingDelete(campaign)}
+                                disabled={busy}
+                                aria-label="Delete draft"
+                              >
+                                <Trash2 className="size-3.5 text-muted-foreground" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Delete draft</TooltipContent>
+                          </Tooltip>
+                        </>
+                      ) : (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openDetail(campaign, "email")}
+                          >
+                            <Eye className="mr-1.5 size-3.5" />
+                            View
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="px-2"
+                                aria-label="More campaign actions"
+                              >
+                                <MoreHorizontal className="size-4 text-muted-foreground" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-44 rounded-md">
+                              {isSentLike ? (
+                                <DropdownMenuItem
+                                  onClick={() => openDetail(campaign, "recipients")}
+                                >
+                                  <Users className="mr-2 size-3.5" />
+                                  Recipients
+                                </DropdownMenuItem>
+                              ) : null}
+                              <DropdownMenuItem onClick={() => onDuplicate(campaign)}>
+                                <Copy className="mr-2 size-3.5" />
+                                Duplicate
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                disabled={isSending || busy}
+                                className="text-red-700 focus:text-red-700"
+                                onClick={() => setPendingDelete(campaign)}
+                              >
+                                <Trash2 className="mr-2 size-3.5" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </TooltipProvider>
+
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleteBusy) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent className="rounded-md bg-white animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {deleteIsDraft ? "Delete this draft?" : "Delete this campaign?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteIsDraft ? (
+                <>
+                  “{pendingDelete?.subject}” will be removed. This can’t be undone.
+                </>
+              ) : (
+                <>
+                  “{pendingDelete?.subject}” and its send history will be permanently
+                  removed. This can’t be undone.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-md" disabled={deleteBusy}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              className="rounded-md"
+              disabled={deleteBusy}
+              onClick={(event) => {
+                event.preventDefault();
+                confirmDelete();
+              }}
+            >
+              {deleteBusy ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <CampaignDetailDialog
         campaign={detailCampaign}

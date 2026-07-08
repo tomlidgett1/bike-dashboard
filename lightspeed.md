@@ -306,11 +306,32 @@ ORDER BY stock_value_at_cost DESC
 LIMIT 20
 ```
 
+## Resolve names before filtering
+
+User wording for a product, service, or category is not a proven Lightspeed name. "General service" may be stored as "Service - Major", "Std Service", "Servicing", a SKU code, or a category label.
+
+Before filtering sales by any user-supplied name, run one cheap discovery query with the broadest keyword:
+
+```sql
+SELECT description, category, COUNT(*) AS lines
+FROM genie_lightspeed_sales_report_lines
+WHERE complete_time >= (current_date - interval '18 months')
+  AND (description ILIKE '%servic%' OR category ILIKE '%servic%')
+GROUP BY 1, 2
+ORDER BY lines DESC
+LIMIT 30
+```
+
+Then build the real filter from the exact names returned. `search_lightspeed_inventory` with the shortest keyword also reveals live item names, categories, and SKUs.
+
+Never answer that a named product/service sold 0 unless discovery has proven no matching catalogue name exists. A grouped result where every metric is 0 means the filter text is wrong — recheck with resolved names.
+
 ## Resilience
 
 Recheck with a changed SQL strategy when:
 
 - No rows match but the request likely should have data.
+- Every metric in a grouped result is 0 for a named product/service/category.
 - A product/service phrase may be too specific.
 - A customer name is ambiguous.
 - The result hits the row limit.
@@ -319,6 +340,7 @@ Recheck with a changed SQL strategy when:
 
 Good rechecks:
 
+- Run the name-resolution discovery query above and re-filter with the exact names it returns.
 - Shorten product terms.
 - Try singular/plural variants.
 - Search `description`, `sku`, and `category`.

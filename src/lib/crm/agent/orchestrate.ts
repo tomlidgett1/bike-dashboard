@@ -43,20 +43,16 @@ export async function orchestrateCrmAgent(
     const { brief, rules } = await parseBrief(options.prompt, context, options.presetRules);
     emit({ type: "brief", brief, rules });
 
-    emit({ type: "step", step: "audience", message: "Resolving audience…" });
-    const audience = await resolveAudience(
-      supabase,
-      userId,
-      rules,
-      brief.max_recipients,
-    );
+    // Audience and product curation only need the brief/rules — run them together.
+    emit({ type: "step", step: "audience", message: "Resolving audience and curating products…" });
+    const [audience, products] = await Promise.all([
+      resolveAudience(supabase, userId, rules, brief.max_recipients),
+      curateProducts(supabase, userId, brief, rules),
+    ]);
     if (audience.count === 0) {
       throw new Error("No eligible contacts match your audience rules");
     }
     emit({ type: "audience", audience });
-
-    emit({ type: "step", step: "products", message: "Curating products…" });
-    const products = await curateProducts(supabase, userId, brief, rules);
     emit({ type: "products", products });
 
     emit({ type: "step", step: "compose", message: "Writing your campaign…" });

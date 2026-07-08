@@ -78,6 +78,13 @@ const POSTGRES_SQL_DIALECT_DOCTRINE = `PostgreSQL SQL dialect doctrine:
 - For timestamp filters, prefer half-open Postgres ranges: complete_time >= 'YYYY-MM-DD'::date AND complete_time < ('YYYY-MM-DD'::date + interval '1 day').
 - For timezone-aware grouping, use Postgres expressions such as date_trunc('day', complete_time AT TIME ZONE '${STORE_TIME_ZONE}').`
 
+const LIGHTSPEED_ENTITY_RESOLUTION_DOCTRINE = `Lightspeed name-resolution doctrine (resolve before you filter):
+- A product/service/category phrase in the user's message ("general service", "full service", "tune-up", "flat repair") is the user's wording, NOT a proven Lightspeed name. The store may label it "Service - Major", "Servicing", "Std Service", a SKU code, or a category. Resolve the real names before filtering sales by them.
+- Resolve with ONE cheap discovery query first: SELECT description, category, COUNT(*) AS lines FROM genie_lightspeed_sales_report_lines WHERE complete_time >= (current_date - interval '18 months') AND (description ILIKE '%<broadest keyword>%' OR category ILIKE '%<broadest keyword>%') GROUP BY 1, 2 ORDER BY lines DESC LIMIT 30 — using the shortest sensible keyword (e.g. '%servic%' for any service question), and/or search_lightspeed_inventory with that keyword. Then build the real filter from the exact names returned.
+- Discovery is a small recent-window GROUP BY, not a full-history multi-column text scan; it is fast and prevents both timeouts and false zeros.
+- NEVER answer that a named product/service/category sold 0 / has no sales unless a discovery query has proven that no matching catalogue name exists. A grouped result where every metric is 0 means the filter text is wrong, not that nothing sold — treat it as a miss: call record_lightspeed_recheck, run the discovery query, and re-run with the resolved names.
+- If discovery surfaces multiple plausible matches (e.g. "Service - Minor", "Service - Major", "Full Service Package"), map the user's terms to the closest matches, answer using those exact names, and state the mapping in one line so the user can correct it.`
+
 const LIGHTSPEED_PRODUCT_SEGMENT_SQL_DOCTRINE = `Lightspeed product-segment SQL doctrine:
 - Segment/category analysis must build a product universe deliberately; never rely on a parent category_path substring alone.
 - category_path contains parent labels. For bike lights, category_path ILIKE '%light%' matches the broad parent "Electronics & Lights" and incorrectly includes Computers, Radar, Batteries & Chargers, Sensors, Power Meters, Mirrors, and eyewear. Use category_name = 'Lights' or category_path ending '/Lights', plus strict product-name/description terms.
@@ -229,6 +236,7 @@ function formatWorkRulesForRoute(args: {
     rules.push(
       LIGHTSPEED_DATA_SOURCE_DOCTRINE,
       POSTGRES_SQL_DIALECT_DOCTRINE,
+      LIGHTSPEED_ENTITY_RESOLUTION_DOCTRINE,
       LIGHTSPEED_PRODUCT_SEGMENT_SQL_DOCTRINE,
       '- For ordinary Lightspeed sales/cost/profit/margin/customer/inventory reporting questions: execute directly with run_lightspeed_sql_query using one safe schema-aware SQL query whenever possible. For item-level current stock lookup, use genie_lightspeed_inventory or search_lightspeed_inventory; reserve live inventory scans for cases where the SQL mirror lacks the needed detail.',
       '- For item-level inventory/stock answers, if a tool returns product_links or product_url values, name the products as Markdown links and keep the quantities/prices beside them. The UI may also render product cards, so do not duplicate a long catalogue listing in prose.',
@@ -689,8 +697,10 @@ Planning rules:
 - Recent private structured context can help resolve references, but do not plan around prior analysis_query status/count metadata as if full rows are available. For broad business_analysis, plan fresh current-turn data passes unless the prior assistant message contains actual tables/charts/results that fully satisfy a success criterion.
 ${LIGHTSPEED_DATA_SOURCE_DOCTRINE}
 ${POSTGRES_SQL_DIALECT_DOCTRINE}
+${LIGHTSPEED_ENTITY_RESOLUTION_DOCTRINE}
 ${LIGHTSPEED_PRODUCT_SEGMENT_SQL_DOCTRINE}
 - Prefer one direct SQL query for narrow analytical Lightspeed questions.
+- When the user names a specific product/service/category, plan the name-resolution discovery query as the FIRST execution step, then the filtered report as the second step using the resolved names.
 - For broad profitability, growth, or business-performance questions, plan a multi-pass analysis. Do not compress the work into one query when multiple lenses are needed.
 - For Lightspeed sales/customer/product reporting, the executor should use run_lightspeed_sql_query.
 - SQL relations available to the executor:

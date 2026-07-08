@@ -15,6 +15,7 @@ import type {
 } from "@/lib/services/lightspeed/types";
 import { normalizeEmail } from "./types";
 import { joinedAtFromCustomer } from "./enrich-contacts";
+import { fetchAllPostgrestPages, POSTGREST_PAGE_SIZE } from "./postgrest-page";
 
 export type CrmImportResult = {
   scanned: number;
@@ -114,15 +115,28 @@ export async function importLightspeedContacts(
   }
 
   // Split into inserts vs metadata updates against what we already have.
-  const { data: existingRows, error: existingError } = await supabase
-    .from("crm_contacts")
-    .select("id, email, first_name, last_name, phone, lightspeed_customer_id, lightspeed_joined_at, opted_out")
-    .eq("user_id", userId);
-  if (existingError) throw new Error(`Failed to load existing contacts: ${existingError.message}`);
+  // Must page — PostgREST max_rows is 1000; an unpaged select silently truncates.
+  let existingRows;
+  try {
+    existingRows = await fetchAllPostgrestPages({
+      fetchPage: (from, to) =>
+        supabase
+          .from("crm_contacts")
+          .select(
+            "id, email, first_name, last_name, phone, lightspeed_customer_id, lightspeed_joined_at, opted_out",
+          )
+          .eq("user_id", userId)
+          .order("id", { ascending: true })
+          .range(from, to),
+      pageSize: POSTGREST_PAGE_SIZE,
+    });
+  } catch (error) {
+    throw new Error(
+      `Failed to load existing contacts: ${error instanceof Error ? error.message : "unknown error"}`,
+    );
+  }
 
-  const existingByEmail = new Map(
-    (existingRows ?? []).map((row) => [String(row.email), row]),
-  );
+  const existingByEmail = new Map(existingRows.map((row) => [String(row.email), row]));
 
   const now = new Date().toISOString();
   const inserts: Record<string, unknown>[] = [];

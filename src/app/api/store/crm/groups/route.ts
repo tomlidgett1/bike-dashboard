@@ -7,6 +7,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { ensureEngagedOpenersGroup } from "@/lib/crm/smart-groups";
+import { fetchAllPostgrestPages, POSTGREST_PAGE_SIZE } from "@/lib/crm/postgrest-page";
 
 export async function GET() {
   try {
@@ -19,17 +21,30 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
     }
 
-    const { data: groups, error } = await supabase
-      .from("crm_contact_groups")
-      .select("id, name, description, is_smart, rules, reason, source, last_refreshed_at, created_at, updated_at")
-      .eq("user_id", user.id)
-      .order("name");
+    // Always keep the engaged (subscribed + opened) smart group available.
+    try {
+      await ensureEngagedOpenersGroup(supabase, user.id);
+    } catch (error) {
+      console.error("[crm] ensure engaged openers group failed:", error);
+    }
 
-    if (error) throw error;
+    // Page groups too — stores can eventually exceed PostgREST's 1000-row cap.
+    const groups = await fetchAllPostgrestPages({
+      fetchPage: (from, to) =>
+        supabase
+          .from("crm_contact_groups")
+          .select(
+            "id, name, description, is_smart, rules, reason, source, last_refreshed_at, created_at, updated_at",
+          )
+          .eq("user_id", user.id)
+          .order("id", { ascending: true })
+          .range(from, to),
+      pageSize: POSTGREST_PAGE_SIZE,
+    });
 
     // Exact count per group — a single row-fetch here silently truncates at
     // PostgREST's 1000-row cap once groups get big, reporting 0 for the rest.
-    const groupIds = (groups ?? []).map((group) => group.id);
+    const groupIds = groups.map((group) => group.id);
     const counts = new Map<string, number>();
     if (groupIds.length > 0) {
       const results = await Promise.all(
@@ -48,10 +63,12 @@ export async function GET() {
     }
 
     return NextResponse.json({
-      groups: (groups ?? []).map((group) => ({
-        ...group,
-        member_count: counts.get(group.id) ?? 0,
-      })),
+      groups: [...groups]
+        .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+        .map((group) => ({
+          ...group,
+          member_count: counts.get(String(group.id)) ?? 0,
+        })),
     });
   } catch (error) {
     console.error("[crm] groups list failed:", error);

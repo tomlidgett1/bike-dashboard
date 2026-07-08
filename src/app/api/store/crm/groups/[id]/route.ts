@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { fetchAllPostgrestPages, POSTGREST_PAGE_SIZE } from "@/lib/crm/postgrest-page";
 
 type GroupMemberRow = {
   id: string;
@@ -22,22 +23,23 @@ async function loadGroupMembers(
   userId: string,
   groupId: string,
 ): Promise<GroupMemberRow[]> {
+  const rows = await fetchAllPostgrestPages({
+    fetchPage: (from, to) =>
+      supabase
+        .from("crm_contact_group_members")
+        .select("contact_id, crm_contacts(id, email, first_name, last_name, opted_out)")
+        .eq("user_id", userId)
+        .eq("group_id", groupId)
+        .order("contact_id", { ascending: true })
+        .range(from, to),
+    pageSize: POSTGREST_PAGE_SIZE,
+  });
+
   const members: GroupMemberRow[] = [];
-  for (let offset = 0; ; offset += 1000) {
-    const { data, error: membersError } = await supabase
-      .from("crm_contact_group_members")
-      .select("contact_id, crm_contacts(id, email, first_name, last_name, opted_out)")
-      .eq("user_id", userId)
-      .eq("group_id", groupId)
-      .order("contact_id")
-      .range(offset, offset + 999);
-    if (membersError) throw membersError;
-    for (const row of data ?? []) {
-      const raw = row.crm_contacts as unknown;
-      const contact = (Array.isArray(raw) ? raw[0] : raw) as GroupMemberRow | null | undefined;
-      if (contact) members.push(contact);
-    }
-    if (!data || data.length < 1000) break;
+  for (const row of rows) {
+    const raw = row.crm_contacts as unknown;
+    const contact = (Array.isArray(raw) ? raw[0] : raw) as GroupMemberRow | null | undefined;
+    if (contact) members.push(contact);
   }
   return members;
 }

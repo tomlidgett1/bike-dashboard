@@ -393,7 +393,7 @@ export function StoreDashboardManager() {
               <Button asChild variant="outline" className="rounded-md">
                 <Link href="/settings/store/home">
                   <LayoutGrid className="h-4 w-4" />
-                  Open Homev2
+                  Open Home
                 </Link>
               </Button>
             </div>
