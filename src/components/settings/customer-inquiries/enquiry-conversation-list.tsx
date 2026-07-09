@@ -89,15 +89,18 @@ function ConversationRow({
     >
       <SourceMark row={row} />
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-2">
-          <p
-            className={cn(
-              "truncate text-sm text-gray-900",
-              unread ? "font-semibold" : "font-medium",
-            )}
-          >
-            {row.customerName}
-          </p>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            <p
+              className={cn(
+                "truncate text-sm text-gray-900",
+                unread ? "font-semibold" : "font-medium",
+              )}
+            >
+              {row.customerName}
+            </p>
+            {row.source === "nest" ? <MessageKindBadge row={row} /> : null}
+          </div>
           <span
             className={cn(
               "shrink-0 text-[11px] tabular-nums",
@@ -120,11 +123,6 @@ function ConversationRow({
             {row.preview}
           </p>
         </div>
-        {row.source === "nest" ? (
-          <div className="mt-1.5 flex items-center gap-1.5 text-[11px]">
-            <MessageKindBadge row={row} />
-          </div>
-        ) : null}
       </div>
     </button>
   );
