@@ -2,8 +2,10 @@
 
 import * as React from "react";
 import Image from "next/image";
+import Link from "next/link";
 import dynamic from "next/dynamic";
 import { MapPin, Pencil, Truck, Globe, ChevronRight } from '@/components/layout/app-sidebar/dashboard-icons';
+import { SolarProvider, DocumentText, ClipboardList } from "@solar-icons/react";
 import { BuyerProtectionSheet } from "./buyer-protection-sheet";
 import { UberDeliveryInlineBadge } from "./uber-delivery-banner";
 import { Badge } from "@/components/ui/badge";
@@ -157,12 +159,7 @@ export function ProductDescription({ text }: { text: string }) {
                   const content = line.replace(/^[•\-\*]\s/, '');
                   return (
                     <li key={li} className="flex gap-2 text-sm text-gray-600 leading-relaxed">
-                      <span
-                        className="text-gray-400 mt-[3px] flex-shrink-0 select-none"
-                        aria-hidden="true"
-                      >
-                        •
-                      </span>
+                      <span className="text-gray-400 mt-[3px] flex-shrink-0 select-none">•</span>
                       <span><InlineText text={content} /></span>
                     </li>
                   );
@@ -184,7 +181,8 @@ export function ProductDescription({ text }: { text: string }) {
 }
 
 // ============================================================
-// Product Details Panel
+// Product Details Panel - Underline Tabs Design
+// Clean, modern design with tabbed navigation
 // ============================================================
 
 interface ProductDetailsPanelSimpleProps {
@@ -192,45 +190,6 @@ interface ProductDetailsPanelSimpleProps {
   onProductUpdate?: (updatedProduct: MarketplaceProduct) => void;
   brandLogoUrl?: string | null;
   brandName?: string | null;
-}
-
-type ProductDetailsTab = "overview" | "condition" | "specs";
-
-function formatCurrency(value: number) {
-  return `$${value.toLocaleString("en-AU", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
-
-function formatAustralianDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-
-  return new Intl.DateTimeFormat("en-AU", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  }).format(date);
-}
-
-function DetailBlock({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-md border border-gray-200 bg-white p-3.5">
-      <h3 className="mb-1.5 text-xs font-medium uppercase tracking-wide text-gray-500">
-        {label}
-      </h3>
-      <div className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">
-        {children}
-      </div>
-    </section>
-  );
 }
 
 export function ProductDetailsPanelSimple({
@@ -243,25 +202,13 @@ export function ProductDetailsPanelSimple({
   const [product, setProduct] = React.useState(initialProduct);
   const [isEditOpen, setIsEditOpen] = React.useState(false);
   const [buyerProtectionOpen, setBuyerProtectionOpen] = React.useState(false);
-  const [activeTab, setActiveTab] = React.useState<ProductDetailsTab>("overview");
-  const tabRefs = React.useRef<Array<HTMLButtonElement | null>>([]);
-  const tabIdPrefix = React.useId();
+  const [activeTab, setActiveTab] = React.useState<'overview' | 'specs'>('overview');
 
+  // Check if current user owns this product
   const isOwner = user?.id === product.user_id;
-  const isSold =
-    !!(product as MarketplaceProduct & { sold_at?: string | null }).sold_at ||
-    product.listing_status === "sold";
-  const quantityOnHand = Number(product.qoh);
-  const hasFiniteQuantity =
-    product.qoh != null && Number.isFinite(quantityOnHand);
-  const isOutOfStock =
-    product.listing_type !== "private_listing" &&
-    hasFiniteQuantity &&
-    quantityOnHand <= 0;
-  const maxQuantity =
-    product.listing_type === "private_listing"
-      ? 1
-      : Math.max(1, hasFiniteQuantity ? quantityOnHand : 1);
+  
+  // Check if product is sold
+  const isSold = !!(product as any).sold_at || (product as any).listing_status === 'sold';
   const isUberDeliveryEligible =
     product.uber_delivery_enabled === true &&
     product.store_account_type === "bicycle_store" &&
@@ -273,83 +220,29 @@ export function ProductDetailsPanelSimple({
   const showSpecsTab = !(
     product.is_bicycle && hasBikeSpecs(parseBikeSpecs(product.bike_specs))
   );
-  const hasConditionHistory = Boolean(
-    product.condition_details ||
-      product.seller_notes ||
-      product.wear_notes ||
-      product.usage_estimate ||
-      product.purchase_date ||
-      product.purchase_location ||
-      product.service_history?.length ||
-      product.upgrades_modifications ||
-      product.included_accessories ||
-      product.reason_for_selling,
-  );
-  const tabs = React.useMemo<Array<{ id: ProductDetailsTab; label: string }>>(
-    () => [
-      { id: "overview", label: "Overview" },
-      ...(hasConditionHistory
-        ? [{ id: "condition" as const, label: "Condition & history" }]
-        : []),
-      ...(showSpecsTab
-        ? [{ id: "specs" as const, label: "Specifications" }]
-        : []),
-    ],
-    [hasConditionHistory, showSpecsTab],
-  );
-  const livePrice = resolveLivePrice(product);
-  const productName = product.display_name || product.description;
-  const displayBrand = (brandName ?? product.brand)?.trim() || null;
 
+  // Sync product state with prop
   React.useEffect(() => {
     setProduct(initialProduct);
   }, [initialProduct]);
 
-  React.useEffect(() => {
-    if (!tabs.some((tab) => tab.id === activeTab)) {
-      setActiveTab("overview");
-    }
-  }, [activeTab, tabs]);
-
+  // Handle product update from edit drawer
   const handleProductUpdate = (updatedProduct: MarketplaceProduct) => {
     setProduct(updatedProduct);
     onProductUpdate?.(updatedProduct);
   };
 
-  const handleTabKeyDown = (
-    event: React.KeyboardEvent<HTMLButtonElement>,
-    index: number,
-  ) => {
-    let nextIndex: number | null = null;
-
-    if (event.key === "ArrowRight") nextIndex = (index + 1) % tabs.length;
-    if (event.key === "ArrowLeft") {
-      nextIndex = (index - 1 + tabs.length) % tabs.length;
-    }
-    if (event.key === "Home") nextIndex = 0;
-    if (event.key === "End") nextIndex = tabs.length - 1;
-
-    if (nextIndex === null) return;
-    event.preventDefault();
-    const nextTab = tabs[nextIndex];
-    setActiveTab(nextTab.id);
-    tabRefs.current[nextIndex]?.focus();
-  };
-
-  const fulfilmentOptions = [
-    product.shipping_available
-      ? product.shipping_cost
-        ? `${formatCurrency(product.shipping_cost)} shipping`
-        : "Free shipping"
-      : null,
-    product.pickup_location ? `Pickup from ${product.pickup_location}` : null,
-  ].filter((option): option is string => Boolean(option));
-  const shippingSummary =
-    fulfilmentOptions.join(" · ") || "Fulfilment not specified — contact the seller";
+  const displayBrand = (brandName ?? product.brand)?.trim() || null;
 
   return (
-    <div className="space-y-4 bg-white px-4 pb-5 pt-3 sm:px-5 sm:pt-4 lg:px-0 lg:pb-6 lg:pt-0">
-      <section className="rounded-md border border-gray-200 bg-white p-4">
+    <div className="bg-transparent pb-2 lg:pb-0">
+      {/* Header: Title, Price, Meta */}
+      <div
+        className={cn(
+          "px-4 pb-4 sm:px-5 lg:px-0",
+          brandLogoUrl ? "pt-3 lg:pt-0" : "pt-2 sm:pt-4 lg:pt-0",
+        )}
+      >
         {brandLogoUrl ? (
           <div className="mb-2">
             <ProductBrandLogoBadge
@@ -359,41 +252,48 @@ export function ProductDetailsPanelSimple({
           </div>
         ) : null}
         {displayBrand && !brandLogoUrl ? (
-          <p className="mb-1.5 text-xs font-medium text-gray-500">
+          <p className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-gray-400">
             {displayBrand}
           </p>
         ) : null}
-        <h1 className="text-2xl font-semibold leading-snug tracking-tight text-gray-900">
-          {productName}
+        <h1 className="text-[22px] font-semibold leading-snug tracking-tight text-gray-900">
+          {(product as any).display_name || product.description}
         </h1>
 
-        <div className="mt-3 flex flex-wrap items-baseline gap-2.5">
-          <p
-            className={cn(
-              "text-3xl font-semibold leading-none tracking-tight",
-              livePrice.onSale ? "text-red-600" : "text-gray-900",
-            )}
-          >
-            {formatCurrency(livePrice.price)}
-          </p>
-          {livePrice.onSale && livePrice.originalPrice != null ? (
-            <>
-              <p className="text-base font-medium text-gray-400 line-through">
-                {formatCurrency(livePrice.originalPrice)}
+        {(() => {
+          const live = resolveLivePrice(product);
+          const fmt = (v: number) =>
+            `$${v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+          return (
+            <div className="mt-3 flex items-baseline gap-2.5 flex-wrap">
+              <p
+                className={cn(
+                  "text-[28px] font-semibold leading-none tracking-tight",
+                  live.onSale ? "text-red-600" : "text-gray-900",
+                )}
+              >
+                {fmt(live.price)}
               </p>
-              <span className="rounded-md bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">
-                Save {formatCurrency(livePrice.originalPrice - livePrice.price)}
-                {livePrice.percentOff ? ` (${livePrice.percentOff}%)` : ""}
-              </span>
-            </>
-          ) : null}
-        </div>
+              {live.onSale && (
+                <>
+                  <p className="text-base font-medium text-gray-400 line-through">
+                    {fmt(live.originalPrice as number)}
+                  </p>
+                  <span className="inline-flex items-center rounded-md bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white">
+                    -{live.percentOff}%
+                  </span>
+                </>
+              )}
+            </div>
+          );
+        })()}
 
+        {/* Meta badges */}
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          {product.listing_source === "online_catalog" && (
+          {(product as any).listing_source === "online_catalog" && (
             <span className="inline-flex items-center gap-1 rounded-md bg-[#ffde59] px-2 py-1 text-xs font-medium text-gray-900">
               <Globe className="h-3 w-3" />
-              Online only
+              Online Only
             </span>
           )}
           {stockLabel && (
@@ -408,15 +308,15 @@ export function ProductDetailsPanelSimple({
               {stockLabel}
             </span>
           )}
-          {product.condition_rating && (
+          {(product as any).condition_rating && (
             <span className="inline-flex items-center rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-700">
-              {product.condition_rating}
+              {(product as any).condition_rating}
             </span>
           )}
-          {product.pickup_location && (
+          {(product as any).pickup_location && (
             <span className="inline-flex items-center gap-1 text-xs text-gray-500">
               <MapPin className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-              {product.pickup_location}
+              {(product as any).pickup_location}
             </span>
           )}
           {!isSold && !isOwner && isUberDeliveryEligible && <UberDeliveryInlineBadge />}
@@ -425,12 +325,14 @@ export function ProductDetailsPanelSimple({
         {product.variants && product.variants.items.length > 1 && (
           <VariantSelector variants={product.variants} />
         )}
-      </section>
+      </div>
 
-      <section className="space-y-2 rounded-md border border-gray-200 bg-white p-3">
+      {/* Action Buttons */}
+      <div className="space-y-2 px-4 pb-4 sm:px-5 lg:px-0">
         {isSold ? (
-          <div className="rounded-md border border-gray-200 bg-white p-4 text-center">
-            <Badge className="mb-2 rounded-md border-0 bg-gray-100 px-4 py-1.5 text-sm font-medium text-gray-600">
+          /* Sold View: Show sold banner */
+          <div className="p-4 bg-gray-100 rounded-md text-center">
+            <Badge className="rounded-md bg-gray-200 text-gray-600 border-0 text-sm px-4 py-1.5 font-medium mb-2">
               Sold
             </Badge>
             <p className="text-sm text-gray-500">This item has been sold</p>
@@ -440,107 +342,74 @@ export function ProductDetailsPanelSimple({
             <Button
               onClick={() => setIsEditOpen(true)}
               size="lg"
-              className="h-11 w-full rounded-md bg-gray-900 text-sm font-medium text-white hover:bg-gray-800"
+              className="w-full h-11 rounded-md text-sm font-medium bg-gray-900 hover:bg-gray-800 text-white"
             >
-              <Pencil className="mr-2 h-4 w-4" />
-              Edit listing
+              <Pencil className="h-4 w-4 mr-2" />
+              Edit Listing
             </Button>
             <div className="hidden sm:block">
               <ProductAskGenieButton product={product} />
             </div>
           </div>
-        ) : isOutOfStock ? (
-          <div className="space-y-3 rounded-md border border-gray-200 bg-white p-4 text-center">
-            <div>
-              <p className="text-sm font-semibold text-gray-900">Out of stock</p>
-              <p className="mt-1 text-xs text-gray-500">
-                Ask the seller about availability or similar products.
-              </p>
-            </div>
-            <ProductInquiryButton
-              productId={product.id}
-              productName={productName}
-              sellerId={product.user_id}
-              sellerName={product.store_name}
-              productImage={product.all_images?.[0] || product.primary_image_url || null}
-              productPrice={livePrice.price}
-              variant="outline"
-              size="lg"
-              fullWidth
-              className="h-10 rounded-md bg-white text-sm font-medium"
-              buttonLabel="Message seller"
-            />
-          </div>
         ) : (
           <>
             <BuyNowButton
               productId={product.id}
-              productName={productName}
-              productPrice={livePrice.price}
+              productName={(product as any).display_name || product.description}
+              productPrice={resolveLivePrice(product).price}
               sellerId={product.user_id}
               sellerName={product.store_name}
               uberDeliveryEligible={isUberDeliveryEligible}
               productImage={product.all_images?.[0] || null}
-              maxQuantity={maxQuantity}
-              shippingAvailable={product.shipping_available || false}
-              shippingCost={product.shipping_cost || 0}
-              pickupLocation={product.pickup_location || null}
-              pickupOnly={product.pickup_only || false}
+              maxQuantity={product.listing_type === "private_listing" ? 1 : Math.max(1, product.qoh ?? 1)}
+              shippingAvailable={(product as any).shipping_available || false}
+              shippingCost={(product as any).shipping_cost || 0}
+              pickupLocation={(product as any).pickup_location || null}
+              pickupOnly={(product as any).pickup_only || false}
               variant="default"
               size="lg"
               fullWidth
               className="h-11"
               showStripeBranding={true}
             />
-            <div
-              className={cn(
-                "grid gap-2",
-                product.is_negotiable === false ? "grid-cols-2" : "grid-cols-3",
-              )}
-            >
+            <div className="flex gap-2">
               <div className="min-w-0 flex-1">
                 <AddToCartButton
                   productId={product.id}
-                  productName={productName}
-                  productPrice={livePrice.price}
+                  productName={(product as any).display_name || product.description}
+                  productPrice={resolveLivePrice(product).price}
                   sellerId={product.user_id}
                   sellerName={product.store_name}
                   uberDeliveryEligible={isUberDeliveryEligible}
                   productImage={product.all_images?.[0] || product.primary_image_url || null}
-                  maxQuantity={maxQuantity}
-                  shippingAvailable={product.shipping_available || false}
-                  shippingCost={product.shipping_cost || 0}
-                  pickupLocation={product.pickup_location || null}
-                  pickupOnly={product.pickup_only || false}
+                  maxQuantity={product.listing_type === "private_listing" ? 1 : Math.max(1, product.qoh ?? 1)}
                   variant="outline"
                   size="lg"
                   fullWidth
                   className="h-10 gap-1 px-2 text-xs font-medium rounded-md bg-white"
                 />
               </div>
-              {product.is_negotiable !== false ? (
-                <div className="min-w-0 flex-1">
-                  <MakeOfferButton
-                    productId={product.id}
-                    productName={productName}
-                    productPrice={livePrice.price}
-                    sellerId={product.user_id}
-                    productImage={product.all_images?.[0] || null}
-                    variant="outline"
-                    size="lg"
-                    fullWidth
-                    className="h-10 gap-1 rounded-md px-2 text-xs font-medium"
-                  />
-                </div>
-              ) : null}
+              <div className="min-w-0 flex-1">
+                <MakeOfferButton
+                  productId={product.id}
+                  productName={(product as any).display_name || product.description}
+                  productPrice={product.price}
+                  sellerId={product.user_id}
+                  productImage={product.all_images?.[0] || null}
+                  variant="outline"
+                  size="lg"
+                  fullWidth
+                  className="h-10 gap-1 px-2 text-xs font-medium rounded-md"
+                />
+              </div>
               <div className="min-w-0 flex-1">
                 <ProductInquiryButton
                   productId={product.id}
-                  productName={productName}
+                  productName={(product as any).display_name || product.description}
                   sellerId={product.user_id}
                   sellerName={product.store_name}
                   productImage={product.all_images?.[0] || product.primary_image_url || null}
-                  productPrice={livePrice.price}
+                  productPrice={product.price}
                   variant="outline"
                   size="lg"
                   fullWidth
@@ -554,14 +423,15 @@ export function ProductDetailsPanelSimple({
             </div>
           </>
         )}
-      </section>
+      </div>
 
-      {!isOwner && !isSold && !isOutOfStock && (
-        <section className="rounded-md border border-gray-200 bg-white p-3">
+      {/* Buyer Protection — trust container */}
+      {!isOwner && !isSold && (
+        <>
           <button
             type="button"
             onClick={() => setBuyerProtectionOpen(true)}
-            className="flex w-full items-center gap-3 rounded-md text-left transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900"
+            className="flex w-full items-center gap-3 border-t border-gray-200/80 px-4 py-3.5 text-left transition-colors hover:bg-gray-100/60 sm:px-5 lg:px-0"
           >
             <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-md">
               <Image
@@ -573,214 +443,197 @@ export function ProductDetailsPanelSimple({
               />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-gray-900">Buyer Protection</p>
+              <p className="text-xs font-medium text-gray-900">Buyer Protection included</p>
               <p className="text-[11px] leading-snug text-gray-500">
-                Coverage from payment through to delivery.
+                Covered from secure payment through to delivery.
               </p>
             </div>
             <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
           </button>
-          <div className="mt-3 space-y-2 border-t border-gray-100 pt-3 text-xs text-gray-600">
-            <div className="flex items-center justify-between gap-4">
-              <span>Checkout</span>
-              <span className="font-medium text-gray-900">Secure Stripe payment</span>
-            </div>
-            <div className="flex items-start justify-between gap-4">
-              <span>Delivery</span>
-              <span className="text-right font-medium text-gray-900">{shippingSummary}</span>
-            </div>
-          </div>
           <BuyerProtectionSheet
             open={buyerProtectionOpen}
             onOpenChange={setBuyerProtectionOpen}
           />
-        </section>
+        </>
       )}
 
-      <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <div
-          className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit"
-          role="tablist"
-          aria-label="Product details"
-        >
-          {tabs.map((tab, index) => {
-            const selected = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                ref={(node) => {
-                  tabRefs.current[index] = node;
-                }}
-                id={`${tabIdPrefix}-${tab.id}-tab`}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                aria-controls={`${tabIdPrefix}-${tab.id}-panel`}
-                tabIndex={selected ? 0 : -1}
-                onClick={() => setActiveTab(tab.id)}
-                onKeyDown={(event) => handleTabKeyDown(event, index)}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
-                  selected
-                    ? "text-gray-800 bg-white shadow-sm"
-                    : "text-gray-600 hover:bg-gray-200/70",
-                )}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      {/* Tabs */}
+      {showSpecsTab && (
+        <>
+          <div className="px-4 pb-4 pt-1 sm:hidden sm:px-5 lg:px-0" role="tablist" aria-label="Product details">
+            <SolarProvider value={{ weight: "Linear", color: "currentColor" }} svgProps={{ strokeWidth: 2 }}>
+              <div className="flex items-center rounded-md bg-gray-100 p-0.5 w-fit">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === "overview"}
+                  onClick={() => setActiveTab("overview")}
+                  className={cn(
+                    "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+                    activeTab === "overview"
+                      ? "bg-white text-gray-800 shadow-sm"
+                      : "text-gray-600 hover:bg-gray-200/70",
+                  )}
+                >
+                  <DocumentText className="h-3 w-3 shrink-0" />
+                  Overview
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === "specs"}
+                  onClick={() => setActiveTab("specs")}
+                  className={cn(
+                    "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+                    activeTab === "specs"
+                      ? "bg-white text-gray-800 shadow-sm"
+                      : "text-gray-600 hover:bg-gray-200/70",
+                  )}
+                >
+                  <ClipboardList className="h-3 w-3 shrink-0" />
+                  Specifications
+                </button>
+              </div>
+            </SolarProvider>
+          </div>
 
+          <div
+            className="hidden border-b border-gray-200 px-4 sm:block sm:px-5 lg:px-0"
+            role="tablist"
+            aria-label="Product details"
+          >
+            <SolarProvider value={{ weight: "Linear", color: "currentColor" }} svgProps={{ strokeWidth: 2 }}>
+              <div className="flex gap-8">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === "overview"}
+                  onClick={() => setActiveTab("overview")}
+                  className={cn(
+                    "flex items-center gap-1.5 -mb-px border-b-2 pb-3 pt-1 text-sm font-medium transition-colors",
+                    activeTab === "overview"
+                      ? "border-gray-900 text-gray-900"
+                      : "border-transparent text-gray-500 hover:text-gray-700",
+                  )}
+                >
+                  <DocumentText className="h-3.5 w-3.5 shrink-0" />
+                  Overview
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === "specs"}
+                  onClick={() => setActiveTab("specs")}
+                  className={cn(
+                    "flex items-center gap-1.5 -mb-px border-b-2 pb-3 pt-1 text-sm font-medium transition-colors",
+                    activeTab === "specs"
+                      ? "border-gray-900 text-gray-900"
+                      : "border-transparent text-gray-500 hover:text-gray-700",
+                  )}
+                >
+                  <ClipboardList className="h-3.5 w-3.5 shrink-0" />
+                  Specifications
+                </button>
+              </div>
+            </SolarProvider>
+          </div>
+        </>
+      )}
+
+      {/* Tab Content */}
       <div
-        id={`${tabIdPrefix}-overview-panel`}
-        role="tabpanel"
-        aria-labelledby={`${tabIdPrefix}-overview-tab`}
-        tabIndex={0}
-        hidden={activeTab !== "overview"}
-        className="space-y-3 rounded-md border border-gray-200 bg-white p-4"
+        className={cn(
+          "px-4 pb-2.5 sm:px-5 lg:px-0",
+          !showSpecsTab && "border-t border-gray-100 pt-5",
+          showSpecsTab && "pt-4 sm:pt-5",
+        )}
       >
-          <section>
-            <h2 className="mb-2 text-sm font-semibold text-gray-900">Description</h2>
-            {product.product_description ? (
-              <ProductDescription text={product.product_description} />
-            ) : (
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-600">
-                {product.description}
-              </p>
-            )}
-          </section>
-
-          {(product.shipping_available || product.pickup_location) && (
-            <section className="border-t border-gray-100 pt-4">
-              <h2 className="mb-3 text-sm font-semibold text-gray-900">
-                Delivery and pickup
-              </h2>
-              <div className="space-y-2">
-                {product.shipping_available && (
-                  <div className="flex items-center gap-3 rounded-md border border-gray-200 bg-white p-3">
-                    <Truck className="h-4 w-4 shrink-0 text-gray-400" />
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">Shipping available</p>
-                      <p className="text-xs text-gray-500">
-                        {product.shipping_cost
-                          ? `${formatCurrency(product.shipping_cost)} shipping`
-                          : "Free shipping"}
-                      </p>
-                    </div>
-                  </div>
-                )}
-                {product.pickup_location && (
-                  <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
-                    <div className="flex items-center gap-3 p-3">
-                      <MapPin className="h-4 w-4 shrink-0 text-gray-400" />
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          {product.pickup_only ? "Pickup only" : "Pickup available"}
-                        </p>
-                        <p className="text-xs text-gray-500">{product.pickup_location}</p>
-                      </div>
-                    </div>
-                    <PickupLocationMap
-                      location={product.pickup_location}
-                      className="h-36 w-full"
-                    />
-                  </div>
+        {(activeTab === "overview" || !showSpecsTab) && (
+          <div className="space-y-4">
+              {/* Description */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 mb-2">Description</h3>
+                {(product as any).product_description ? (
+                  <ProductDescription text={(product as any).product_description} />
+                ) : (
+                  <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                    {product.description}
+                  </p>
                 )}
               </div>
-            </section>
-          )}
-      </div>
 
-      {hasConditionHistory && (
-        <div
-          id={`${tabIdPrefix}-condition-panel`}
-          role="tabpanel"
-          aria-labelledby={`${tabIdPrefix}-condition-tab`}
-          tabIndex={0}
-          hidden={activeTab !== "condition"}
-          className="space-y-3 rounded-md border border-gray-200 bg-white p-3"
-        >
-          {product.condition_details && (
-            <DetailBlock label="Condition details">{product.condition_details}</DetailBlock>
-          )}
-          {product.seller_notes && (
-            <DetailBlock label="Seller notes">{product.seller_notes}</DetailBlock>
-          )}
-          {product.wear_notes && (
-            <DetailBlock label="Wear and marks">{product.wear_notes}</DetailBlock>
-          )}
-          {product.usage_estimate && (
-            <DetailBlock label="Estimated usage">{product.usage_estimate}</DetailBlock>
-          )}
-          {(product.purchase_date || product.purchase_location) && (
-            <DetailBlock label="Purchase history">
-              <dl className="space-y-2">
-                {product.purchase_date && (
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-gray-500">Purchased</dt>
-                    <dd className="text-right font-medium text-gray-900">
-                      {formatAustralianDate(product.purchase_date)}
-                    </dd>
-                  </div>
-                )}
-                {product.purchase_location && (
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-gray-500">Purchase location</dt>
-                    <dd className="text-right font-medium text-gray-900">
-                      {product.purchase_location}
-                    </dd>
-                  </div>
-                )}
-              </dl>
-            </DetailBlock>
-          )}
-          {product.service_history?.length ? (
-            <DetailBlock label="Service history">
-              <ol className="divide-y divide-gray-100">
-                {product.service_history.map((service, index) => (
-                  <li key={`${service.date}-${service.shop}-${index}`} className="py-2 first:pt-0 last:pb-0">
-                    <div className="flex flex-wrap justify-between gap-2">
-                      <span className="font-medium text-gray-900">
-                        {service.work_done}
-                      </span>
-                      {service.date && (
-                        <span className="text-xs text-gray-500">
-                          {formatAustralianDate(service.date)}
-                        </span>
-                      )}
-                    </div>
-                    {service.shop && (
-                      <p className="mt-0.5 text-xs text-gray-500">{service.shop}</p>
+              {/* Seller Notes */}
+              {(product as any).seller_notes && (
+                <div className="pt-3 border-t border-gray-100">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-2">Seller Notes</h3>
+                  <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                    {(product as any).seller_notes}
+                  </p>
+                </div>
+              )}
+
+              {/* Delivery Options */}
+              {((product as any).shipping_available || (product as any).pickup_location) && (
+                <div className="pt-3 border-t border-gray-100">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">Delivery Options</h3>
+                  <div className="overflow-hidden rounded-md bg-gray-50">
+                    {/* Shipping Option */}
+                    {(product as any).shipping_available && (
+                      <div
+                        className={cn(
+                          "flex items-center gap-3 py-3 px-3",
+                          (product as any).pickup_location && "border-b border-gray-200/80",
+                        )}
+                      >
+                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white border border-gray-200">
+                          <Truck className="h-4 w-4 text-gray-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-900">Shipping</p>
+                          <p className="text-xs text-gray-500">
+                            {(product as any).shipping_cost === 0 || !(product as any).shipping_cost
+                              ? "Free shipping"
+                              : `$${(product as any).shipping_cost.toLocaleString("en-AU")} shipping`}
+                          </p>
+                        </div>
+                      </div>
                     )}
-                  </li>
-                ))}
-              </ol>
-            </DetailBlock>
-          ) : null}
-          {product.upgrades_modifications && (
-            <DetailBlock label="Upgrades and modifications">
-              {product.upgrades_modifications}
-            </DetailBlock>
-          )}
-          {product.included_accessories && (
-            <DetailBlock label="Included accessories">
-              {product.included_accessories}
-            </DetailBlock>
-          )}
-          {product.reason_for_selling && (
-            <DetailBlock label="Reason for selling">
-              {product.reason_for_selling}
-            </DetailBlock>
-          )}
-        </div>
-      )}
 
-      {showSpecsTab && (() => {
+                    {/* Pickup Option */}
+                    {(product as any).pickup_location && (
+                      <>
+                        <div className="flex items-center gap-3 py-3 px-3">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white border border-gray-200">
+                            <MapPin className="h-4 w-4 text-gray-600" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-gray-900">Pickup Available</p>
+                            <p className="text-xs text-gray-500">{(product as any).pickup_location}</p>
+                          </div>
+                        </div>
+                        <PickupLocationMap
+                          location={(product as any).pickup_location}
+                          className="h-36 w-full"
+                        />
+                      </>
+                    )}
+                  </div>
+
+                  {/* Pickup Only Badge */}
+                  {(product as any).pickup_only && !(product as any).shipping_available && (
+                    <p className="mt-2 text-xs text-gray-500">
+                      This item is available for local pickup only
+                    </p>
+                  )}
+                </div>
+              )}
+          </div>
+        )}
+
+        {showSpecsTab && activeTab === "specs" && (() => {
           const highlightSpecs = getHighlightSpecEntries(product, stockLabel);
           const structuredSpecs = getStructuredSpecEntries(product);
-          const proseSpecs = product.product_specs;
+          const proseSpecs = (product as { product_specs?: string }).product_specs;
           const listSpecs = proseSpecs
             ? highlightSpecs
             : [...highlightSpecs, ...structuredSpecs];
@@ -788,30 +641,16 @@ export function ProductDetailsPanelSimple({
 
           if (!hasContent) {
             return (
-              <div
-                id={`${tabIdPrefix}-specs-panel`}
-                role="tabpanel"
-                aria-labelledby={`${tabIdPrefix}-specs-tab`}
-                tabIndex={0}
-                hidden={activeTab !== "specs"}
-                className="rounded-md border border-gray-200 bg-white py-8 text-center text-sm text-gray-400"
-              >
+              <p className="py-8 text-center text-sm text-gray-400">
                 No specifications available
-              </div>
+              </p>
             );
           }
 
           return (
-            <div
-              id={`${tabIdPrefix}-specs-panel`}
-              role="tabpanel"
-              aria-labelledby={`${tabIdPrefix}-specs-tab`}
-              tabIndex={0}
-              hidden={activeTab !== "specs"}
-              className="space-y-6 rounded-md border border-gray-200 bg-white p-4"
-            >
+            <div className="space-y-6">
               {listSpecs.length > 0 && (
-                <dl className="divide-y divide-gray-100">
+                <dl className="divide-y divide-gray-100 border-t border-gray-100">
                   {listSpecs.map((entry, index) => (
                     <SpecRow
                       key={`${entry.label}-${index}`}
@@ -839,13 +678,16 @@ export function ProductDetailsPanelSimple({
             </div>
           );
         })()}
+      </div>
 
-      {product.product_spec_sources?.length ? (
-        <div className="rounded-md border border-gray-200 bg-white p-4">
-          <SpecSources sources={product.product_spec_sources} />
+      {/* Official sources cited during AI copy generation */}
+      {(product as any).product_spec_sources?.length ? (
+        <div className="border-t border-gray-100 px-4 pb-5 pt-4 sm:px-5 lg:px-0">
+          <SpecSources sources={(product as any).product_spec_sources} />
         </div>
       ) : null}
 
+      {/* Edit Product Drawer - Only for owners */}
       {isOwner && isEditOpen && (
         <EditProductDrawer
           product={product}

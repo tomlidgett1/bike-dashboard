@@ -23,7 +23,6 @@ import {
   type PublicMarketplaceCardRow,
 } from "@/lib/marketplace/public-card-feed";
 import { resolveProductBrandLogoUrl } from "@/lib/marketplace/resolve-product-brand-logo";
-import { resolveLivePrice } from "@/lib/marketplace/pricing";
 import type { ProductSellerProfile } from "@/components/marketplace/product-detail/about-this-seller-section";
 import type { OpeningHours } from "@/lib/types/store";
 
@@ -44,9 +43,10 @@ interface SellerInfo {
   account_type: string | null;
 }
 
-// Helper function to fetch public product data. Sold listings remain visible so
-// buyers can understand the state and continue into relevant alternatives.
-async function fetchProduct(productId: string): Promise<MarketplaceProduct | null> {
+// Helper function to fetch product data
+// allowSoldProducts: When true, allows fetching products regardless of listing_status
+// This is used when viewing purchased products from order history
+async function fetchProduct(productId: string, allowSoldProducts: boolean = false): Promise<MarketplaceProduct | null> {
   try {
     const supabase = createPublicSupabaseClient();
 
@@ -117,9 +117,10 @@ async function fetchProduct(productId: string): Promise<MarketplaceProduct | nul
         shipping_available,
         shipping_cost,
         pickup_location,
-        pickup_only,
         included_accessories,
         seller_contact_preference,
+        seller_phone,
+        seller_email,
         uber_delivery_enabled,
         is_bicycle,
         bike_specs,
@@ -133,9 +134,10 @@ async function fetchProduct(productId: string): Promise<MarketplaceProduct | nul
       `)
       .eq('id', productId);
 
-    query = query.or(
-      'listing_status.is.null,listing_status.eq.active,listing_status.eq.sold',
-    );
+    // Only filter by listing_status if not allowing sold products
+    if (!allowSoldProducts) {
+      query = query.or('listing_status.is.null,listing_status.eq.active');
+    }
 
     const { data: product, error: productError } = await query.single();
 
@@ -160,11 +162,10 @@ async function fetchProduct(productId: string): Promise<MarketplaceProduct | nul
       order: number;
     }> = [];
     
-    const productImages = await getProductImages(
-      supabase,
-      productId,
-      product.canonical_product_id,
-    );
+    const [productImages, immersivePage] = await Promise.all([
+      getProductImages(supabase, productId, product.canonical_product_id),
+      fetchImmersivePageFlag(supabase, productId),
+    ]);
     
     if (productImages.length > 0) {
       const orderedImages = orderProductImagesForPublicDisplay(
@@ -241,6 +242,7 @@ async function fetchProduct(productId: string): Promise<MarketplaceProduct | nul
       all_images: allImages,
       images: imagesForClient.length > 0 ? imagesForClient : product.images,
       image_variants: null,
+      immersive_page: immersivePage,
       uber_delivery_enabled: product.uber_delivery_enabled ?? false,
       // Members of a variant group present the shared master title.
       display_name: variants?.masterTitle || (product as { display_name?: string }).display_name,
@@ -279,29 +281,23 @@ async function fetchVariantInfo(
       .order('position', { ascending: true }),
     supabase
       .from('product_variant_group_items')
-      .select('product_id, is_master, value_assignments, position, products!inner(display_name, description, price, qoh, listing_type, listing_status, sold_at)')
+      .select('product_id, is_master, value_assignments, position, products!inner(display_name, description, price, qoh)')
       .eq('group_id', groupId)
       .order('position', { ascending: true }),
   ]);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const items = (itemRows ?? []).map((row: any) => {
     const p = row.products;
     const title = (p?.display_name || p?.description || '').trim();
-    const quantity = typeof p?.qoh === 'number' ? p.qoh : p?.qoh ? Number(p.qoh) : null;
-    const isPrivateListing = p?.listing_type === 'private_listing';
-    const isAvailable =
-      (p?.listing_status == null || p.listing_status === 'active') &&
-      !p?.sold_at &&
-      (isPrivateListing || quantity == null || quantity > 0);
     return {
       productId: row.product_id as string,
       title,
       price: typeof p?.price === 'number' ? p.price : p?.price ? Number(p.price) : null,
-      qoh: quantity,
+      qoh: typeof p?.qoh === 'number' ? p.qoh : p?.qoh ? Number(p.qoh) : null,
       valueAssignments: (row.value_assignments ?? {}) as Record<string, string>,
       isMaster: Boolean(row.is_master),
       isCurrent: row.product_id === currentProductId,
-      isAvailable,
       url: productPath(productSlugId(row.product_id as string, title)),
     };
   });
@@ -309,7 +305,8 @@ async function fetchVariantInfo(
   if (items.length < 2) return null;
 
   const optionNames = (optionRows ?? []).length
-    ? (optionRows ?? []).map((o: any) => o.name as string)
+    ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (optionRows ?? []).map((o: any) => o.name as string)
     : Array.from(new Set(items.flatMap((i) => Object.keys(i.valueAssignments))));
 
   const options = optionNames.map((name) => {
@@ -322,6 +319,22 @@ async function fetchVariantInfo(
   });
 
   return { groupId, masterTitle: (group as { master_title: string }).master_title, options, items };
+}
+
+async function fetchImmersivePageFlag(
+  supabase: ReturnType<typeof createPublicSupabaseClient>,
+  productId: string,
+): Promise<boolean> {
+  // Read defensively so older databases without the immersive_page column still
+  // render the regular product page.
+  const { data, error } = await supabase
+    .from('products')
+    .select('immersive_page')
+    .eq('id', productId)
+    .maybeSingle();
+
+  if (error) return false;
+  return !!(data as any)?.immersive_page;
 }
 
 async function fetchPublicCardProducts(
@@ -472,14 +485,12 @@ async function fetchSellerProfile(
   if (!seller) return null;
 
   const isBicycleStore = seller.account_type === 'bicycle_store' && seller.bicycle_store === true;
-  const privateDisplayName =
+  const displayName =
     seller.seller_display_name ||
-    (seller.first_name
-      ? `${seller.first_name}${seller.last_name ? ` ${seller.last_name.charAt(0)}.` : ''}`
-      : 'Private seller');
-  const displayName = isBicycleStore
-    ? seller.business_name || seller.seller_display_name || 'Bicycle store'
-    : privateDisplayName;
+    seller.business_name ||
+    (seller.first_name && seller.last_name
+      ? `${seller.first_name} ${seller.last_name}`.trim()
+      : 'Unknown Seller');
 
   return {
     id: seller.user_id,
@@ -487,9 +498,9 @@ async function fetchSellerProfile(
     logo_url: seller.logo_url || null,
     account_type: seller.account_type || null,
     is_bicycle_store: isBicycleStore,
-    store_type: isBicycleStore ? seller.store_type || null : null,
-    address: isBicycleStore ? seller.address || null : null,
-    website: isBicycleStore ? seller.website || null : null,
+    store_type: seller.store_type || null,
+    address: seller.address || null,
+    website: seller.website || null,
     bio: seller.bio || null,
     opening_hours: (seller.opening_hours as OpeningHours | null) ?? null,
   };
@@ -589,8 +600,8 @@ async function fetchSellerProducts(product: MarketplaceProduct): Promise<{ produ
 // heavier "more from seller / brand" product lists are fetched separately and
 // streamed (see fetchProductRecommendations) so they never block first paint.
 const fetchCoreProductData = unstable_cache(
-  async (productId: string) => {
-    const product = await fetchProduct(productId);
+  async (productId: string, allowSoldProducts: boolean) => {
+    const product = await fetchProduct(productId, allowSoldProducts);
     if (!product) return null;
 
     const productBrand = product.brand?.trim() || null;
@@ -650,17 +661,18 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { productId: param } = await params;
   const productId = extractProductId(param);
-  const data = await fetchCoreProductData(productId);
+  const data = await fetchCoreProductData(productId, false);
+  const product = (data?.product ?? undefined) as unknown as ProductLike | undefined;
 
-  if (!data) {
+  if (!product) {
     return { title: "Product not found", robots: { index: false, follow: true } };
   }
-  const product = data.product as unknown as ProductLike;
 
   const canonicalPath = productPath(productSlugId(productId, product.display_name || product.description));
 
   const name = product.display_name || product.description || "Bike for sale";
-  const priceNum = resolveLivePrice(data.product).price;
+  const priceNum =
+    typeof product.price === "number" ? product.price : parseFloat(String(product.price ?? ""));
   const priceLabel = Number.isFinite(priceNum)
     ? new Intl.NumberFormat("en-AU", {
         style: "currency",
@@ -718,12 +730,16 @@ export default async function ProductPage({
   searchParams
 }: {
   params: Promise<{ productId: string }>;
-  searchParams: Promise<{ fromUpload?: string }>;
+  searchParams: Promise<{ fromPurchase?: string; fromUpload?: string }>;
 }) {
   const { productId: param } = await params;
   const productId = extractProductId(param);
-  const { fromUpload } = await searchParams;
-  const data = await fetchCoreProductData(productId);
+  const { fromPurchase, fromUpload } = await searchParams;
+
+  // Allow viewing sold products if coming from purchase history
+  const allowSoldProducts = fromPurchase === 'true';
+
+  const data = await fetchCoreProductData(productId, allowSoldProducts);
 
   // If product not found, show 404
   if (!data) {
@@ -742,37 +758,6 @@ export default async function ProductPage({
   const canonicalUrl = absoluteUrl(
     productPath(productSlugId(productId, seoProduct.display_name || seoProduct.description)),
   );
-  const breadcrumbItems = [
-    { name: 'Marketplace', url: absoluteUrl('/marketplace') },
-    ...(data.product.marketplace_category
-      ? [{
-          name: data.product.marketplace_category,
-          url: absoluteUrl(
-            `/marketplace?level1=${encodeURIComponent(data.product.marketplace_category)}`,
-          ),
-        }]
-      : []),
-    ...(data.product.marketplace_subcategory
-      ? [{
-          name: data.product.marketplace_subcategory,
-          url: absoluteUrl(
-            `/marketplace?level1=${encodeURIComponent(data.product.marketplace_category || '')}&level2=${encodeURIComponent(data.product.marketplace_subcategory)}`,
-          ),
-        }]
-      : []),
-    ...(data.product.marketplace_level_3_category
-      ? [{
-          name: data.product.marketplace_level_3_category,
-          url: absoluteUrl(
-            `/marketplace?level1=${encodeURIComponent(data.product.marketplace_category || '')}&level2=${encodeURIComponent(data.product.marketplace_subcategory || '')}&level3=${encodeURIComponent(data.product.marketplace_level_3_category)}`,
-          ),
-        }]
-      : []),
-    {
-      name: seoProduct.display_name || seoProduct.description || 'Product',
-      url: canonicalUrl,
-    },
-  ];
 
   // Pass all data to client component
   return (
@@ -780,7 +765,13 @@ export default async function ProductPage({
       <JsonLd
         data={[
           productSchema(seoProduct, canonicalUrl),
-          breadcrumbSchema(breadcrumbItems),
+          breadcrumbSchema([
+            { name: 'Marketplace', url: absoluteUrl('/marketplace') },
+            {
+              name: seoProduct.display_name || seoProduct.description || 'Product',
+              url: canonicalUrl,
+            },
+          ]),
         ]}
       />
       <ProductPageClient

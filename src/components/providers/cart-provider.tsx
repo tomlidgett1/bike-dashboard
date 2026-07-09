@@ -27,11 +27,6 @@ export interface CartItem {
   sellerName: string;
   /** Snapshot used only to guide checkout UI. Re-validated server-side. */
   uberDeliveryEligible?: boolean;
-  /** Fulfilment snapshots used to show valid checkout choices. Re-validated server-side. */
-  shippingAvailable?: boolean;
-  shippingCost?: number;
-  pickupLocation?: string | null;
-  pickupOnly?: boolean;
   /** Units of this product in the cart (>= 1). */
   quantity: number;
   /**

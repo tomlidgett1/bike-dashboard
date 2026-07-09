@@ -13,7 +13,6 @@ import { useCart, type CartItem } from "@/components/providers/cart-provider";
 import { getCardImageUrl } from "@/lib/utils/cloudinary";
 import { cloudinaryCardLoader, extractCloudinaryPublicId } from "@/lib/utils/cloudinary-transforms";
 import { resolveLivePrice, formatPriceAUD, formatPriceAUDFull } from "@/lib/marketplace/pricing";
-import { productPath, productSlugId } from "@/lib/seo/site";
 import { cn } from "@/lib/utils";
 import { trackStoreBehaviourEvent } from "@/lib/tracking/store-analytics";
 
@@ -100,10 +99,6 @@ function buildCardCartItem(product: ProductCardData): CartItem {
       product.uber_delivery_enabled === true &&
       product.store_account_type === "bicycle_store" &&
       product.store_bicycle_store === true,
-    shippingAvailable: product.shipping_available === true,
-    shippingCost: Number(product.shipping_cost) || 0,
-    pickupLocation: product.pickup_location || null,
-    pickupOnly: product.pickup_only === true,
     quantity: 1,
     maxQuantity: getCardActionMaxQuantity(product),
   };
@@ -356,12 +351,6 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
       : featuredMobile
         ? "(max-width: 640px) 100vw, (min-width: 1280px) 16vw, (min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw"
         : "(min-width: 1280px) 16vw, (min-width: 1024px) 25vw, (min-width: 768px) 33vw, 50vw";
-  const productHrefBase = productPath(
-    productSlugId(product.id, product.display_name || product.description),
-  );
-  const productHref = storeId
-    ? `${productHrefBase}?store=${encodeURIComponent(storeId)}`
-    : productHrefBase;
 
   // Memoize click handler to prevent recreating on every render
   const handleClick = React.useCallback((e: React.MouseEvent) => {
@@ -391,14 +380,16 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
     }
 
     // Navigate to product page
-    router.push(productHref);
+    const productUrl = storeId
+      ? `/marketplace/product/${product.id}?store=${storeId}`
+      : `/marketplace/product/${product.id}`;
+    router.push(productUrl);
   }, [
     product.description,
     product.display_name,
     product.id,
     product.marketplace_category,
     product.price,
-    productHref,
     router,
     onNavigate,
     storeId,
@@ -407,8 +398,12 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
   // Predictively warm the product page's RSC on hover (desktop) and press-in
   // (mobile) so the route + loading skeleton are ready before the click resolves.
   const handlePrefetch = React.useCallback(() => {
-    router.prefetch(productHref);
-  }, [router, productHref]);
+    router.prefetch(
+      storeId
+        ? `/marketplace/product/${product.id}?store=${storeId}`
+        : `/marketplace/product/${product.id}`,
+    );
+  }, [router, product.id, storeId]);
 
   const isList = layout === "list";
   // Resolve live price once so both the photo badge and the price row can use it.
@@ -424,7 +419,7 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
 
   return (
     <Link
-      href={productHref}
+      href={storeId ? `/marketplace/product/${product.id}?store=${storeId}` : `/marketplace/product/${product.id}`}
       onClick={handleClick}
       onPointerEnter={handlePrefetch}
       onPointerDown={handlePrefetch}

@@ -22,10 +22,6 @@ interface AddToCartButtonProps {
   sellerName: string;
   uberDeliveryEligible?: boolean;
   productImage?: string | null;
-  shippingAvailable?: boolean;
-  shippingCost?: number;
-  pickupLocation?: string | null;
-  pickupOnly?: boolean;
   /** Max purchasable units (stock on hand). 1 for unique listings; qoh for shop inventory. */
   maxQuantity?: number;
   variant?: "default" | "outline";
@@ -42,10 +38,6 @@ export function AddToCartButton({
   sellerName,
   uberDeliveryEligible = false,
   productImage,
-  shippingAvailable = false,
-  shippingCost = 0,
-  pickupLocation = null,
-  pickupOnly = false,
   maxQuantity = 1,
   variant = "outline",
   size = "lg",
@@ -72,10 +64,6 @@ export function AddToCartButton({
       sellerId,
       sellerName,
       uberDeliveryEligible,
-      shippingAvailable,
-      shippingCost,
-      pickupLocation,
-      pickupOnly,
       quantity: 1,
       maxQuantity,
     });

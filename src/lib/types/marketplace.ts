@@ -44,7 +44,6 @@ export interface ProductVariantItemDisplay {
   valueAssignments: Record<string, string>;
   isMaster: boolean;
   isCurrent: boolean;
-  isAvailable: boolean;
   url: string;
 }
 

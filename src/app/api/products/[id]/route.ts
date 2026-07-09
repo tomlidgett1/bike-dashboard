@@ -201,6 +201,7 @@ export async function PATCH(
     if ('display_name' in body) updatePayload.display_name = body.display_name || null
     if ('product_description' in body) updatePayload.product_description = body.product_description || null
     if ('product_specs' in body) updatePayload.product_specs = body.product_specs || null
+    if ('immersive_page' in body) updatePayload.immersive_page = !!body.immersive_page
     if ('is_bicycle' in body) updatePayload.is_bicycle = !!body.is_bicycle
     if ('bike_specs' in body) updatePayload.bike_specs = body.bike_specs || null
 

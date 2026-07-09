@@ -20,7 +20,9 @@ export function VariantSelector({ variants }: { variants: ProductVariantInfo }) 
     const exact = variants.items.find((item) =>
       Object.entries(desired).every(([k, v]) => item.valueAssignments[k] === v),
     );
-    return exact ?? null;
+    if (exact) return exact;
+    // Fall back to any item matching just this dimension.
+    return variants.items.find((item) => item.valueAssignments[optionName] === value) ?? null;
   }
 
   return (
@@ -39,22 +41,15 @@ export function VariantSelector({ variants }: { variants: ProductVariantInfo }) 
               {option.values.map((value) => {
                 const isCurrent = current.valueAssignments[option.name] === value;
                 const target = targetFor(option.name, value);
-                const unavailable = !!target && !target.isAvailable;
+                const outOfStock = !!target && (target.qoh ?? 0) <= 0;
 
-                if (!target || unavailable) {
+                if (!target) {
                   return (
                     <span
                       key={value}
-                      aria-disabled="true"
-                      title={!target ? "This combination is unavailable" : "This option is out of stock"}
                       className="cursor-not-allowed rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm text-gray-300 line-through"
                     >
                       {value}
-                      {unavailable && (
-                        <span className="ml-1 text-[10px] uppercase tracking-wide text-gray-400">
-                          out
-                        </span>
-                      )}
                     </span>
                   );
                 }
@@ -69,9 +64,11 @@ export function VariantSelector({ variants }: { variants: ProductVariantInfo }) 
                       isCurrent
                         ? "border-gray-900 bg-gray-900 text-white"
                         : "border-gray-200 bg-white text-gray-800 hover:border-gray-400",
+                      outOfStock && !isCurrent && "text-gray-400",
                     )}
                   >
                     {value}
+                    {outOfStock && <span className="ml-1 text-[10px] uppercase tracking-wide text-gray-400">out</span>}
                   </Link>
                 );
               })}

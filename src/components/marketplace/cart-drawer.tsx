@@ -459,33 +459,10 @@ export function CartDrawer() {
   const cartUberEligible =
     activeItems.length > 0 &&
     activeItems.every((item) => item.uberDeliveryEligible === true);
-  const cartShippingAvailable =
-    activeItems.length > 0 &&
-    activeItems.every(
-      (item) => item.shippingAvailable !== false && item.pickupOnly !== true,
-    );
-  const cartPickupAvailable =
-    activeItems.length > 0 &&
-    activeItems.every(
-      (item) => item.pickupOnly === true || Boolean(item.pickupLocation),
-    );
-  const auspostCost = activeItems.reduce(
-    (cost, item) =>
-      Math.max(
-        cost,
-        item.shippingCost == null ? AUSPOST_FEE : Math.max(0, item.shippingCost),
-      ),
-    0,
-  );
-  const defaultDeliveryMethod: DeliveryMethod = cartShippingAvailable
-    ? "auspost"
-    : cartPickupAvailable
-      ? "pickup"
-      : "auspost";
 
   const [step, setStep] = React.useState<CartStep>("cart");
   const [selectedDelivery, setSelectedDelivery] =
-    React.useState<DeliveryMethod>(defaultDeliveryMethod);
+    React.useState<DeliveryMethod>("auspost");
   const [address, setAddress] = React.useState<AddressData>(() => savedAddress);
   const [uberEligibility, setUberEligibility] = React.useState<UberEligibility>(
     {
@@ -525,7 +502,7 @@ export function CartDrawer() {
   React.useEffect(() => {
     if (!cart.isOpen) {
       setStep("cart");
-      setSelectedDelivery(defaultDeliveryMethod);
+      setSelectedDelivery("auspost");
       setAddress(savedAddress);
       setUberEligibility({
         eligible: false,
@@ -536,7 +513,7 @@ export function CartDrawer() {
       setError(null);
       setIsRedirecting(false);
     }
-  }, [cart.isOpen, defaultDeliveryMethod, savedAddress]);
+  }, [cart.isOpen, savedAddress]);
 
   React.useEffect(() => {
     if (cart.isOpen && step === "cart") {
@@ -547,7 +524,7 @@ export function CartDrawer() {
   React.useEffect(() => {
     if (!cart.isOpen || !isBuyNow || activeCount === 0) return;
     setAddress(savedAddress);
-    setSelectedDelivery(defaultDeliveryMethod);
+    setSelectedDelivery("auspost");
     setUberEligibility({
       eligible: false,
       distance: null,
@@ -557,28 +534,7 @@ export function CartDrawer() {
     setError(null);
     setIsRedirecting(false);
     setStep("delivery");
-  }, [
-    cart.buyNowRequestId,
-    cart.isOpen,
-    isBuyNow,
-    activeCount,
-    defaultDeliveryMethod,
-    savedAddress,
-  ]);
-
-  React.useEffect(() => {
-    const selectedIsAvailable =
-      (selectedDelivery === "auspost" && cartShippingAvailable) ||
-      (selectedDelivery === "pickup" && cartPickupAvailable) ||
-      (selectedDelivery === "uber_express" && cartUberEligible);
-    if (!selectedIsAvailable) setSelectedDelivery(defaultDeliveryMethod);
-  }, [
-    cartPickupAvailable,
-    cartShippingAvailable,
-    cartUberEligible,
-    defaultDeliveryMethod,
-    selectedDelivery,
-  ]);
+  }, [cart.buyNowRequestId, cart.isOpen, isBuyNow, activeCount, savedAddress]);
 
   // If the active set empties mid-flow, return to the list.
   React.useEffect(() => {
@@ -590,7 +546,7 @@ export function CartDrawer() {
     selectedDelivery === "uber_express"
       ? UBER_EXPRESS_FEE
       : selectedDelivery === "auspost"
-        ? auspostCost
+        ? AUSPOST_FEE
         : 0;
   const total = activeSubtotal + deliveryCost + buyerFee;
 
@@ -600,13 +556,8 @@ export function CartDrawer() {
   const checkoutRequiresUberAddress =
     selectedDelivery === "uber_express" &&
     (!isAddressComplete || !uberEligibility.eligible);
-  const hasDeliveryOption =
-    cartShippingAvailable || cartPickupAvailable || cartUberEligible;
   const isCheckoutDisabled =
-    isRedirecting ||
-    uberEligibility.checking ||
-    checkoutRequiresUberAddress ||
-    !hasDeliveryOption;
+    isRedirecting || uberEligibility.checking || checkoutRequiresUberAddress;
 
   const resetUberAvailability = React.useCallback(() => {
     setUberEligibility({
@@ -616,9 +567,9 @@ export function CartDrawer() {
       checking: false,
     });
     setSelectedDelivery((current) =>
-      current === "uber_express" ? defaultDeliveryMethod : current,
+      current === "uber_express" ? "auspost" : current,
     );
-  }, [defaultDeliveryMethod]);
+  }, []);
 
   const updateAddress = React.useCallback(
     (patch: Partial<AddressData>) => {
@@ -843,24 +794,24 @@ export function CartDrawer() {
     description: string;
     cost: number;
   }[] = [
-    ...(cartUberEligible ? [{
+    {
       id: "uber_express",
       label: "Uber Express",
       description: "Get it in 1 hour",
       cost: UBER_EXPRESS_FEE,
-    } as const] : []),
-    ...(cartShippingAvailable ? [{
+    },
+    {
       id: "auspost",
       label: "Australia Post",
       description: "2-5 business days",
-      cost: auspostCost,
-    } as const] : []),
-    ...(cartPickupAvailable ? [{
+      cost: AUSPOST_FEE,
+    },
+    {
       id: "pickup",
       label: "Local Pickup",
       description: "Arrange collection with the seller",
       cost: 0,
-    } as const] : []),
+    },
   ];
   const sheetSide = isMobileSheet ? "bottom" : "right";
 
@@ -1063,7 +1014,7 @@ export function CartDrawer() {
                   </span>
                 </div>
                 {error && <p className="text-xs text-red-500">{error}</p>}
-                {user && expressCheckoutItems.length > 0 && cartShippingAvailable && (
+                {user && expressCheckoutItems.length > 0 && (
                   <CartExpressCheckout
                     key={expressCheckoutKey}
                     items={expressCheckoutItems}
@@ -1247,12 +1198,6 @@ export function CartDrawer() {
                     >
                       Change
                     </button>
-                  </div>
-                )}
-                {!hasDeliveryOption && (
-                  <div className="rounded-md border border-gray-200 bg-white p-4 text-sm text-gray-600">
-                    Fulfilment is not configured for this item. Message the seller before
-                    purchasing.
                   </div>
                 )}
                 {deliveryOptions.map((option) => {

@@ -107,7 +107,9 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  userScalable: true,
+  maximumScale: 1,
+  minimumScale: 1,
+  userScalable: false,
   viewportFit: "cover",
   interactiveWidget: "resizes-content",
 };
@@ -132,6 +134,7 @@ export default async function RootLayout({
       </head>
       <body
         className={`${inter.variable} ${jetbrainsMono.variable} ${caveat.variable} ${plusJakartaSans.variable} font-sans antialiased touch-manipulation`}
+        style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none' } as any}
       >
         <HapticsBootstrap />
         <ThemeProvider

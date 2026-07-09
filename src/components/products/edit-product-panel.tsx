@@ -83,6 +83,7 @@ interface EditProductData {
   qoh: number;
   reorder_point: number;
   is_active: boolean;
+  immersive_page: boolean;
   is_bicycle: boolean;
   bike_specs: unknown;
   resolved_image_url: string | null;
@@ -1533,6 +1534,17 @@ export function EditProductPanel({
                         size="sm"
                         checked={product.is_active}
                         onCheckedChange={(checked) => void patchSettings({ is_active: checked })}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm text-gray-800">Immersive product page</p>
+                        <p className="text-xs text-gray-500">Full-screen hero with floating buy card.</p>
+                      </div>
+                      <Switch
+                        size="sm"
+                        checked={product.immersive_page}
+                        onCheckedChange={(checked) => void patchSettings({ immersive_page: checked })}
                       />
                     </div>
                   </div>
