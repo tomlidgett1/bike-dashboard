@@ -1450,8 +1450,14 @@ function sanitisePortalMessageRow(
   const existingImages = Array.isArray(metadata.images) ? metadata.images : []
   const senderHandle = row.handle ?? ''
   const pendingImages = pendingImagesBySender.get(senderHandle) ?? []
+  const isSyntheticPlaceholder = SYNTHETIC_INBOUND_PLACEHOLDER.test(content.trim())
 
-  if (row.role === 'user' && existingImages.length === 0 && pendingImages.length > 0) {
+  if (
+    row.role === 'user' &&
+    existingImages.length === 0 &&
+    pendingImages.length > 0 &&
+    (isSyntheticPlaceholder || !content.trim())
+  ) {
     metadata.images = pendingImages
   }
 
@@ -1484,13 +1490,13 @@ function sanitisePortalMessageRow(
 async function loadPendingInboundImagesBySender(
   supabase: SupabaseClient,
   chatId: string,
-  nowIso: string,
+  _nowIso: string,
 ): Promise<Map<string, unknown[]>> {
+  // Brand portal bypasses the 24h message TTL — keep pending image URLs for inbox display too.
   const { data, error } = await supabase
     .from('pending_inbound_images')
     .select('sender_handle, images, expires_at')
     .eq('chat_id', chatId)
-    .gt('expires_at', nowIso)
 
   if (error) {
     console.error('[brand-portal] pending inbound images load failed:', error.message)
