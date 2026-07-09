@@ -13,10 +13,69 @@ export const IMESSAGE_INCOMING = "#E9E9EB";
 export const IMESSAGE_AI = "#F2F2F7";
 
 const IMAGE_URL_PATTERN =
-  /^https?:\/\/[^\s]+\.(?:png|jpe?g|gif|webp|avif)(?:\?[^\s]*)?$/i;
+  /^https?:\/\/[^\s]+\.(?:png|jpe?g|gif|webp|avif|heic|heif)(?:\?[^\s]*)?$/i;
+const LINQ_CDN_PATTERN = /^https?:\/\/cdn\.linqapp\.com\/[^\s]+$/i;
+const ANY_HTTP_URL_PATTERN = /https?:\/\/[^\s]+/gi;
 
 function isImageUrl(text: string): boolean {
-  return IMAGE_URL_PATTERN.test(text.trim());
+  const trimmed = text.trim();
+  return IMAGE_URL_PATTERN.test(trimmed) || LINQ_CDN_PATTERN.test(trimmed);
+}
+
+type NestMediaItem = {
+  url: string;
+  mimeType?: string;
+  filename?: string;
+};
+
+function asMediaItems(value: unknown): NestMediaItem[] {
+  if (!Array.isArray(value)) return [];
+  const items: NestMediaItem[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Record<string, unknown>;
+    const url = typeof row.url === "string" ? row.url.trim() : "";
+    if (!url) continue;
+    items.push({
+      url,
+      mimeType: typeof row.mimeType === "string" ? row.mimeType : undefined,
+      filename: typeof row.filename === "string" ? row.filename : undefined,
+    });
+  }
+  return items;
+}
+
+function extractImageUrlsFromContent(content: string): string[] {
+  const matches = content.match(ANY_HTTP_URL_PATTERN) ?? [];
+  return matches.map((url) => url.trim()).filter((url) => isImageUrl(url));
+}
+
+function stripImageUrlsFromContent(content: string, imageUrls: string[]): string {
+  let next = content;
+  for (const url of imageUrls) {
+    next = next.split(url).join(" ");
+  }
+  return next.replace(/\s+/g, " ").trim();
+}
+
+function messageMedia(message: NestConversationMessage): {
+  images: NestMediaItem[];
+  text: string;
+} {
+  const fromMeta = asMediaItems(message.metadata?.images).filter((item) => {
+    if (item.mimeType?.startsWith("image/")) return true;
+    return isImageUrl(item.url);
+  });
+  const fromContent = extractImageUrlsFromContent(message.content).map((url) => ({ url }));
+  const seen = new Set<string>();
+  const images: NestMediaItem[] = [];
+  for (const item of [...fromMeta, ...fromContent]) {
+    if (seen.has(item.url)) continue;
+    seen.add(item.url);
+    images.push(item);
+  }
+  const text = stripImageUrlsFromContent(message.content, images.map((item) => item.url));
+  return { images, text };
 }
 
 export function RichText({ text }: { text: string }) {
@@ -229,6 +288,37 @@ function BotBadge({ alignEnd }: { alignEnd?: boolean }) {
   );
 }
 
+function NestImageBubble({
+  url,
+  filename,
+  variant,
+  showTail,
+}: {
+  url: string;
+  filename?: string;
+  variant: BubbleVariant;
+  showTail: boolean;
+}) {
+  return (
+    <NestChatBubble variant={variant} showTail={showTail} dense>
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block overflow-hidden rounded-[14px]"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={url}
+          alt={filename?.trim() || "Customer photo"}
+          className="block max-h-72 max-w-full object-cover"
+          loading="lazy"
+        />
+      </a>
+    </NestChatBubble>
+  );
+}
+
 export function NestThreadMessage({
   message,
   showTail = true,
@@ -246,8 +336,13 @@ export function NestThreadMessage({
   const isStoreSide = isStoreSideMessage(message);
   const isAi = message.role === "assistant" && !isStaff;
   const isOutgoing = layout === "nest" && isStaff;
+  const { images, text } = messageMedia(message);
   const bubbles =
-    message.role === "assistant" ? splitAssistantBubbles(message.content) : [message.content];
+    message.role === "assistant"
+      ? splitAssistantBubbles(text || message.content)
+      : text
+        ? [text]
+        : [];
 
   // Inbox mimics text messaging from the store's perspective:
   // customer on the left (grey), store/bot on the right (blue shades).
@@ -271,6 +366,11 @@ export function NestThreadMessage({
   const alignEnd = layout === "inbox" ? isStoreSide && !isSystem : isOutgoing;
   const isPending = message.metadata?.send_state === "pending";
   const showBotBadge = isAi;
+  const hasRenderableContent = images.length > 0 || bubbles.some((bubble) => bubble.trim());
+
+  if (!hasRenderableContent && !isSystem) {
+    return null;
+  }
 
   return (
     <div
@@ -292,8 +392,22 @@ export function NestThreadMessage({
             Staff
           </p>
         ) : null}
+        {images.map((image, index) => (
+          <NestImageBubble
+            key={`${message.id}-img-${index}`}
+            url={image.url}
+            filename={image.filename}
+            variant={bubbleVariant}
+            showTail={
+              showTail &&
+              index === images.length - 1 &&
+              bubbles.every((bubble) => !bubble.trim())
+            }
+          />
+        ))}
         {bubbles.map((bubble, index) => {
           const trimmed = bubble.trim();
+          if (!trimmed) return null;
           const imageOnly = isImageUrl(trimmed);
 
           return (
@@ -310,6 +424,7 @@ export function NestThreadMessage({
                     src={trimmed}
                     alt="Shared image"
                     className="block max-h-72 max-w-full object-cover"
+                    loading="lazy"
                   />
                 </div>
               ) : (
