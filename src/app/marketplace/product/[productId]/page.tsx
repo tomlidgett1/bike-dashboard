@@ -647,11 +647,11 @@ export async function generateMetadata({
   const { productId: param } = await params;
   const productId = extractProductId(param);
   const data = await fetchCoreProductData(productId, false);
-  const product = (data?.product ?? undefined) as unknown as ProductLike | undefined;
 
-  if (!product) {
+  if (!data) {
     return { title: "Product not found", robots: { index: false, follow: true } };
   }
+  const product = data.product as unknown as ProductLike;
 
   const canonicalPath = productPath(productSlugId(productId, product.display_name || product.description));
 
