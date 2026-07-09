@@ -35,7 +35,16 @@ type NestMediaItem = {
   url: string;
   mimeType?: string;
   filename?: string;
+  attachmentId?: string;
 };
+
+function resolveNestMediaUrl(item: NestMediaItem): string {
+  const attachmentId = item.attachmentId?.trim();
+  if (attachmentId) {
+    return `/api/store/linq-attachment?id=${encodeURIComponent(attachmentId)}`;
+  }
+  return item.url;
+}
 
 function asMediaItems(value: unknown): NestMediaItem[] {
   if (!Array.isArray(value)) return [];
@@ -43,10 +52,16 @@ function asMediaItems(value: unknown): NestMediaItem[] {
   for (const entry of value) {
     if (!entry || typeof entry !== "object") continue;
     const row = entry as Record<string, unknown>;
+    const attachmentId =
+      typeof row.attachmentId === "string"
+        ? row.attachmentId
+        : typeof row.attachment_id === "string"
+          ? row.attachment_id
+          : undefined;
     const url = typeof row.url === "string" ? row.url.trim() : "";
-    if (!url) continue;
+    if (!url && !attachmentId) continue;
     items.push({
-      url,
+      url: url || (attachmentId ? resolveNestMediaUrl({ url: "", attachmentId }) : ""),
       mimeType:
         typeof row.mimeType === "string"
           ? row.mimeType
@@ -54,6 +69,7 @@ function asMediaItems(value: unknown): NestMediaItem[] {
             ? row.mime_type
             : undefined,
       filename: typeof row.filename === "string" ? row.filename : undefined,
+      attachmentId,
     });
   }
   return items;
@@ -77,6 +93,7 @@ function messageMedia(message: NestConversationMessage): {
   text: string;
 } {
   const fromMeta = asMediaItems(message.metadata?.images).filter((item) => {
+    if (item.attachmentId) return true;
     if (item.mimeType?.startsWith("image/")) return true;
     return isImageUrl(item.url);
   });
@@ -307,26 +324,32 @@ function BotBadge({ alignEnd }: { alignEnd?: boolean }) {
 
 function NestImageBubble({
   url,
+  attachmentId,
   filename,
   variant,
   showTail,
 }: {
   url: string;
+  attachmentId?: string;
   filename?: string;
   variant: BubbleVariant;
   showTail: boolean;
 }) {
+  const src = attachmentId?.trim()
+    ? `/api/store/linq-attachment?id=${encodeURIComponent(attachmentId.trim())}`
+    : url;
+
   return (
     <NestChatBubble variant={variant} showTail={showTail} dense>
       <a
-        href={url}
+        href={src}
         target="_blank"
         rel="noopener noreferrer"
         className="block overflow-hidden rounded-[14px]"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={url}
+          src={src}
           alt={filename?.trim() || "Customer photo"}
           className="block max-h-72 max-w-full object-cover"
           loading="lazy"
@@ -413,6 +436,7 @@ export function NestThreadMessage({
           <NestImageBubble
             key={`${message.id}-img-${index}`}
             url={image.url}
+            attachmentId={image.attachmentId}
             filename={image.filename}
             variant={bubbleVariant}
             showTail={

@@ -16,6 +16,11 @@ import {
   type BusinessRawPromptConfig,
 } from '../lib/brand-raw-prompt'
 import { pickServerEnv } from '../lib/server-env'
+import {
+  extractImageAttachmentsFromLinqParts,
+  fetchLinqChatMessages,
+  type LinqChatMessage,
+} from '@/lib/nest/linq-attachments'
 import { getLinqFromNumber } from '@/lib/nest/linq-sender'
 import { getLightspeedAccess, lightspeedGetJson } from '../lib/lightspeed-portal-access'
 
@@ -746,6 +751,7 @@ type ConversationRow = {
   content: string
   handle: string | null
   created_at: string
+  provider_message_id?: string | null
   metadata?: Record<string, unknown> | null
   engagement_scope?: 'nest' | 'brand'
   engagement_brand_key?: string | null
@@ -1409,13 +1415,111 @@ async function isChatAllowedForBrandPortal(
   return (portalProbe?.length ?? 0) > 0
 }
 
-function buildConversationRecord(
+function rowNeedsLinqMediaLookup(row: ConversationRow): boolean {
+  if (row.role !== 'user') return false
+  const images = Array.isArray(row.metadata?.images) ? row.metadata.images : []
+  if (images.length > 0) return false
+  const trimmed = (row.content ?? '').trim()
+  return SYNTHETIC_INBOUND_PLACEHOLDER.test(trimmed) || trimmed.length === 0
+}
+
+function linqMessageHandle(message: LinqChatMessage): string {
+  const handle = message.from_handle?.handle
+  return typeof handle === 'string' ? handle.trim() : ''
+}
+
+function linqMessageTimeMs(message: LinqChatMessage): number {
+  const ms = new Date(message.created_at).getTime()
+  return Number.isFinite(ms) ? ms : 0
+}
+
+function rowTimeMs(row: ConversationRow): number {
+  const ms = new Date(row.created_at).getTime()
+  return Number.isFinite(ms) ? ms : 0
+}
+
+/** LINQ docs: lazy-load attachments via GET /v3/attachments/{id}; backfill ids from chat messages. */
+async function enrichRowsWithLinqAttachments(
+  chatId: string,
+  rows: ConversationRow[],
+): Promise<ConversationRow[]> {
+  if (!rows.some(rowNeedsLinqMediaLookup)) return rows
+  if (!pickServerEnv(['LINQ_API_TOKEN'])) return rows
+
+  const linqMessages = await fetchLinqChatMessages(chatId)
+  if (linqMessages.length === 0) return rows
+
+  const inboundMediaByProviderId = new Map<string, unknown[]>()
+  const inboundMediaByHandleTime: Array<{
+    handle: string
+    createdAtMs: number
+    images: unknown[]
+  }> = []
+
+  for (const message of linqMessages) {
+    if (message.is_from_me) continue
+    const images = extractImageAttachmentsFromLinqParts(message.parts).map((item) => ({
+      attachmentId: item.attachmentId,
+      attachment_id: item.attachmentId,
+      mimeType: item.mimeType,
+      mime_type: item.mimeType,
+      filename: item.filename,
+      url: item.url,
+    }))
+    if (images.length === 0) continue
+
+    inboundMediaByProviderId.set(message.id, images)
+    const handle = linqMessageHandle(message)
+    if (handle) {
+      inboundMediaByHandleTime.push({
+        handle,
+        createdAtMs: linqMessageTimeMs(message),
+        images,
+      })
+    }
+  }
+
+  if (inboundMediaByProviderId.size === 0) return rows
+
+  return rows.map((row) => {
+    if (!rowNeedsLinqMediaLookup(row)) return row
+
+    const providerId = row.provider_message_id?.trim() ?? ''
+    let images = providerId ? inboundMediaByProviderId.get(providerId) : undefined
+
+    if (!images || images.length === 0) {
+      const handle = row.handle?.trim() ?? ''
+      const rowMs = rowTimeMs(row)
+      let best: { delta: number; images: unknown[] } | null = null
+      for (const candidate of inboundMediaByHandleTime) {
+        if (handle && candidate.handle !== handle) continue
+        const delta = Math.abs(candidate.createdAtMs - rowMs)
+        if (delta > 120_000) continue
+        if (!best || delta < best.delta) best = { delta, images: candidate.images }
+      }
+      images = best?.images
+    }
+
+    if (!images || images.length === 0) return row
+
+    return {
+      ...row,
+      metadata: {
+        ...(row.metadata ?? {}),
+        images,
+      },
+    }
+  })
+}
+
+async function buildConversationRecord(
   chatId: string,
   selectedRows: ConversationRow[],
   profilesByHandle: Map<string, UserProfileRow>,
   selectedChat: PortalChatListItem | null,
   pendingImagesBySender: Map<string, unknown[]> = new Map(),
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
+  const enrichedRows = await enrichRowsWithLinqAttachments(chatId, selectedRows)
   const participantHandle = extractParticipantHandle(chatId, selectedRows)
   const profile = participantHandle ? profilesByHandle.get(participantHandle) ?? null : null
   const metadataName = extractParticipantName(selectedRows)
@@ -1427,7 +1531,7 @@ function buildConversationRecord(
     participantHandle,
     source: selectedChat?.source ?? (chatId.startsWith('portal-test#') || chatId.startsWith('portal-sim#') ? 'portal_test' : 'customer'),
     lastSeen: profile?.last_seen ?? null,
-    messages: selectedRows.map((row) => sanitisePortalMessageRow(row, pendingImagesBySender)),
+    messages: enrichedRows.map((row) => sanitisePortalMessageRow(row, pendingImagesBySender)),
   }
 }
 
@@ -1522,7 +1626,7 @@ async function fetchConversationRows(
     chunk(chatIds, 25).map(async (ids) => {
       const portalTestHandle = `portal-test@${brandKey}`
       const portalSimHandle = `portal-sim@${brandKey}`
-      const select = 'id, chat_id, role, content, handle, created_at, metadata, engagement_scope, engagement_brand_key'
+      const select = 'id, chat_id, role, content, handle, created_at, provider_message_id, metadata, engagement_scope, engagement_brand_key'
 
       const [{ data: brandData, error: brandError }, { data: portalData, error: portalError }, { data: twilioData, error: twilioError }] =
         await Promise.all([
@@ -1683,7 +1787,7 @@ async function buildBrandPortalConversationsPayload(
       requestedChatId,
       nowIso,
     )
-    const conversation = buildConversationRecord(
+    const conversation = await buildConversationRecord(
       requestedChatId,
       selectedRows,
       profilesByHandle,
@@ -1738,7 +1842,7 @@ async function buildBrandPortalConversationsPayload(
       selectedChatId,
       nowIso,
     )
-    conversation = buildConversationRecord(
+    conversation = await buildConversationRecord(
       selectedChatId,
       selectedRows,
       profilesByHandle,
