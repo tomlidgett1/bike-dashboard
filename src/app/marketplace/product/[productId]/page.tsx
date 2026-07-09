@@ -23,6 +23,7 @@ import {
   type PublicMarketplaceCardRow,
 } from "@/lib/marketplace/public-card-feed";
 import { resolveProductBrandLogoUrl } from "@/lib/marketplace/resolve-product-brand-logo";
+import { resolveLivePrice } from "@/lib/marketplace/pricing";
 import type { ProductSellerProfile } from "@/components/marketplace/product-detail/about-this-seller-section";
 import type { OpeningHours } from "@/lib/types/store";
 
@@ -162,10 +163,11 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
       order: number;
     }> = [];
     
-    const [productImages, immersivePage] = await Promise.all([
-      getProductImages(supabase, productId, product.canonical_product_id),
-      fetchImmersivePageFlag(supabase, productId),
-    ]);
+    const productImages = await getProductImages(
+      supabase,
+      productId,
+      product.canonical_product_id,
+    );
     
     if (productImages.length > 0) {
       const orderedImages = orderProductImagesForPublicDisplay(
@@ -242,7 +244,6 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
       all_images: allImages,
       images: imagesForClient.length > 0 ? imagesForClient : product.images,
       image_variants: null,
-      immersive_page: immersivePage,
       uber_delivery_enabled: product.uber_delivery_enabled ?? false,
       // Members of a variant group present the shared master title.
       display_name: variants?.masterTitle || (product as { display_name?: string }).display_name,
@@ -319,22 +320,6 @@ async function fetchVariantInfo(
   });
 
   return { groupId, masterTitle: (group as { master_title: string }).master_title, options, items };
-}
-
-async function fetchImmersivePageFlag(
-  supabase: ReturnType<typeof createPublicSupabaseClient>,
-  productId: string,
-): Promise<boolean> {
-  // Read defensively so older databases without the immersive_page column still
-  // render the regular product page.
-  const { data, error } = await supabase
-    .from('products')
-    .select('immersive_page')
-    .eq('id', productId)
-    .maybeSingle();
-
-  if (error) return false;
-  return !!(data as any)?.immersive_page;
 }
 
 async function fetchPublicCardProducts(
@@ -671,8 +656,7 @@ export async function generateMetadata({
   const canonicalPath = productPath(productSlugId(productId, product.display_name || product.description));
 
   const name = product.display_name || product.description || "Bike for sale";
-  const priceNum =
-    typeof product.price === "number" ? product.price : parseFloat(String(product.price ?? ""));
+  const priceNum = resolveLivePrice(data.product).price;
   const priceLabel = Number.isFinite(priceNum)
     ? new Intl.NumberFormat("en-AU", {
         style: "currency",
@@ -758,6 +742,37 @@ export default async function ProductPage({
   const canonicalUrl = absoluteUrl(
     productPath(productSlugId(productId, seoProduct.display_name || seoProduct.description)),
   );
+  const breadcrumbItems = [
+    { name: 'Marketplace', url: absoluteUrl('/marketplace') },
+    ...(data.product.marketplace_category
+      ? [{
+          name: data.product.marketplace_category,
+          url: absoluteUrl(
+            `/marketplace?level1=${encodeURIComponent(data.product.marketplace_category)}`,
+          ),
+        }]
+      : []),
+    ...(data.product.marketplace_subcategory
+      ? [{
+          name: data.product.marketplace_subcategory,
+          url: absoluteUrl(
+            `/marketplace?level1=${encodeURIComponent(data.product.marketplace_category || '')}&level2=${encodeURIComponent(data.product.marketplace_subcategory)}`,
+          ),
+        }]
+      : []),
+    ...(data.product.marketplace_level_3_category
+      ? [{
+          name: data.product.marketplace_level_3_category,
+          url: absoluteUrl(
+            `/marketplace?level1=${encodeURIComponent(data.product.marketplace_category || '')}&level2=${encodeURIComponent(data.product.marketplace_subcategory || '')}&level3=${encodeURIComponent(data.product.marketplace_level_3_category)}`,
+          ),
+        }]
+      : []),
+    {
+      name: seoProduct.display_name || seoProduct.description || 'Product',
+      url: canonicalUrl,
+    },
+  ];
 
   // Pass all data to client component
   return (
@@ -765,13 +780,7 @@ export default async function ProductPage({
       <JsonLd
         data={[
           productSchema(seoProduct, canonicalUrl),
-          breadcrumbSchema([
-            { name: 'Marketplace', url: absoluteUrl('/marketplace') },
-            {
-              name: seoProduct.display_name || seoProduct.description || 'Product',
-              url: canonicalUrl,
-            },
-          ]),
+          breadcrumbSchema(breadcrumbItems),
         ]}
       />
       <ProductPageClient

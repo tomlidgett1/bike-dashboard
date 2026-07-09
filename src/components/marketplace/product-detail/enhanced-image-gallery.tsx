@@ -72,17 +72,17 @@ export function EnhancedImageGallery({
     onIndexChange(currentIndex === images.length - 1 ? 0 : currentIndex + 1);
   }, [currentIndex, images.length, onIndexChange]);
 
-  const handlePrev = () => {
+  const handlePrev = React.useCallback(() => {
     const next = fullscreenIndex === 0 ? images.length - 1 : fullscreenIndex - 1;
     setFullscreenIndex(next);
     onIndexChange(next);
-  };
+  }, [fullscreenIndex, images.length, onIndexChange]);
 
-  const handleNext = () => {
+  const handleNext = React.useCallback(() => {
     const next = fullscreenIndex === images.length - 1 ? 0 : fullscreenIndex + 1;
     setFullscreenIndex(next);
     onIndexChange(next);
-  };
+  }, [fullscreenIndex, images.length, onIndexChange]);
 
   const openFullscreen = (index: number) => {
     setFullscreenIndex(index);
@@ -108,7 +108,7 @@ export function EnhancedImageGallery({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isFullscreen, fullscreenIndex]);
+  }, [handleNext, handlePrev, isFullscreen]);
 
   if (images.length === 0) {
     return (
@@ -121,7 +121,7 @@ export function EnhancedImageGallery({
   const heroFrameClassName = "rounded-md border border-gray-200";
 
   // Reusable grid image component
-  const GridImage = ({ 
+  const GridImage = ({
     src, 
     index, 
     className,
@@ -134,19 +134,21 @@ export function EnhancedImageGallery({
     showOverlay?: boolean;
     overlayCount?: number;
   }) => (
-    <div
+    <button
+      type="button"
       onClick={() => openFullscreen(index)}
       className={cn(
-        "relative bg-gray-100 overflow-hidden cursor-pointer transition-all duration-200",
+        "relative block bg-white overflow-hidden cursor-zoom-in transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2",
         className
       )}
+      aria-label={`Open image ${index + 1} of ${images.length} in full screen`}
     >
       <Image
         src={src}
         alt={`${productName} - Image ${index + 1}`}
         fill
         unoptimized={!isOptimizableHost(src)}
-        className="object-cover"
+        className="object-contain"
         sizes="(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 800px"
         priority={index < 2} // Prioritize first 2 images for faster LCP
         placeholder="blur"
@@ -158,7 +160,7 @@ export function EnhancedImageGallery({
           <span className="text-white text-2xl font-semibold">+{overlayCount} more</span>
         </div>
       )}
-    </div>
+    </button>
   );
 
   const handleCarouselTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
@@ -196,8 +198,17 @@ export function EnhancedImageGallery({
     >
       <div
         key={currentIndex}
-        className="absolute inset-0 cursor-pointer"
+        className="absolute inset-0 cursor-zoom-in"
+        role="button"
+        tabIndex={0}
+        aria-label={`Open image ${currentIndex + 1} of ${images.length} in full screen`}
         onClick={() => openFullscreen(currentIndex)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openFullscreen(currentIndex);
+          }
+        }}
         onTouchStart={(event) => {
           touchStartXRef.current = event.touches[0]?.clientX ?? null;
         }}
@@ -208,7 +219,7 @@ export function EnhancedImageGallery({
           alt={`${productName} - Image ${currentIndex + 1}`}
           fill
           unoptimized={!isOptimizableHost(images[currentIndex])}
-          className="object-cover"
+          className="object-contain"
           sizes="(max-width: 640px) 100vw, (max-width: 1024px) 60vw, 800px"
           priority={currentIndex === 0}
           quality={85}
@@ -273,6 +284,21 @@ export function EnhancedImageGallery({
           ))}
         </div>
       </div>
+
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          openFullscreen(currentIndex);
+        }}
+        className={cn(
+          "absolute bottom-3 right-3 z-10 hidden h-8 items-center rounded-md px-3 text-xs font-medium transition-colors hover:bg-white sm:flex",
+          heroFloatingControlClassName,
+        )}
+        aria-label={`View all ${images.length} product photos`}
+      >
+        View all {images.length} {images.length === 1 ? "photo" : "photos"}
+      </button>
     </div>
   );
 
@@ -371,13 +397,18 @@ export function EnhancedImageGallery({
   const renderFullscreenModal = () =>
     isFullscreen ? (
       <>
-        <div
-          className="fixed inset-0 bg-black z-[100]"
+        <button
+          type="button"
+          aria-label="Close image gallery"
+          className="fixed inset-0 z-[100] bg-black/90 animate-in fade-in duration-200"
           onClick={() => setIsFullscreen(false)}
         />
         <div
-          className="fixed inset-0 z-[101] flex items-center justify-center p-4"
+          className="fixed inset-0 z-[101] flex items-center justify-center p-4 animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out"
           onClick={() => setIsFullscreen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${productName} image gallery`}
         >
           <div className="relative w-full h-full max-w-5xl max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
             <Image
@@ -393,8 +424,10 @@ export function EnhancedImageGallery({
           </div>
 
           <button
+            type="button"
             onClick={() => setIsFullscreen(false)}
-            className="absolute top-4 right-4 p-2 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors"
+            className="absolute top-4 right-4 rounded-md bg-white p-2 shadow-lg transition-colors hover:bg-gray-100"
+            aria-label="Close image gallery"
           >
             <X className="h-6 w-6 text-gray-900" />
           </button>
@@ -402,30 +435,35 @@ export function EnhancedImageGallery({
           {images.length > 1 && (
             <>
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   handlePrev();
                 }}
-                className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-white/90 rounded-full shadow-lg hover:bg-white transition-colors"
+                className="absolute left-4 top-1/2 -translate-y-1/2 rounded-md bg-white/90 p-3 shadow-lg transition-colors hover:bg-white"
+                aria-label="Previous image"
               >
                 <ChevronLeft className="h-6 w-6 text-gray-900" />
               </button>
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleNext();
                 }}
-                className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-white/90 rounded-full shadow-lg hover:bg-white transition-colors"
+                className="absolute right-4 top-1/2 -translate-y-1/2 rounded-md bg-white/90 p-3 shadow-lg transition-colors hover:bg-white"
+                aria-label="Next image"
               >
                 <ChevronRight className="h-6 w-6 text-gray-900" />
               </button>
             </>
           )}
 
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-black/50 backdrop-blur-sm p-2 rounded-lg max-w-[90vw] overflow-x-auto">
+          <div className="absolute bottom-4 left-1/2 flex max-w-[90vw] -translate-x-1/2 gap-2 overflow-x-auto rounded-md bg-black/50 p-2 backdrop-blur-sm">
             {images.map((image, index) => (
               <button
                 key={index}
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   setFullscreenIndex(index);
@@ -436,6 +474,8 @@ export function EnhancedImageGallery({
                     ? "border-white"
                     : "border-transparent opacity-60 hover:opacity-100"
                 )}
+                aria-label={`View image ${index + 1}`}
+                aria-current={index === fullscreenIndex}
               >
                 <Image
                   src={image}
@@ -450,7 +490,7 @@ export function EnhancedImageGallery({
             ))}
           </div>
 
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full text-sm font-medium">
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 rounded-md bg-white/90 px-4 py-2 text-sm font-medium backdrop-blur-sm">
             {fullscreenIndex + 1} / {images.length}
           </div>
         </div>

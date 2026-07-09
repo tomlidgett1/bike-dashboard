@@ -7,6 +7,7 @@ import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { StoreProductContextHeader } from "@/components/marketplace/product-detail/store-product-context-header";
 import { ProductBreadcrumbs } from "@/components/marketplace/product-breadcrumbs";
 import { ProductDetailsPanelSimple } from "@/components/marketplace/product-details-panel-simple";
+import { BuyNowButton } from "@/components/marketplace/buy-now-button";
 import { ProductAskGenieFloatingPill } from "@/components/marketplace/product-ask-genie-floating-pill";
 import { ProductAskGenieImageBadge } from "@/components/marketplace/product-ask-genie-image-badge";
 import { ProductGeniePanel } from "@/components/genie/product-genie-panel";
@@ -28,6 +29,8 @@ import {
   type BikeSpecSelection,
 } from "@/components/marketplace/bike-spec-explore-panel";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
+import { resolveLivePrice } from "@/lib/marketplace/pricing";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useProductView, trackGalleryView } from "@/lib/tracking/interaction-tracker";
 import { useStoreProductView } from "@/lib/tracking/store-analytics";
@@ -39,12 +42,6 @@ const SimilarProductsCarousel = dynamic(
 
 const ProductUploadSuccessBanner = dynamic(
   () => import("@/components/marketplace/product-upload-success-banner").then((mod) => mod.ProductUploadSuccessBanner),
-  { ssr: false },
-);
-
-
-const ImmersiveProductLayout = dynamic(
-  () => import("./immersive-product-layout").then((mod) => mod.ImmersiveProductLayout),
   { ssr: false },
 );
 
@@ -97,7 +94,7 @@ export function ProductPageClient({
   const [localProduct, setLocalProduct] = React.useState(product);
   const [exploreSpec, setExploreSpec] = React.useState<BikeSpecSelection | null>(null);
 
-  const isOwner = !!user && user.id === product.user_id;
+  const isOwner = !!user && user.id === localProduct.user_id;
 
   // Track product view with dwell time
   useProductView(product.id, user?.id);
@@ -116,16 +113,14 @@ export function ProductPageClient({
 
   // Get all available images
   const images = React.useMemo(() => {
-    if (!product) return [];
-    
     // Priority 1: Pre-computed all_images from server (already uses correct URL variants)
-    if (product.all_images && product.all_images.length > 0) {
-      return product.all_images;
+    if (localProduct.all_images && localProduct.all_images.length > 0) {
+      return localProduct.all_images;
     }
     
     // Priority 2: Images JSONB field - use galleryUrl for best quality on product pages
-    if (Array.isArray(product.images) && product.images.length > 0) {
-      const manualImages = product.images as ProductPageImage[];
+    if (Array.isArray(localProduct.images) && localProduct.images.length > 0) {
+      const manualImages = localProduct.images as ProductPageImage[];
       const filtered = manualImages
         .sort((a, b) => (a.order || 0) - (b.order || 0))
         // Use galleryUrl (1200px 4:3 padded) for product pages, with fallbacks
@@ -141,14 +136,14 @@ export function ProductPageClient({
     const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
     const imgs: string[] = [];
     
-    if (product.image_variants && product.image_variants.original) {
-      imgs.push(`${baseUrl}/storage/v1/object/public/product-images/${product.image_variants.original}`);
-    } else if (product.primary_image_url && !product.primary_image_url.startsWith("blob:")) {
-      imgs.push(product.primary_image_url);
+    if (localProduct.image_variants && localProduct.image_variants.original) {
+      imgs.push(`${baseUrl}/storage/v1/object/public/product-images/${localProduct.image_variants.original}`);
+    } else if (localProduct.primary_image_url && !localProduct.primary_image_url.startsWith("blob:")) {
+      imgs.push(localProduct.primary_image_url);
     }
     
     return imgs.length > 0 ? imgs : ['/placeholder-product.svg'];
-  }, [product]);
+  }, [localProduct]);
 
   // Build the "See All" href for similar products
   const similarSeeAllHref = product.marketplace_subcategory
@@ -167,9 +162,16 @@ export function ProductPageClient({
   const showFullWidthBikeSpecs =
     localProduct.is_bicycle && hasBikeSpecs(parseBikeSpecs(localProduct.bike_specs));
   const isSold =
-    !!(localProduct as { sold_at?: string | null }).sold_at ||
-    (localProduct as { listing_status?: string }).listing_status === "sold";
+    !!(localProduct as MarketplaceProduct & { sold_at?: string | null }).sold_at ||
+    localProduct.listing_status === "sold";
+  const quantityOnHand = Number(localProduct.qoh);
+  const hasFiniteQuantity =
+    localProduct.qoh != null && Number.isFinite(quantityOnHand);
+  const isOutOfStock =
+    hasFiniteQuantity && quantityOnHand <= 0;
+  const showMobilePurchaseBar = !isOwner && !isSold && !isOutOfStock;
   const showAskGenie = !isSold;
+  const livePrice = resolveLivePrice(localProduct);
   const featuredBrandAbout = React.useMemo(
     () => getFeaturedBrandAbout(localProduct.brand || brandName),
     [localProduct.brand, brandName],
@@ -177,7 +179,7 @@ export function ProductPageClient({
 
   const galleryProps = {
     images,
-    productName: product.display_name || product.description,
+    productName: localProduct.display_name || localProduct.description,
     currentIndex: currentImageIndex,
     onIndexChange: setCurrentImageIndex,
     heroOverlay: showAskGenie ? (
@@ -187,10 +189,10 @@ export function ProductPageClient({
 
   const productBreadcrumbs = (
     <ProductBreadcrumbs
-      level1={product.marketplace_category}
-      level2={product.marketplace_subcategory}
-      level3={product.marketplace_level_3_category}
-      productName={product.display_name || product.description}
+      level1={localProduct.marketplace_category}
+      level2={localProduct.marketplace_subcategory}
+      level3={localProduct.marketplace_level_3_category}
+      productName={localProduct.display_name || localProduct.description}
     />
   );
 
@@ -200,26 +202,13 @@ export function ProductPageClient({
         product={localProduct}
         brandLogoUrl={brandLogoUrl}
         brandName={localProduct.brand || brandName}
+        onProductUpdate={setLocalProduct}
       />
       {sellerProfile && (
         <AboutThisSellerSection seller={sellerProfile} embedded />
       )}
     </>
   );
-
-  // Immersive layout — per-product opt-in (Store Settings → Products tab).
-  if (product.immersive_page) {
-    return (
-      <ImmersiveProductLayout
-        product={localProduct}
-        images={images}
-        sellerInfo={sellerInfo}
-        recommendationsPromise={recommendationsPromise}
-        brandName={brandName}
-        isOwner={isOwner}
-      />
-    );
-  }
 
   return (
     <>
@@ -230,7 +219,12 @@ export function ProductPageClient({
       )}
       
       {/* Main Content */}
-      <div className="min-h-screen overflow-x-hidden bg-white sm:bg-gray-50 pb-28 sm:pb-8">
+      <div
+        className={cn(
+          "min-h-screen overflow-x-hidden bg-white sm:bg-gray-50 sm:pb-8",
+          showMobilePurchaseBar ? "pb-32" : "pb-8",
+        )}
+      >
         {/* Upload Success Banner */}
         {showBanner && (
           <ProductUploadSuccessBanner
@@ -246,10 +240,10 @@ export function ProductPageClient({
               <div className="pt-6 pb-6">{productBreadcrumbs}</div>
             </div>
             <div className="mx-auto flex max-w-[1536px] items-start">
-              <div className="min-w-0 w-[62%] bg-white pl-3 pr-4 xl:pl-4 xl:pr-6">
+              <div className="min-w-0 w-3/5 bg-white pl-3 pr-4 xl:pl-4 xl:pr-6">
                 <EnhancedImageGallery {...galleryProps} />
               </div>
-              <div className="sticky top-0 min-w-0 w-[38%] shrink-0 self-start bg-white px-4 max-h-screen overflow-y-auto [scrollbar-width:thin] xl:px-5">
+              <div className="sticky top-4 min-w-0 w-2/5 shrink-0 self-start overflow-y-auto bg-white px-4 max-h-[calc(100vh-1rem)] [scrollbar-width:thin] xl:px-5">
                 {infoPanelContent}
               </div>
             </div>
@@ -257,8 +251,10 @@ export function ProductPageClient({
 
           {/* Mobile / tablet: stacked gallery + flat gray info */}
           <div className="bg-white lg:hidden">
-            <div className="hidden sm:block max-w-[1536px] mx-auto px-4 sm:px-4 pt-4 sm:pt-6 mb-4 sm:mb-6">
-              {productBreadcrumbs}
+            <div className="mx-auto mb-2 max-w-[1536px] overflow-x-auto px-4 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mb-6 sm:pt-6">
+              <div className="w-max whitespace-nowrap text-xs sm:text-sm">
+                {productBreadcrumbs}
+              </div>
             </div>
             <EnhancedImageGallery
               {...galleryProps}
@@ -319,7 +315,61 @@ export function ProductPageClient({
 
       <ProductGeniePanel />
 
-      {showAskGenie && <ProductAskGenieFloatingPill product={localProduct} />}
+      {showAskGenie && (
+        <ProductAskGenieFloatingPill
+          product={localProduct}
+          className={showMobilePurchaseBar ? "!bottom-[4.75rem]" : undefined}
+        />
+      )}
+
+      {showMobilePurchaseBar && (
+        <div className="fixed inset-x-0 bottom-0 z-50 border-t border-gray-200 bg-white/95 px-3 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] shadow-[0_-4px_18px_rgba(0,0,0,0.08)] backdrop-blur sm:hidden">
+          <div className="mx-auto flex max-w-lg items-center gap-3">
+            <div className="min-w-0 shrink-0">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-gray-500">
+                Price
+              </p>
+              <p
+                className={cn(
+                  "text-lg font-semibold leading-tight",
+                  livePrice.onSale ? "text-red-600" : "text-gray-900",
+                )}
+              >
+                ${livePrice.price.toLocaleString("en-AU", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </p>
+            </div>
+            <BuyNowButton
+              productId={localProduct.id}
+              productName={localProduct.display_name || localProduct.description}
+              productPrice={livePrice.price}
+              sellerId={localProduct.user_id}
+              sellerName={localProduct.store_name}
+              uberDeliveryEligible={
+                localProduct.uber_delivery_enabled === true &&
+                localProduct.store_account_type === "bicycle_store" &&
+                localProduct.store_bicycle_store === true
+              }
+              productImage={localProduct.all_images?.[0] || localProduct.primary_image_url}
+              maxQuantity={
+                localProduct.listing_type === "private_listing"
+                  ? 1
+                  : Math.max(1, hasFiniteQuantity ? quantityOnHand : 1)
+              }
+              shippingAvailable={localProduct.shipping_available || false}
+              shippingCost={localProduct.shipping_cost || 0}
+              pickupLocation={localProduct.pickup_location || null}
+              pickupOnly={localProduct.pickup_only || false}
+              size="lg"
+              fullWidth
+              className="h-11 px-3 text-sm"
+              showStripeBranding={false}
+            />
+          </div>
+        </div>
+      )}
     </>
   );
 }

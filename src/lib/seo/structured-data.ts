@@ -218,7 +218,15 @@ export function productSchema(p: ProductLike, url: string): Json {
     (img) => /^https?:\/\//i.test(img),
   );
   const brandName = p.brand || p.manufacturer_name || null;
-  const price = toPrice(p.discount_active && p.sale_price != null ? p.sale_price : p.price);
+  const discountEndsAt = p.discount_ends_at
+    ? new Date(p.discount_ends_at).getTime()
+    : null;
+  const discountIsLive =
+    p.discount_active === true &&
+    p.sale_price != null &&
+    (discountEndsAt == null ||
+      (Number.isFinite(discountEndsAt) && discountEndsAt > Date.now()));
+  const price = toPrice(discountIsLive ? p.sale_price : p.price);
 
   const offer: Json = {
     '@type': 'Offer',
@@ -228,7 +236,7 @@ export function productSchema(p: ProductLike, url: string): Json {
     itemCondition: productCondition(p),
   };
   if (price != null) offer.price = price;
-  if (p.discount_active && p.discount_ends_at) offer.priceValidUntil = p.discount_ends_at;
+  if (discountIsLive && p.discount_ends_at) offer.priceValidUntil = p.discount_ends_at;
   if (p.store_name) offer.seller = { '@type': 'Organization', name: p.store_name };
 
   const schema: Json = {

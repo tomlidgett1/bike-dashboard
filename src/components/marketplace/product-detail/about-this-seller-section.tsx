@@ -196,7 +196,7 @@ export function AboutThisSellerSection({
               role="dialog"
               aria-modal="true"
               aria-labelledby="about-seller-title"
-              className="absolute inset-x-0 bottom-0 flex max-h-[min(88dvh,720px)] flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out"
+              className="absolute inset-x-0 bottom-0 flex max-h-[min(88dvh,720px)] flex-col overflow-hidden rounded-t-md bg-white shadow-2xl animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out"
             >
               <div className="flex shrink-0 justify-center pb-1 pt-3">
                 <div className="h-1 w-8 rounded-full bg-gray-300/80" />
