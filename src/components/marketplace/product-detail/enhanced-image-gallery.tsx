@@ -3,6 +3,7 @@
 import * as React from "react";
 import Image from "next/image";
 import { ChevronLeft, ChevronRight, X } from '@/components/layout/app-sidebar/dashboard-icons';
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 // ============================================================
@@ -263,27 +264,36 @@ export function EnhancedImageGallery({
       </div>
 
       <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 sm:hidden">
-        <div className="flex items-center gap-1.5">
-          {images.map((_, index) => (
-            <button
-              key={index}
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onIndexChange(index);
-              }}
-              className={cn(
-                "rounded-full transition-all",
-                index === currentIndex
-                  ? "h-2 w-6 bg-white shadow-sm"
-                  : "h-2 w-2 bg-white/60 hover:bg-white/90",
-              )}
-              aria-label={`View image ${index + 1}`}
-              aria-current={index === currentIndex}
-            />
-          ))}
-        </div>
+        {images.length <= 8 ? (
+          <div className="flex items-center gap-1.5">
+            {images.map((_, index) => (
+              <button
+                key={index}
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onIndexChange(index);
+                }}
+                className={cn(
+                  "rounded-md transition-all",
+                  index === currentIndex
+                    ? "h-2 w-6 bg-white shadow-sm"
+                    : "h-2 w-2 bg-white/60 hover:bg-white/90",
+                )}
+                aria-label={`View image ${index + 1}`}
+                aria-current={index === currentIndex}
+              />
+            ))}
+          </div>
+        ) : (
+          <span className="rounded-md bg-white/90 px-2.5 py-1 text-xs font-medium text-gray-900 shadow-sm">
+            {currentIndex + 1} / {images.length}
+          </span>
+        )}
       </div>
+      <span className="sr-only" aria-live="polite">
+        Showing image {currentIndex + 1} of {images.length}
+      </span>
 
       <button
         type="button"
@@ -394,23 +404,16 @@ export function EnhancedImageGallery({
     </div>
   );
 
-  const renderFullscreenModal = () =>
-    isFullscreen ? (
-      <>
-        <button
-          type="button"
-          aria-label="Close image gallery"
-          className="fixed inset-0 z-[100] bg-black/90 animate-in fade-in duration-200"
-          onClick={() => setIsFullscreen(false)}
-        />
-        <div
-          className="fixed inset-0 z-[101] flex items-center justify-center p-4 animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out"
-          onClick={() => setIsFullscreen(false)}
-          role="dialog"
-          aria-modal="true"
-          aria-label={`${productName} image gallery`}
-        >
-          <div className="relative w-full h-full max-w-5xl max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+  const renderFullscreenModal = () => (
+    <Dialog open={isFullscreen} onOpenChange={setIsFullscreen}>
+      <DialogContent
+        showCloseButton={false}
+        overlayClassName="z-[100] bg-black/90 animate-in fade-in duration-200"
+        className="z-[101] h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-none gap-0 overflow-hidden rounded-md bg-black p-0 ring-0 animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out sm:max-w-none"
+      >
+        <DialogTitle className="sr-only">{productName} image gallery</DialogTitle>
+        <div className="relative flex h-full w-full items-center justify-center p-4">
+          <div className="relative h-full max-h-[90vh] w-full max-w-5xl">
             <Image
               src={images[fullscreenIndex]}
               alt={`${productName} - Fullscreen`}
@@ -494,8 +497,9 @@ export function EnhancedImageGallery({
             {fullscreenIndex + 1} / {images.length}
           </div>
         </div>
-      </>
-    ) : null;
+      </DialogContent>
+    </Dialog>
+  );
 
   const renderHeroOverlay = () =>
     heroOverlay ? (

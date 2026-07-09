@@ -119,7 +119,11 @@ export async function POST(request: NextRequest) {
         listing_status,
         qoh,
         listing_type,
-        uber_delivery_enabled
+        uber_delivery_enabled,
+        shipping_available,
+        shipping_cost,
+        pickup_location,
+        pickup_only
       `,
       )
       .in('id', ids);
@@ -143,6 +147,27 @@ export async function POST(request: NextRequest) {
     // Prevent buying your own products
     if (sellerId === user.id) {
       return NextResponse.json({ error: 'You cannot purchase your own products' }, { status: 400 });
+    }
+
+    const shippingAvailable = products.every(
+      (product) =>
+        product.shipping_available === true && product.pickup_only !== true,
+    );
+    const pickupAvailable = products.every((product) =>
+      Boolean(product.pickup_location),
+    );
+
+    if (deliveryMethod === 'auspost' && !shippingAvailable) {
+      return NextResponse.json(
+        { error: 'Shipping is not available for every item in this cart' },
+        { status: 400 },
+      );
+    }
+    if (deliveryMethod === 'pickup' && !pickupAvailable) {
+      return NextResponse.json(
+        { error: 'Pickup is not available for every item in this cart' },
+        { status: 400 },
+      );
     }
 
     if (deliveryMethod === 'uber_express') {
@@ -235,7 +260,16 @@ export async function POST(request: NextRequest) {
         break;
       case 'auspost':
       default:
-        deliveryCost = AUSPOST_FEE;
+        deliveryCost = products.reduce(
+          (cost, product) =>
+            Math.max(
+              cost,
+              product.shipping_cost == null
+                ? AUSPOST_FEE
+                : Math.max(0, Number(product.shipping_cost) || 0),
+            ),
+          0,
+        );
         deliveryDescription = 'Australia Post (2-5 business days)';
         break;
     }

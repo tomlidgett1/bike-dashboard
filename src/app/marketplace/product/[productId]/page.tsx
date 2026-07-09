@@ -44,10 +44,9 @@ interface SellerInfo {
   account_type: string | null;
 }
 
-// Helper function to fetch product data
-// allowSoldProducts: When true, allows fetching products regardless of listing_status
-// This is used when viewing purchased products from order history
-async function fetchProduct(productId: string, allowSoldProducts: boolean = false): Promise<MarketplaceProduct | null> {
+// Helper function to fetch public product data. Sold listings remain visible so
+// buyers can understand the state and continue into relevant alternatives.
+async function fetchProduct(productId: string): Promise<MarketplaceProduct | null> {
   try {
     const supabase = createPublicSupabaseClient();
 
@@ -118,10 +117,9 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
         shipping_available,
         shipping_cost,
         pickup_location,
+        pickup_only,
         included_accessories,
         seller_contact_preference,
-        seller_phone,
-        seller_email,
         uber_delivery_enabled,
         is_bicycle,
         bike_specs,
@@ -135,10 +133,9 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
       `)
       .eq('id', productId);
 
-    // Only filter by listing_status if not allowing sold products
-    if (!allowSoldProducts) {
-      query = query.or('listing_status.is.null,listing_status.eq.active');
-    }
+    query = query.or(
+      'listing_status.is.null,listing_status.eq.active,listing_status.eq.sold',
+    );
 
     const { data: product, error: productError } = await query.single();
 
@@ -282,23 +279,29 @@ async function fetchVariantInfo(
       .order('position', { ascending: true }),
     supabase
       .from('product_variant_group_items')
-      .select('product_id, is_master, value_assignments, position, products!inner(display_name, description, price, qoh)')
+      .select('product_id, is_master, value_assignments, position, products!inner(display_name, description, price, qoh, listing_type, listing_status, sold_at)')
       .eq('group_id', groupId)
       .order('position', { ascending: true }),
   ]);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const items = (itemRows ?? []).map((row: any) => {
     const p = row.products;
     const title = (p?.display_name || p?.description || '').trim();
+    const quantity = typeof p?.qoh === 'number' ? p.qoh : p?.qoh ? Number(p.qoh) : null;
+    const isPrivateListing = p?.listing_type === 'private_listing';
+    const isAvailable =
+      (p?.listing_status == null || p.listing_status === 'active') &&
+      !p?.sold_at &&
+      (isPrivateListing || quantity == null || quantity > 0);
     return {
       productId: row.product_id as string,
       title,
       price: typeof p?.price === 'number' ? p.price : p?.price ? Number(p.price) : null,
-      qoh: typeof p?.qoh === 'number' ? p.qoh : p?.qoh ? Number(p.qoh) : null,
+      qoh: quantity,
       valueAssignments: (row.value_assignments ?? {}) as Record<string, string>,
       isMaster: Boolean(row.is_master),
       isCurrent: row.product_id === currentProductId,
+      isAvailable,
       url: productPath(productSlugId(row.product_id as string, title)),
     };
   });
@@ -306,8 +309,7 @@ async function fetchVariantInfo(
   if (items.length < 2) return null;
 
   const optionNames = (optionRows ?? []).length
-    ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (optionRows ?? []).map((o: any) => o.name as string)
+    ? (optionRows ?? []).map((o: any) => o.name as string)
     : Array.from(new Set(items.flatMap((i) => Object.keys(i.valueAssignments))));
 
   const options = optionNames.map((name) => {
@@ -470,12 +472,14 @@ async function fetchSellerProfile(
   if (!seller) return null;
 
   const isBicycleStore = seller.account_type === 'bicycle_store' && seller.bicycle_store === true;
-  const displayName =
+  const privateDisplayName =
     seller.seller_display_name ||
-    seller.business_name ||
-    (seller.first_name && seller.last_name
-      ? `${seller.first_name} ${seller.last_name}`.trim()
-      : 'Unknown Seller');
+    (seller.first_name
+      ? `${seller.first_name}${seller.last_name ? ` ${seller.last_name.charAt(0)}.` : ''}`
+      : 'Private seller');
+  const displayName = isBicycleStore
+    ? seller.business_name || seller.seller_display_name || 'Bicycle store'
+    : privateDisplayName;
 
   return {
     id: seller.user_id,
@@ -483,9 +487,9 @@ async function fetchSellerProfile(
     logo_url: seller.logo_url || null,
     account_type: seller.account_type || null,
     is_bicycle_store: isBicycleStore,
-    store_type: seller.store_type || null,
-    address: seller.address || null,
-    website: seller.website || null,
+    store_type: isBicycleStore ? seller.store_type || null : null,
+    address: isBicycleStore ? seller.address || null : null,
+    website: isBicycleStore ? seller.website || null : null,
     bio: seller.bio || null,
     opening_hours: (seller.opening_hours as OpeningHours | null) ?? null,
   };
@@ -585,8 +589,8 @@ async function fetchSellerProducts(product: MarketplaceProduct): Promise<{ produ
 // heavier "more from seller / brand" product lists are fetched separately and
 // streamed (see fetchProductRecommendations) so they never block first paint.
 const fetchCoreProductData = unstable_cache(
-  async (productId: string, allowSoldProducts: boolean) => {
-    const product = await fetchProduct(productId, allowSoldProducts);
+  async (productId: string) => {
+    const product = await fetchProduct(productId);
     if (!product) return null;
 
     const productBrand = product.brand?.trim() || null;
@@ -646,7 +650,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { productId: param } = await params;
   const productId = extractProductId(param);
-  const data = await fetchCoreProductData(productId, false);
+  const data = await fetchCoreProductData(productId);
 
   if (!data) {
     return { title: "Product not found", robots: { index: false, follow: true } };
@@ -714,16 +718,12 @@ export default async function ProductPage({
   searchParams
 }: {
   params: Promise<{ productId: string }>;
-  searchParams: Promise<{ fromPurchase?: string; fromUpload?: string }>;
+  searchParams: Promise<{ fromUpload?: string }>;
 }) {
   const { productId: param } = await params;
   const productId = extractProductId(param);
-  const { fromPurchase, fromUpload } = await searchParams;
-
-  // Allow viewing sold products if coming from purchase history
-  const allowSoldProducts = fromPurchase === 'true';
-
-  const data = await fetchCoreProductData(productId, allowSoldProducts);
+  const { fromUpload } = await searchParams;
+  const data = await fetchCoreProductData(productId);
 
   // If product not found, show 404
   if (!data) {

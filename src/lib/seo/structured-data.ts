@@ -8,6 +8,7 @@
  */
 import type { DayHours, OpeningHours, SocialLinks, StoreProfile } from '@/lib/types/store';
 import { SITE_DESCRIPTION, SITE_NAME, SITE_URL, absoluteUrl } from '@/lib/seo/site';
+import { resolveLivePrice } from '@/lib/marketplace/pricing';
 
 type Json = Record<string, unknown>;
 
@@ -19,6 +20,7 @@ export interface ProductLike {
   product_description?: string | null;
   price?: string | number | null;
   sale_price?: string | number | null;
+  discount_percent?: string | number | null;
   discount_active?: boolean | null;
   discount_ends_at?: string | null;
   brand?: string | null;
@@ -30,6 +32,7 @@ export interface ProductLike {
   qoh?: number | string | null;
   sold_at?: string | null;
   listing_status?: string | null;
+  listing_type?: string | null;
   store_name?: string | null;
   primary_image_url?: string | null;
   all_images?: string[] | null;
@@ -125,8 +128,11 @@ function socialSameAs(links?: SocialLinks | null): string[] {
 function productAvailability(p: ProductLike): string {
   const sold = !!p.sold_at || p.listing_status === 'sold';
   if (sold) return 'https://schema.org/SoldOut';
-  const qoh = typeof p.qoh === 'number' ? p.qoh : Number(p.qoh ?? 0);
-  return qoh > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock';
+  if (p.listing_type === 'private_listing') return 'https://schema.org/InStock';
+  const qoh = typeof p.qoh === 'number' ? p.qoh : Number(p.qoh);
+  return Number.isFinite(qoh) && qoh <= 0
+    ? 'https://schema.org/OutOfStock'
+    : 'https://schema.org/InStock';
 }
 
 function productCondition(p: ProductLike): string {
@@ -218,15 +224,13 @@ export function productSchema(p: ProductLike, url: string): Json {
     (img) => /^https?:\/\//i.test(img),
   );
   const brandName = p.brand || p.manufacturer_name || null;
-  const discountEndsAt = p.discount_ends_at
-    ? new Date(p.discount_ends_at).getTime()
-    : null;
-  const discountIsLive =
-    p.discount_active === true &&
-    p.sale_price != null &&
-    (discountEndsAt == null ||
-      (Number.isFinite(discountEndsAt) && discountEndsAt > Date.now()));
-  const price = toPrice(discountIsLive ? p.sale_price : p.price);
+  const livePrice = resolveLivePrice({
+    price: toPrice(p.price) ?? 0,
+    sale_price: toPrice(p.sale_price) ?? null,
+    discount_percent: toPrice(p.discount_percent) ?? null,
+    discount_active: p.discount_active,
+    discount_ends_at: p.discount_ends_at,
+  });
 
   const offer: Json = {
     '@type': 'Offer',
@@ -235,8 +239,8 @@ export function productSchema(p: ProductLike, url: string): Json {
     availability: productAvailability(p),
     itemCondition: productCondition(p),
   };
-  if (price != null) offer.price = price;
-  if (discountIsLive && p.discount_ends_at) offer.priceValidUntil = p.discount_ends_at;
+  offer.price = livePrice.price;
+  if (livePrice.onSale && p.discount_ends_at) offer.priceValidUntil = p.discount_ends_at;
   if (p.store_name) offer.seller = { '@type': 'Organization', name: p.store_name };
 
   const schema: Json = {

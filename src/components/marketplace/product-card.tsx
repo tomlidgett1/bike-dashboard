@@ -100,6 +100,10 @@ function buildCardCartItem(product: ProductCardData): CartItem {
       product.uber_delivery_enabled === true &&
       product.store_account_type === "bicycle_store" &&
       product.store_bicycle_store === true,
+    shippingAvailable: product.shipping_available === true,
+    shippingCost: Number(product.shipping_cost) || 0,
+    pickupLocation: product.pickup_location || null,
+    pickupOnly: product.pickup_only === true,
     quantity: 1,
     maxQuantity: getCardActionMaxQuantity(product),
   };

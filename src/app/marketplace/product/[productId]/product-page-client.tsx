@@ -168,7 +168,9 @@ export function ProductPageClient({
   const hasFiniteQuantity =
     localProduct.qoh != null && Number.isFinite(quantityOnHand);
   const isOutOfStock =
-    hasFiniteQuantity && quantityOnHand <= 0;
+    localProduct.listing_type !== "private_listing" &&
+    hasFiniteQuantity &&
+    quantityOnHand <= 0;
   const showMobilePurchaseBar = !isOwner && !isSold && !isOutOfStock;
   const showAskGenie = !isSold;
   const livePrice = resolveLivePrice(localProduct);

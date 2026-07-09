@@ -157,7 +157,12 @@ export function ProductDescription({ text }: { text: string }) {
                   const content = line.replace(/^[•\-\*]\s/, '');
                   return (
                     <li key={li} className="flex gap-2 text-sm text-gray-600 leading-relaxed">
-                      <span className="text-gray-400 mt-[3px] flex-shrink-0 select-none">•</span>
+                      <span
+                        className="text-gray-400 mt-[3px] flex-shrink-0 select-none"
+                        aria-hidden="true"
+                      >
+                        •
+                      </span>
                       <span><InlineText text={content} /></span>
                     </li>
                   );
@@ -249,7 +254,10 @@ export function ProductDetailsPanelSimple({
   const quantityOnHand = Number(product.qoh);
   const hasFiniteQuantity =
     product.qoh != null && Number.isFinite(quantityOnHand);
-  const isOutOfStock = hasFiniteQuantity && quantityOnHand <= 0;
+  const isOutOfStock =
+    product.listing_type !== "private_listing" &&
+    hasFiniteQuantity &&
+    quantityOnHand <= 0;
   const maxQuantity =
     product.listing_type === "private_listing"
       ? 1
@@ -337,7 +345,7 @@ export function ProductDetailsPanelSimple({
     product.pickup_location ? `Pickup from ${product.pickup_location}` : null,
   ].filter((option): option is string => Boolean(option));
   const shippingSummary =
-    fulfilmentOptions.join(" · ") || "Delivery arranged with the seller";
+    fulfilmentOptions.join(" · ") || "Fulfilment not specified — contact the seller";
 
   return (
     <div className="space-y-4 bg-white px-4 pb-5 pt-3 sm:px-5 sm:pt-4 lg:px-0 lg:pb-6 lg:pt-0">
@@ -500,6 +508,10 @@ export function ProductDetailsPanelSimple({
                   uberDeliveryEligible={isUberDeliveryEligible}
                   productImage={product.all_images?.[0] || product.primary_image_url || null}
                   maxQuantity={maxQuantity}
+                  shippingAvailable={product.shipping_available || false}
+                  shippingCost={product.shipping_cost || 0}
+                  pickupLocation={product.pickup_location || null}
+                  pickupOnly={product.pickup_only || false}
                   variant="outline"
                   size="lg"
                   fullWidth
@@ -544,7 +556,7 @@ export function ProductDetailsPanelSimple({
         )}
       </section>
 
-      {!isOwner && !isSold && (
+      {!isOwner && !isSold && !isOutOfStock && (
         <section className="rounded-md border border-gray-200 bg-white p-3">
           <button
             type="button"
