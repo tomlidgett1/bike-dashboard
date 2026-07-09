@@ -45,6 +45,15 @@ export type LightspeedInquiryContext = {
     title: string | null
     status: string | null
     updated_at: string | null
+    items?: Array<{
+      description: string | null
+      quantity: number | null
+      note: string | null
+    }>
+    lines?: Array<{
+      note: string
+      done: boolean
+    }>
   }>
   recent_sales_count?: number
   sales_summary?: {

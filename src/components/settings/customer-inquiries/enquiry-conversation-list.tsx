@@ -1,21 +1,12 @@
 "use client";
 
-import { AlertCircle, Inbox, Loader2 } from "@/components/layout/app-sidebar/dashboard-icons";
+import { AlertCircle, Inbox } from "@/components/layout/app-sidebar/dashboard-icons";
+import { BrandLoadingSpinner } from "@/components/ui/brand-loading-spinner";
 import { GmailLogo } from "@/components/genie/gmail-logo";
 import { NestLogo } from "@/components/genie/nest-logo";
 import { cn } from "@/lib/utils";
 import { CHANNEL_META, type InboxChannel } from "./channel-meta";
 import type { UnifiedInboxController, UnifiedInboxRow } from "./use-unified-inbox-controller";
-
-const STATUS_TEXT_CLASS: Record<UnifiedInboxRow["statusTone"], string> = {
-  unread: "text-blue-700",
-  ready: "text-violet-700",
-  responded: "text-emerald-700",
-  ignored: "text-gray-400",
-  processing: "text-amber-700",
-  error: "text-red-700",
-  neutral: "text-gray-500",
-};
 
 function SourceMark({ row }: { row: UnifiedInboxRow }) {
   return (
@@ -41,13 +32,31 @@ export function ChannelChip({
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-px text-[10px] font-medium leading-4",
+        "inline-flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-px text-[10px] font-medium leading-4",
         meta.chipClass,
         className,
       )}
     >
       <Icon className="h-2.5 w-2.5 shrink-0" />
       {meta.label}
+    </span>
+  );
+}
+
+/** Left-list badge: Nest threads are Staff Message or Bot Message only. */
+export function MessageKindBadge({ row }: { row: UnifiedInboxRow }) {
+  if (row.source !== "nest") return null;
+  const isStaff = Boolean(row.nestItem?.hasManualMessages);
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center rounded-md border px-1.5 py-px text-[10px] font-medium leading-4",
+        isStaff
+          ? "border-gray-200 bg-gray-50 text-gray-600"
+          : "border-gray-200 bg-gray-50 text-gray-600",
+      )}
+    >
+      {isStaff ? "Staff Message" : "Bot Message"}
     </span>
   );
 }
@@ -63,13 +72,19 @@ function ConversationRow({
   onSelect: () => void;
   relativeTime: (value: string | null) => string;
 }) {
+  const unread = row.isUnread;
+
   return (
     <button
       type="button"
       onClick={onSelect}
       className={cn(
         "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors",
-        selected ? "bg-gray-100" : "hover:bg-gray-50",
+        selected
+          ? "bg-gray-100"
+          : unread
+            ? "bg-[#f2f2f7] hover:bg-[#ebebf0]"
+            : "hover:bg-gray-50",
       )}
     >
       <SourceMark row={row} />
@@ -78,40 +93,38 @@ function ConversationRow({
           <p
             className={cn(
               "truncate text-sm text-gray-900",
-              row.needsAction ? "font-semibold" : "font-medium",
+              unread ? "font-semibold" : "font-medium",
             )}
           >
             {row.customerName}
           </p>
-          <span className="shrink-0 text-[11px] tabular-nums text-gray-400">
+          <span
+            className={cn(
+              "shrink-0 text-[11px] tabular-nums",
+              unread ? "font-medium text-[#007AFF]" : "text-gray-400",
+            )}
+          >
             {relativeTime(row.receivedAt)}
           </span>
         </div>
         <div className="mt-0.5 flex items-center gap-1.5">
-          {row.needsAction ? (
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-600" aria-hidden />
+          {unread ? (
+            <span className="h-2 w-2 shrink-0 rounded-full bg-[#007AFF]" aria-hidden />
           ) : null}
           <p
             className={cn(
               "truncate text-xs",
-              row.needsAction ? "text-gray-700" : "text-gray-500",
+              unread ? "font-medium text-gray-800" : "text-gray-500",
             )}
           >
             {row.preview}
           </p>
         </div>
-        <div className="mt-1.5 flex items-center gap-1.5 text-[11px]">
-          <ChannelChip channel={row.channel} />
-          {row.intentLabel ? (
-            <span className="text-gray-400">{row.intentLabel}</span>
-          ) : null}
-          <span aria-hidden className="text-gray-300">
-            ·
-          </span>
-          <span className={cn("font-medium", STATUS_TEXT_CLASS[row.statusTone])}>
-            {row.statusLabel}
-          </span>
-        </div>
+        {row.source === "nest" ? (
+          <div className="mt-1.5 flex items-center gap-1.5 text-[11px]">
+            <MessageKindBadge row={row} />
+          </div>
+        ) : null}
       </div>
     </button>
   );
@@ -120,9 +133,8 @@ function ConversationRow({
 export function EnquiryConversationList({ c }: { c: UnifiedInboxController }) {
   if (c.listLoading) {
     return (
-      <div className="flex flex-1 items-center justify-center py-24 text-sm text-gray-500">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        Loading enquiries…
+      <div className="flex flex-1 items-center justify-center py-24">
+        <BrandLoadingSpinner label="Loading enquiries…" size="md" />
       </div>
     );
   }
@@ -147,8 +159,8 @@ export function EnquiryConversationList({ c }: { c: UnifiedInboxController }) {
         <p className="mt-4 text-sm font-medium text-gray-900">
           {c.searchActive
             ? "No enquiries match your search"
-            : c.statusTab === "needs_action"
-              ? "Nothing needs action right now"
+            : c.statusTab === "unread"
+              ? "No unread enquiries"
               : "No enquiries here yet"}
         </p>
         <p className="mt-1 max-w-[240px] text-xs text-gray-500">

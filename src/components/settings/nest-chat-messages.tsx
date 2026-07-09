@@ -1,10 +1,14 @@
 "use client";
 
 import * as React from "react";
+import { Bot } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 import type { NestConversationMessage } from "@/lib/nest/types";
 
+/** Manual staff send — classic iMessage blue */
 export const IMESSAGE_OUTGOING = "#007AFF";
+/** Nest bot send — lighter sky blue so it reads differently from staff */
+export const IMESSAGE_BOT = "#5AC8FA";
 export const IMESSAGE_INCOMING = "#E9E9EB";
 export const IMESSAGE_AI = "#F2F2F7";
 
@@ -33,6 +37,47 @@ export function RichText({ text }: { text: string }) {
   );
 }
 
+type BubbleVariant =
+  | "incoming"
+  | "outgoing"
+  | "bot"
+  | "ai"
+  | "system"
+  | "store-left"
+  | "store-bot-left"
+  | "customer-right";
+
+function bubbleColor(variant: BubbleVariant): string {
+  switch (variant) {
+    case "outgoing":
+    case "store-left":
+      return IMESSAGE_OUTGOING;
+    case "bot":
+    case "store-bot-left":
+      return IMESSAGE_BOT;
+    case "ai":
+      return IMESSAGE_AI;
+    case "incoming":
+    case "customer-right":
+      return IMESSAGE_INCOMING;
+    default:
+      return IMESSAGE_INCOMING;
+  }
+}
+
+function isBlueBubble(variant: BubbleVariant): boolean {
+  return (
+    variant === "outgoing" ||
+    variant === "bot" ||
+    variant === "store-left" ||
+    variant === "store-bot-left"
+  );
+}
+
+function isRightSideBubble(variant: BubbleVariant): boolean {
+  return variant === "outgoing" || variant === "bot" || variant === "customer-right";
+}
+
 export function NestChatBubble({
   children,
   variant,
@@ -40,7 +85,7 @@ export function NestChatBubble({
   dense = false,
 }: {
   children: React.ReactNode;
-  variant: "incoming" | "outgoing" | "ai" | "system" | "store-left" | "customer-right";
+  variant: BubbleVariant;
   showTail?: boolean;
   dense?: boolean;
 }) {
@@ -52,10 +97,9 @@ export function NestChatBubble({
     );
   }
 
-  const isRightSide = variant === "outgoing" || variant === "customer-right";
-  const isBlue =
-    variant === "outgoing" || variant === "store-left";
-  const color = isBlue ? IMESSAGE_OUTGOING : variant === "ai" ? IMESSAGE_AI : IMESSAGE_INCOMING;
+  const isRightSide = isRightSideBubble(variant);
+  const isBlue = isBlueBubble(variant);
+  const color = bubbleColor(variant);
 
   return (
     <div className="relative max-w-full">
@@ -146,16 +190,20 @@ function isStoreSideMessage(message: NestConversationMessage): boolean {
 function messageSide(
   message: NestConversationMessage,
   layout: NestBubbleLayout = "nest",
-): "outgoing" | "incoming" | "system" | "store" | "customer" {
+): "outgoing" | "bot" | "incoming" | "system" | "store" | "store-bot" | "customer" {
   if (message.role === "system") return "system";
-  if (layout === "inbox") {
-    if (message.role === "user") return "customer";
-    return "store";
-  }
   const isStaff =
     (typeof message.handle === "string" && message.handle.startsWith("staff@")) ||
     isManualMessage(message);
+  const isBot = message.role === "assistant" && !isStaff;
+
+  if (layout === "inbox") {
+    if (message.role === "user") return "customer";
+    if (isBot) return "store-bot";
+    return "store";
+  }
   if (isStaff) return "outgoing";
+  if (isBot) return "bot";
   return "incoming";
 }
 
@@ -165,6 +213,20 @@ export function sameMessageGroup(
   layout: NestBubbleLayout = "nest",
 ): boolean {
   return messageSide(a, layout) === messageSide(b, layout) && messageSide(a, layout) !== "system";
+}
+
+function BotBadge({ alignEnd }: { alignEnd?: boolean }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-md border border-[#5AC8FA]/40 bg-[#5AC8FA]/15 px-1.5 py-0.5 text-[10px] font-medium text-[#0077A8]",
+        alignEnd ? "self-end" : "self-start",
+      )}
+    >
+      <Bot className="h-3 w-3" />
+      Bot
+    </span>
+  );
 }
 
 export function NestThreadMessage({
@@ -187,23 +249,28 @@ export function NestThreadMessage({
   const bubbles =
     message.role === "assistant" ? splitAssistantBubbles(message.content) : [message.content];
 
-  const bubbleVariant =
+  // Inbox mimics text messaging from the store's perspective:
+  // customer on the left (grey), store/bot on the right (blue shades).
+  const bubbleVariant: BubbleVariant =
     layout === "inbox"
       ? isSystem
         ? "system"
         : isCustomer
-          ? "customer-right"
-          : "store-left"
+          ? "incoming"
+          : isAi
+            ? "bot"
+            : "outgoing"
       : isOutgoing
         ? "outgoing"
-        : isStoreSide
-          ? "store-left"
+        : isAi
+          ? "store-bot-left"
           : isCustomer
             ? "incoming"
             : "system";
 
-  const alignEnd = layout === "inbox" ? isCustomer : isOutgoing;
+  const alignEnd = layout === "inbox" ? isStoreSide && !isSystem : isOutgoing;
   const isPending = message.metadata?.send_state === "pending";
+  const showBotBadge = isAi;
 
   return (
     <div
@@ -213,15 +280,16 @@ export function NestThreadMessage({
         isPending && "opacity-80",
       )}
     >
-      <div className={cn("max-w-[min(78%,28rem)] space-y-1", alignEnd && "items-end")}>
-        {isAi && layout === "nest" ? (
-          <p className="px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Nest
-          </p>
-        ) : null}
-        {isStoreSide && layout === "inbox" && isAi ? (
-          <p className="px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Nest
+      <div className={cn("flex max-w-[min(78%,28rem)] flex-col space-y-1", alignEnd && "items-end")}>
+        {showBotBadge ? <BotBadge alignEnd={alignEnd} /> : null}
+        {isStaff && !isSystem ? (
+          <p
+            className={cn(
+              "px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground",
+              alignEnd ? "text-right" : "text-left",
+            )}
+          >
+            Staff
           </p>
         ) : null}
         {bubbles.map((bubble, index) => {
@@ -258,7 +326,7 @@ export function NestThreadMessage({
             )}
           >
             {formatMessageTime(message.createdAt)}
-            {isStaff ? " · You" : null}
+            {isStaff ? " · You" : isAi ? " · Nest" : null}
           </p>
         ) : null}
       </div>

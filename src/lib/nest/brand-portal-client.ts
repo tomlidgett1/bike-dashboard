@@ -7,11 +7,15 @@ import {
   isNestMessagingConfigured,
 } from "@/lib/nest/config";
 import brandPortalConfigHandler from "@/lib/nest-portal/api/brand-portal-config";
+import brandPortalKnowledgeHandler from "@/lib/nest-portal/api/brand-portal-knowledge";
 import { invokeVercelHandler } from "@/lib/nest-portal/vercel-adapter";
 
 const SESSION_DAYS = 7;
 const MESSAGE_SEND_TIMEOUT_MS = 90_000;
 const DEFAULT_TIMEOUT_MS = 25_000;
+
+export type NestPortalEndpoint = "brand-portal-config" | "brand-portal-knowledge";
+export type NestPortalHttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
 
 /**
  * Staged cutover switch. While OFF (default) the portal still runs on the external Nest
@@ -30,6 +34,11 @@ type CachedSession = {
 
 const sessionCache = new Map<string, CachedSession>();
 const sessionRequests = new Map<string, Promise<string>>();
+
+const INTERNAL_HANDLERS = {
+  "brand-portal-config": brandPortalConfigHandler,
+  "brand-portal-knowledge": brandPortalKnowledgeHandler,
+} as const;
 
 function nestSessionErrorMessage(message: string): string {
   const trimmed = message.trim();
@@ -126,12 +135,22 @@ async function parseJsonResponse(res: Response): Promise<Record<string, unknown>
   );
 }
 
+type ProxyOptions = {
+  method: NestPortalHttpMethod;
+  endpoint?: NestPortalEndpoint;
+  query?: URLSearchParams;
+  body?: Record<string, unknown>;
+  timeoutMs?: number;
+};
+
 /** In-process path: run the ported handler against YJ's own DB (no external call). */
 async function proxyInternal(
   token: string,
-  options: { method: "GET" | "POST"; query?: URLSearchParams; body?: Record<string, unknown> },
+  options: ProxyOptions,
 ): Promise<Record<string, unknown>> {
-  const { status, data } = await invokeVercelHandler(brandPortalConfigHandler, {
+  const endpoint = options.endpoint ?? "brand-portal-config";
+  const handler = INTERNAL_HANDLERS[endpoint];
+  const { status, data } = await invokeVercelHandler(handler, {
     method: options.method,
     query: options.query,
     body: options.body,
@@ -146,12 +165,7 @@ async function proxyInternal(
 /** External path (fallback): call the live Nest deployment over HTTP. */
 async function proxyExternal(
   token: string,
-  options: {
-    method: "GET" | "POST";
-    query?: URLSearchParams;
-    body?: Record<string, unknown>;
-    timeoutMs?: number;
-  },
+  options: ProxyOptions,
 ): Promise<Record<string, unknown>> {
   if (!isNestMessagingConfigured()) {
     throw new Error("Nest messaging is not configured yet.");
@@ -161,10 +175,14 @@ async function proxyExternal(
     throw new Error("Nest messaging is not configured yet.");
   }
 
+  const endpoint = options.endpoint ?? "brand-portal-config";
   const search = options.query ? `?${options.query.toString()}` : "";
-  const url = `${baseUrl}/api/brand-portal-config${search}`;
+  const url = `${baseUrl}/api/${endpoint}${search}`;
   const timeoutMs =
-    options.timeoutMs ?? (options.method === "POST" ? MESSAGE_SEND_TIMEOUT_MS : DEFAULT_TIMEOUT_MS);
+    options.timeoutMs ??
+    (options.method === "POST" || options.method === "PATCH" || options.method === "DELETE"
+      ? MESSAGE_SEND_TIMEOUT_MS
+      : DEFAULT_TIMEOUT_MS);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -199,7 +217,8 @@ async function proxyExternal(
 export async function proxyNestBrandPortalRequest(
   brandKey: string,
   options: {
-    method: "GET" | "POST";
+    method: NestPortalHttpMethod;
+    endpoint?: NestPortalEndpoint;
     query?: URLSearchParams;
     body?: Record<string, unknown>;
     timeoutMs?: number;

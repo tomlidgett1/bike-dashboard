@@ -64,9 +64,8 @@ import {
   senderName,
 } from "./parts";
 import {
-  AlertCircle,
-  Archive,
   Inbox,
+  Letter,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { GmailLogo } from "@/components/genie/gmail-logo";
 import { NestLogo } from "@/components/genie/nest-logo";
@@ -86,7 +85,7 @@ function NestInboxTabIcon() {
   });
 }
 
-export type InboxStatusTab = "needs_action" | "all" | "closed";
+export type InboxStatusTab = "all" | "unread";
 
 export type InboxSourceTab = "all" | "gmail" | "nest";
 
@@ -116,13 +115,12 @@ export type UnifiedInboxRow = {
 };
 
 export const INBOX_STATUS_TABS: Array<{ id: InboxStatusTab; label: string; icon: InboxTabIcon }> = [
-  { id: "needs_action", label: "Needs action", icon: AlertCircle },
   { id: "all", label: "All", icon: Inbox },
-  { id: "closed", label: "Closed", icon: Archive },
+  { id: "unread", label: "Unread", icon: Letter },
 ];
 
-export const INBOX_SOURCE_TABS: Array<{ id: InboxSourceTab; label: string; icon: InboxTabIcon }> = [
-  { id: "all", label: "All", icon: Inbox },
+export const INBOX_SOURCE_OPTIONS: Array<{ id: InboxSourceTab; label: string; icon: InboxTabIcon }> = [
+  { id: "all", label: "All sources", icon: Inbox },
   { id: "gmail", label: "Gmail", icon: GmailInboxTabIcon },
   { id: "nest", label: "Nest", icon: NestInboxTabIcon },
 ];
@@ -338,14 +336,8 @@ function matchesSearch(row: UnifiedInboxRow, query: string): boolean {
 }
 
 function matchesStatusTab(row: UnifiedInboxRow, tab: InboxStatusTab): boolean {
-  switch (tab) {
-    case "needs_action":
-      return row.needsAction;
-    case "closed":
-      return row.statusTone === "ignored";
-    default:
-      return true;
-  }
+  if (tab === "unread") return row.isUnread;
+  return true;
 }
 
 function matchesSourceTab(row: UnifiedInboxRow, tab: InboxSourceTab): boolean {
@@ -354,7 +346,7 @@ function matchesSourceTab(row: UnifiedInboxRow, tab: InboxSourceTab): boolean {
 
 export function useUnifiedInboxController() {
   const c = useInquiriesController({ deferListLoad: true });
-  const [statusTab, setStatusTab] = React.useState<InboxStatusTab>("needs_action");
+  const [statusTab, setStatusTab] = React.useState<InboxStatusTab>("all");
   const [sourceTab, setSourceTab] = React.useState<InboxSourceTab>("all");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [nestChats, setNestChats] = React.useState<NestConversationListItem[]>(() => {
@@ -496,9 +488,8 @@ export function useUnifiedInboxController() {
   const statusCounts = React.useMemo(() => {
     const sourceRows = allRows.filter((row) => matchesSourceTab(row, sourceTab));
     const counts: Record<InboxStatusTab, number> = {
-      needs_action: sourceRows.filter((row) => row.needsAction).length,
       all: sourceRows.length,
-      closed: sourceRows.filter((row) => matchesStatusTab(row, "closed")).length,
+      unread: sourceRows.filter((row) => row.isUnread).length,
     };
     return counts;
   }, [allRows, sourceTab]);

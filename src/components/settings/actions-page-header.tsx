@@ -49,6 +49,65 @@ function headerActionButtonClassName(active?: boolean, disabled?: boolean) {
   return storeSettingsHeaderActionClass(active, disabled);
 }
 
+export function NestNewMessageButton({
+  disabled = false,
+  onMessageStarted,
+  onOpen,
+  className,
+}: {
+  disabled?: boolean;
+  onMessageStarted?: (chatId: string, message: NestConversationMessage) => void;
+  /** When set, opens an inline panel instead of the anchored dropdown popup. */
+  onOpen?: () => void;
+  className?: string;
+}) {
+  const [nestOpen, setNestOpen] = React.useState(false);
+  const newMessageRef = React.useRef<HTMLButtonElement>(null);
+  const useInlinePanel = typeof onOpen === "function";
+
+  return (
+    <>
+      <div className={cn("relative", className)}>
+        <button
+          ref={newMessageRef}
+          type="button"
+          onClick={() => {
+            if (disabled) return;
+            if (useInlinePanel) {
+              onOpen();
+              return;
+            }
+            setNestOpen((current) => !current);
+          }}
+          disabled={disabled}
+          className={headerActionButtonClassName(useInlinePanel ? false : nestOpen, disabled)}
+          aria-expanded={useInlinePanel ? undefined : nestOpen}
+        >
+          <NestLogo className="size-[15px]" />
+          New message
+          {useInlinePanel ? null : (
+            <ChevronDown
+              className={cn(
+                "size-[15px] text-gray-400 transition-transform duration-200",
+                nestOpen && "rotate-180",
+              )}
+            />
+          )}
+        </button>
+      </div>
+
+      {useInlinePanel ? null : (
+        <NestComposePopup
+          open={nestOpen}
+          onClose={() => setNestOpen(false)}
+          anchorRef={newMessageRef}
+          onStarted={onMessageStarted}
+        />
+      )}
+    </>
+  );
+}
+
 export function StoreSettingsPageHeader({
   title,
   icon: Icon,
@@ -56,6 +115,7 @@ export function StoreSettingsPageHeader({
   composeDisabled = false,
   onMessageStarted,
   trailingActions,
+  hideCompose = false,
 }: {
   title: string;
   icon: LucideIcon;
@@ -63,10 +123,8 @@ export function StoreSettingsPageHeader({
   composeDisabled?: boolean;
   onMessageStarted?: (chatId: string, message: NestConversationMessage) => void;
   trailingActions?: React.ReactNode;
+  hideCompose?: boolean;
 }) {
-  const [nestOpen, setNestOpen] = React.useState(false);
-  const newMessageRef = React.useRef<HTMLButtonElement>(null);
-
   return (
     <div className={cn("sticky top-0 z-30 w-full bg-white pb-2", className)}>
       <div className="flex min-h-9 items-center justify-between gap-3">
@@ -77,37 +135,14 @@ export function StoreSettingsPageHeader({
 
         <div className="flex shrink-0 items-center gap-2">
           {trailingActions}
-          <div className="relative">
-            <button
-              ref={newMessageRef}
-              type="button"
-              onClick={() => {
-                if (composeDisabled) return;
-                setNestOpen((current) => !current);
-              }}
+          {hideCompose ? null : (
+            <NestNewMessageButton
               disabled={composeDisabled}
-              className={headerActionButtonClassName(nestOpen, composeDisabled)}
-              aria-expanded={nestOpen}
-            >
-              <NestLogo className="size-[15px]" />
-              New message
-              <ChevronDown
-                className={cn(
-                  "size-[15px] text-gray-400 transition-transform duration-200",
-                  nestOpen && "rotate-180",
-                )}
-              />
-            </button>
-          </div>
+              onMessageStarted={onMessageStarted}
+            />
+          )}
         </div>
       </div>
-
-      <NestComposePopup
-        open={nestOpen}
-        onClose={() => setNestOpen(false)}
-        anchorRef={newMessageRef}
-        onStarted={onMessageStarted}
-      />
     </div>
   );
 }
@@ -157,11 +192,13 @@ export function CustomerEnquiriesPageHeader({
   composeDisabled,
   onMessageStarted,
   trailingActions,
+  hideCompose = false,
 }: {
   className?: string;
   composeDisabled?: boolean;
   onMessageStarted?: (chatId: string, message: NestConversationMessage) => void;
   trailingActions?: React.ReactNode;
+  hideCompose?: boolean;
 }) {
   return (
     <StoreSettingsPageHeader
@@ -171,6 +208,7 @@ export function CustomerEnquiriesPageHeader({
       composeDisabled={composeDisabled}
       onMessageStarted={onMessageStarted}
       trailingActions={trailingActions}
+      hideCompose={hideCompose}
     />
   );
 }

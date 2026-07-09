@@ -15,8 +15,85 @@ import {
   normalizeAustralianMobileLocal,
 } from '@/lib/services/lightspeed/customer-search'
 import { createLightspeedClient } from '@/lib/services/lightspeed'
-import type { LightspeedCustomer } from '@/lib/services/lightspeed/types'
+import type {
+  LightspeedCustomer,
+  LightspeedWorkorderItem,
+  LightspeedWorkorderLine,
+  LightspeedWorkorderWithRelations,
+} from '@/lib/services/lightspeed/types'
 import type { LightspeedInquiryContext } from '@/lib/customer-inquiries/types'
+
+type InquiryWorkorder = NonNullable<LightspeedInquiryContext['recent_workorders']>[number]
+
+function ensureWorkorderArray<T>(value: T | T[] | undefined): T[] {
+  if (!value) return []
+  return Array.isArray(value) ? value : [value]
+}
+
+function parseLooseNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+function mapWorkorderItems(items: LightspeedWorkorderItem[]): InquiryWorkorder['items'] {
+  return items
+    .map((item) => {
+      const description =
+        String(item.Item?.description ?? '').trim() ||
+        String(item.note ?? '').trim() ||
+        null
+      const note = String(item.note ?? '').trim() || null
+      return {
+        description,
+        quantity: parseLooseNumber(item.unitQuantity),
+        note: note && note !== description ? note : null,
+      }
+    })
+    .filter((item) => item.description || item.note)
+}
+
+function mapWorkorderLines(lines: LightspeedWorkorderLine[]): InquiryWorkorder['lines'] {
+  return lines
+    .map((line) => ({
+      note: String(line.note ?? '').trim(),
+      done: String(line.done ?? '') === 'true',
+    }))
+    .filter((line) => line.note.length > 0)
+}
+
+async function mapRecentWorkorders(
+  client: ReturnType<typeof createLightspeedClient>,
+  workorders: LightspeedWorkorderWithRelations[],
+): Promise<InquiryWorkorder[]> {
+  const top = workorders.slice(0, 5)
+  return Promise.all(
+    top.map(async (workorder) => {
+      const id = String(workorder.workorderID ?? '')
+      let items = ensureWorkorderArray(workorder.WorkorderItems?.WorkorderItem)
+      if (items.length === 0 && id) {
+        try {
+          items = await client.getWorkorderItems(id)
+        } catch {
+          items = []
+        }
+      }
+      const lines = ensureWorkorderArray(workorder.WorkorderLines?.WorkorderLine)
+      const statusName = String(workorder.WorkorderStatus?.name ?? '').trim()
+      return {
+        id,
+        title: String(workorder.note ?? workorder.internalNote ?? '').trim() || null,
+        status: statusName || String(workorder.workorderStatusID ?? '') || null,
+        updated_at: String(workorder.timeStamp ?? workorder.timeIn ?? '') || null,
+        items: mapWorkorderItems(items),
+        lines: mapWorkorderLines(lines),
+      }
+    }),
+  )
+}
 
 function ensureArray<T>(value: T | T[] | undefined): T[] {
   if (!value) return []
@@ -120,11 +197,17 @@ export async function buildLightspeedContextFromPhone(args: {
     const [bikes, workorders, salesSummary] = await Promise.all([
       client.getCustomerBikes(customerId),
       client.getRecentWorkorders(
-        { customerID: customerId },
+        {
+          customerID: customerId,
+          sort: '-timeStamp',
+          load_relations: '["WorkorderLines","WorkorderStatus","WorkorderItems"]',
+        },
         { targetCount: 5, maxPages: 2, limit: 25 },
       ),
       fetchCustomerSalesSummary(args.userId, customerId),
     ])
+
+    const recentWorkorders = await mapRecentWorkorders(client, workorders)
 
     return {
       matched: true,
@@ -137,12 +220,7 @@ export async function buildLightspeedContextFromPhone(args: {
         serial: bike.serial,
         item_id: bike.itemId,
       })),
-      recent_workorders: workorders.slice(0, 5).map((workorder) => ({
-        id: String(workorder.workorderID ?? ''),
-        title: String(workorder.note ?? workorder.internalNote ?? '').trim() || null,
-        status: String(workorder.workorderStatusID ?? '') || null,
-        updated_at: String(workorder.timeStamp ?? '') || null,
-      })),
+      recent_workorders: recentWorkorders,
       sales_summary: salesSummary,
       summary: `Matched Lightspeed customer ${customerName(customer)} (${customerId}).`,
     }
@@ -188,11 +266,17 @@ export async function buildLightspeedInquiryContext(args: {
     const [bikes, workorders, salesSummary] = await Promise.all([
       client.getCustomerBikes(customerId),
       client.getRecentWorkorders(
-        { customerID: customerId },
+        {
+          customerID: customerId,
+          sort: '-timeStamp',
+          load_relations: '["WorkorderLines","WorkorderStatus","WorkorderItems"]',
+        },
         { targetCount: 5, maxPages: 2, limit: 25 },
       ),
       fetchCustomerSalesSummary(args.userId, customerId),
     ])
+
+    const recentWorkorders = await mapRecentWorkorders(client, workorders)
 
     const context: LightspeedInquiryContext = {
       matched: true,
@@ -205,12 +289,7 @@ export async function buildLightspeedInquiryContext(args: {
         serial: bike.serial,
         item_id: bike.itemId,
       })),
-      recent_workorders: workorders.slice(0, 5).map((workorder) => ({
-        id: String(workorder.workorderID ?? ''),
-        title: String(workorder.note ?? workorder.internalNote ?? '').trim() || null,
-        status: String(workorder.workorderStatusID ?? '') || null,
-        updated_at: String(workorder.timeStamp ?? '') || null,
-      })),
+      recent_workorders: recentWorkorders,
       sales_summary: salesSummary,
       summary: `Matched Lightspeed customer ${customerName(customer)} (${customerId}).`,
     }

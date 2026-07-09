@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import {
-  Archive,
   ChevronLeft,
   Inbox,
   Loader2,
@@ -15,16 +14,16 @@ import type { NestConversationMessage } from "@/lib/nest/types";
 import {
   Collapsible,
   GmailInquiryThread,
-  LightspeedBody,
   LightspeedMark,
-  MatchBadge,
   ReplyComposer,
   SourcesBody,
-  fullTime,
 } from "./parts";
+import {
+  LightspeedBentoPanel,
+  LightspeedBentoSkeleton,
+} from "./lightspeed-bento-panel";
 import { EnquiriesNavTabs, type EnquiriesNavTabItem } from "./enquiries-nav-tabs";
 import { CHANNEL_META, type InboxChannel } from "./channel-meta";
-import { ChannelChip } from "./enquiry-conversation-list";
 import type { UnifiedInboxController } from "./use-unified-inbox-controller";
 import type { LightspeedContext } from "./use-inquiries-controller";
 import { NestThreadMessage, sameMessageGroup } from "@/components/settings/nest-chat-messages";
@@ -42,30 +41,18 @@ function LightspeedPanelSection({
   lookupHint?: string | null;
 }) {
   if (loading) {
+    return <LightspeedBentoSkeleton />;
+  }
+
+  if (!context) {
     return (
-      <div className="flex items-center justify-center py-16 text-sm text-gray-500">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        Looking up customer in Lightspeed…
+      <div className="rounded-md border border-gray-200 bg-white p-6 text-center shadow-sm">
+        <p className="text-sm text-gray-500">No Lightspeed data is available yet.</p>
       </div>
     );
   }
 
-  return (
-    <div className="space-y-4">
-      <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-medium text-gray-900">Customer in Lightspeed</p>
-          <MatchBadge matched={context?.matched} />
-        </div>
-        {lookupHint ? <p className="text-xs text-gray-500">Lookup via {lookupHint}</p> : null}
-      </div>
-      {context ? (
-        <LightspeedBody context={context} />
-      ) : (
-        <p className="text-sm text-gray-500">No Lightspeed data is available yet.</p>
-      )}
-    </div>
-  );
+  return <LightspeedBentoPanel context={context} lookupHint={lookupHint} />;
 }
 
 function NestThread({
@@ -181,8 +168,8 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
   ];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-100 px-4 pb-3 pt-4 md:px-5">
+    <div className="flex min-h-0 flex-1 flex-col bg-white">
+      <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-100 bg-white px-4 pb-3 pt-4 md:px-5">
         <div className="flex min-w-0 flex-1 items-start gap-1.5">
           <Button
             type="button"
@@ -200,24 +187,7 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
             </h2>
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-gray-500">
               {isGmail ? <GmailLogo className="h-3.5 w-auto" /> : <NestLogo className="h-3.5 w-3.5" />}
-              <ChannelChip channel={c.selectedChannel ?? row.channel} />
-              {isGmail ? (
-                <>
-                  <span className="truncate">{row.customerName}</span>
-                  <span aria-hidden className="text-gray-300">
-                    ·
-                  </span>
-                </>
-              ) : null}
               <span className="truncate">{row.customerContact}</span>
-              {isGmail && c.detail?.received_at ? (
-                <>
-                  <span aria-hidden className="text-gray-300">
-                    ·
-                  </span>
-                  <span className="shrink-0">{fullTime(c.detail.received_at)}</span>
-                </>
-              ) : null}
             </div>
           </div>
         </div>
@@ -229,34 +199,6 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
             onChange={setPaneTab}
             className="hidden sm:flex"
           />
-          {row.needsAction ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="rounded-md bg-white"
-              disabled={c.closingSelectedCase}
-              onClick={() => void c.handleCloseSelectedCase()}
-            >
-              {c.closingSelectedCase ? (
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Archive className="mr-1.5 h-3.5 w-3.5" />
-              )}
-              Close case
-            </Button>
-          ) : isNest && c.selectedNestClosed ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="rounded-md bg-white"
-              disabled={c.closingSelectedCase}
-              onClick={() => void c.handleReopenSelectedNestCase()}
-            >
-              Reopen case
-            </Button>
-          ) : null}
         </div>
       </div>
 
@@ -266,32 +208,60 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
 
       <div
         className={cn(
-          "min-h-0 flex-1 overflow-y-auto",
-          isNest && paneTab === "conversation" && "relative flex flex-col overflow-hidden p-0",
-          isNest && paneTab === "lightspeed" && "px-4 pb-6 pt-4 md:px-5",
-          isGmail && "px-4 pb-6 pt-4 md:px-5",
+          "min-h-0 flex-1",
+          isNest && paneTab === "conversation" && "relative flex flex-col overflow-hidden",
+          isNest && paneTab === "lightspeed" && "overflow-y-auto px-4 pb-6 pt-4 md:px-5",
+          isGmail && paneTab === "conversation" && "flex flex-col overflow-hidden bg-[#f6f6f7]",
+          isGmail && paneTab === "lightspeed" && "overflow-y-auto px-4 pb-6 pt-4 md:px-5",
         )}
       >
         {isGmail ? (
           c.detailLoading || !c.detail ? (
-            <div className="flex items-center justify-center py-16 text-sm text-gray-500">
+            <div className="flex flex-1 items-center justify-center py-16 text-sm text-gray-500">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Loading email…
             </div>
           ) : paneTab === "conversation" ? (
-            <div className="space-y-6">
-              <GmailInquiryThread detail={c.detail} />
+            <>
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-5">
+                <GmailInquiryThread detail={c.detail} />
 
-              {c.detail.citations?.length ? (
-                <Collapsible
-                  title={`Sources (${c.detail.citations.length})`}
-                  defaultOpen={false}
-                  variant="inline"
-                >
-                  <SourcesBody citations={c.detail.citations} />
-                </Collapsible>
-              ) : null}
-            </div>
+                {c.detail.citations?.length ? (
+                  <div className="mt-5">
+                    <Collapsible
+                      title={`Sources (${c.detail.citations.length})`}
+                      defaultOpen={false}
+                      variant="inline"
+                    >
+                      <SourcesBody citations={c.detail.citations} />
+                    </Collapsible>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="shrink-0">
+                <ReplyComposer
+                  detail={c.detail}
+                  draft={c.draft}
+                  setDraft={c.setDraft}
+                  onRegenerate={() => void c.handleRegenerate()}
+                  regenerating={c.regenerating}
+                  onSend={() => c.setSendConfirmOpen(true)}
+                  onIgnore={() => void c.handleIgnore()}
+                  onUnignore={() => void c.handleUnignore()}
+                  onBanSender={() => c.setBanConfirmOpen(true)}
+                  sending={c.sending}
+                  banning={c.banning}
+                  revising={c.revising}
+                  reviseInstruction={c.reviseInstruction}
+                  setReviseInstruction={c.setReviseInstruction}
+                  onRevise={() => void c.handleReviseDraft()}
+                  actionMessage={c.actionMessage}
+                  layout="panel"
+                  showCaseActions={false}
+                />
+              </div>
+            </>
           ) : (
             <LightspeedPanelSection
               loading={false}
@@ -333,31 +303,6 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
           )
         ) : null}
       </div>
-
-      {isGmail && c.detail && !c.detailLoading && paneTab === "conversation" ? (
-        <div className="shrink-0">
-          <ReplyComposer
-            detail={c.detail}
-            draft={c.draft}
-            setDraft={c.setDraft}
-            onRegenerate={() => void c.handleRegenerate()}
-            regenerating={c.regenerating}
-            onSend={() => c.setSendConfirmOpen(true)}
-            onIgnore={() => void c.handleIgnore()}
-            onUnignore={() => void c.handleUnignore()}
-            onBanSender={() => c.setBanConfirmOpen(true)}
-            sending={c.sending}
-            banning={c.banning}
-            revising={c.revising}
-            reviseInstruction={c.reviseInstruction}
-            setReviseInstruction={c.setReviseInstruction}
-            onRevise={() => void c.handleReviseDraft()}
-            actionMessage={c.actionMessage}
-            layout="panel"
-            showCaseActions={false}
-          />
-        </div>
-      ) : null}
     </div>
   );
 }

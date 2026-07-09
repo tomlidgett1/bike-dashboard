@@ -29,7 +29,21 @@ export type LightspeedContext = {
   customer_email?: string | null;
   customer_phone?: string | null;
   bikes?: Array<{ label: string | null; serial: string | null }>;
-  recent_workorders?: Array<{ id: string; title: string | null; status: string | null }>;
+  recent_workorders?: Array<{
+    id: string;
+    title: string | null;
+    status: string | null;
+    updated_at?: string | null;
+    items?: Array<{
+      description: string | null;
+      quantity: number | null;
+      note: string | null;
+    }>;
+    lines?: Array<{
+      note: string;
+      done: boolean;
+    }>;
+  }>;
   sales_summary?: {
     sale_count: number;
     total_spend: number;

@@ -19,7 +19,7 @@ import type {
   CustomerInquiryListItem,
   CustomerInquiryStatus,
 } from "@/lib/customer-inquiries/types";
-import type { LightspeedContext, StatusFilter } from "./use-inquiries-controller";
+import type { StatusFilter } from "./use-inquiries-controller";
 
 export const STATUS_FILTERS: Array<{ id: StatusFilter; label: string }> = [
   { id: "draft_ready", label: "Ready" },
@@ -333,8 +333,8 @@ function GmailMessageBody({
     <div>
       <p
         className={cn(
-          "whitespace-pre-wrap text-[13px] leading-relaxed",
-          emphasised ? "text-gray-800" : "text-gray-600",
+          "whitespace-pre-wrap leading-relaxed",
+          emphasised ? "text-[15px] text-gray-900" : "text-[15px] text-gray-800",
           shouldClamp && "line-clamp-5",
         )}
       >
@@ -353,68 +353,119 @@ function GmailMessageBody({
   );
 }
 
+function groupGmailThreadMessages(
+  messages: ReturnType<typeof gmailThreadMessages>,
+): Array<{ role: "customer" | "shop"; messages: ReturnType<typeof gmailThreadMessages> }> {
+  const groups: Array<{
+    role: "customer" | "shop";
+    messages: ReturnType<typeof gmailThreadMessages>;
+  }> = [];
+
+  for (const message of messages) {
+    const last = groups[groups.length - 1];
+    if (last && last.role === message.role) {
+      last.messages.push(message);
+    } else {
+      groups.push({ role: message.role, messages: [message] });
+    }
+  }
+
+  return groups;
+}
+
+function GmailDaySeparator({ label }: { label: string }) {
+  return (
+    <div className="flex justify-center py-3" aria-hidden>
+      <span className="rounded-full bg-white/90 px-3 py-0.5 text-[11px] font-medium text-gray-500 shadow-sm ring-1 ring-gray-200/60">
+        {label}
+      </span>
+    </div>
+  );
+}
+
 /**
- * Conversation-style email thread: customer messages sit left with an avatar,
- * shop replies sit right on a tinted card, with day separators between groups.
- * Older messages clamp so the newest exchange stays in view.
+ * Conversation-style email thread with grouped chat bubbles — customer left,
+ * shop replies right. Metadata stays on the message, not the pane header.
  */
 export function GmailInquiryThread({ detail }: { detail: CustomerInquiryDetail }) {
   const messages = gmailThreadMessages(detail);
+  const groups = groupGmailThreadMessages(messages);
 
   return (
-    <div className="space-y-4">
-      {messages.map((message, index) => {
-        const isShop = message.role === "shop";
-        const isLatestCustomer = Boolean(message.is_latest_customer);
-        const isLast = index === messages.length - 1;
-        const prev = messages[index - 1];
+    <div className="space-y-3">
+      {groups.map((group, groupIndex) => {
+        const isShop = group.role === "shop";
+        const firstMessage = group.messages[0];
+        const lastMessage = group.messages[group.messages.length - 1];
+        const prevGroup = groups[groupIndex - 1];
         const showDay =
-          index === 0 || dayKey(message.received_at) !== dayKey(prev?.received_at ?? null);
-        const day = dayLabel(message.received_at);
+          groupIndex === 0 ||
+          dayKey(firstMessage.received_at) !== dayKey(prevGroup?.messages[0]?.received_at ?? null);
+        const day = dayLabel(firstMessage.received_at);
+        const senderLabel = isShop ? "You" : firstMessage.from_name;
+        const timeLabel =
+          timeOnly(lastMessage.received_at) || lastMessage.date_label || "";
 
         return (
-          <React.Fragment key={message.message_id}>
-            {showDay && day ? (
-              <div className="flex items-center gap-3 py-1" aria-hidden>
-                <span className="h-px flex-1 bg-gray-100" />
-                <span className="text-[11px] font-medium text-gray-400">{day}</span>
-                <span className="h-px flex-1 bg-gray-100" />
-              </div>
-            ) : null}
+          <React.Fragment key={`${group.role}-${firstMessage.message_id}`}>
+            {showDay && day ? <GmailDaySeparator label={day} /> : null}
 
-            <article className={cn("flex gap-2.5", isShop ? "justify-end" : "justify-start")}>
-              {!isShop ? <Avatar name={message.from_name || "Customer"} size="sm" /> : null}
-              <div className={cn("min-w-0 max-w-[min(88%,34rem)]", isShop && "flex flex-col items-end")}>
-                <div
+            <div className={cn("flex px-1", isShop ? "justify-end" : "justify-start")}>
+              <div
+                className={cn(
+                  "flex max-w-[min(88%,34rem)] flex-col gap-1",
+                  isShop ? "items-end" : "items-start",
+                )}
+              >
+                <div className="flex flex-col gap-1">
+                  {group.messages.map((message, messageIndex) => {
+                    const isLastInGroup = messageIndex === group.messages.length - 1;
+                    const isLatestCustomer = Boolean(message.is_latest_customer);
+                    const isLastOverall =
+                      groupIndex === groups.length - 1 && isLastInGroup;
+
+                    return (
+                      <div
+                        key={message.message_id}
+                        className={cn(
+                          "px-3.5 py-2.5 text-[15px] leading-snug",
+                          isShop
+                            ? cn(
+                                "rounded-[18px] bg-white text-gray-900 shadow-sm ring-1 ring-gray-200/80",
+                                isLastInGroup ? "rounded-br-[4px]" : "rounded-br-[18px]",
+                              )
+                            : cn(
+                                "rounded-[18px] bg-[#E9E9EB] text-gray-900",
+                                isLastInGroup ? "rounded-bl-[4px]" : "rounded-bl-[18px]",
+                                isLatestCustomer &&
+                                  messages.length > 1 &&
+                                  "ring-1 ring-gray-300/80",
+                              ),
+                        )}
+                      >
+                        <GmailMessageBody
+                          body={message.body}
+                          clampable={
+                            !isLastOverall && !isLatestCustomer && messages.length > 1
+                          }
+                          emphasised={isLatestCustomer && messages.length > 1}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <p
                   className={cn(
-                    "flex items-baseline gap-2 px-1 pb-1",
-                    isShop && "flex-row-reverse",
+                    "px-1 text-[11px] text-gray-500",
+                    isShop ? "text-right" : "text-left",
                   )}
                 >
-                  <p className="truncate text-[12px] font-medium text-gray-700">
-                    {isShop ? "You" : message.from_name}
-                  </p>
-                  <time className="shrink-0 text-[11px] text-gray-400">
-                    {timeOnly(message.received_at) || message.date_label || ""}
-                  </time>
-                </div>
-                <div
-                  className={cn(
-                    "rounded-xl border px-3.5 py-2.5",
-                    isShop
-                      ? "rounded-tr-sm border-amber-200/70 bg-amber-50/70"
-                      : "rounded-tl-sm border-gray-200 bg-white",
-                    isLatestCustomer && messages.length > 1 && "border-gray-300 shadow-sm",
-                  )}
-                >
-                  <GmailMessageBody
-                    body={message.body}
-                    clampable={!isLast && !isLatestCustomer && messages.length > 1}
-                    emphasised={isLatestCustomer && messages.length > 1}
-                  />
-                </div>
+                  {senderLabel}
+                  {timeLabel ? ` · ${timeLabel}` : ""}
+                </p>
               </div>
-            </article>
+            </div>
           </React.Fragment>
         );
       })}
@@ -431,120 +482,7 @@ export function ThreadTimeline({ detail }: { detail: CustomerInquiryDetail }) {
   );
 }
 
-export function LightspeedBody({ context }: { context: LightspeedContext }) {
-  if (!context.matched) {
-    return (
-      <p className="text-[13px] text-gray-500">
-        {context.summary || "No matching Lightspeed customer found for this sender."}
-      </p>
-    );
-  }
-
-  const sales = context.sales_summary;
-  const money = (value: number | null | undefined) => {
-    if (value == null || !Number.isFinite(value)) return "$0.00";
-    return value.toLocaleString("en-AU", {
-      style: "currency",
-      currency: "AUD",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-  };
-
-  const formatPurchaseDate = (value: string) => {
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime())
-      ? value
-      : parsed.toLocaleDateString("en-AU", {
-          day: "numeric",
-          month: "short",
-          year: "numeric",
-        });
-  };
-
-  const recentPurchases = sales?.recent_purchases ?? [];
-
-  return (
-    <div className="space-y-4 text-[13px] text-gray-700">
-      {context.customer_name ? (
-        <p className="text-sm font-medium text-gray-900">{context.customer_name}</p>
-      ) : null}
-
-      {sales && sales.sale_count > 0 ? (
-        <div className="grid grid-cols-2 gap-2">
-          <div className="rounded-md border border-gray-200 bg-white px-3 py-2.5">
-            <p className="text-[11px] text-gray-400">Lifetime spend</p>
-            <p className="mt-0.5 text-sm font-semibold text-gray-900">{money(sales.total_spend)}</p>
-          </div>
-          <div className="rounded-md border border-gray-200 bg-white px-3 py-2.5">
-            <p className="text-[11px] text-gray-400">Purchases</p>
-            <p className="mt-0.5 text-sm font-semibold text-gray-900">{sales.sale_count}</p>
-          </div>
-        </div>
-      ) : null}
-
-      {recentPurchases.length > 0 ? (
-        <div>
-          <p className="text-[11px] font-medium text-gray-400">Recent purchases</p>
-          <ul className="mt-1.5 space-y-2">
-            {recentPurchases.map((purchase, idx) => (
-              <li
-                key={`${purchase.purchased_at}-${purchase.description}-${idx}`}
-                className="rounded-md border border-gray-200 bg-white px-3 py-2.5"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <p className="text-[12px] font-medium leading-snug text-gray-900">
-                    {purchase.description}
-                  </p>
-                  {purchase.total != null ? (
-                    <p className="shrink-0 text-[12px] text-gray-600">{money(purchase.total)}</p>
-                  ) : null}
-                </div>
-                <p className="mt-1 text-[11px] text-gray-500">
-                  {formatPurchaseDate(purchase.purchased_at)}
-                  {purchase.quantity != null && purchase.quantity !== 1
-                    ? ` · Qty ${purchase.quantity}`
-                    : ""}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : sales && sales.sale_count === 0 ? (
-        <p className="text-[13px] text-gray-500">No completed purchases on record.</p>
-      ) : null}
-
-      {context.customer_phone ? (
-        <p className="text-[12px] text-gray-500">{context.customer_phone}</p>
-      ) : null}
-
-      {context.bikes?.length ? (
-        <div>
-          <p className="text-[11px] font-medium text-gray-400">Bikes</p>
-          <ul className="mt-1.5 space-y-1 text-[12px] text-gray-600">
-            {context.bikes.map((bike, idx) => (
-              <li key={`${bike.serial ?? bike.label ?? idx}`}>
-                {bike.label || "Bike"}
-                {bike.serial ? ` · ${bike.serial}` : ""}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {context.recent_workorders?.length ? (
-        <div>
-          <p className="text-[11px] font-medium text-gray-400">Recent workorders</p>
-          <ul className="mt-1.5 space-y-1 text-[12px] text-gray-600">
-            {context.recent_workorders.map((wo) => (
-              <li key={wo.id}>{wo.title || `Workorder ${wo.id}`}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </div>
-  );
-}
+export { LightspeedBody } from "./lightspeed-bento-panel";
 
 export function SourcesBody({
   citations,
@@ -697,47 +635,47 @@ export function ReplyComposer({
   return (
     <div
       className={cn(
-        isPanel
-          ? "border-t border-gray-200 bg-white"
-          : "overflow-hidden rounded-md border border-gray-200 bg-white",
+        isPanel ? "border-t border-gray-200 bg-white" : "overflow-hidden rounded-md border border-gray-200 bg-white",
       )}
     >
-      <div
-        className={cn(
-          "flex items-center justify-between gap-3",
-          isPanel ? "px-5 pt-3" : "border-b border-gray-100 px-4 py-3",
-        )}
-      >
-        <p className="text-sm font-medium text-gray-900">Reply</p>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="shrink-0 rounded-md text-gray-600"
-          onClick={onRegenerate}
-          disabled={regenerating || detail.status === "sent"}
-        >
-          {regenerating ? (
-            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-          )}
-          Regenerate
-        </Button>
-      </div>
-
-      <div className={cn(isPanel ? "px-5 pb-3 pt-2" : "p-4")}>
+      <div className={cn(isPanel ? "px-4 pb-3 pt-3 md:px-5" : "p-4")}>
         <textarea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           disabled={locked || ignored}
           rows={isPanel ? 4 : 12}
           className={cn(
-            "block max-h-[280px] w-full resize-y rounded-md bg-gray-50 px-3.5 py-3 text-[13px] leading-relaxed text-gray-800 outline-none ring-1 ring-gray-200 transition-shadow focus:bg-white focus:ring-gray-300 disabled:text-gray-500",
-            isPanel ? "min-h-[88px]" : "min-h-[140px]",
+            "block max-h-[280px] w-full resize-y rounded-md border border-gray-200 bg-white px-3.5 py-3 text-[14px] leading-relaxed text-gray-800 outline-none transition-shadow placeholder:text-gray-400 focus:border-gray-300 focus:ring-2 focus:ring-gray-100 disabled:bg-gray-50 disabled:text-gray-500",
+            isPanel ? "min-h-[96px]" : "min-h-[140px]",
           )}
-          placeholder="Draft reply will appear once processing completes."
+          placeholder={
+            locked
+              ? "This reply has already been sent."
+              : ignored
+                ? "Reopen this enquiry to edit the reply."
+                : "Write your reply…"
+          }
         />
+
+        {!locked && !ignored ? (
+          <div className="mt-2 flex items-center justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 rounded-md text-gray-600"
+              onClick={onRegenerate}
+              disabled={regenerating || detail.status === "sent"}
+            >
+              {regenerating ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              Regenerate draft
+            </Button>
+          </div>
+        ) : null}
 
         {!locked && !ignored && setReviseInstruction && onRevise ? (
           <details className="mt-3 group">
@@ -785,7 +723,7 @@ export function ReplyComposer({
       <div
         className={cn(
           "flex flex-wrap items-center gap-2",
-          isPanel ? "border-t border-gray-100 px-5 py-3" : "border-t border-gray-100 bg-[#fafaf9] px-4 py-3",
+          isPanel ? "border-t border-gray-100 px-4 py-3 md:px-5" : "border-t border-gray-100 bg-[#fafaf9] px-4 py-3",
         )}
       >
         <Button

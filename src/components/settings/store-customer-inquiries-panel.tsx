@@ -1,41 +1,32 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
-  Archive,
   BarChart3,
-  ChatRound,
   Inbox,
   Loader2,
   Mail,
-  RefreshCw,
   Search,
   Send,
   UserX,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { GmailLogo } from "@/components/genie/gmail-logo";
+import { NestLogo } from "@/components/genie/nest-logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
   CustomerEnquiriesPageHeader,
+  NestNewMessageButton,
   storeSettingsHeaderActionClass,
 } from "@/components/settings/actions-page-header";
 import { EnquiriesNavTabs } from "@/components/settings/customer-inquiries/enquiries-nav-tabs";
+import { InboxSourceSelect } from "@/components/settings/customer-inquiries/inbox-source-select";
 import { EnquiryConversationList } from "@/components/settings/customer-inquiries/enquiry-conversation-list";
 import { EnquiryConversationPane } from "@/components/settings/customer-inquiries/enquiry-conversation-pane";
+import { NestNewMessagePanel } from "@/components/settings/customer-inquiries/nest-new-message-panel";
+import { NestPromptCoachSheet } from "@/components/settings/customer-inquiries/nest-prompt-coach-sheet";
 import {
-  INBOX_SOURCE_TABS,
   INBOX_STATUS_TABS,
   useUnifiedInboxController,
   type UnifiedInboxController,
@@ -47,16 +38,14 @@ import {
   FloatingCardPageTitleRow,
 } from "@/components/layout/floating-card-page";
 import { floatingCardPageHeaderNudgeClass } from "@/lib/layout/floating-card-page";
+import { BrandLoadingSpinner } from "@/components/ui/brand-loading-spinner";
 import { cn } from "@/lib/utils";
 
 function InquiriesGmailStatusLoading() {
   return (
     <InquiriesFloatingCardShell>
       <div className="flex flex-1 items-center justify-center p-6">
-        <div className="flex items-center gap-2 text-sm text-gray-500">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading enquiries…
-        </div>
+        <BrandLoadingSpinner label="Loading enquiries…" size="lg" />
       </div>
     </InquiriesFloatingCardShell>
   );
@@ -84,18 +73,11 @@ function InquiriesFloatingCardShell({
   );
 }
 
-function CustomerEnquiriesHeader({
-  c,
-  trailingActions,
-}: {
-  c: UnifiedInboxController;
-  trailingActions?: ReactNode;
-}) {
+function CustomerEnquiriesHeader({ trailingActions }: { trailingActions?: ReactNode }) {
   return (
     <CustomerEnquiriesPageHeader
       className={cn(floatingCardPageHeaderNudgeClass, "!static !pb-0")}
-      composeDisabled={!c.nestConfigured}
-      onMessageStarted={c.handleNestStarted}
+      hideCompose
       trailingActions={trailingActions}
     />
   );
@@ -103,10 +85,10 @@ function CustomerEnquiriesHeader({
 
 function CustomerEnquiriesFilterBar({
   c,
-  onCloseAll,
+  onNewMessage,
 }: {
   c: UnifiedInboxController;
-  onCloseAll: () => void;
+  onNewMessage: () => void;
 }) {
   const statusItems = INBOX_STATUS_TABS.map((tab) => ({
     ...tab,
@@ -116,47 +98,35 @@ function CustomerEnquiriesFilterBar({
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2.5 rounded-t-xl border-b border-border/60 bg-gray-50 px-4 py-3 md:px-5">
       <EnquiriesNavTabs items={statusItems} value={c.statusTab} onChange={c.setStatusTab} />
-      {c.needsActionCount > 0 ? (
-        <button
-          type="button"
-          onClick={onCloseAll}
-          disabled={c.closingCases}
-          className={cn(
-            "relative ml-auto inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-gray-200/80 bg-white px-3.5 py-1.5 text-sm font-medium text-gray-800 shadow-sm transition-colors hover:bg-gray-50",
-            c.closingCases && "cursor-not-allowed opacity-50 hover:bg-white",
-          )}
-        >
-          {c.closingCases ? (
-            <Loader2 className="size-[15px] shrink-0 animate-spin" />
-          ) : (
-            <Archive className="size-[15px] shrink-0" />
-          )}
-          Close all
-          <span className="rounded-full bg-gray-100 px-1.5 py-0 text-[10px] font-semibold tabular-nums text-gray-600">
-            {c.needsActionCount}
-          </span>
-        </button>
-      ) : null}
+      <InboxSourceSelect value={c.sourceTab} onChange={c.setSourceTab} />
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        <NestNewMessageButton disabled={!c.nestConfigured} onOpen={onNewMessage} />
+      </div>
     </div>
   );
 }
 
-function EnquiriesSplitView({ c }: { c: UnifiedInboxController }) {
+function EnquiriesSplitView({
+  c,
+  composing,
+  onCloseCompose,
+}: {
+  c: UnifiedInboxController;
+  composing: boolean;
+  onCloseCompose: () => void;
+}) {
   const hasSelection = Boolean(c.selectedKey && c.selectedRow);
-  const sourceItems = INBOX_SOURCE_TABS.map((tab) => ({
-    ...tab,
-    count: c.sourceCounts[tab.id],
-  }));
+  const showPane = composing || hasSelection;
 
   return (
     <div className="flex min-h-0 flex-1">
       <div
         className={cn(
           "w-full min-w-0 flex-col md:flex md:w-[340px] md:shrink-0 md:border-r md:border-border/60 lg:w-[380px]",
-          hasSelection ? "hidden" : "flex",
+          showPane ? "hidden" : "flex",
         )}
       >
-        <div className="shrink-0 space-y-2 border-b border-gray-100 px-3 py-2.5">
+        <div className="shrink-0 border-b border-gray-100 px-3 py-2.5">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
             <Input
@@ -164,46 +134,61 @@ function EnquiriesSplitView({ c }: { c: UnifiedInboxController }) {
               value={c.searchQuery}
               onChange={(event) => c.setSearchQuery(event.target.value)}
               placeholder="Search name, email, subject…"
-              className="h-8 rounded-md border-gray-200 bg-white pl-8 text-sm"
+              className="h-8 rounded-full border-gray-200 bg-white pl-8 text-sm shadow-sm"
             />
           </div>
-          <EnquiriesNavTabs
-            size="sm"
-            items={sourceItems}
-            value={c.sourceTab}
-            onChange={c.setSourceTab}
-          />
         </div>
         <EnquiryConversationList c={c} />
       </div>
       <div
         className={cn(
           "min-w-0 flex-1 flex-col md:flex",
-          hasSelection ? "flex" : "hidden",
+          showPane ? "flex" : "hidden",
         )}
       >
-        <EnquiryConversationPane c={c} />
+        {composing ? (
+          <NestNewMessagePanel
+            onClose={onCloseCompose}
+            onStarted={c.handleNestStarted}
+          />
+        ) : (
+          <EnquiryConversationPane c={c} />
+        )}
       </div>
     </div>
   );
 }
 
-function CustomerEnquiriesHeaderActions({ c }: { c: UnifiedInboxController }) {
+function CustomerEnquiriesHeaderActions({
+  c,
+  onOpenTrainNest,
+}: {
+  c: UnifiedInboxController;
+  onOpenTrainNest: () => void;
+}) {
   return (
     <>
+      <button
+        type="button"
+        onClick={onOpenTrainNest}
+        disabled={!c.nestConfigured}
+        className={storeSettingsHeaderActionClass(false, !c.nestConfigured)}
+        title={
+          c.nestConfigured
+            ? "Train Nest — update rules and knowledge"
+            : "Nest is not configured yet"
+        }
+      >
+        <NestLogo className="h-[15px] w-[15px]" />
+        Train Nest
+      </button>
       <Link
         href="/settings/store/customer-inquiries/analytics"
-        className={storeSettingsHeaderActionClass()}
+        className={cn(storeSettingsHeaderActionClass(), "px-2.5")}
+        aria-label="Analytics"
+        title="Analytics"
       >
         <BarChart3 className="size-[15px]" />
-        Analytics
-      </Link>
-      <Link
-        href="/settings/store/nest"
-        className={storeSettingsHeaderActionClass()}
-      >
-        <ChatRound className="size-[15px]" />
-        Nest
       </Link>
       {c.gmailConfigured && !c.gmailConnected ? (
         <button
@@ -220,26 +205,30 @@ function CustomerEnquiriesHeaderActions({ c }: { c: UnifiedInboxController }) {
           Connect Gmail
         </button>
       ) : null}
-      <button
-        type="button"
-        onClick={() => void c.handleRefreshAll()}
-        disabled={c.refreshing}
-        className={storeSettingsHeaderActionClass(false, c.refreshing)}
-      >
-        {c.refreshing ? (
-          <Loader2 className="size-[15px] animate-spin" />
-        ) : (
-          <RefreshCw className="size-[15px]" />
-        )}
-        Refresh
-      </button>
     </>
   );
 }
 
 export function StoreCustomerInquiriesPanel() {
   const c = useUnifiedInboxController();
-  const [closeAllOpen, setCloseAllOpen] = useState(false);
+  const [trainNestOpen, setTrainNestOpen] = useState(false);
+  const [composing, setComposing] = useState(false);
+
+  useEffect(() => {
+    if (c.selectedKey) setComposing(false);
+  }, [c.selectedKey]);
+
+  const openCompose = () => {
+    c.closePanel();
+    setComposing(true);
+  };
+
+  const headerActions = (
+    <CustomerEnquiriesHeaderActions
+      c={c}
+      onOpenTrainNest={() => setTrainNestOpen(true)}
+    />
+  );
 
   if (!c.gmailStatusReady) {
     if (c.loading) {
@@ -263,10 +252,7 @@ export function StoreCustomerInquiriesPanel() {
     return (
       <InquiriesFloatingCardShell
         headerActions={
-          <CustomerEnquiriesHeader
-            c={c}
-            trailingActions={<CustomerEnquiriesHeaderActions c={c} />}
-          />
+          <CustomerEnquiriesHeader trailingActions={headerActions} />
         }
       >
         <div className="flex flex-1 items-center justify-center p-6">
@@ -313,18 +299,21 @@ export function StoreCustomerInquiriesPanel() {
   return (
     <>
       <FloatingCardPageHeader>
-        <CustomerEnquiriesHeader
-          c={c}
-          trailingActions={<CustomerEnquiriesHeaderActions c={c} />}
-        />
+        <CustomerEnquiriesHeader trailingActions={headerActions} />
       </FloatingCardPageHeader>
 
       <FloatingCardPageBody>
         <FloatingCard>
-          <CustomerEnquiriesFilterBar c={c} onCloseAll={() => setCloseAllOpen(true)} />
-          <EnquiriesSplitView c={c} />
+          <CustomerEnquiriesFilterBar c={c} onNewMessage={openCompose} />
+          <EnquiriesSplitView
+            c={c}
+            composing={composing}
+            onCloseCompose={() => setComposing(false)}
+          />
         </FloatingCard>
       </FloatingCardPageBody>
+
+      <NestPromptCoachSheet open={trainNestOpen} onOpenChange={setTrainNestOpen} />
 
       {c.sendConfirmOpen ? (
         <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
@@ -417,31 +406,6 @@ export function StoreCustomerInquiriesPanel() {
           </div>
         </div>
       ) : null}
-
-      <AlertDialog open={closeAllOpen} onOpenChange={setCloseAllOpen}>
-        <AlertDialogContent className="rounded-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Close all cases needing action?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This closes {c.needsActionCount} case{c.needsActionCount === 1 ? "" : "s"} without
-              sending a reply. New customer messages will reopen a case automatically.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="rounded-md">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="rounded-md"
-              disabled={c.closingCases}
-              onClick={(event) => {
-                event.preventDefault();
-                void c.handleCloseAllNeedsAction().finally(() => setCloseAllOpen(false));
-              }}
-            >
-              {c.closingCases ? "Closing…" : "Close all"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }

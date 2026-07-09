@@ -6,6 +6,7 @@ export type StoreAuth = {
   user: { id: string }
   profile: {
     business_name: string | null
+    nest_brand_key: string | null
   }
 }
 
@@ -22,7 +23,7 @@ export async function requireStoreUser(): Promise<StoreAuth | { error: NextRespo
 
   const { data: profile, error: profileError } = await supabase
     .from('users')
-    .select('account_type, bicycle_store, business_name')
+    .select('account_type, bicycle_store, business_name, nest_brand_key')
     .eq('user_id', user.id)
     .maybeSingle()
 
@@ -39,6 +40,9 @@ export async function requireStoreUser(): Promise<StoreAuth | { error: NextRespo
   return {
     supabase,
     user: { id: user.id },
-    profile: { business_name: profile.business_name ?? null },
+    profile: {
+      business_name: profile.business_name ?? null,
+      nest_brand_key: profile.nest_brand_key ?? null,
+    },
   }
 }
