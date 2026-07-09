@@ -87,7 +87,7 @@ export function EmailElementEditPanel(props: {
 
             <div>
               <Label className="text-xs">Text size</Label>
-              <div className="mt-1 flex max-w-full flex-wrap items-center gap-1 bg-gray-100 p-0.5 rounded-md w-fit">
+              <div className="mt-1 flex max-w-full flex-wrap items-center gap-1 bg-gray-100 p-0.5 rounded-full w-fit">
                 {EMAIL_FONT_SIZE_OPTIONS.map((size) => (
                   <button
                     key={size}

@@ -37,7 +37,7 @@ export default function ProductsBulkOptimisePage() {
           title="Optimise products"
           icon={Sparkles}
           actions={
-            <Button variant="outline" size="sm" className="rounded-md" asChild>
+            <Button variant="outline" size="sm" className="rounded-full" asChild>
               <Link href="/optimize">
                 <ArrowLeft className="size-4" />
                 Back to optimise

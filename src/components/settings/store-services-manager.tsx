@@ -567,10 +567,10 @@ export function StoreServicesManager({ addRequest = 0 }: { addRequest?: number }
           </div>
 
           <DialogFooter className="shrink-0 gap-2 border-t border-border px-6 py-4 sm:justify-end">
-            <Button variant="outline" size="sm" onClick={() => setIsDialogOpen(false)} disabled={saving}>
+            <Button variant="outline" size="sm" className="rounded-full" onClick={() => setIsDialogOpen(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button size="sm" onClick={handleSave} disabled={!formData.name.trim() || saving}>
+            <Button size="sm" className="rounded-full" onClick={handleSave} disabled={!formData.name.trim() || saving}>
               {saving ? (
                 <><Loader2 className="size-4 animate-spin" />Saving…</>
               ) : (

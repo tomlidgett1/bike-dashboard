@@ -11,7 +11,7 @@ const StoreCustomerInquiriesPanel = nextDynamic(
     import("@/components/settings/store-customer-inquiries-panel").then(
       (mod) => mod.StoreCustomerInquiriesPanel,
     ),
-  { ssr: false, loading: () => <SettingsManagerLoading className="min-h-80" /> },
+  { ssr: false, loading: () => <SettingsManagerLoading fullPage /> },
 );
 
 export default function StoreCustomerInquiriesPage() {

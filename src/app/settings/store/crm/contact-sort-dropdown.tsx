@@ -24,6 +24,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { crmDropdownTriggerClass } from "@/app/settings/store/crm/crm-page-button-styles";
 import type { CrmContactGroup, CrmContactSort } from "@/lib/crm/types";
 
 type SortOption = {
@@ -169,7 +170,7 @@ export function ContactSortDropdown({
         <button
           type="button"
           aria-label="Sort contacts"
-          className="flex h-9 items-center gap-1.5 rounded-md border border-border/60 bg-white px-2.5 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/10"
+          className={crmDropdownTriggerClass}
         >
           <ArrowUpDown className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="max-w-[9rem] truncate">{sortLabel(value)}</span>
@@ -231,7 +232,7 @@ export function ContactGroupFilterDropdown({
         <button
           type="button"
           aria-label="Filter by group"
-          className="flex h-9 items-center gap-1.5 rounded-md border border-border/60 bg-white px-2.5 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-zinc-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/10"
+          className={crmDropdownTriggerClass}
         >
           <Users className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="max-w-[8rem] truncate">{label}</span>

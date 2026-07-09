@@ -160,7 +160,7 @@ export function PhoneAiLiveLab() {
             Bridge {health?.ok ? "healthy" : health?.bridgeConfigured ? "unreachable" : "not configured"}
           </span>
         </div>
-        <Button type="button" variant="outline" size="sm" className="rounded-md" onClick={() => void refresh()}>
+        <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={() => void refresh()}>
           <RefreshCw className={cn("mr-2 size-4", loading && "animate-spin")} />
           Refresh
         </Button>
@@ -246,7 +246,7 @@ export function PhoneAiLiveLab() {
 
           <Button
             type="button"
-            className="rounded-md"
+            className="rounded-full"
             disabled={!selectedInventory || saving || !health?.bridgeConfigured}
             onClick={() => void registerNumber()}
           >

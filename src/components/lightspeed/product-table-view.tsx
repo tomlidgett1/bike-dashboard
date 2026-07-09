@@ -166,7 +166,7 @@ export function ProductTableView({
             placeholder="Search products by name, SKU, or ID..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 pr-9 rounded-md"
+            className="pl-9 pr-9 rounded-full"
           />
           {search && (
             <button
@@ -193,7 +193,7 @@ export function ProductTableView({
                 variant="ghost"
                 size="sm"
                 onClick={onClearAll}
-                className="h-7 text-xs rounded-md"
+                className="h-7 text-xs rounded-full"
               >
                 Clear
               </Button>

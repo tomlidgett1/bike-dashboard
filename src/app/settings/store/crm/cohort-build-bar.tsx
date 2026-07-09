@@ -206,7 +206,7 @@ export function CohortBuildBar(props: {
           size="sm"
           onClick={() => void runPreview()}
           disabled={disabled || previewing || creating || !trimmed}
-          className="h-7 shrink-0 rounded-md px-2.5"
+          className="h-7 shrink-0 rounded-full px-2.5"
         >
           {previewing ? <Loader2 className="size-3.5 animate-spin" /> : "Build"}
         </Button>
@@ -289,7 +289,7 @@ export function CohortBuildBar(props: {
                   size="sm"
                   onClick={clearPreview}
                   disabled={creating}
-                  className="h-8 rounded-md"
+                  className="h-8 rounded-full"
                 >
                   Cancel
                 </Button>
@@ -297,7 +297,7 @@ export function CohortBuildBar(props: {
                   size="sm"
                   onClick={() => void confirmCreate()}
                   disabled={creating}
-                  className="h-8 rounded-md"
+                  className="h-8 rounded-full"
                 >
                   {creating ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : null}
                   Create group

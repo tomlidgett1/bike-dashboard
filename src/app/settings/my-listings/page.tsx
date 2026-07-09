@@ -137,7 +137,7 @@ function CreateListingDropdown({ onSelectQuick, onSelectFacebook, onSelectBulk }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button size="sm">
+        <Button size="sm" className="rounded-full">
           <Plus className="size-4" />
           Create listing
           <ChevronDown className="size-3.5 opacity-70" />
@@ -581,14 +581,14 @@ export default function MyListingsPage() {
   };
 
   const tabBar = (
-    <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+    <div className="flex items-center bg-gray-100 p-0.5 rounded-full w-fit">
       {TABS.map((tab) => (
         <button
           key={tab.id}
           type="button"
           onClick={() => setActiveTab(tab.id)}
           className={cn(
-            "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+            "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-full transition-colors",
             activeTab === tab.id
               ? "text-gray-800 bg-white shadow-sm"
               : "text-gray-600 hover:bg-gray-200/70",
@@ -619,7 +619,7 @@ export default function MyListingsPage() {
               <Button
                 variant="outline"
                 size="xs"
-                className="text-destructive hover:text-destructive"
+                className="rounded-full text-destructive hover:text-destructive"
                 onClick={() => openDeleteDialog("selected")}
               >
                 <Trash2 className="size-3.5" />
@@ -628,7 +628,7 @@ export default function MyListingsPage() {
               <Button
                 variant="ghost"
                 size="xs"
-                className="text-muted-foreground"
+                className="rounded-full text-muted-foreground"
                 onClick={() => setSelected(new Set())}
               >
                 Clear selection

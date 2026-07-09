@@ -112,7 +112,7 @@ export function GroupMembersDialog(props: {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search name or email"
-            className="h-9 rounded-md"
+            className="h-9 rounded-full"
           />
         </div>
 
@@ -182,7 +182,7 @@ export function GroupMembersDialog(props: {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="rounded-md"
+                className="rounded-full"
                 disabled={loadingMore || !props.group}
                 onClick={() => props.group && void loadPage(members.length, true, props.group.id, debouncedSearch)}
               >
@@ -190,7 +190,7 @@ export function GroupMembersDialog(props: {
                 Load more
               </Button>
             ) : null}
-            <Button type="button" size="sm" className="rounded-md" onClick={() => props.onOpenChange(false)}>
+            <Button type="button" size="sm" className="rounded-full" onClick={() => props.onOpenChange(false)}>
               Close
             </Button>
           </div>

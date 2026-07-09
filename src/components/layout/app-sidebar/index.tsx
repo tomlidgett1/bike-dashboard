@@ -48,7 +48,7 @@ import { SidebarViewStoreLink } from "./sidebar-view-store-link";
 import { SidebarCollapseTrigger } from "./sidebar-collapse-trigger";
 import { LightspeedSidebarIcon } from "@/components/genie/lightspeed-logo";
 import { cn } from "@/lib/utils";
-import { useCustomerInquiriesNeedsActionCount } from "@/lib/hooks/use-customer-inquiries-needs-action-count";
+import { useCustomerInquiriesUnreadCount } from "@/lib/hooks/use-customer-inquiries-unread-count";
 import { useStoreOpenActionsCount } from "@/lib/hooks/use-store-open-actions-count";
 
 const COMPRESSED_NAV_BUTTON =
@@ -263,7 +263,7 @@ function FlatNavItem({
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname() ?? "/products";
   const router = useRouter();
-  const { badge: customerInquiriesBadge } = useCustomerInquiriesNeedsActionCount();
+  const { badge: customerInquiriesBadge } = useCustomerInquiriesUnreadCount();
   const { badge: openActionsBadge } = useStoreOpenActionsCount();
 
   const prefetch = React.useCallback(

@@ -78,7 +78,7 @@ function NestSectionTabs({
   ];
 
   return (
-    <div className="flex items-center rounded-md bg-gray-100 p-0.5 w-fit">
+    <div className="flex items-center rounded-full bg-gray-100 p-0.5 w-fit">
       {tabs.map((tab) => {
         const Icon = tab.icon;
         const isActive = activeTab === tab.id;

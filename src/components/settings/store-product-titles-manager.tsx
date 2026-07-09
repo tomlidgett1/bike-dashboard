@@ -316,14 +316,14 @@ export function StoreProductTitlesManager() {
             placeholder="Search products..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="pl-8 h-8 text-sm"
+            className="pl-8 h-8 text-sm rounded-full"
           />
         </div>
         {needsCleaningIds.length > 0 && !isGenerating && !isApproving && (
           <Button
             onClick={() => generateTitles(needsCleaningIds)}
             size="sm"
-            className="whitespace-nowrap"
+            className="whitespace-nowrap rounded-full"
           >
             <Zap className="size-4" />
             Clean All ({needsCleaningIds.length})
@@ -335,7 +335,7 @@ export function StoreProductTitlesManager() {
             disabled={isApproving}
             size="sm"
             variant="outline"
-            className="whitespace-nowrap"
+            className="whitespace-nowrap rounded-full"
           >
             {isApproving
               ? <Loader2 className="size-4 animate-spin" />
@@ -346,13 +346,13 @@ export function StoreProductTitlesManager() {
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-0.5 p-1 bg-muted rounded-md w-fit text-xs">
+      <div className="flex w-fit gap-0.5 rounded-full bg-muted p-1 text-xs">
         {(['all', 'needs', 'has'] as const).map(f => (
           <button
             key={f}
             onClick={() => setFilter(f)}
             className={cn(
-              "px-2.5 py-1 rounded font-medium transition-all",
+              "px-2.5 py-1 rounded-full font-medium transition-all",
               filter === f ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
             )}
           >

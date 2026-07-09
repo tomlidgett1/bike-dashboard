@@ -355,7 +355,7 @@ export function StoreProductDescriptionsManager() {
         <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted-foreground">Generate</p>
-            <div className="flex w-fit items-center rounded-md bg-gray-100 p-0.5">
+            <div className="flex w-fit items-center rounded-full bg-gray-100 p-0.5">
               {(Object.keys(MODE_CONFIG) as GenerateMode[]).map((nextMode) => (
                 <button
                   key={nextMode}
@@ -363,7 +363,7 @@ export function StoreProductDescriptionsManager() {
                   onClick={() => setMode(nextMode)}
                   disabled={isGenerating}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                    "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
                     mode === nextMode
                       ? "bg-white text-gray-800 shadow-sm"
                       : "text-gray-600 hover:bg-gray-200/70 disabled:opacity-50"
@@ -383,11 +383,11 @@ export function StoreProductDescriptionsManager() {
                 placeholder="Search name, SKU, brand or category..."
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                className="h-8 rounded-md pl-8 text-xs"
+                className="h-8 rounded-full pl-8 text-xs"
               />
             </div>
             <Select value={brandFilter} onValueChange={setBrandFilter}>
-              <SelectTrigger size="sm" className="h-8 w-full rounded-md text-xs lg:w-44">
+              <SelectTrigger size="sm" className="h-8 w-full rounded-full text-xs lg:w-44">
                 <span className="flex min-w-0 items-center gap-1.5">
                   <Tag className="h-3 w-3 shrink-0 text-muted-foreground" />
                   <SelectValue placeholder="All brands" />
@@ -404,7 +404,7 @@ export function StoreProductDescriptionsManager() {
               </SelectContent>
             </Select>
             {needsContentIds.length > 0 && !isGenerating ? (
-              <Button onClick={() => generateDescriptions(needsContentIds)} size="sm" className="rounded-md whitespace-nowrap">
+              <Button onClick={() => generateDescriptions(needsContentIds)} size="sm" className="rounded-full whitespace-nowrap">
                 <Zap className="size-4" />
                 Generate Missing ({needsContentIds.length})
               </Button>
@@ -412,14 +412,14 @@ export function StoreProductDescriptionsManager() {
           </div>
         </div>
 
-        <div className="flex w-fit items-center rounded-md bg-gray-100 p-0.5">
+        <div className="flex w-fit items-center rounded-full bg-gray-100 p-0.5">
           {filterTabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setFilter(tab.id)}
               className={cn(
-                "flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                "flex items-center gap-1 rounded-full px-2.5 py-1.5 text-xs font-medium transition-colors",
                 filter === tab.id ? "bg-white text-gray-800 shadow-sm" : "text-gray-600 hover:bg-gray-200/70"
               )}
             >
@@ -451,19 +451,19 @@ export function StoreProductDescriptionsManager() {
                   } catch { /* storage unavailable */ }
                   router.push('/settings/store/products/optimise');
                 }}
-                className="rounded-md"
+                className="rounded-full"
               >
                 <Wand2 className="size-3.5" />
                 Optimise ({selected.size})
               </Button>
-              <Button size="xs" variant="outline" onClick={() => generateDescriptions(Array.from(selected))} className="rounded-md">
+              <Button size="xs" variant="outline" onClick={() => generateDescriptions(Array.from(selected))} className="rounded-full">
                 <Sparkles className="size-3.5" />
                 Generate selected ({MODE_CONFIG[mode].label.toLowerCase()})
               </Button>
               <button
                 type="button"
                 onClick={() => setSelected(new Set())}
-                className="ml-auto rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="ml-auto rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 aria-label="Clear selected products"
               >
                 <X className="h-3.5 w-3.5" />
@@ -490,7 +490,7 @@ export function StoreProductDescriptionsManager() {
               <button
                 type="button"
                 onClick={stopGeneration}
-                className="rounded-md px-2 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                className="rounded-full px-2 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted"
               >
                 Stop
               </button>

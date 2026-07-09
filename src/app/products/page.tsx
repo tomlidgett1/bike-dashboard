@@ -1179,7 +1179,7 @@ export default function ProductsPage() {
             <div className="flex justify-end gap-1">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon-xs" className="rounded-md text-muted-foreground">
+                  <Button variant="ghost" size="icon-xs" className="rounded-full text-muted-foreground">
                     <MoreHorizontal className="size-3.5" />
                     <span className="sr-only">More actions</span>
                   </Button>
@@ -1286,7 +1286,7 @@ export default function ProductsPage() {
     brandFilter === "__none__" ? "No brand" : brandFilter || "All brands";
 
   const filterTriggerClassName =
-    "h-9 shrink-0 rounded-md border-input bg-white px-2.5 font-normal shadow-none";
+    "h-9 shrink-0 rounded-full border-input bg-white px-3.5 font-normal shadow-none";
 
   return (
     <FloatingCardPage>
@@ -1298,7 +1298,7 @@ export default function ProductsPage() {
             <>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="group rounded-md">
+                  <Button variant="outline" size="sm" className="group rounded-full">
                     Tools
                     <ChevronDown className="size-4 transition-transform duration-200 group-data-[state=open]:rotate-180" />
                   </Button>
@@ -1309,7 +1309,7 @@ export default function ProductsPage() {
                       <Layers className="size-4" />
                       Review variants
                       {stats?.variantPendingReview ? (
-                        <span className="ml-auto rounded-md bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-800">
+                        <span className="ml-auto rounded-full bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-800">
                           {stats.variantPendingReview.toLocaleString()}
                         </span>
                       ) : null}
@@ -1329,7 +1329,7 @@ export default function ProductsPage() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Button size="sm" className="rounded-md" onClick={openSellModal}>
+              <Button size="sm" className="rounded-full" onClick={openSellModal}>
                 <Plus className="size-4" />
                 Add product
               </Button>
@@ -1347,7 +1347,7 @@ export default function ProductsPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search name, SKU, brand, category, year, source or status..."
-                className="h-9 w-full rounded-md border border-input bg-white pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-[3px] focus:ring-ring/30"
+                className="h-9 w-full rounded-full border border-input bg-white pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-[3px] focus:ring-ring/30"
               />
             </div>
 
@@ -1417,7 +1417,7 @@ export default function ProductsPage() {
                     <SlidersHorizontal className="size-3.5 text-muted-foreground" />
                     Filters
                     {catalogFilterCount > 0 ? (
-                      <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-800">
+                      <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-800">
                         {catalogFilterCount}
                       </span>
                     ) : null}
@@ -1460,7 +1460,7 @@ export default function ProductsPage() {
                       <span className="flex items-center gap-2">
                         On sale
                         {stats?.onSale ? (
-                          <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-800">
+                          <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-800">
                             {stats.onSale.toLocaleString()}
                           </span>
                         ) : null}
@@ -1476,7 +1476,7 @@ export default function ProductsPage() {
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              <div className="flex h-9 shrink-0 items-center gap-2 rounded-md border border-input bg-white px-3">
+              <div className="flex h-9 shrink-0 items-center gap-2 rounded-full border border-input bg-white px-3">
                 <Switch
                   id="needs-optimisation-filter"
                   size="sm"
@@ -1486,7 +1486,7 @@ export default function ProductsPage() {
                 <Label htmlFor="needs-optimisation-filter" className="flex cursor-pointer items-center gap-1.5 text-sm font-normal whitespace-nowrap">
                   Needs optimisation
                   {stats != null ? (
-                    <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-xs font-medium tabular-nums text-gray-800">
+                    <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-xs font-medium tabular-nums text-gray-800">
                       {stats.needsOptimisation.toLocaleString()}
                     </span>
                   ) : null}
@@ -1494,7 +1494,7 @@ export default function ProductsPage() {
               </div>
 
               {hasFilters ? (
-                <Button variant="ghost" size="sm" onClick={clearFilters}>
+                <Button variant="ghost" size="sm" className="rounded-full" onClick={clearFilters}>
                   <X className="size-4" />
                   Clear
                 </Button>
@@ -1513,28 +1513,28 @@ export default function ProductsPage() {
               >
                 <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 md:px-5">
                   <span className="text-sm font-medium text-foreground">{selected.size} selected</span>
-                  <Button size="xs" onClick={openBulkOptimise}>
+                  <Button size="xs" className="rounded-full" onClick={openBulkOptimise}>
                     <Wand2 className="size-3.5" />
                     Optimise ({selected.size})
                   </Button>
-                  <Button variant="outline" size="xs" onClick={() => handleBulkActive(true)}>
+                  <Button variant="outline" size="xs" className="rounded-full" onClick={() => handleBulkActive(true)}>
                     <Eye className="size-3.5" />
                     Activate
                   </Button>
-                  <Button variant="outline" size="xs" onClick={() => handleBulkActive(false)}>
+                  <Button variant="outline" size="xs" className="rounded-full" onClick={() => handleBulkActive(false)}>
                     <EyeOff className="size-3.5" />
                     Hide
                   </Button>
                   <Button
                     variant="outline"
                     size="xs"
-                    className="text-destructive hover:text-destructive"
+                    className="rounded-full text-destructive hover:text-destructive"
                     onClick={() => openDeleteDialog("selected")}
                   >
                     <Trash2 className="size-3.5" />
                     Delete
                   </Button>
-                  <Button variant="ghost" size="xs" className="text-muted-foreground" onClick={() => setSelected(new Set())}>
+                  <Button variant="ghost" size="xs" className="rounded-full text-muted-foreground" onClick={() => setSelected(new Set())}>
                     Clear
                   </Button>
                 </div>
@@ -1639,7 +1639,7 @@ export default function ProductsPage() {
             <div className="flex items-center gap-2">
               <span className="hidden text-muted-foreground sm:inline">Rows per page</span>
               <Select value={pagination.pageSize.toString()} onValueChange={handlePageSizeChange}>
-                <SelectTrigger size="sm" className="w-[72px]"><SelectValue /></SelectTrigger>
+                <SelectTrigger size="sm" className="w-[72px] rounded-full"><SelectValue /></SelectTrigger>
                 <SelectContent position="popper" align="start" className="w-[var(--radix-select-trigger-width)]">
                   <SelectItem value="10">10</SelectItem>
                   <SelectItem value="20">20</SelectItem>
@@ -1650,11 +1650,11 @@ export default function ProductsPage() {
                 </SelectContent>
               </Select>
               <div className="flex items-center gap-1">
-                <Button variant="outline" size="icon-sm" disabled={pagination.page <= 1 || loading} onClick={() => handlePageChange(pagination.page - 1)}>
+                <Button variant="outline" size="icon-sm" className="rounded-full" disabled={pagination.page <= 1 || loading} onClick={() => handlePageChange(pagination.page - 1)}>
                   <ChevronLeft className="size-4" />
                 </Button>
                 <span className="px-2 text-muted-foreground">Page {pagination.page} of {Math.max(pagination.totalPages, 1)}</span>
-                <Button variant="outline" size="icon-sm" disabled={pagination.page >= pagination.totalPages || loading} onClick={() => handlePageChange(pagination.page + 1)}>
+                <Button variant="outline" size="icon-sm" className="rounded-full" disabled={pagination.page >= pagination.totalPages || loading} onClick={() => handlePageChange(pagination.page + 1)}>
                   <ChevronRight className="size-4" />
                 </Button>
               </div>

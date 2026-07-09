@@ -77,16 +77,16 @@ const TYPE_LABELS: Record<ActionRowKind, string> = {
 };
 
 const rowPrimaryButtonClass =
-  "inline-flex h-8 items-center gap-1.5 rounded-md bg-[#ffde59] px-3 text-xs font-medium text-gray-900 shadow-sm transition-colors hover:bg-[#f0cf45] disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex h-8 items-center gap-1.5 rounded-full bg-[#ffde59] px-3 text-xs font-medium text-gray-900 shadow-sm transition-colors hover:bg-[#f0cf45] disabled:cursor-not-allowed disabled:opacity-40";
 
 const rowSecondaryButtonClass =
-  "inline-flex h-8 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40";
 
 const rowIconButtonClass =
-  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900 disabled:opacity-40";
+  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900 disabled:opacity-40";
 
 const rowDismissButtonClass =
-  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40";
+  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40";
 
 async function fetchNestList(): Promise<NestConversationListItem[]> {
   return fetchNestListForActions();
@@ -298,7 +298,7 @@ function CatalogEditRow({
                   onChange={(event) => onBrandChange(event.target.value)}
                   disabled={saving}
                   placeholder="Enter brand…"
-                  className="mt-1.5 h-8 w-full rounded-md border border-input bg-white px-2.5 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-[3px] focus:ring-ring/30 disabled:opacity-60"
+                  className="mt-1.5 h-8 w-full rounded-full border border-input bg-white px-2.5 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-[3px] focus:ring-ring/30 disabled:opacity-60"
                 />
               ) : (
                 <div className="relative mt-1.5">
@@ -307,7 +307,7 @@ function CatalogEditRow({
                     value={categoryId}
                     onChange={(event) => onCategoryChange(event.target.value)}
                     disabled={saving}
-                    className="h-8 w-full appearance-none rounded-md border border-input bg-white py-1 pl-2.5 pr-8 text-sm outline-none transition-colors focus:border-ring focus:ring-[3px] focus:ring-ring/30 disabled:opacity-60"
+                    className="h-8 w-full appearance-none rounded-full border border-input bg-white py-1 pl-2.5 pr-8 text-sm outline-none transition-colors focus:border-ring focus:ring-[3px] focus:ring-ring/30 disabled:opacity-60"
                   >
                     <option value="" disabled>
                       Select a category…
@@ -684,7 +684,7 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
           type="button"
           onClick={() => void load({ refresh: true })}
           disabled={loading || refreshing}
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-input bg-white text-muted-foreground transition-colors hover:bg-muted/40 disabled:opacity-50"
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-input bg-white text-muted-foreground transition-colors hover:bg-muted/40 disabled:opacity-50"
           aria-label="Refresh actions"
         >
           <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />

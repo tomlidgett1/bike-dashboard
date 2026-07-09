@@ -922,7 +922,7 @@ export function StoreOnlineProductsCsvPanel({
                       <span className="font-medium text-foreground">{pendingUpload.file.name}</span>
                     </DialogDescription>
                   </div>
-                  <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit shrink-0">
+                  <div className="flex items-center bg-gray-100 p-0.5 rounded-full w-fit shrink-0">
                     <button
                       type="button"
                       disabled={uploading}
@@ -1307,7 +1307,7 @@ export function StoreOnlineProductsCsvPanel({
 
           <OptimiseBulkBar>
             <div className="flex flex-wrap items-center gap-3 min-w-0">
-            <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+            <div className="flex items-center bg-gray-100 p-0.5 rounded-full w-fit">
               <button
                 type="button"
                 className={cn(

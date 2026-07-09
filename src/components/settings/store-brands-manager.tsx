@@ -506,7 +506,7 @@ export function StoreBrandsManager({ addRequest = 0 }: { addRequest?: number }) 
                       }
                     }}
                     placeholder={formData.name.trim() ? `${formData.name.trim()} logo` : 'e.g. Shimano logo'}
-                    className="h-9 flex-1 rounded-md bg-white text-sm"
+                    className="h-9 flex-1 rounded-full bg-white text-sm"
                   />
                   <Button
                     type="button"
@@ -514,7 +514,7 @@ export function StoreBrandsManager({ addRequest = 0 }: { addRequest?: number }) 
                     size="sm"
                     onClick={() => void handleLogoSearch()}
                     disabled={logoSearching || logoImportingUrl !== null}
-                    className="h-9 shrink-0 rounded-md"
+                    className="h-9 shrink-0 rounded-full"
                   >
                     {logoSearching ? (
                       <>
@@ -586,7 +586,7 @@ export function StoreBrandsManager({ addRequest = 0 }: { addRequest?: number }) 
                 onValueChange={handleLightspeedBrandChange}
                 disabled={lightspeedBrandsLoading}
               >
-                <SelectTrigger className="h-9 w-full rounded-md bg-white">
+                <SelectTrigger className="h-9 w-full rounded-full bg-white">
                   <SelectValue placeholder="Select a Lightspeed brand" />
                 </SelectTrigger>
                 <SelectContent className="max-h-60">
@@ -628,11 +628,12 @@ export function StoreBrandsManager({ addRequest = 0 }: { addRequest?: number }) 
           )}
 
           <DialogFooter className="shrink-0 border-t border-gray-100 px-6 py-4">
-            <Button variant="outline" size="sm" onClick={() => setIsDialogOpen(false)} disabled={saving}>
+            <Button variant="outline" size="sm" className="rounded-full" onClick={() => setIsDialogOpen(false)} disabled={saving}>
               Cancel
             </Button>
             <Button
               size="sm"
+              className="rounded-full"
               onClick={handleSave}
               disabled={!formData.name.trim() || saving || uploading || logoImportingUrl !== null}
             >

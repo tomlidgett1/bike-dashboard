@@ -47,7 +47,7 @@ export function LightspeedProductPicker(props: {
           onChange={(event) => setQuery(event.target.value)}
           onFocus={() => products.length > 0 && setOpen(true)}
           placeholder="Search Lightspeed products…"
-          className="h-9 rounded-md pl-9"
+          className="h-9 rounded-full pl-9"
         />
         {loading ? (
           <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />

@@ -73,7 +73,7 @@ export function StoreCarouselsPageContent() {
           {activeTab === "sections" ? (
             <Button
               size="sm"
-              className="rounded-md"
+              className="rounded-full"
               onClick={() => setSectionCreateRequest((n) => n + 1)}
             >
               <Plus className="size-4" />
@@ -94,12 +94,12 @@ export function StoreCarouselsPageContent() {
         </div>
       }
       toolbar={
-        <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+        <div className="flex items-center bg-gray-100 p-0.5 rounded-full w-fit">
           <button
             type="button"
             onClick={() => selectTab("products")}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors",
               activeTab === "products"
                 ? "text-gray-800 bg-white shadow-sm"
                 : "text-gray-600 hover:bg-gray-200/70",
@@ -112,7 +112,7 @@ export function StoreCarouselsPageContent() {
             type="button"
             onClick={() => selectTab("bikes")}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors",
               activeTab === "bikes"
                 ? "text-gray-800 bg-white shadow-sm"
                 : "text-gray-600 hover:bg-gray-200/70",
@@ -125,7 +125,7 @@ export function StoreCarouselsPageContent() {
             type="button"
             onClick={() => selectTab("sections")}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors",
               activeTab === "sections"
                 ? "text-gray-800 bg-white shadow-sm"
                 : "text-gray-600 hover:bg-gray-200/70",

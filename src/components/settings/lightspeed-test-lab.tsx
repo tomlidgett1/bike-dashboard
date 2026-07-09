@@ -76,11 +76,11 @@ function ReceiptResultPanel({
           ) : null}
           {html ? (
             <>
-              <Button type="button" variant="outline" size="sm" className="rounded-md" onClick={openReceiptWindow}>
+              <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={openReceiptWindow}>
                 <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
                 Open
               </Button>
-              <Button type="button" variant="outline" size="sm" className="rounded-md" onClick={printReceipt}>
+              <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={printReceipt}>
                 <Printer className="mr-1.5 h-3.5 w-3.5" />
                 Print
               </Button>
@@ -310,14 +310,14 @@ export function LightspeedTestLab() {
         </div>
       </div>
 
-      <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+      <div className="flex items-center bg-gray-100 p-0.5 rounded-full w-fit">
         {TABS.map((item) => (
           <button
             key={item.id}
             type="button"
             onClick={() => setTab(item.id)}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors",
               tab === item.id
                 ? "text-gray-800 bg-white shadow-sm"
                 : "text-gray-600 hover:bg-gray-200/70",
@@ -377,7 +377,7 @@ export function LightspeedTestLab() {
                 />
               </div>
             </div>
-            <Button type="button" className="rounded-md" onClick={runCustomerLookup} disabled={loading}>
+            <Button type="button" className="rounded-full" onClick={runCustomerLookup} disabled={loading}>
               {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}
               Run customer scan
             </Button>
@@ -426,14 +426,14 @@ export function LightspeedTestLab() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" className="rounded-md" onClick={runInquiryLookup} disabled={loading}>
+              <Button type="button" className="rounded-full" onClick={runInquiryLookup} disabled={loading}>
                 {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}
                 Run enquiry lookup
               </Button>
               <Button
                 type="button"
                 variant="outline"
-                className="rounded-md"
+                className="rounded-full"
                 disabled={loading}
                 onClick={() =>
                   void runPost({
@@ -476,7 +476,7 @@ export function LightspeedTestLab() {
                 />
               </div>
             </div>
-            <Button type="button" className="rounded-md" onClick={runNestSearch} disabled={loading}>
+            <Button type="button" className="rounded-full" onClick={runNestSearch} disabled={loading}>
               {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}
               Run Nest search
             </Button>
@@ -530,7 +530,7 @@ export function LightspeedTestLab() {
                     value={receiptPageWidth}
                     onChange={(event) => setReceiptPageWidth(event.target.value)}
                     placeholder="auto"
-                    className="rounded-md"
+                    className="rounded-full"
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -540,12 +540,12 @@ export function LightspeedTestLab() {
                     value={receiptPageHeight}
                     onChange={(event) => setReceiptPageHeight(event.target.value)}
                     placeholder="2000mm"
-                    className="rounded-md"
+                    className="rounded-full"
                   />
                 </div>
               </div>
             </div>
-            <Button type="button" className="rounded-md" onClick={runReceipt} disabled={loading || !saleId.trim()}>
+            <Button type="button" className="rounded-full" onClick={runReceipt} disabled={loading || !saleId.trim()}>
               {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}
               Render receipt
             </Button>
@@ -562,7 +562,7 @@ export function LightspeedTestLab() {
               Check OAuth status, rate-limit backoff, and whether the in-memory phone name index is warm.
             </p>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" className="rounded-md" onClick={runStatus} disabled={loading}>
+              <Button type="button" className="rounded-full" onClick={runStatus} disabled={loading}>
                 {loading ? (
                   <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                 ) : (
@@ -573,7 +573,7 @@ export function LightspeedTestLab() {
               <Button
                 type="button"
                 variant="outline"
-                className="rounded-md"
+                className="rounded-full"
                 disabled={loading}
                 onClick={() => void runPost({ action: "warm_phone_index", maxPages: Number(maxScanPages) || 80 })}
               >
@@ -603,7 +603,7 @@ export function LightspeedTestLab() {
                 </select>
               </div>
             </div>
-            <Button type="button" className="rounded-md" onClick={runPreset} disabled={loading}>
+            <Button type="button" className="rounded-full" onClick={runPreset} disabled={loading}>
               {loading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}
               Run preset
             </Button>

@@ -16,7 +16,7 @@ export function StoreOffersPageContent() {
       description="Create buy-one-get-free bundles with an expiry date. Shown on your storefront Offers tab."
       flush
       actions={
-        <Button size="sm" className="rounded-md" onClick={() => setAddRequest((n) => n + 1)}>
+        <Button size="sm" className="rounded-full" onClick={() => setAddRequest((n) => n + 1)}>
           <Plus className="size-4" />
           Create offer
         </Button>

@@ -1120,12 +1120,12 @@ export function StoreOnlineProductsManager({
 
       {/* Intake mode tabs */}
       {!csvOnlyMode && products.length === 0 && (
-        <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+        <div className="flex items-center bg-gray-100 p-0.5 rounded-full w-fit">
           <button
             type="button"
             onClick={() => setIntakeMode("csv")}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors",
               intakeMode === "csv"
                 ? "text-gray-800 bg-white shadow-sm"
                 : "text-gray-600 hover:bg-gray-200/70",
@@ -1138,7 +1138,7 @@ export function StoreOnlineProductsManager({
             type="button"
             onClick={() => setIntakeMode("screenshot")}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+              "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors",
               intakeMode === "screenshot"
                 ? "text-gray-800 bg-white shadow-sm"
                 : "text-gray-600 hover:bg-gray-200/70",
@@ -1276,7 +1276,7 @@ export function StoreOnlineProductsManager({
                       onValueChange={setImageBatchSize}
                       disabled={searching || isCreating}
                     >
-                      <SelectTrigger id="image-batch-size" className="h-8 w-[120px] rounded-md text-xs">
+                      <SelectTrigger id="image-batch-size" className="h-8 w-[120px] rounded-full text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1291,6 +1291,7 @@ export function StoreOnlineProductsManager({
                   <Button
                     size="sm"
                     variant="outline"
+                    className="rounded-full"
                     onClick={handleFindImages}
                     disabled={searching || isCreating}
                   >
@@ -1311,6 +1312,7 @@ export function StoreOnlineProductsManager({
               {allSearched && readyCount > 0 && (
                 <Button
                   size="sm"
+                  className="rounded-full"
                   onClick={handleCreate}
                   disabled={isCreating}
                 >
@@ -1366,7 +1368,7 @@ export function StoreOnlineProductsManager({
                     onValueChange={setImageBatchSize}
                     disabled={searching}
                   >
-                    <SelectTrigger className="h-8 w-[120px] rounded-md text-xs">
+                    <SelectTrigger className="h-8 w-[120px] rounded-full text-xs">
                       <SelectValue placeholder="Batch size" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1380,6 +1382,7 @@ export function StoreOnlineProductsManager({
                   <Button
                     size="sm"
                     variant="outline"
+                    className="rounded-full"
                     onClick={handleFindImages}
                     disabled={searching}
                   >

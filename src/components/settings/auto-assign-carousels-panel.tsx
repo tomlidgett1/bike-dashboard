@@ -163,7 +163,7 @@ export function AutoAssignCarouselsPanel({
   if (loading) {
     if (variant === "button") {
       return (
-        <Button size="sm" variant="outline" disabled className="rounded-md">
+        <Button size="sm" variant="outline" disabled className="rounded-full">
           <Loader2 className="size-4 animate-spin" />
           Auto-assign
         </Button>
@@ -204,7 +204,7 @@ export function AutoAssignCarouselsPanel({
       variant="outline"
       disabled={scanning || !hasActions || awaitingDynamicMatch}
       onClick={() => void handleReview()}
-      className="shrink-0 rounded-md"
+      className="shrink-0 rounded-full"
       title={
         awaitingDynamicMatch
           ? "These products already match existing carousels. Refresh from Lightspeed if counts look wrong."
@@ -382,7 +382,7 @@ function EditableActionCard({
           </span>
         </div>
 
-        <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit shrink-0">
+        <div className="flex items-center bg-gray-100 p-0.5 rounded-full w-fit shrink-0">
           <button
             type="button"
             onClick={() => onUpdate({ approved: true })}

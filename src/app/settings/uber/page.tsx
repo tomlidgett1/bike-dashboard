@@ -54,7 +54,7 @@ export default function UberSettingsPage() {
       description="Offer same-day local delivery on your storefront."
       flush
       toolbar={
-        <div className="flex items-center rounded-md bg-gray-100 p-0.5 w-fit">
+        <div className="flex items-center rounded-full bg-gray-100 p-0.5 w-fit">
           <button
             type="button"
             onClick={() => setActiveTab("products")}

@@ -15,12 +15,12 @@ export function ActionsViewToggle({
   className?: string;
 }) {
   return (
-    <div className={cn("flex items-center bg-gray-100 p-0.5 rounded-md w-fit", className)}>
+    <div className={cn("flex items-center bg-gray-100 p-0.5 rounded-full w-fit", className)}>
       <button
         type="button"
         onClick={() => onViewChange("bento")}
         className={cn(
-          "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+          "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-full transition-colors",
           view === "bento"
             ? "text-gray-800 bg-white shadow-sm"
             : "text-gray-600 hover:bg-gray-200/70",
@@ -33,7 +33,7 @@ export function ActionsViewToggle({
         type="button"
         onClick={() => onViewChange("simple")}
         className={cn(
-          "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+          "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-full transition-colors",
           view === "simple"
             ? "text-gray-800 bg-white shadow-sm"
             : "text-gray-600 hover:bg-gray-200/70",

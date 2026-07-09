@@ -78,7 +78,7 @@ export function OptimiseSegmentedControl<T extends string>({
   className?: string;
 }) {
   return (
-    <div className={cn("flex items-center bg-gray-100 p-0.5 rounded-md w-fit", className)}>
+    <div className={cn("flex items-center bg-gray-100 p-0.5 rounded-full w-fit", className)}>
       {items.map((tab) => (
         <button
           key={tab.id}

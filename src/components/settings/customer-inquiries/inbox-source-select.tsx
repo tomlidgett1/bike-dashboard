@@ -1,12 +1,14 @@
 "use client";
 
+import { useState } from "react";
+import { Filter } from "@/components/layout/app-sidebar/dashboard-icons";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   INBOX_SOURCE_OPTIONS,
   type InboxSourceTab,
@@ -22,34 +24,54 @@ export function InboxSourceSelect({
   onChange: (value: InboxSourceTab) => void;
   className?: string;
 }) {
-  const selected = INBOX_SOURCE_OPTIONS.find((option) => option.id === value);
+  const [open, setOpen] = useState(false);
+  const selected =
+    INBOX_SOURCE_OPTIONS.find((option) => option.id === value) ?? INBOX_SOURCE_OPTIONS[0];
+  const isFiltered = value !== "all";
 
   return (
-    <Select value={value} onValueChange={(next) => onChange(next as InboxSourceTab)}>
-      <SelectTrigger
-        size="sm"
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <div
         className={cn(
-          "h-8 min-w-[8.5rem] rounded-full border-gray-200/80 bg-white px-3.5 py-1.5 text-sm font-medium text-gray-800 shadow-sm",
+          "flex w-fit items-center rounded-full bg-gray-100 p-0.5",
           className,
         )}
       >
-        <SelectValue>
-          <span className="flex items-center gap-1.5">
-            {selected?.icon ? <selected.icon className="size-[15px] shrink-0" /> : null}
-            {selected?.label ?? "Source"}
-          </span>
-        </SelectValue>
-      </SelectTrigger>
-      <SelectContent className="rounded-md">
-        {INBOX_SOURCE_OPTIONS.map((option) => (
-          <SelectItem key={option.id} value={option.id}>
-            <span className="flex items-center gap-1.5">
-              <option.icon className="size-[15px] shrink-0" />
-              {option.label}
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={`Filter by source: ${selected.label}`}
+            className={cn(
+              "relative flex h-8 shrink-0 items-center justify-center rounded-full px-3.5 text-sm font-medium transition-colors",
+              isFiltered || open
+                ? "bg-white text-gray-800 shadow-sm"
+                : "text-gray-600 hover:bg-gray-200/70",
+            )}
+          >
+            <Filter className="size-[15px] shrink-0" />
+          </button>
+        </DropdownMenuTrigger>
+      </div>
+      <DropdownMenuContent align="start" className="min-w-40 rounded-lg bg-white p-1.5">
+        <DropdownMenuRadioGroup
+          value={value}
+          onValueChange={(next) => onChange(next as InboxSourceTab)}
+        >
+          {INBOX_SOURCE_OPTIONS.map((option) => {
+            const Icon = option.icon;
+            return (
+              <DropdownMenuRadioItem
+                key={option.id}
+                value={option.id}
+                className="gap-2 rounded-md text-sm"
+              >
+                <Icon className="size-[15px]" />
+                {option.label}
+              </DropdownMenuRadioItem>
+            );
+          })}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

@@ -962,7 +962,7 @@ function ThinkingProgressPanel({
               <button
                 type="button"
                 onClick={() => setRawLogsOpen(false)}
-                className="rounded-md px-2 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100"
+                className="rounded-full px-2 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100"
               >
                 Back
               </button>
@@ -970,7 +970,7 @@ function ThinkingProgressPanel({
               <button
                 type="button"
                 onClick={() => setRawLogsOpen(true)}
-                className="rounded-md px-2 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100"
+                className="rounded-full px-2 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-100"
               >
                 Raw logs
               </button>
@@ -1174,7 +1174,7 @@ function HomeV2OtherDropdown({
         type="button"
         onClick={() => setOpen((current) => !current)}
         className={cn(
-          "inline-flex h-7 items-center gap-1 rounded-md px-2.5 text-xs text-muted-foreground transition-colors hover:bg-gray-100/80 hover:text-foreground",
+          "inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-xs text-muted-foreground transition-colors hover:bg-gray-100/80 hover:text-foreground",
           open && "bg-gray-100/80 text-foreground",
         )}
         aria-expanded={open}
@@ -1291,7 +1291,7 @@ function ConversationHistoryDropdown({
         <button
           type="button"
           onClick={onNewChat}
-          className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-gray-100/80 hover:text-foreground"
+          className="inline-flex h-7 items-center gap-1 rounded-full px-2 text-xs text-muted-foreground transition-colors hover:bg-gray-100/80 hover:text-foreground"
         >
           <Plus className="h-3 w-3" />
           New chat
@@ -1304,7 +1304,7 @@ function ConversationHistoryDropdown({
             type="button"
             onClick={() => setOpen((current) => !current)}
             className={cn(
-              "inline-flex h-7 items-center gap-1 rounded-md px-2.5 text-xs text-muted-foreground transition-colors hover:bg-gray-100/80 hover:text-foreground",
+              "inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-xs text-muted-foreground transition-colors hover:bg-gray-100/80 hover:text-foreground",
               open && "bg-gray-100/80 text-foreground",
             )}
             aria-expanded={open}
@@ -1428,7 +1428,7 @@ function PromptQueueList({
                 type="button"
                 onClick={saveEdit}
                 disabled={!draft.trim()}
-                className="shrink-0 rounded-md px-1.5 py-0.5 text-xs font-medium text-gray-800 transition-colors hover:bg-gray-100 disabled:opacity-50"
+                className="shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium text-gray-800 transition-colors hover:bg-gray-100 disabled:opacity-50"
               >
                 Save
               </button>

@@ -7,21 +7,18 @@ import { UsedGrid } from "@/components/marketing/used-grid";
 import { JsonLd } from "@/components/seo/json-ld";
 import { breadcrumbSchema, faqSchema } from "@/lib/seo/structured-data";
 import {
-  getAllLandingSlugs,
   getLandingPage,
   type LandingPage,
 } from "@/lib/seo/landing-pages";
 import { SITE_NAME, SITE_URL, absoluteUrl } from "@/lib/seo/site";
 import { fetchLandingProducts } from "@/lib/server/fetch-landing-products";
 
-export const revalidate = 300;
+// Force dynamic so a flaky Supabase/Cloudflare timeout during static
+// generation cannot fail the whole production deploy.
+export const dynamic = "force-dynamic";
 
 // Index once there's enough inventory to avoid a thin doorway page.
 const MIN_FOR_INDEX = 4;
-
-export function generateStaticParams() {
-  return getAllLandingSlugs().map((slug) => ({ slug }));
-}
 
 export async function generateMetadata({
   params,

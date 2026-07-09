@@ -279,7 +279,7 @@ export function DashboardWidgetEditPanel({
       </div>
 
       <div className="shrink-0 border-b border-gray-200 px-4 py-3">
-        <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+        <div className="flex items-center bg-gray-100 p-0.5 rounded-full w-fit">
           {tabs.map((item) => (
             <button
               key={item.id}

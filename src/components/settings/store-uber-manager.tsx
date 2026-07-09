@@ -300,7 +300,7 @@ export function StoreUberManager({ activeTab = "products" }: { activeTab?: UberT
                   }
                 }}
                 placeholder="+61 400 000 000"
-                className="h-9 rounded-md"
+                className="h-9 rounded-full"
               />
               <Button type="button" variant="outline" size="sm" className="rounded-md" onClick={addPhone}>
                 <Plus className="size-4" />
@@ -376,7 +376,7 @@ export function StoreUberManager({ activeTab = "products" }: { activeTab?: UberT
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search products"
-                className="h-9 rounded-md pl-8"
+                className="h-9 rounded-full pl-8"
               />
             </div>
             <Select value={category} onValueChange={setCategory}>
@@ -406,14 +406,14 @@ export function StoreUberManager({ activeTab = "products" }: { activeTab?: UberT
             </Select>
           </div>
 
-          <div className="flex items-center rounded-md bg-gray-100 p-0.5 w-fit">
+          <div className="flex items-center rounded-full bg-gray-100 p-0.5 w-fit">
             {(["all", "enabled", "disabled"] as const).map((item) => (
               <button
                 key={item}
                 type="button"
                 onClick={() => setMode(item)}
                 className={cn(
-                  "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+                  "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-full transition-colors",
                   mode === item
                     ? "text-gray-800 bg-white shadow-sm"
                     : "text-gray-600 hover:bg-gray-200/70"

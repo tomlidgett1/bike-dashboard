@@ -424,7 +424,7 @@ export function StoreHomepageManager() {
             {config.enabled ? "Home tab is on" : "Home tab is off"}
           </span>
         </label>
-        <Button asChild variant="outline" size="sm" className="gap-1.5 rounded-md">
+        <Button asChild variant="outline" size="sm" className="gap-1.5 rounded-full">
           <a href={`/marketplace/store/${user?.id}`} target="_blank" rel="noopener noreferrer">
             <ExternalLink className="h-3.5 w-3.5" /> View live
           </a>
@@ -449,7 +449,7 @@ export function StoreHomepageManager() {
           <div className="max-w-sm rounded-md border border-destructive/30 bg-white p-6 text-center">
             <AlertTriangle className="h-6 w-6 text-destructive mx-auto mb-2" />
             <p className="text-sm text-foreground font-medium">{loadError || "Couldn't load your home page settings"}</p>
-            <Button variant="outline" size="sm" onClick={load} className="mt-4 rounded-md">
+            <Button variant="outline" size="sm" onClick={load} className="mt-4 rounded-full">
               <RotateCcw className="h-3.5 w-3.5 mr-2" /> Try again
             </Button>
           </div>
@@ -466,7 +466,7 @@ export function StoreHomepageManager() {
       actions={headerActions}
       description="Design the landing page customers see first on your storefront."
       toolbar={
-        <div className="flex max-w-full flex-wrap items-center gap-0.5 rounded-md bg-gray-100 p-0.5 w-fit">
+        <div className="flex max-w-full flex-wrap items-center gap-0.5 rounded-full bg-gray-100 p-0.5 w-fit">
           {EDITOR_TABS.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
@@ -475,7 +475,7 @@ export function StoreHomepageManager() {
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
                 className={cn(
-                  "flex shrink-0 items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  "flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-xs font-medium transition-colors",
                   isActive
                     ? "bg-white text-gray-800 shadow-sm"
                     : "text-gray-600 hover:bg-gray-200/70",
@@ -998,14 +998,14 @@ export function StoreHomepageManager() {
               {/* Products per row */}
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">Products per row</Label>
-                <div className="flex w-fit items-center rounded-md bg-gray-100 p-0.5">
+                <div className="flex w-fit items-center rounded-full bg-gray-100 p-0.5">
                   {([6, 8] as const).map((n) => (
                     <button
                       key={n}
                       type="button"
                       onClick={() => patchFeaturedCarousels({ per_row: n })}
                       className={cn(
-                        "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                        "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
                         config.featured_carousels.per_row === n
                           ? "bg-white text-gray-800 shadow-sm"
                           : "text-gray-600 hover:bg-gray-200/70",
@@ -1213,14 +1213,14 @@ function Segmented<T extends string>({
   options: { value: T; label: string }[];
 }) {
   return (
-    <div className="flex w-fit items-center rounded-md bg-gray-100 p-0.5">
+    <div className="flex w-fit items-center rounded-full bg-gray-100 p-0.5">
       {options.map((o) => (
         <button
           key={o.value}
           type="button"
           onClick={() => onChange(o.value)}
           className={cn(
-            "cursor-pointer rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+            "cursor-pointer rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
             value === o.value ? "bg-white text-gray-800 shadow-sm" : "text-gray-600 hover:bg-gray-200/70",
           )}
         >
@@ -1475,7 +1475,7 @@ function ImageField({
         </div>
         <div className="flex-1 space-y-1">
           <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp,image/avif" onChange={onFile} className="hidden" />
-          <Button type="button" variant="outline" size="sm" onClick={() => inputRef.current?.click()} disabled={uploading} className="gap-1.5">
+          <Button type="button" variant="outline" size="sm" onClick={() => inputRef.current?.click()} disabled={uploading} className="gap-1.5 rounded-full">
             {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
             {value ? "Replace" : "Upload"}
           </Button>

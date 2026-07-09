@@ -199,7 +199,7 @@ export function FilterTabs({
   className?: string;
 }) {
   return (
-    <div className={cn("flex items-center gap-0.5 overflow-x-auto rounded-md bg-gray-100 p-0.5", className)}>
+    <div className={cn("flex items-center gap-0.5 overflow-x-auto rounded-full bg-gray-100 p-0.5", className)}>
       {STATUS_FILTERS.map((item) => (
         <button
           key={item.id}

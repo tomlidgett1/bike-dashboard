@@ -306,12 +306,12 @@ function ReplyFace({
             </p>
           ) : (
             <div className="mt-2 flex min-h-0 flex-1 flex-col space-y-2">
-              <div className="flex shrink-0 items-center bg-gray-100 p-0.5 rounded-md w-fit">
+              <div className="flex shrink-0 items-center bg-gray-100 p-0.5 rounded-full w-fit">
                 <button
                   type="button"
                   onClick={() => setEditTab("manual")}
                   className={cn(
-                    "px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+                    "px-2.5 py-1.5 text-xs font-medium rounded-full transition-colors",
                     editTab === "manual"
                       ? "text-gray-800 bg-white shadow-sm"
                       : "text-gray-600 hover:bg-gray-200/70",
@@ -323,7 +323,7 @@ function ReplyFace({
                   type="button"
                   onClick={() => setEditTab("ai")}
                   className={cn(
-                    "px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+                    "px-2.5 py-1.5 text-xs font-medium rounded-full transition-colors",
                     editTab === "ai"
                       ? "text-gray-800 bg-white shadow-sm"
                       : "text-gray-600 hover:bg-gray-200/70",

@@ -866,7 +866,7 @@ export default function ConnectLightspeedPage() {
       <Button
         variant="outline"
         size="sm"
-        className="rounded-md"
+        className="rounded-full"
         onClick={() => void refreshAll()}
         disabled={isRefreshingAll}
       >
@@ -875,7 +875,7 @@ export default function ConnectLightspeedPage() {
       </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="icon-sm" className="rounded-md" aria-label="Lightspeed options">
+          <Button variant="outline" size="icon-sm" className="rounded-full" aria-label="Lightspeed options">
             <SlidersHorizontal className="size-4" />
           </Button>
         </DropdownMenuTrigger>
@@ -966,7 +966,7 @@ export default function ConnectLightspeedPage() {
                 />
                 <div className="flex flex-shrink-0 items-center gap-2">
                   {(viewMode === "categories" || viewMode === "products") ? (
-                    <Button variant="outline" size="sm" className="relative rounded-md" onClick={openFilterSheet}>
+                    <Button variant="outline" size="sm" className="relative rounded-full" onClick={openFilterSheet}>
                       <SlidersHorizontal className="size-4" />
                       Filters
                       {activeFilterCount > 0 ? (
@@ -980,12 +980,12 @@ export default function ConnectLightspeedPage() {
                   {viewMode === "categories" && selectedCategories.size > 0 ? (
                     <>
                       {hasNotSyncedSelected ? (
-                        <Button onClick={handleSyncSelected} size="sm" className="rounded-md">
+                        <Button onClick={handleSyncSelected} size="sm" className="rounded-full">
                           Add to store
                         </Button>
                       ) : null}
                       {hasSyncedSelected ? (
-                        <Button variant="outline" size="sm" className="rounded-md" onClick={handleRemoveSelected}>
+                        <Button variant="outline" size="sm" className="rounded-full" onClick={handleRemoveSelected}>
                           Remove from store
                         </Button>
                       ) : null}
@@ -997,13 +997,13 @@ export default function ConnectLightspeedPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="rounded-md"
+                        className="rounded-full"
                         onClick={() => handleDeleteProducts(Array.from(selectedProducts))}
                       >
                         Remove {selectedProducts.size} from store
                       </Button>
                     ) : (
-                      <Button onClick={handleSyncSelectedProducts} size="sm" className="rounded-md">
+                      <Button onClick={handleSyncSelectedProducts} size="sm" className="rounded-full">
                         Add {selectedProducts.size} product{selectedProducts.size !== 1 ? "s" : ""} to store
                       </Button>
                     )
@@ -1192,7 +1192,7 @@ export default function ConnectLightspeedPage() {
                     value={draftFilters.inStockOnly ? '1' : draftFilters.minSoh}
                     disabled={draftFilters.inStockOnly}
                     onChange={(e) => setDraftFilters(prev => ({ ...prev, minSoh: e.target.value }))}
-                    className="rounded-md h-9 text-sm"
+                    className="rounded-full h-9 text-sm"
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -1206,7 +1206,7 @@ export default function ConnectLightspeedPage() {
                     placeholder="No limit"
                     value={draftFilters.maxSoh}
                     onChange={(e) => setDraftFilters(prev => ({ ...prev, maxSoh: e.target.value }))}
-                    className="rounded-md h-9 text-sm"
+                    className="rounded-full h-9 text-sm"
                   />
                 </div>
               </div>
@@ -1283,13 +1283,13 @@ export default function ConnectLightspeedPage() {
           <SheetFooter className="px-6 py-4 border-t border-border flex flex-row gap-2">
             <Button
               variant="outline"
-              className="flex-1 rounded-md"
+              className="flex-1 rounded-full"
               onClick={() => setFilterSheetOpen(false)}
             >
               Cancel
             </Button>
             <Button
-              className="flex-1 rounded-md"
+              className="flex-1 rounded-full"
               onClick={applyFilters}
             >
               {draftFilterCount > 0 ? `Apply ${draftFilterCount} filter${draftFilterCount > 1 ? 's' : ''}` : 'Apply'}

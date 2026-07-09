@@ -335,7 +335,7 @@ function SortableCarouselCard({
               <RotateCcw className="size-4" />
             </Button>
           ) : null}
-          <Button variant="outline" size="sm" onClick={onEdit} className="rounded-md">
+          <Button variant="outline" size="sm" onClick={onEdit} className="rounded-full">
             <Edit2 className="h-3.5 w-3.5" />
             Edit carousel
           </Button>
@@ -1552,14 +1552,14 @@ export function StoreCategoriesManager({
             <div className="space-y-3">
               <div className="space-y-2">
                 <Label>Show on</Label>
-                <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+                <div className="flex items-center bg-gray-100 p-0.5 rounded-full w-fit">
                   {(["products", "bikes"] as StoreCarouselPage[]).map((page) => (
                     <button
                       key={page}
                       type="button"
                       onClick={() => setFormData((prev) => ({ ...prev, storePage: page }))}
                       className={cn(
-                        "px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+                        "px-2.5 py-1.5 text-xs font-medium rounded-full transition-colors",
                         formData.storePage === page
                           ? "text-gray-800 bg-white shadow-sm"
                           : "text-gray-600 hover:bg-gray-200/70",
@@ -1573,7 +1573,7 @@ export function StoreCategoriesManager({
 
               <div className="space-y-2">
                 <Label>Carousel size</Label>
-                <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+                <div className="flex items-center bg-gray-100 p-0.5 rounded-full w-fit">
                   {(
                     [
                       { value: "featured", label: "Featured" },
@@ -1586,7 +1586,7 @@ export function StoreCategoriesManager({
                       type="button"
                       onClick={() => setFormData((prev) => ({ ...prev, carouselSize: value }))}
                       className={cn(
-                        "px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+                        "px-2.5 py-1.5 text-xs font-medium rounded-full transition-colors",
                         formData.carouselSize === value
                           ? "text-gray-800 bg-white shadow-sm"
                           : "text-gray-600 hover:bg-gray-200/70",
@@ -1659,7 +1659,7 @@ export function StoreCategoriesManager({
                             ? `${formData.name.trim()} logo`
                             : "e.g. Helmets logo"
                         }
-                        className="h-9 flex-1 rounded-md bg-white text-sm"
+                        className="h-9 flex-1 rounded-full bg-white text-sm"
                       />
                       <Button
                         type="button"
@@ -1671,7 +1671,7 @@ export function StoreCategoriesManager({
                           logoImportingUrl !== null ||
                           uploadingLogoId === editingCategoryLive.id
                         }
-                        className="h-9 shrink-0 rounded-md"
+                        className="h-9 shrink-0 rounded-full"
                       >
                         {logoSearching ? (
                           <>

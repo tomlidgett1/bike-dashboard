@@ -137,12 +137,12 @@ export function CampaignDetailDialog(props: {
         </DialogHeader>
 
         <div className="border-b border-border/60 px-5 py-3">
-          <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+          <div className="flex items-center bg-gray-100 p-0.5 rounded-full w-fit">
             <button
               type="button"
               onClick={() => setTab("email")}
               className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors",
                 tab === "email"
                   ? "text-gray-800 bg-white shadow-sm"
                   : "text-gray-600 hover:bg-gray-200/70",
@@ -155,7 +155,7 @@ export function CampaignDetailDialog(props: {
               type="button"
               onClick={() => setTab("recipients")}
               className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors",
                 tab === "recipients"
                   ? "text-gray-800 bg-white shadow-sm"
                   : "text-gray-600 hover:bg-gray-200/70",
@@ -164,7 +164,7 @@ export function CampaignDetailDialog(props: {
               <Users size={15} />
               Recipients
               {recipients.length > 0 ? (
-                <span className="rounded-md bg-gray-200/80 px-1.5 py-0.5 text-[10px] font-semibold text-gray-600">
+                <span className="rounded-full bg-gray-200/80 px-1.5 py-0.5 text-[10px] font-semibold text-gray-600">
                   {recipients.length}
                 </span>
               ) : null}

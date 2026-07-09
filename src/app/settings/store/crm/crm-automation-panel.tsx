@@ -132,14 +132,14 @@ export function CrmAutomationPanel() {
 
         <div className="mt-3">
           <Label className="text-xs">Repeat</Label>
-          <div className="mt-1 flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+          <div className="mt-1 flex items-center bg-gray-100 p-0.5 rounded-full w-fit">
             {(["once", "weekly", "monthly"] as const).map((type) => (
               <button
                 key={type}
                 type="button"
                 onClick={() => setScheduleType(type)}
                 className={cn(
-                  "px-3 py-1.5 text-sm font-medium rounded-md transition-colors capitalize",
+                  "px-3 py-1.5 text-sm font-medium rounded-full transition-colors capitalize",
                   scheduleType === type
                     ? "text-gray-800 bg-white shadow-sm"
                     : "text-gray-600 hover:bg-gray-200/70",

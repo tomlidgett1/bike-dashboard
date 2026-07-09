@@ -1373,7 +1373,7 @@ function PreviewColumn(props: {
               type="button"
               onClick={() => onPreviewModeChange("desktop")}
               className={cn(
-                "flex h-full items-center rounded-md px-2.5 text-xs font-medium transition-colors",
+                "flex h-full items-center rounded-full px-2.5 text-xs font-medium transition-colors",
                 previewMode === "desktop"
                   ? "bg-zinc-900 text-white"
                   : "text-muted-foreground hover:text-foreground",
@@ -1386,7 +1386,7 @@ function PreviewColumn(props: {
               type="button"
               onClick={() => onPreviewModeChange("mobile")}
               className={cn(
-                "flex h-full items-center rounded-md px-2.5 text-xs font-medium transition-colors",
+                "flex h-full items-center rounded-full px-2.5 text-xs font-medium transition-colors",
                 previewMode === "mobile"
                   ? "bg-zinc-900 text-white"
                   : "text-muted-foreground hover:text-foreground",
@@ -1781,7 +1781,7 @@ function SpecsColumn(props: {
                   {/* ——— Send ——— */}
                   {campaign ? (
                     <div className="space-y-2.5">
-                      <div className="flex items-center rounded-lg bg-gray-100 p-0.5">
+                      <div className="flex items-center rounded-full bg-gray-100 p-0.5">
                         {(
                           [
                             { id: "draft", label: "Draft" },
@@ -1797,7 +1797,7 @@ function SpecsColumn(props: {
                               onSendPlanChange((plan) => ({ ...plan, mode: option.id }));
                             }}
                             className={cn(
-                              "flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
+                              "flex-1 rounded-full px-2 py-1.5 text-xs font-medium transition-colors",
                               sendPlan.mode === option.id
                                 ? "bg-white text-foreground shadow-sm"
                                 : "text-muted-foreground hover:text-foreground",

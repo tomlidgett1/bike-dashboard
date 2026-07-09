@@ -4,17 +4,25 @@ import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   BarChart3,
+  ChevronDown,
   Inbox,
   Loader2,
   Mail,
   Search,
   Send,
+  Settings,
   UserX,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { GmailLogo } from "@/components/genie/gmail-logo";
 import { NestLogo } from "@/components/genie/nest-logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   CustomerEnquiriesPageHeader,
   NestNewMessageButton,
@@ -38,15 +46,30 @@ import {
   FloatingCardPageTitleRow,
 } from "@/components/layout/floating-card-page";
 import { floatingCardPageHeaderNudgeClass } from "@/lib/layout/floating-card-page";
-import { BrandLoadingSpinner } from "@/components/ui/brand-loading-spinner";
 import { cn } from "@/lib/utils";
+
+function EnquiriesPageSpinner({ label = "Loading enquiries" }: { label?: string }) {
+  return (
+    <div
+      role="status"
+      aria-label={label}
+      className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-gray-500"
+    />
+  );
+}
+
+function EnquiriesPageLoadingState() {
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center">
+      <EnquiriesPageSpinner />
+    </div>
+  );
+}
 
 function InquiriesGmailStatusLoading() {
   return (
     <InquiriesFloatingCardShell>
-      <div className="flex flex-1 items-center justify-center p-6">
-        <BrandLoadingSpinner label="Loading enquiries…" size="lg" />
-      </div>
+      <EnquiriesPageLoadingState />
     </InquiriesFloatingCardShell>
   );
 }
@@ -122,7 +145,7 @@ function EnquiriesSplitView({
     <div className="flex min-h-0 flex-1">
       <div
         className={cn(
-          "w-full min-w-0 flex-col md:flex md:w-[340px] md:shrink-0 md:border-r md:border-border/60 lg:w-[380px]",
+          "flex min-h-0 w-full min-w-0 flex-col md:flex md:w-[340px] md:shrink-0 md:border-r md:border-border/60 lg:w-[380px]",
           showPane ? "hidden" : "flex",
         )}
       >
@@ -166,30 +189,48 @@ function CustomerEnquiriesHeaderActions({
   c: UnifiedInboxController;
   onOpenTrainNest: () => void;
 }) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
   return (
     <>
-      <button
-        type="button"
-        onClick={onOpenTrainNest}
-        disabled={!c.nestConfigured}
-        className={storeSettingsHeaderActionClass(false, !c.nestConfigured)}
-        title={
-          c.nestConfigured
-            ? "Train Nest — update rules and knowledge"
-            : "Nest is not configured yet"
-        }
-      >
-        <NestLogo className="h-[15px] w-[15px]" />
-        Train Nest
-      </button>
-      <Link
-        href="/settings/store/customer-inquiries/analytics"
-        className={cn(storeSettingsHeaderActionClass(), "px-2.5")}
-        aria-label="Analytics"
-        title="Analytics"
-      >
-        <BarChart3 className="size-[15px]" />
-      </Link>
+      <DropdownMenu open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className={cn(storeSettingsHeaderActionClass(), "px-2.5")}
+            aria-label="Settings"
+            title="Settings"
+          >
+            <Settings className="size-[15px]" />
+            <ChevronDown
+              className={cn(
+                "h-3.5 w-3.5 text-gray-400 transition-transform duration-200",
+                settingsOpen && "rotate-180",
+              )}
+            />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-44 rounded-lg bg-white p-1.5">
+          <DropdownMenuItem
+            disabled={!c.nestConfigured}
+            onSelect={(event) => {
+              event.preventDefault();
+              if (!c.nestConfigured) return;
+              onOpenTrainNest();
+            }}
+            className="gap-2 rounded-md"
+          >
+            <NestLogo className="h-[15px] w-[15px]" />
+            Train Nest
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild className="gap-2 rounded-md">
+            <Link href="/settings/store/customer-inquiries/analytics">
+              <BarChart3 className="size-[15px]" />
+              Analytics
+            </Link>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       {c.gmailConfigured && !c.gmailConnected ? (
         <button
           type="button"
@@ -287,12 +328,30 @@ export function StoreCustomerInquiriesPanel() {
   if (!c.gmailConfigured && !c.nestConfigured) {
     return (
       <InquiriesFloatingCardShell>
-        <div className="flex flex-1 items-center justify-center p-6">
+        <div className="flex min-h-0 flex-1 items-center justify-center p-6">
           <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white p-6 text-center text-sm text-gray-600">
             Gmail integration is not configured for this environment.
           </div>
         </div>
       </InquiriesFloatingCardShell>
+    );
+  }
+
+  if (c.listLoading && c.allRows.length === 0) {
+    return (
+      <>
+        <FloatingCardPageHeader>
+          <CustomerEnquiriesHeader trailingActions={headerActions} />
+        </FloatingCardPageHeader>
+
+        <FloatingCardPageBody>
+          <FloatingCard>
+            <EnquiriesPageLoadingState />
+          </FloatingCard>
+        </FloatingCardPageBody>
+
+        <NestPromptCoachSheet open={trainNestOpen} onOpenChange={setTrainNestOpen} />
+      </>
     );
   }
 

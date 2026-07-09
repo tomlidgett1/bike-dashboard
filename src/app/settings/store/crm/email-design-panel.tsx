@@ -35,7 +35,7 @@ export function EmailDesignPanel(props: {
     <div className="space-y-4 rounded-md border border-border/60 bg-white p-4">
       <div>
         <Label className="text-xs font-medium text-muted-foreground">Editor mode</Label>
-        <div className="mt-2 flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+        <div className="mt-2 flex items-center bg-gray-100 p-0.5 rounded-full w-fit">
           {(
             [
               { id: "template", label: "Template" },
@@ -47,7 +47,7 @@ export function EmailDesignPanel(props: {
               type="button"
               onClick={() => patchDesign({ mode: entry.id })}
               className={cn(
-                "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                "px-3 py-1.5 text-xs font-medium rounded-full transition-colors",
                 design.mode === entry.id
                   ? "text-gray-800 bg-white shadow-sm"
                   : "text-gray-600 hover:bg-gray-200/70",

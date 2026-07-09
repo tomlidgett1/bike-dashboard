@@ -7,6 +7,7 @@
 import * as React from "react";
 import {
   AlertTriangle,
+  BadgeCheck,
   CheckCircle2,
   Cog,
   Copy,
@@ -22,7 +23,6 @@ import {
   Tag,
   Trash2,
   Users,
-  Calendar,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-page";
 import { SettingsNavTabs } from "@/components/settings/settings-nav-tabs";
@@ -61,15 +61,14 @@ import { formatAud } from "@/lib/crm/types";
 import { CampaignComposer, type ComposerSeed } from "./campaign-composer";
 import { CampaignDetailDialog } from "./campaign-detail-dialog";
 import { ContactGroupFilterDropdown, ContactSortDropdown } from "./contact-sort-dropdown";
+import { crmFilterPillClass, crmFilterPillsClass } from "./crm-page-button-styles";
 import { ContactGroupsPanel } from "./contact-groups-panel";
 import { CrmAgentPanel } from "./crm-agent-panel";
-import { CrmAutomationPanel } from "./crm-automation-panel";
 
 type ContactStats = { total: number; optedOut: number; eligible: number };
 type ContactFilter = "all" | "opted_in" | "opted_out";
 type CrmSection = "create" | "people" | "activity";
 type PeopleTab = "contacts" | "groups";
-type ActivityTab = "campaigns" | "automation";
 
 const PAGE_SIZE = 50;
 
@@ -221,20 +220,13 @@ const PEOPLE_TABS = [
   { id: "groups", label: "Groups", icon: Tag },
 ] as const satisfies readonly { id: PeopleTab; label: string; icon: React.ComponentType<{ className?: string }> }[];
 
-const ACTIVITY_TABS = [
-  { id: "campaigns", label: "Campaigns", icon: Letter },
-  { id: "automation", label: "Automation", icon: Calendar },
-] as const satisfies readonly { id: ActivityTab; label: string; icon: typeof Letter }[];
-
 export function CrmPageContent() {
   const [section, setSection] = React.useState<CrmSection>("create");
   const [peopleTab, setPeopleTab] = React.useState<PeopleTab>("contacts");
-  const [activityTab, setActivityTab] = React.useState<ActivityTab>("campaigns");
   const { open, setOpen, isMobile, openMobile, setOpenMobile } = useSidebar();
 
   const goToCampaigns = React.useCallback(() => {
     setSection("activity");
-    setActivityTab("campaigns");
   }, []);
 
   const handleSectionChange = React.useCallback(
@@ -492,7 +484,7 @@ export function CrmPageContent() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button size="sm" onClick={() => openComposer()} disabled={(stats?.eligible ?? 0) === 0 && selected.size === 0}>
+            <Button size="sm" className="rounded-full" onClick={() => openComposer()} disabled={(stats?.eligible ?? 0) === 0 && selected.size === 0}>
               <Send className="mr-1.5 size-4" />
               New campaign
             </Button>
@@ -513,14 +505,6 @@ export function CrmPageContent() {
                 value={peopleTab}
                 onChange={setPeopleTab}
                 layoutId="crm-people-tabs"
-              />
-            ) : section === "activity" ? (
-              <SettingsNavTabs
-                size="sm"
-                items={ACTIVITY_TABS}
-                value={activityTab}
-                onChange={setActivityTab}
-                layoutId="crm-activity-tabs"
               />
             ) : null}
           </div>
@@ -601,8 +585,6 @@ export function CrmPageContent() {
                 void loadCampaigns();
               }}
             />
-          ) : section === "activity" && activityTab === "automation" ? (
-            <CrmAutomationPanel />
           ) : section === "activity" ? (
             <CampaignsView
               campaigns={campaigns}
@@ -732,7 +714,7 @@ function ContactsView(props: {
             deduplicated by email automatically.
           </p>
         </div>
-        <Button onClick={onImport} disabled={importing}>
+        <Button className="rounded-full" onClick={onImport} disabled={importing}>
           {importing ? <Loader2 className="mr-1.5 size-4" /> : <RefreshCw className="mr-1.5 size-4" />}
           {importing ? "Importing…" : "Import from Lightspeed"}
         </Button>
@@ -776,18 +758,13 @@ function ContactsView(props: {
         </div>
 
         <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <div className="flex shrink-0 items-center rounded-lg bg-gray-100 p-0.5">
+          <div className={crmFilterPillsClass}>
             {FILTERS.map((entry) => (
               <button
                 key={entry.id}
                 type="button"
                 onClick={() => onFilter(entry.id)}
-                className={cn(
-                  "shrink-0 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-                  filter === entry.id
-                    ? "bg-white text-gray-800 shadow-sm"
-                    : "text-gray-600 hover:bg-gray-200/70",
-                )}
+                className={crmFilterPillClass(filter === entry.id)}
               >
                 {entry.label}
               </button>
@@ -823,7 +800,7 @@ function ContactsView(props: {
             <Button
               size="sm"
               variant="secondary"
-              className="w-full bg-white text-zinc-900 hover:bg-white/90 sm:w-auto"
+              className="w-full rounded-full bg-white text-zinc-900 hover:bg-white/90 sm:w-auto"
               onClick={onCreateCampaign}
             >
               <Send className="mr-1.5 size-3.5" />
@@ -940,7 +917,7 @@ function ContactsView(props: {
           </ul>
           {contacts.length < filteredCount ? (
             <div className="flex justify-center py-4">
-              <Button variant="outline" size="sm" onClick={onLoadMore} disabled={loadingMore}>
+              <Button variant="outline" size="sm" className="rounded-full" onClick={onLoadMore} disabled={loadingMore}>
                 {loadingMore ? <Loader2 className="mr-1.5 size-4" /> : null}
                 Load more
               </Button>
@@ -1020,7 +997,7 @@ function CampaignsView(props: {
             Pick a template, make it yours, and send it to your customers in a couple of minutes.
           </p>
         </div>
-        <Button onClick={onNewCampaign}>
+        <Button className="rounded-full" onClick={onNewCampaign}>
           <Send className="mr-1.5 size-4" />
           Create your first campaign
         </Button>
@@ -1056,10 +1033,6 @@ function CampaignsView(props: {
                   : `${campaign.intended_count.toLocaleString()} recipient${
                       campaign.intended_count === 1 ? "" : "s"
                     }`;
-              const failedCount =
-                campaign.status === "sent" || campaign.status === "failed"
-                  ? campaign.failed_count
-                  : 0;
 
               return (
                 <li
@@ -1073,19 +1046,26 @@ function CampaignsView(props: {
                         <button
                           type="button"
                           onClick={() => openDetail(campaign, "email")}
-                          className="min-w-0 truncate text-left text-sm font-semibold tracking-tight text-foreground transition-colors hover:text-foreground/75"
+                          className="min-w-0 truncate text-left font-display text-[17px] font-semibold leading-snug tracking-[-0.02em] text-foreground transition-colors hover:text-foreground/75"
                         >
                           {campaign.subject}
                         </button>
-                        <span
-                          className={cn(
-                            "shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium capitalize",
-                            CAMPAIGN_STATUS_STYLES[campaign.status] ??
-                              CAMPAIGN_STATUS_STYLES.draft,
-                          )}
-                        >
-                          {campaign.status}
-                        </span>
+                        {campaign.status === "sent" ? (
+                          <BadgeCheck
+                            className="size-3.5 shrink-0 text-emerald-600"
+                            aria-label="Sent"
+                          />
+                        ) : (
+                          <span
+                            className={cn(
+                              "shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium capitalize",
+                              CAMPAIGN_STATUS_STYLES[campaign.status] ??
+                                CAMPAIGN_STATUS_STYLES.draft,
+                            )}
+                          >
+                            {campaign.status}
+                          </span>
+                        )}
                       </div>
 
                       <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
@@ -1098,12 +1078,6 @@ function CampaignsView(props: {
                           ·
                         </span>
                         <span className="shrink-0 tabular-nums">{volumeLabel}</span>
-                        {failedCount > 0 ? (
-                          <span className="inline-flex items-center gap-1 rounded-md bg-red-50 px-1.5 py-0.5 text-[11px] font-medium text-red-700">
-                            <AlertTriangle className="size-3" />
-                            {failedCount.toLocaleString()} failed
-                          </span>
-                        ) : null}
                       </div>
 
                       {showMetrics ? (
@@ -1126,6 +1100,7 @@ function CampaignsView(props: {
                         <>
                           <Button
                             size="sm"
+                            className="rounded-full"
                             onClick={() => onSendDraft(campaign)}
                             disabled={busy}
                           >
@@ -1171,6 +1146,7 @@ function CampaignsView(props: {
                           <Button
                             variant="outline"
                             size="sm"
+                            className="rounded-full"
                             onClick={() => openDetail(campaign, "email")}
                           >
                             <Eye className="mr-1.5 size-3.5" />

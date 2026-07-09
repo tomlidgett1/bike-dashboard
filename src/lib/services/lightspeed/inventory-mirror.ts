@@ -787,10 +787,9 @@ export async function syncLightspeedInventoryMirrorForUser(args: {
       })
       .eq('id', runId)
 
-    await admin
-      .from('lightspeed_connections')
-      .update({ last_sync_at: new Date().toISOString() })
-      .eq('user_id', args.userId)
+    // Do NOT advance lightspeed_connections.last_sync_at here.
+    // That watermark is used by marketplace stock reconciliation / UI "last sync".
+    // The inventory mirror has its own lightspeed_inventory_sync_runs timeline.
 
     return result
   } catch (error) {

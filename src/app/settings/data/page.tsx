@@ -528,10 +528,10 @@ export default function DataSettingsPage() {
                   <h2 className="text-sm font-semibold text-foreground">
                     Full Lightspeed inventory
                   </h2>
-                  <Badge variant="outline" className="rounded-md">
+                  <Badge variant="outline" className="rounded-full">
                     {total.toLocaleString()} rows
                   </Badge>
-                  <Badge variant="secondary" className="rounded-md">
+                  <Badge variant="secondary" className="rounded-full">
                     Double-click editable cells
                   </Badge>
                 </div>
@@ -551,7 +551,7 @@ export default function DataSettingsPage() {
                     if (event.key === "Enter") applySearch();
                   }}
                   placeholder="Search inventory"
-                  className="h-9 rounded-md pl-9 pr-8"
+                  className="h-9 rounded-full pl-9 pr-8"
                 />
                 {searchDraft && (
                   <button
@@ -568,13 +568,14 @@ export default function DataSettingsPage() {
                   </button>
                 )}
               </div>
-              <Button type="button" variant="outline" size="sm" onClick={applySearch}>
+              <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={applySearch}>
                 Search
               </Button>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
+                className="rounded-full"
                 onClick={refreshFromLightspeed}
                 disabled={syncing || loading}
               >
@@ -588,6 +589,7 @@ export default function DataSettingsPage() {
               <Button
                 type="button"
                 size="sm"
+                className="rounded-full"
                 onClick={cleanSelectedTitles}
                 disabled={cleaningTitles || selectedItemIds.size === 0}
               >
@@ -779,7 +781,7 @@ export default function DataSettingsPage() {
                 setPage(1);
               }}
             >
-              <SelectTrigger className="h-8 w-[120px] rounded-md">
+              <SelectTrigger className="h-8 w-[120px] rounded-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -793,6 +795,7 @@ export default function DataSettingsPage() {
               type="button"
               variant="outline"
               size="icon-sm"
+              className="rounded-full"
               disabled={page <= 1 || loading}
               onClick={() => setPage((current) => Math.max(current - 1, 1))}
             >
@@ -802,6 +805,7 @@ export default function DataSettingsPage() {
               type="button"
               variant="outline"
               size="icon-sm"
+              className="rounded-full"
               disabled={page >= totalPages || loading}
               onClick={() => setPage((current) => current + 1)}
             >

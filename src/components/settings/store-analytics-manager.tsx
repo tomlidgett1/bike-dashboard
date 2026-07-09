@@ -1018,7 +1018,7 @@ export function StoreAnalyticsManager() {
           </div>
           <div className="flex items-center gap-2">
             <Select value={days} onValueChange={setDays}>
-              <SelectTrigger size="sm" className="w-[140px] rounded-md">
+              <SelectTrigger size="sm" className="w-[140px] rounded-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1028,7 +1028,7 @@ export function StoreAnalyticsManager() {
                 <SelectItem value="365">Last year</SelectItem>
               </SelectContent>
             </Select>
-            <Button type="button" variant="outline" size="sm" onClick={loadAnalytics} disabled={loading}>
+            <Button type="button" variant="outline" size="sm" className="rounded-full" onClick={loadAnalytics} disabled={loading}>
               {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
               Refresh
             </Button>
@@ -1037,7 +1037,7 @@ export function StoreAnalyticsManager() {
       </div>
 
       <nav aria-label="Analytics sections">
-        <div className="flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-md bg-gray-100 p-0.5">
+        <div className="flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-full bg-gray-100 p-0.5">
           {tabs.map((tab) => (
             <AnalyticsTabButton
               key={tab.value}

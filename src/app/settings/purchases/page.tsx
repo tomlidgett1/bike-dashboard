@@ -581,7 +581,7 @@ function StatusBadge({
 }
 
 const ORDERS_SEARCH_INPUT_CLASS =
-  "h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-[3px] focus:ring-ring/30";
+  "h-9 w-full rounded-full border border-input bg-background pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-[3px] focus:ring-ring/30";
 
 const PANEL_CLASS = "overflow-hidden rounded-md border border-gray-200 bg-white";
 const MOBILE_LIST_CLASS = "divide-y divide-gray-100 overflow-hidden rounded-md border border-gray-200 bg-white";
@@ -623,7 +623,7 @@ function OrderFilterTabs<T extends string>({
   return (
     <div
       className={cn(
-        "flex items-center rounded-md bg-gray-100 p-0.5",
+        "flex items-center rounded-full bg-gray-100 p-0.5",
         fullWidth ? "w-full" : "w-fit",
         className,
       )}
@@ -637,7 +637,7 @@ function OrderFilterTabs<T extends string>({
             type="button"
             onClick={() => onTabChange(tab.id)}
             className={cn(
-              "flex shrink-0 items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+              "flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1.5 text-xs font-medium transition-colors",
               fullWidth && "flex-1 justify-center",
               isActive
                 ? "bg-white text-gray-800 shadow-sm"
@@ -701,7 +701,7 @@ function OrderManagementMainTabs({
 }) {
   return (
     <nav className={cn("mb-4", className)} aria-label="Order management sections">
-      <div className="flex max-w-full flex-wrap items-center gap-0.5 rounded-md bg-gray-100 p-0.5 w-fit">
+      <div className="flex max-w-full flex-wrap items-center gap-0.5 rounded-full bg-gray-100 p-0.5 w-fit">
         {tabs.map((tab) => {
           const Icon = MAIN_TAB_ICONS[tab.id];
           const isActive = activeTab === tab.id;
@@ -711,7 +711,7 @@ function OrderManagementMainTabs({
               type="button"
               onClick={() => onTabChange(tab.id)}
               className={cn(
-                "flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                "flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
                 isActive
                   ? "bg-white text-gray-800 shadow-sm"
                   : "text-gray-600 hover:bg-gray-200/70",
@@ -722,7 +722,7 @@ function OrderManagementMainTabs({
               {tab.badge > 0 ? (
                 <Badge
                   variant="outline"
-                  className="rounded-md px-1.5 py-0 text-[10px] font-medium"
+                  className="rounded-full px-1.5 py-0 text-[10px] font-medium"
                 >
                   {tab.badge > 99 ? "99+" : tab.badge}
                 </Badge>
@@ -3460,7 +3460,7 @@ function OrderManagementPageContent() {
                       />
 
                       <Select value={statusFilter} onValueChange={setStatusFilter}>
-                        <SelectTrigger className="w-[140px]">
+                        <SelectTrigger className="w-[140px] rounded-full">
                           <SelectValue placeholder="Status" />
                         </SelectTrigger>
                         <SelectContent>
@@ -3471,7 +3471,7 @@ function OrderManagementPageContent() {
                         </SelectContent>
                       </Select>
 
-                      <Button variant="outline" size="icon-sm" onClick={fetchOrders}>
+                      <Button variant="outline" size="icon-sm" className="rounded-full" onClick={fetchOrders}>
                         <RefreshCw className={cn("size-4", ordersLoading && "animate-spin")} />
                       </Button>
                     </div>
@@ -3549,7 +3549,7 @@ function OrderManagementPageContent() {
                       </div>
                       
                       <Select value={listingsFilter} onValueChange={(v) => setListingsFilter(v as any)}>
-                        <SelectTrigger className="w-[140px]">
+                        <SelectTrigger className="w-[140px] rounded-full">
                           <SelectValue placeholder="Status" />
                         </SelectTrigger>
                         <SelectContent>
@@ -3587,7 +3587,7 @@ function OrderManagementPageContent() {
                   <div className={PANEL_CLASS}>
                     <div className="flex flex-col gap-3 border-b border-gray-200 p-4 lg:flex-row lg:items-center">
                       <Select value={ticketsFilter} onValueChange={(v) => setTicketsFilter(v as any)}>
-                        <SelectTrigger className="w-[140px]">
+                        <SelectTrigger className="w-[140px] rounded-full">
                           <SelectValue placeholder="Status" />
                         </SelectTrigger>
                         <SelectContent>
@@ -3738,7 +3738,7 @@ function OrderManagementPageContent() {
                       />
 
                       <Select value={offersFilter} onValueChange={(v) => setOffersFilter(v as any)}>
-                        <SelectTrigger className="w-[140px]">
+                        <SelectTrigger className="w-[140px] rounded-full">
                           <SelectValue placeholder="Status" />
                         </SelectTrigger>
                         <SelectContent>
@@ -3927,7 +3927,7 @@ function OrderManagementPageContent() {
                   </div>
                   
                   {/* Filter tabs */}
-                  <div className="mb-3 flex items-center rounded-md bg-gray-100 p-0.5 w-fit overflow-x-auto">
+                  <div className="mb-3 flex items-center rounded-full bg-gray-100 p-0.5 w-fit overflow-x-auto">
                     {(['all', 'active', 'sold', 'archived'] as const).map((f) => (
                       <button
                         key={f}
@@ -3954,7 +3954,7 @@ function OrderManagementPageContent() {
                       <Tag className="mx-auto mb-3 h-8 w-8 text-gray-300" />
                       <p className="text-sm font-medium text-gray-900">No listings yet</p>
                       <p className="mt-1 text-xs text-gray-500">Create your first listing</p>
-                      <Button size="sm" className="mt-4 rounded-md" onClick={() => router.push('/marketplace/sell')}>
+                      <Button size="sm" className="mt-4 rounded-full" onClick={() => router.push('/marketplace/sell')}>
                         <Plus className="size-4" />
                         New Listing
                       </Button>
@@ -3985,7 +3985,7 @@ function OrderManagementPageContent() {
               {/* Mobile Claims */}
               {activeTab === 'claims' && (
                 <div className="space-y-2">
-                  <div className="mb-3 flex items-center rounded-md bg-gray-100 p-0.5 w-fit overflow-x-auto">
+                  <div className="mb-3 flex items-center rounded-full bg-gray-100 p-0.5 w-fit overflow-x-auto">
                     {(['all', 'active', 'resolved', 'closed'] as const).map((f) => (
                       <button
                         key={f}
@@ -4038,7 +4038,7 @@ function OrderManagementPageContent() {
                   />
 
                   {/* Filter chips */}
-                  <div className="mb-3 flex items-center rounded-md bg-gray-100 p-0.5 w-fit overflow-x-auto">
+                  <div className="mb-3 flex items-center rounded-full bg-gray-100 p-0.5 w-fit overflow-x-auto">
                     {(['all', 'pending', 'accepted', 'rejected'] as const).map((f) => (
                       <button
                         key={f}

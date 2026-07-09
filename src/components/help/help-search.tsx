@@ -97,7 +97,7 @@ export function HelpSearch({ onResultClick, className, autoFocus }: HelpSearchPr
           onFocus={() => query.length >= 2 && setShowResults(true)}
           placeholder="Search for help..."
           autoFocus={autoFocus}
-          className="w-full pl-10 pr-10 py-3 bg-white border border-gray-200 rounded-md text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+          className="w-full pl-10 pr-10 py-3 bg-white border border-gray-200 rounded-full text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
         />
         {query && (
           <button

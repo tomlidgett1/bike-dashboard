@@ -46,7 +46,7 @@ export default function LightspeedTestPage() {
       icon={TestTube}
       description="Debug Lightspeed API calls, customer lookup scans, and connection state."
       actions={
-        <Button variant="outline" size="sm" className="rounded-md" asChild>
+        <Button variant="outline" size="sm" className="rounded-full" asChild>
           <Link href="/settings/store/test-tom">
             <Soundwave className="size-4" />
             Test Tom

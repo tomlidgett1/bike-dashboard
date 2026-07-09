@@ -48,7 +48,7 @@ export function StoreCarouselsNewMenu({
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <Button size="sm" className="rounded-md" disabled={disabled}>
+        <Button size="sm" className="rounded-full" disabled={disabled}>
           <Plus className="size-4" />
           New
           <ChevronDown className="size-4 opacity-60" />
@@ -57,12 +57,12 @@ export function StoreCarouselsNewMenu({
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel>Add to</DropdownMenuLabel>
         <div className="px-2 pb-2">
-          <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-full">
+          <div className="flex items-center bg-gray-100 p-0.5 rounded-full w-full">
             <button
               type="button"
               onClick={() => setStorePage("products")}
               className={cn(
-                "flex flex-1 items-center justify-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+                "flex flex-1 items-center justify-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-full transition-colors",
                 storePage === "products"
                   ? "text-gray-800 bg-white shadow-sm"
                   : "text-gray-600 hover:bg-gray-200/70",
@@ -75,7 +75,7 @@ export function StoreCarouselsNewMenu({
               type="button"
               onClick={() => setStorePage("bikes")}
               className={cn(
-                "flex flex-1 items-center justify-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+                "flex flex-1 items-center justify-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-full transition-colors",
                 storePage === "bikes"
                   ? "text-gray-800 bg-white shadow-sm"
                   : "text-gray-600 hover:bg-gray-200/70",

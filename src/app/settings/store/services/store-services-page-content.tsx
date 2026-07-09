@@ -16,7 +16,7 @@ export function StoreServicesPageContent() {
       description="The services your store offers to customers."
       flush
       actions={
-        <Button size="sm" className="rounded-md" onClick={() => setAddRequest((n) => n + 1)}>
+        <Button size="sm" className="rounded-full" onClick={() => setAddRequest((n) => n + 1)}>
           <Plus className="size-4" />
           Add service
         </Button>

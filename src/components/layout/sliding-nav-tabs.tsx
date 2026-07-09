@@ -59,7 +59,7 @@ export function SlidingNavTabs<T extends string>({
               <entry.icon className={compact ? "h-3 w-3" : "size-[15px]"} />
               {entry.label}
               {entry.badge != null && entry.badge !== 0 ? (
-                <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-gray-600">
+                <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-gray-600">
                   {entry.badge}
                 </span>
               ) : null}

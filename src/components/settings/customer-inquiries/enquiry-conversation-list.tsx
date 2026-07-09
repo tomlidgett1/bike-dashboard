@@ -1,7 +1,6 @@
 "use client";
 
 import { AlertCircle, Inbox } from "@/components/layout/app-sidebar/dashboard-icons";
-import { BrandLoadingSpinner } from "@/components/ui/brand-loading-spinner";
 import { GmailLogo } from "@/components/genie/gmail-logo";
 import { NestLogo } from "@/components/genie/nest-logo";
 import { cn } from "@/lib/utils";
@@ -50,7 +49,7 @@ export function MessageKindBadge({ row }: { row: UnifiedInboxRow }) {
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center rounded-md border px-1.5 py-px text-[10px] font-medium leading-4",
+        "inline-flex shrink-0 items-center rounded-md border px-1 py-0 text-[9px] font-medium leading-3",
         isStaff
           ? "border-blue-200 bg-blue-50 text-blue-700"
           : "border-gray-200 bg-gray-100 text-gray-600",
@@ -90,25 +89,25 @@ function ConversationRow({
       <SourceMark row={row} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            <p
-              className={cn(
-                "truncate text-sm text-gray-900",
-                unread ? "font-semibold" : "font-medium",
-              )}
-            >
-              {row.customerName}
-            </p>
-            {row.source === "nest" ? <MessageKindBadge row={row} /> : null}
-          </div>
-          <span
+          <p
             className={cn(
-              "shrink-0 text-[11px] tabular-nums",
-              unread ? "font-medium text-[#007AFF]" : "text-gray-400",
+              "min-w-0 flex-1 truncate text-sm text-gray-900",
+              unread ? "font-semibold" : "font-medium",
             )}
           >
-            {relativeTime(row.receivedAt)}
-          </span>
+            {row.customerName}
+          </p>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {row.source === "nest" ? <MessageKindBadge row={row} /> : null}
+            <span
+              className={cn(
+                "text-[11px] tabular-nums",
+                unread ? "font-medium text-[#007AFF]" : "text-gray-400",
+              )}
+            >
+              {relativeTime(row.receivedAt)}
+            </span>
+          </div>
         </div>
         <div className="mt-0.5 flex items-center gap-1.5">
           {unread ? (
@@ -129,10 +128,18 @@ function ConversationRow({
 }
 
 export function EnquiryConversationList({ c }: { c: UnifiedInboxController }) {
+  if (c.listLoading && c.allRows.length === 0) {
+    return null;
+  }
+
   if (c.listLoading) {
     return (
-      <div className="flex flex-1 items-center justify-center py-24">
-        <BrandLoadingSpinner label="Loading enquiries…" size="md" />
+      <div className="flex min-h-0 flex-1 items-center justify-center">
+        <div
+          role="status"
+          aria-label="Loading enquiries"
+          className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-gray-500"
+        />
       </div>
     );
   }

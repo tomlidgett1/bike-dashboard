@@ -25,7 +25,7 @@ export default function BulkOptimisePage() {
       description="Optimise titles, descriptions, specs, photos and brands for many products at once."
       flush
       actions={
-        <Button variant="outline" size="sm" className="rounded-md" asChild>
+        <Button variant="outline" size="sm" className="rounded-full" asChild>
           <Link href="/settings/store/products">
             <ArrowLeft className="size-4" />
             Back to products

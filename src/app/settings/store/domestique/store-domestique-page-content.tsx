@@ -1310,7 +1310,7 @@ export function StoreDomestiquePageContent() {
         <Button
           size="sm"
           variant="outline"
-          className="rounded-md"
+          className="rounded-full"
           onClick={handleRunNow}
           disabled={running || loading || !config?.is_enabled}
         >
@@ -1345,7 +1345,7 @@ export function StoreDomestiquePageContent() {
               Turn it on and it will run every night — finding riders due a service, VIPs gone quiet and stock that
               needs clearing, then proposing plays for your one-tap approval.
             </p>
-            <Button className="mt-4 rounded-md" disabled={saving} onClick={() => handleSaveConfig({ is_enabled: true })}>
+            <Button className="mt-4 rounded-full" disabled={saving} onClick={() => handleSaveConfig({ is_enabled: true })}>
               Turn on the Domestique
             </Button>
           </div>

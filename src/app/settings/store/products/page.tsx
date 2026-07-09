@@ -30,7 +30,7 @@ export default function StoreProductContentPage() {
       description="AI-generated descriptions and immersive product pages."
       flush
       actions={
-        <Button variant="outline" size="sm" className="rounded-md" asChild>
+        <Button variant="outline" size="sm" className="rounded-full" asChild>
           <Link href="/products">
             <Pencil className="size-4" />
             Edit products

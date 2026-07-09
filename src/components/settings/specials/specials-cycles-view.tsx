@@ -112,7 +112,7 @@ export function SpecialsCyclesView({
         <p className="mx-auto mt-1 mb-4 max-w-md text-sm text-muted-foreground">
           Generate the first set of specials from your Lightspeed inventory and sales history.
         </p>
-        <Button onClick={onRefresh} disabled={busy || working} className="rounded-md">
+        <Button onClick={onRefresh} disabled={busy || working} className="rounded-full">
           <Restart className={cn("size-4", (busy || working) && "animate-spin")} /> Generate specials
         </Button>
       </div>

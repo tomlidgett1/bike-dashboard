@@ -135,7 +135,7 @@ export function AudienceMembersDialog(props: {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search loaded customers"
-            className="h-9 rounded-md"
+            className="h-9 rounded-full"
           />
           {excludedCount > 0 ? (
             <span className="shrink-0 text-xs text-muted-foreground">

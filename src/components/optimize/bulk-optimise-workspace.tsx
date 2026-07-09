@@ -416,7 +416,7 @@ function FieldChip({
           : `${FIELD_LABELS[field]} will be skipped — click to include`
       }
       className={cn(
-        "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
         active
           ? "border-amber-600 bg-amber-50 text-foreground shadow-xs"
           : "border-border bg-background text-muted-foreground hover:bg-muted",
@@ -1645,7 +1645,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
   const addBrandLabel =
     addBrandFilter === "__none__" ? "No brand" : addBrandFilter || "All brands";
   const addFilterTriggerClassName =
-    "h-9 shrink-0 rounded-md border-input bg-white px-2.5 font-normal shadow-none";
+    "h-9 shrink-0 rounded-full border-input bg-white px-3.5 font-normal shadow-none";
 
   const togglePickerProduct = (id: string) => {
     setPickerSelected((prev) => {
@@ -1700,7 +1700,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
                     if (hasAddPickerQuery) setAddPickerOpen(true);
                   }}
                   className={cn(
-                    "rounded-md pl-8 text-sm",
+                    "rounded-full pl-8 text-sm",
                     isProductsCard ? "h-9 bg-white shadow-none" : "h-8 text-xs",
                   )}
                 />
@@ -1901,7 +1901,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
           <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
-              className="rounded-md"
+              className="rounded-full"
               disabled={!someSelected || optimiseBusy}
               onClick={() => void startOptimise()}
             >

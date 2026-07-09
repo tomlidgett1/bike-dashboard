@@ -155,7 +155,7 @@ export function StoreSpecialsPageContent() {
         <Button
           size="sm"
           variant="outline"
-          className="rounded-md"
+          className="rounded-full"
           onClick={handleRefresh}
           disabled={busy || loading || !config?.is_enabled}
         >
@@ -164,7 +164,7 @@ export function StoreSpecialsPageContent() {
         </Button>
       }
       toolbar={
-        <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+        <div className="flex items-center bg-gray-100 p-0.5 rounded-full w-fit">
           {TABS.map((tab) => {
             const Icon = tab.icon;
             return (
@@ -173,7 +173,7 @@ export function StoreSpecialsPageContent() {
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
                 className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                  "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors",
                   activeTab === tab.id
                     ? "text-gray-800 bg-white shadow-sm"
                     : "text-gray-600 hover:bg-gray-200/70",

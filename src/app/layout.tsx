@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { JetBrains_Mono, Inter, Caveat } from "next/font/google";
+import { JetBrains_Mono, Inter, Caveat, Plus_Jakarta_Sans } from "next/font/google";
 import { SITE_URL, SITE_NAME, SITE_TITLE, SITE_DESCRIPTION, SITE_OG_IMAGE } from "@/lib/seo/site";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { AuthProvider } from "@/components/providers/auth-provider";
@@ -38,6 +38,12 @@ const caveat = Caveat({
   variable: "--font-handwriting",
   subsets: ["latin"],
   weight: ["600", "700"],
+});
+
+const plusJakartaSans = Plus_Jakarta_Sans({
+  variable: "--font-display",
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -127,7 +133,7 @@ export default async function RootLayout({
         <link rel="dns-prefetch" href="https://frjcluhuictnbimitvrm.supabase.co" />
       </head>
       <body
-        className={`${inter.variable} ${jetbrainsMono.variable} ${caveat.variable} font-sans antialiased touch-manipulation`}
+        className={`${inter.variable} ${jetbrainsMono.variable} ${caveat.variable} ${plusJakartaSans.variable} font-sans antialiased touch-manipulation`}
         style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none' } as any}
       >
         <HapticsBootstrap />

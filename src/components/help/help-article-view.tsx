@@ -168,7 +168,7 @@ export function HelpArticleView({
                 variant="outline"
                 size="sm"
                 onClick={() => handleFeedback("helpful")}
-                className="rounded-md"
+                className="rounded-full"
               >
                 <ThumbsUp className="h-4 w-4 mr-1.5" />
                 Yes
@@ -177,7 +177,7 @@ export function HelpArticleView({
                 variant="outline"
                 size="sm"
                 onClick={() => handleFeedback("not_helpful")}
-                className="rounded-md"
+                className="rounded-full"
               >
                 <ThumbsDown className="h-4 w-4 mr-1.5" />
                 No

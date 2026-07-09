@@ -310,7 +310,7 @@ export function StoreOffersManager({ addRequest = 0 }: { addRequest?: number } =
           <p className="mt-1 max-w-md text-sm text-gray-500">
             Create a buy-one-get-free bundle — for example, book a general service and include a free tube, tyre levers and gels.
           </p>
-          <Button className="mt-5 rounded-md" onClick={openAdd}>
+          <Button className="mt-5 rounded-full" onClick={openAdd}>
             Create offer
           </Button>
         </div>
@@ -363,14 +363,14 @@ export function StoreOffersManager({ addRequest = 0 }: { addRequest?: number } =
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <Button variant="outline" size="sm" className="rounded-md" onClick={() => openEdit(offer)}>
+                  <Button variant="outline" size="sm" className="rounded-full" onClick={() => openEdit(offer)}>
                     <Edit2 className="h-3.5 w-3.5" />
                     Edit
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
-                    className="rounded-md text-red-600 hover:text-red-700"
+                    className="rounded-full text-red-600 hover:text-red-700"
                     onClick={() => setDeleteConfirmId(offer.id)}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -428,7 +428,7 @@ export function StoreOffersManager({ addRequest = 0 }: { addRequest?: number } =
 
             <div className="space-y-3">
               <Label>What must the customer buy?</Label>
-              <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+              <div className="flex items-center bg-gray-100 p-0.5 rounded-full w-fit">
                 <button
                   type="button"
                   onClick={() =>
@@ -439,7 +439,7 @@ export function StoreOffersManager({ addRequest = 0 }: { addRequest?: number } =
                     }))
                   }
                   className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                    "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors",
                     formData.buy_type === "service"
                       ? "text-gray-800 bg-white shadow-sm"
                       : "text-gray-600 hover:bg-gray-200/70",
@@ -458,7 +458,7 @@ export function StoreOffersManager({ addRequest = 0 }: { addRequest?: number } =
                     }))
                   }
                   className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                    "flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full transition-colors",
                     formData.buy_type === "product"
                       ? "text-gray-800 bg-white shadow-sm"
                       : "text-gray-600 hover:bg-gray-200/70",
@@ -623,10 +623,10 @@ export function StoreOffersManager({ addRequest = 0 }: { addRequest?: number } =
           </div>
 
           <DialogFooter className="shrink-0 border-t border-gray-100 px-6 py-4">
-            <Button variant="outline" className="rounded-md" onClick={() => setIsDialogOpen(false)}>
+            <Button variant="outline" className="rounded-full" onClick={() => setIsDialogOpen(false)}>
               Cancel
             </Button>
-            <Button className="rounded-md" onClick={handleSave} disabled={saving}>
+            <Button className="rounded-full" onClick={handleSave} disabled={saving}>
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {editingOffer ? "Save changes" : "Create offer"}
             </Button>

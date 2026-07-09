@@ -67,7 +67,7 @@ export function DesignTabbed({ c }: { c: InquiriesController }) {
                 </div>
               </div>
 
-              <div className="mt-4 flex items-center gap-0.5 rounded-md bg-gray-100 p-0.5">
+              <div className="mt-4 flex items-center gap-0.5 rounded-full bg-gray-100 p-0.5">
                 {tabs.map((t) => (
                   <button
                     key={t.id}

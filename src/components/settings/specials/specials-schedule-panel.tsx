@@ -54,7 +54,7 @@ function Segmented<T extends string | number>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="inline-flex items-center bg-gray-100 p-0.5 rounded-md">
+    <div className="inline-flex items-center bg-gray-100 p-0.5 rounded-full">
       {options.map((opt) => (
         <button
           key={String(opt.value)}

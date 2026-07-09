@@ -57,7 +57,7 @@ export async function GET() {
 
     const seenWorkorderIds = new Set<string>()
     const suggestions = (
-      await fetchHomeV2WorkorderNestSuggestions(user.id, 4, {
+      await fetchHomeV2WorkorderNestSuggestions(user.id, 5, {
         messageTemplates: resolveNestMessageTemplates({
           intro: profile?.nest_message_intro,
           signoff: profile?.nest_message_signoff,

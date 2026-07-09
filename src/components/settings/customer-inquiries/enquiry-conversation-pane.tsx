@@ -23,7 +23,6 @@ import {
   LightspeedBentoSkeleton,
 } from "./lightspeed-bento-panel";
 import { EnquiriesNavTabs, type EnquiriesNavTabItem } from "./enquiries-nav-tabs";
-import { CHANNEL_META, type InboxChannel } from "./channel-meta";
 import type { UnifiedInboxController } from "./use-unified-inbox-controller";
 import type { LightspeedContext } from "./use-inquiries-controller";
 import { NestThreadMessage, sameMessageGroup } from "@/components/settings/nest-chat-messages";
@@ -66,9 +65,12 @@ function NestThread({
 }) {
   if (loading && messages.length === 0) {
     return (
-      <div className="flex flex-1 items-center justify-center py-16 text-sm text-gray-500">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        Loading conversation…
+      <div
+        className="flex min-h-0 flex-1 items-center justify-center"
+        role="status"
+        aria-label="Loading conversation"
+      >
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-gray-500" />
       </div>
     );
   }
@@ -99,18 +101,6 @@ function NestThread({
           />
         );
       })}
-    </div>
-  );
-}
-
-/** Thin strip under the header spelling out how this conversation reached the store. */
-function ChannelOriginStrip({ channel }: { channel: InboxChannel }) {
-  const meta = CHANNEL_META[channel];
-  const Icon = meta.icon;
-  return (
-    <div className="flex shrink-0 items-center gap-2 border-b border-gray-100 bg-gray-50/80 px-4 py-2 md:px-5">
-      <Icon className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-      <p className="text-xs text-gray-500">{meta.origin}</p>
     </div>
   );
 }
@@ -274,7 +264,6 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
         {isNest ? (
           paneTab === "conversation" ? (
             <>
-              <ChannelOriginStrip channel={c.selectedChannel ?? row.channel} />
               <NestThread
                 messages={nestMessages}
                 loading={c.nestDetailLoading}

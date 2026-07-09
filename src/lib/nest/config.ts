@@ -36,6 +36,28 @@ export function getNestDefaultBrandKey(): string {
   return (sanitiseEnvValue(process.env.NEST_DEFAULT_BRAND_KEY) || "ash").toLowerCase();
 }
 
+function useInternalPortal(): boolean {
+  return process.env.NEST_PORTAL_INTERNAL === "1" || process.env.NEST_PORTAL_INTERNAL === "true";
+}
+
+function getYjSupabaseUrl(): string | null {
+  return (
+    sanitiseEnvValue(process.env.SUPABASE_URL) ||
+    sanitiseEnvValue(process.env.NEXT_PUBLIC_SUPABASE_URL)
+  );
+}
+
+function getYjSupabaseServiceKey(): string | null {
+  return (
+    sanitiseEnvValue(process.env.SUPABASE_SERVICE_ROLE_KEY) ||
+    sanitiseEnvValue(process.env.SUPABASE_SECRET_KEY)
+  );
+}
+
 export function isNestMessagingConfigured(): boolean {
+  // Post-cutover: portal runs in-process against YJ Supabase (see NEST_PORTAL_CUTOVER.md).
+  if (useInternalPortal()) {
+    return Boolean(getYjSupabaseUrl() && getYjSupabaseServiceKey());
+  }
   return Boolean(getNestSupabaseUrl() && getNestSupabaseServiceKey() && getNestBrandPortalApiUrl());
 }
