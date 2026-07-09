@@ -104,10 +104,10 @@ function renderHeading(
     return `<h4 class="mt-1.5 first:mt-0 text-sm font-semibold leading-snug text-foreground">${inner}</h4>`
   }
   const byLevel: Record<number, string> = {
-    1: 'mt-3 first:mt-0 mb-1 text-[1.35em] font-semibold leading-tight tracking-[-0.01em] text-foreground',
-    2: 'mt-2.5 first:mt-0 mb-0.5 text-[1.15em] font-semibold leading-snug tracking-[-0.005em] text-foreground',
-    3: 'mt-2 first:mt-0 mb-0.5 text-[1em] font-semibold leading-snug text-foreground',
-    4: 'mt-2 first:mt-0 mb-0.5 text-[0.8em] font-semibold uppercase tracking-wider text-muted-foreground',
+    1: 'mt-0 first:mt-0 mb-3 text-2xl font-semibold leading-tight tracking-tight text-gray-900',
+    2: 'mt-4 first:mt-0 mb-2 text-xl font-semibold leading-snug text-gray-900',
+    3: 'mt-3 first:mt-0 mb-1.5 text-lg font-semibold leading-snug text-foreground',
+    4: 'mt-2.5 first:mt-0 mb-0.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground',
   }
   const tag = level <= 1 ? 'h1' : level === 2 ? 'h2' : level === 3 ? 'h3' : 'h4'
   const cls = byLevel[Math.min(Math.max(level, 1), 4)]
@@ -132,7 +132,7 @@ function renderBlockquote(
   if (options.compact) {
     return `<blockquote class="my-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs leading-snug text-gray-600">${inner}</blockquote>`
   }
-  return `<blockquote class="my-2 rounded-md border border-gray-200 bg-white px-3.5 py-2.5 leading-relaxed text-gray-700">${inner}</blockquote>`
+  return `<blockquote class="my-2.5 rounded-md border border-gray-200 bg-white px-3.5 py-2.5 text-sm leading-relaxed text-gray-700 shadow-sm">${inner}</blockquote>`
 }
 
 function nextNonEmptyLine(lines: string[], startIndex: number): string | null {

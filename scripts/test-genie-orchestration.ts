@@ -27,7 +27,15 @@ import {
   buildDeepResearchFramingMessage,
   buildRoutingFramingMessage,
 } from '../src/lib/genie/routing-framing'
-import { mergeGenieJobSnapshots, ensureAssistantMessageForJob } from '../src/lib/genie/sync-genie-job-message'
+import {
+  mergeGenieJobIntoAssistantMessage,
+  mergeGenieJobSnapshots,
+  ensureAssistantMessageForJob,
+} from '../src/lib/genie/sync-genie-job-message'
+import {
+  applyGenieSseEvent,
+  createEmptyGenieAssistant,
+} from '../src/lib/genie/accumulate-genie-sse-event'
 import type { GenieJob } from '../src/lib/genie/genie-job-types'
 
 const root = process.cwd()
@@ -2140,6 +2148,121 @@ assert.equal(
   mergeGenieJobSnapshots(streamFinishedJob, staleRunningPoll).result?.assistantMessage?.content,
   'Full sales comparison answer.',
   'polled running snapshots must not replace richer streamed answer text',
+)
+
+const chartA = {
+  kind: 'line' as const,
+  title: 'Net Sales by month',
+  xKey: 'label' as const,
+  series: [{ key: 'net_sales', label: 'Net Sales', format: 'currency' as const }],
+  data: [{ label: 'Jan 2026', net_sales: 100 }],
+}
+const chartB = {
+  ...chartA,
+  title: 'Gross Profit by month',
+  series: [{ key: 'gross_profit', label: 'Gross Profit', format: 'currency' as const }],
+  data: [{ label: 'Jan 2026', gross_profit: 30 }],
+}
+const visualSnapshotJob: GenieJob = {
+  ...streamFinishedJob,
+  result: {
+    assistantMessage: {
+      role: 'assistant',
+      content: 'Chart ready.',
+      charts: [chartA],
+    },
+  },
+}
+const mergedVisualMessage = mergeGenieJobIntoAssistantMessage(
+  {
+    role: 'assistant',
+    content: 'A longer streamed chart answer.',
+    charts: [chartA, chartB],
+  },
+  visualSnapshotJob,
+)
+assert.equal(
+  (mergedVisualMessage as { charts?: unknown[] }).charts?.length,
+  2,
+  'polled snapshots must not replace richer streamed chart arrays',
+)
+
+let accumulatedVisuals = applyGenieSseEvent(
+  { event: 'chart', chart: chartA },
+  createEmptyGenieAssistant(),
+)
+accumulatedVisuals = applyGenieSseEvent(
+  {
+    event: 'chart',
+    chart: {
+      ...chartA,
+      data: [{ label: 'Jan 2026', net_sales: 125 }],
+    },
+  },
+  accumulatedVisuals,
+)
+assert.equal(
+  accumulatedVisuals.charts?.length,
+  1,
+  're-emitting the same chart must update it rather than append a duplicate',
+)
+assert.equal(
+  accumulatedVisuals.charts?.[0]?.data[0]?.net_sales,
+  125,
+  'the latest chart payload must replace the earlier payload',
+)
+accumulatedVisuals = applyGenieSseEvent(
+  {
+    event: 'suggested_prompts',
+    prompts: [
+      {
+        label: 'Use Net Sales',
+        prompt: 'Show net sales as a line chart',
+      },
+    ],
+  },
+  accumulatedVisuals,
+)
+assert.deepEqual(
+  accumulatedVisuals.suggestedPrompts,
+  [
+    {
+      label: 'Use Net Sales',
+      prompt: 'Show net sales as a line chart',
+    },
+  ],
+  'metric clarifications must preserve deterministic follow-up choices',
+)
+
+const governedChartCallIndex = executeModuleSource.indexOf(
+  'const governedChart = await runGovernedQuickChart',
+)
+const routerCallIndex = executeModuleSource.indexOf(
+  'const orchestrationRaw = await createGenieOrchestrationDecision',
+)
+assert.ok(
+  governedChartCallIndex >= 0 && governedChartCallIndex < routerCallIndex,
+  'Home chart requests must try the deterministic governed path before the LLM router',
+)
+assert.match(
+  homeV2ChatSource,
+  /target\.charts\?\.length === nextMessage\.charts\?\.length/,
+  'Home job synchronisation must detect chart-only updates',
+)
+assert.match(
+  executeModuleSource,
+  /event: 'suggested_prompts'/,
+  'governed metric clarifications must emit deterministic follow-up choices',
+)
+assert.match(
+  homeV2ChatSource,
+  /<AssistantMessageContent[\s\S]{0,500}\{message\.charts\?\.map/,
+  'Home answers must render the takeaway before charts',
+)
+assert.ok(
+  geniePanelSource.indexOf('show the takeaway before supporting visuals') <
+    geniePanelSource.indexOf('Lightspeed visuals'),
+  'Panel answers must render the takeaway before charts',
 )
 
 const telemetrySummary = summarizeGenieAgentRuns([

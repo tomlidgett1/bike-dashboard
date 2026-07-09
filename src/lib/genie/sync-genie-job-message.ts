@@ -89,6 +89,17 @@ function assistantContentLength(job: GenieJob): number {
   return typeof content === "string" ? content.length : 0;
 }
 
+const ASSISTANT_ARRAY_KEYS = [
+  "charts",
+  "tables",
+  "pivotTables",
+  "products",
+  "webImages",
+  "proposals",
+  "analysisQueries",
+  "suggestedPrompts",
+] as const;
+
 function mergeAssistantPayload<T extends object>(
   base: T,
   incoming: Record<string, unknown> | null | undefined,
@@ -105,6 +116,17 @@ function mergeAssistantPayload<T extends object>(
 
   if (baseContent.length > incomingContent.length) {
     merged.content = baseContent;
+  }
+
+  const baseRecord = base as Record<string, unknown>;
+  const mergedRecord = merged as Record<string, unknown>;
+  for (const key of ASSISTANT_ARRAY_KEYS) {
+    const baseItems = Array.isArray(baseRecord[key]) ? baseRecord[key] : [];
+    const incomingItems = Array.isArray(incoming[key]) ? incoming[key] : [];
+    if (baseItems.length > 0 || incomingItems.length > 0) {
+      mergedRecord[key] =
+        baseItems.length > incomingItems.length ? baseItems : incomingItems;
+    }
   }
 
   return merged;

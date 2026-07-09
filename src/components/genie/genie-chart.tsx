@@ -141,6 +141,15 @@ function chartLabel(value: string) {
   return value.length > 20 ? `${value.slice(0, 19)}…` : value;
 }
 
+function escapeTooltipHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function isCanvasSafeColor(value: string) {
   return (
     /^#(?:[\da-f]{3,8})$/i.test(value)
@@ -222,15 +231,30 @@ function hasRenderableChartValues(chart: GenieChartPayload) {
 
 function buildChartOption(chart: GenieChartPayload, theme: GenieChartTheme): GenieChartOption {
   const showLegend = chart.series.length > 1;
-  const showDataZoom = chart.data.length > 14;
   const labels = chart.data.map((point) => point.label);
+  const showDataZoom =
+    chart.kind === "bar"
+      ? chart.data.length > 6
+      : chart.data.length > 14;
+  const rotateLabels =
+    chart.kind === "bar"
+    && labels.some((label) => label.length > 10 || /\d{4}-\d{2}-\d{2}/.test(label));
   const isSingleSeries = chart.series.length === 1;
   const showEndLabel = chart.kind === "line" && isSingleSeries && chart.data.length > 1;
+  const seriesFormats = chart.series.map((item) => item.format ?? chart.valueFormatter);
+  const axisFormats = seriesFormats.filter(
+    (format, index) => seriesFormats.indexOf(format) === index,
+  );
+  const useSecondaryAxis = axisFormats.length > 1;
+  const seriesAxisIndex = (format: VisualValueFormat | undefined) =>
+    useSecondaryAxis && format !== axisFormats[0] ? 1 : 0;
   const labelFormatter: NonNullable<BarSeriesOption["label"]>["formatter"] = (params) =>
     formatVisualValue((params as { value?: number | string | null }).value ?? null, chart.valueFormatter);
   const series = chart.series.map<BarSeriesOption | LineSeriesOption>((item, index) => {
     const data = chart.data.map((point) => coerceChartNumber(point[item.key]));
     const color = theme.seriesColors[index];
+    const format = item.format ?? chart.valueFormatter;
+    const yAxisIndex = seriesAxisIndex(format);
 
     if (chart.kind === "line") {
       const gradientTop = colorWithAlpha(color, 0.22);
@@ -239,8 +263,9 @@ function buildChartOption(chart: GenieChartPayload, theme: GenieChartTheme): Gen
         type: "line",
         name: item.label,
         data,
+        yAxisIndex,
         smooth: true,
-        connectNulls: true,
+        connectNulls: false,
         symbol: chart.data.length <= 18 ? "circle" : "none",
         symbolSize: 6,
         lineStyle: {
@@ -302,6 +327,7 @@ function buildChartOption(chart: GenieChartPayload, theme: GenieChartTheme): Gen
       type: "bar",
       name: item.label,
       data,
+      yAxisIndex,
       barMaxWidth: 38,
       barMinHeight: 2,
       itemStyle: {
@@ -344,8 +370,29 @@ function buildChartOption(chart: GenieChartPayload, theme: GenieChartTheme): Gen
         color: theme.foreground,
         fontSize: 12,
       },
-      valueFormatter: (value) =>
-        formatVisualValue(typeof value === "number" || typeof value === "string" ? value : null, chart.valueFormatter),
+      formatter: (params: unknown) => {
+        const items = Array.isArray(params) ? params : [params];
+        const typedItems = items.filter(
+          (item): item is {
+            axisValueLabel?: string;
+            marker?: string;
+            seriesIndex?: number;
+            seriesName?: string;
+            value?: number | string | null;
+          } => Boolean(item) && typeof item === "object",
+        );
+        const axisLabel = escapeTooltipHtml(String(typedItems[0]?.axisValueLabel ?? ""));
+        const values = typedItems.map((item) => {
+          const index = item.seriesIndex ?? 0;
+          const seriesItem = chart.series[index];
+          const formatted = formatVisualValue(
+            item.value ?? null,
+            seriesItem?.format ?? chart.valueFormatter,
+          );
+          return `${item.marker ?? ""}${escapeTooltipHtml(seriesItem?.label ?? item.seriesName ?? "")}: <strong>${escapeTooltipHtml(formatted)}</strong>`;
+        });
+        return [axisLabel, ...values].join("<br/>");
+      },
       axisPointer: {
         type: chart.kind === "bar" ? "shadow" : "line",
       },
@@ -371,7 +418,7 @@ function buildChartOption(chart: GenieChartPayload, theme: GenieChartTheme): Gen
       : undefined,
     grid: {
       top: showLegend ? 34 : 12,
-      right: showEndLabel ? 52 : 14,
+      right: useSecondaryAxis ? 58 : showEndLabel ? 52 : 14,
       bottom: showDataZoom ? 42 : 12,
       left: 10,
       containLabel: true,
@@ -389,29 +436,35 @@ function buildChartOption(chart: GenieChartPayload, theme: GenieChartTheme): Gen
         color: theme.mutedForeground,
         fontSize: 11,
         hideOverlap: true,
+        rotate: rotateLabels ? 32 : 0,
         formatter: (value: string) => chartLabel(String(value)),
       },
     },
-    yAxis: {
-      type: "value",
-      axisLine: {
-        show: false,
-      },
-      axisTick: {
-        show: false,
-      },
-      splitLine: {
-        lineStyle: {
-          color: theme.border,
-          opacity: 0.72,
+    yAxis: (useSecondaryAxis ? [axisFormats[0], axisFormats[1]] : [axisFormats[0] ?? chart.valueFormatter]).map(
+      (format, index) => ({
+        type: "value" as const,
+        position: index === 1 ? "right" as const : "left" as const,
+        axisLine: {
+          show: index === 1,
+          lineStyle: { color: theme.border },
         },
-      },
-      axisLabel: {
-        color: theme.mutedForeground,
-        fontSize: 11,
-        formatter: (value: number) => formatAxisValue(Number(value), chart.valueFormatter),
-      },
-    },
+        axisTick: {
+          show: false,
+        },
+        splitLine: {
+          show: index === 0,
+          lineStyle: {
+            color: theme.border,
+            opacity: 0.72,
+          },
+        },
+        axisLabel: {
+          color: theme.mutedForeground,
+          fontSize: 11,
+          formatter: (value: number) => formatAxisValue(Number(value), format),
+        },
+      }),
+    ),
     dataZoom: showDataZoom
       ? [
           {
@@ -458,6 +511,7 @@ export function GenieChart({
   const cardRef = React.useRef<HTMLDivElement>(null);
   const chartElementRef = React.useRef<HTMLDivElement>(null);
   const chartInstanceRef = React.useRef<ECharts | null>(null);
+  const accessibilityTableId = React.useId();
   const [theme, setTheme] = React.useState<GenieChartTheme>(DEFAULT_CHART_THEME);
   const [isExporting, setIsExporting] = React.useState(false);
   const isLineChart = chart.kind === "line";
@@ -540,7 +594,39 @@ export function GenieChart({
         className="h-full w-full"
         role="img"
         aria-label={`${chart.title}${chart.subtitle ? `. ${chart.subtitle}` : ""}`}
+        aria-describedby={accessibilityTableId}
       />
+      <table id={accessibilityTableId} className="sr-only">
+        <caption>
+          {chart.title}. {chart.subtitle ?? ""} {chart.sourceLabel ?? ""}{" "}
+          {chart.freshnessLabel ?? ""}
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Period</th>
+            {chart.series.map((series) => (
+              <th key={series.key} scope="col">
+                {series.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {chart.data.slice(0, 50).map((point, index) => (
+            <tr key={`${point.label}-${index}`}>
+              <th scope="row">{point.label}</th>
+              {chart.series.map((series) => (
+                <td key={series.key}>
+                  {formatVisualValue(
+                    point[series.key] as string | number | null | undefined,
+                    series.format ?? chart.valueFormatter,
+                  )}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
       {isEmpty ? (
         <div className="absolute inset-0 flex items-center justify-center text-xs font-medium text-muted-foreground">
           No chart data
@@ -561,8 +647,8 @@ export function GenieChart({
     <div
       ref={cardRef}
       className={cn(
-        "w-full border border-border/70 bg-background shadow-sm",
-        isPanel || isDashboard ? "rounded-md p-3" : "rounded-3xl p-4",
+        "w-full min-w-0 max-w-full border border-border/70 bg-background shadow-sm",
+        isPanel || isDashboard ? "rounded-md p-3" : "rounded-md p-4",
         className,
       )}
     >
@@ -570,8 +656,8 @@ export function GenieChart({
         <div className="flex min-w-0 items-start gap-2">
           <div
             className={cn(
-              "flex shrink-0 items-center justify-center bg-primary/12 text-primary",
-              isPanel || isDashboard ? "h-6 w-6 rounded-md" : "h-8 w-8 rounded-2xl",
+              "flex shrink-0 items-center justify-center bg-gray-100 text-gray-600",
+              isPanel || isDashboard ? "h-6 w-6 rounded-md" : "h-8 w-8 rounded-md",
             )}
           >
             <ChartIcon className={cn(isPanel || isDashboard ? "h-3.5 w-3.5" : "h-4 w-4")} />
@@ -583,6 +669,11 @@ export function GenieChart({
             {chart.subtitle ? (
               <p className={cn("mt-0.5 text-muted-foreground", isPanel || isDashboard ? "text-[11px] leading-snug" : "text-xs")}>
                 {chart.subtitle}
+              </p>
+            ) : null}
+            {chart.sourceLabel || chart.freshnessLabel ? (
+              <p className={cn("mt-1 text-muted-foreground", isPanel || isDashboard ? "text-[10px] leading-snug" : "text-[11px]")}>
+                {[chart.sourceLabel, chart.freshnessLabel].filter(Boolean).join(" · ")}
               </p>
             ) : null}
           </div>

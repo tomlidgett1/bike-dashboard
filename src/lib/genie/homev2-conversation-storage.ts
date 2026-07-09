@@ -17,6 +17,7 @@ export type HomeV2StoredMessage = {
   gmailEmails?: unknown;
   analysisPlan?: unknown;
   analysisQueries?: unknown[];
+  suggestedPrompts?: Array<{ label: string; prompt: string }>;
   isStreaming?: boolean;
   error?: string;
 };
@@ -112,7 +113,8 @@ function assistantPayloadHasBody(payload: Record<string, unknown>) {
       payload.customerProfile ||
       payload.gmailEmails ||
       payload.analysisPlan ||
-      (payload.analysisQueries as unknown[] | undefined)?.length,
+      (payload.analysisQueries as unknown[] | undefined)?.length ||
+      (payload.suggestedPrompts as unknown[] | undefined)?.length,
   );
 }
 
@@ -142,6 +144,8 @@ function storedMessageFromJobAssistant(
     gmailEmails: payload.gmailEmails,
     analysisPlan: payload.analysisPlan,
     analysisQueries: payload.analysisQueries as HomeV2StoredMessage["analysisQueries"],
+    suggestedPrompts:
+      payload.suggestedPrompts as HomeV2StoredMessage["suggestedPrompts"],
     isStreaming: false,
   };
 }
@@ -255,6 +259,7 @@ export function sanitizeStoredMessages(messages: HomeV2StoredMessage[]): HomeV2S
     gmailEmails: message.gmailEmails,
     analysisPlan: message.analysisPlan,
     analysisQueries: message.analysisQueries,
+    suggestedPrompts: message.suggestedPrompts,
     isStreaming: false,
     error: message.error,
   }));
@@ -276,6 +281,7 @@ export function messagesToApiPayload(messages: HomeV2StoredMessage[]) {
     gmailEmails: message.gmailEmails,
     analysisPlan: message.analysisPlan,
     analysisQueries: message.analysisQueries,
+    suggestedPrompts: message.suggestedPrompts,
   }));
 }
 
@@ -431,6 +437,8 @@ export function mapApiConversationToSaved(
           gmailEmails: row.gmailEmails,
           analysisPlan: row.analysisPlan,
           analysisQueries: row.analysisQueries as HomeV2StoredMessage["analysisQueries"],
+          suggestedPrompts:
+            row.suggestedPrompts as HomeV2StoredMessage["suggestedPrompts"],
           isStreaming: false,
         } satisfies HomeV2StoredMessage;
       })

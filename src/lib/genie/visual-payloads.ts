@@ -4,6 +4,7 @@ export interface GenieChartSeries {
   key: string;
   label: string;
   color?: string;
+  format?: VisualValueFormat;
 }
 
 export interface GenieChartPoint {
@@ -19,6 +20,8 @@ export interface GenieChartPayload {
   series: GenieChartSeries[];
   data: GenieChartPoint[];
   valueFormatter?: VisualValueFormat;
+  sourceLabel?: string;
+  freshnessLabel?: string;
 }
 
 export interface GenieTableColumn {

@@ -105,6 +105,17 @@ export const SPECIALIST_AGENT_TOOL_NAMES = [
   'consult_bike_store_analyst',
 ]
 
+export const ANALYTICS_METRIC_TOOL_NAMES = [
+  'search_metrics',
+  'get_metric_definition',
+  'get_dimensions_for_metric',
+  'check_data_freshness',
+  'run_metric_query',
+  'run_multi_metric_timeseries',
+  'run_segment_breakdown',
+  'run_product_segment_timeseries',
+]
+
 function plannedToolsText(plannedToolNames: Iterable<string> | undefined): string {
   return Array.from(plannedToolNames ?? []).join(' ')
 }
@@ -154,6 +165,7 @@ export function toolNameSetForRoute(
 
   if (route === 'lightspeed_sql') {
     add(LIGHTSPEED_READ_TOOL_NAMES)
+    add(ANALYTICS_METRIC_TOOL_NAMES)
     add(XERO_TOOL_NAMES)
     add(DEPUTY_TOOL_NAMES)
     add(PURCHASE_ORDER_TOOL_NAMES)
@@ -188,6 +200,7 @@ export function toolNameSetForRoute(
     names.delete('verify_question_answered')
     add(['record_lightspeed_plan'])
     add(LIGHTSPEED_READ_TOOL_NAMES)
+    add(ANALYTICS_METRIC_TOOL_NAMES)
     add(XERO_TOOL_NAMES)
     add(DEPUTY_TOOL_NAMES)
     if (planRequestsPurchaseOrder) add(PURCHASE_ORDER_TOOL_NAMES)

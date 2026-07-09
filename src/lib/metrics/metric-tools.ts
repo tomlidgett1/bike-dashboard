@@ -11,9 +11,14 @@ import {
   getMetricById,
   metricSourceView,
   searchMetrics,
+  STORE_METRIC_TIMEZONE,
   type MetricDefinition,
 } from "@/lib/metrics/metric-catalog";
 import type { Emit, VisualPrefs } from "@/lib/genie/agent/tools";
+import {
+  shouldEmitChart,
+  shouldEmitStructuredTable,
+} from "@/lib/genie/visual-emission-policy";
 import type { GenieChartPayload, GenieTablePayload } from "@/lib/genie/visual-payloads";
 import { getStoreToday } from "@/lib/genie/agent/runtime";
 
@@ -23,14 +28,19 @@ export const METRIC_CATALOG_TOOL_NAMES = [
   "get_dimensions_for_metric",
   "check_data_freshness",
   "run_metric_query",
+  "run_multi_metric_timeseries",
   "run_segment_breakdown",
   "run_product_segment_timeseries",
 ] as const;
 
 import {
+  buildMultiCatalogMetricTimeseriesSql,
+  buildMultiMetricTimeseriesChartForRows,
   buildProductSegmentTimeseriesSql,
   buildTimeseriesChartForRows,
   formatPeriodLabel,
+  metricValueFormat,
+  metricsAreCompatibleForCombinedTimeseries,
   sqlLiteral,
 } from "@/lib/metrics/metric-chart-runner";
 import { executeMetricSqlForUser } from "@/lib/metrics/metric-sql-executor";
@@ -46,7 +56,7 @@ function emitMetricChart(
   prefs: VisualPrefs,
   chart: GenieChartPayload | undefined,
 ) {
-  if (prefs.chart && chart) {
+  if (chart && shouldEmitChart(prefs, chart)) {
     emit({ event: "chart", chart });
   }
 }
@@ -55,8 +65,9 @@ function emitMetricTable(
   emit: Emit,
   prefs: VisualPrefs,
   table: GenieTablePayload | undefined,
+  chartEmitted: boolean,
 ) {
-  if (prefs.table && table) {
+  if (table && shouldEmitStructuredTable(prefs, true, chartEmitted)) {
     emit({ event: "table", table });
   }
 }
@@ -69,6 +80,9 @@ function buildTimeseriesChart(args: {
   yKey?: string;
   kind?: "line" | "bar";
   valueFormat?: "number" | "currency" | "percent";
+  seriesLabel?: string;
+  sourceLabel?: string;
+  freshnessLabel?: string;
 }): GenieChartPayload | undefined {
   return buildTimeseriesChartForRows(args);
 }
@@ -428,7 +442,9 @@ export function buildMetricCatalogTools(userId: string, emit: Emit, visualPrefs:
             rows: result.rows,
             yKey: "metric_value",
             kind: "line",
-            valueFormat: /margin|percent|pct/i.test(metric.id) ? "percent" : /sales|profit|value|revenue/i.test(metric.id) ? "currency" : "number",
+            valueFormat: metricValueFormat(metric.id),
+            seriesLabel: metric.label,
+            sourceLabel: "Lightspeed sales mirror",
           });
           emitMetricChart(emit, visualPrefs, chart);
           const table: GenieTablePayload = {
@@ -436,14 +452,19 @@ export function buildMetricCatalogTools(userId: string, emit: Emit, visualPrefs:
             subtitle: `${args.start_date} to ${args.end_date}`,
             columns: [
               { key: "period", label: "Period" },
-              { key: "metric_value", label: metric.label, align: "right", format: "number" },
+              {
+                key: "metric_value",
+                label: metric.label,
+                align: "right",
+                format: metricValueFormat(metric.id),
+              },
             ],
             rows: result.rows.slice(0, 120).map((row) => ({
               period: formatPeriodLabel(row.period),
               metric_value: Number(row.metric_value) || 0,
             })),
           };
-          emitMetricTable(emit, visualPrefs, table);
+          emitMetricTable(emit, visualPrefs, table, shouldEmitChart(visualPrefs, chart));
         }
 
         return {
@@ -453,6 +474,131 @@ export function buildMetricCatalogTools(userId: string, emit: Emit, visualPrefs:
           row_count: result.row_count ?? 0,
           rows: result.rows.slice(0, 50),
           sql,
+          chart_emitted: Boolean(args.group_by_time && result.status === "ok" && result.rows.length > 0),
+        };
+      },
+    }),
+    tool({
+      name: "run_multi_metric_timeseries",
+      description:
+        "Run up to three governed catalog metrics on one shared time series chart. Use for requests like 'gross profit and sales by month on one chart'.",
+      parameters: z.object({
+        metric_ids: z.array(z.string().min(1)).min(1).max(3),
+        start_date: z.string().describe("YYYY-MM-DD inclusive"),
+        end_date: z.string().describe("YYYY-MM-DD inclusive"),
+        group_by_time: z.enum(["day", "week", "month"]),
+        chart_kind: z.enum(["line", "bar"]).optional(),
+        purpose: z.string().optional(),
+      }),
+      async execute(args) {
+        const metrics = args.metric_ids
+          .map((metricId) => getMetricById(metricId))
+          .filter((metric): metric is MetricDefinition => Boolean(metric));
+
+        if (metrics.length !== args.metric_ids.length) {
+          const missing = args.metric_ids.filter((metricId) => !getMetricById(metricId));
+          return {
+            status: "error",
+            error: `Unknown metric id(s): ${missing.join(", ")}. Call search_metrics first.`,
+          };
+        }
+
+        if (!metricsAreCompatibleForCombinedTimeseries(metrics)) {
+          return {
+            status: "error",
+            error: "These metrics cannot share one governed Lightspeed timeseries.",
+            metric_ids: args.metric_ids,
+          };
+        }
+
+        emitStatus("metrics", `Running ${metrics.map((metric) => metric.label).join(" + ")}`);
+
+        const sql = buildMultiCatalogMetricTimeseriesSql(metrics, {
+          startDate: args.start_date,
+          endDate: args.end_date,
+          groupBy: args.group_by_time,
+        });
+
+        emit({
+          event: "analysis_query",
+          query: {
+            id: randomUUID(),
+            at: new Date().toISOString(),
+            tool_name: "run_multi_metric_timeseries",
+            purpose: args.purpose ?? `Multi-metric chart for ${metrics.map((metric) => metric.id).join(", ")}`,
+            sql,
+            status: "running",
+          },
+        });
+
+        const result = await executeMetricSql(userId, sql);
+
+        emit({
+          event: "analysis_query",
+          query: {
+            id: randomUUID(),
+            at: new Date().toISOString(),
+            tool_name: "run_multi_metric_timeseries",
+            purpose: args.purpose ?? `Multi-metric chart for ${metrics.map((metric) => metric.id).join(", ")}`,
+            sql,
+            status: result.status === "ok" ? "ok" : "error",
+            row_count: result.row_count ?? null,
+            error: result.status === "error" ? result.error : null,
+          },
+        });
+
+        if (result.status !== "ok") {
+          return {
+            status: "error",
+            error: result.error,
+            metric_ids: args.metric_ids,
+            sql,
+          };
+        }
+
+        const title =
+          args.purpose ??
+          `${metrics.map((metric) => metric.label).join(" and ")} by ${args.group_by_time}`;
+        const subtitle = `${args.start_date} to ${args.end_date}`;
+        const chart = buildMultiMetricTimeseriesChartForRows({
+          title,
+          subtitle,
+          rows: result.rows,
+          metrics,
+          kind: args.chart_kind ?? "line",
+          sourceLabel: "Lightspeed sales mirror",
+        });
+        emitMetricChart(emit, visualPrefs, chart);
+
+        const table: GenieTablePayload = {
+          title,
+          subtitle,
+          columns: [
+            { key: "period", label: "Period" },
+            ...metrics.map((metric) => ({
+              key: metric.id,
+              label: metric.label,
+              align: "right" as const,
+              format: metricValueFormat(metric.id),
+            })),
+          ],
+          rows: result.rows.slice(0, 120).map((row) => ({
+            period: formatPeriodLabel(row.period),
+            ...Object.fromEntries(
+              metrics.map((metric) => [metric.id, Number(row[metric.id]) || 0]),
+            ),
+          })),
+        };
+        emitMetricTable(emit, visualPrefs, table, shouldEmitChart(visualPrefs, chart));
+
+        return {
+          status: "ok",
+          metric_ids: metrics.map((metric) => metric.id),
+          row_count: result.row_count ?? result.rows.length,
+          rows: result.rows.slice(0, 50),
+          sql,
+          chart_emitted: Boolean(chart),
+          table_emitted: Boolean(table),
         };
       },
     }),
@@ -626,6 +772,8 @@ LIMIT 100
           rows,
           kind: "line",
           valueFormat: measure === "net_sales" ? "currency" : "number",
+          seriesLabel: measure === "units_sold" ? "Units sold" : "Net sales",
+          sourceLabel: "Lightspeed sales mirror",
         });
         emitMetricChart(emit, visualPrefs, chart);
 
@@ -643,7 +791,7 @@ LIMIT 100
             sale_lines: Number(row.sale_lines) || 0,
           })),
         };
-        emitMetricTable(emit, visualPrefs, table);
+        emitMetricTable(emit, visualPrefs, table, shouldEmitChart(visualPrefs, chart));
 
         return {
           status: "ok",
@@ -664,20 +812,22 @@ LIMIT 100
 export function buildMetricsAgentInstructions(): string {
   return `
 METRICS ANALYSIS SURFACE
-You are operating in the store Metrics workspace — a governed analysis environment, not a freestyle SQL chatbot.
+You are operating in a governed analysis environment, not a freestyle SQL chatbot.
 
 Required workflow for analytical questions:
 1. Classify intent (trend, root cause, ranking, dashboard build, monitor).
 2. Call search_metrics then get_metric_definition to ground business terms in approved definitions.
 3. Call check_data_freshness before synthesising an answer.
 4. Plan 3–8 diagnostic steps (topline, trend, segment breakdown, ranking, outliers).
-5. Prefer run_product_segment_timeseries for service/product segment charts (e.g. "general service sold each week").
-6. Prefer run_metric_query and run_segment_breakdown for catalog KPIs.
-7. Use run_lightspeed_sql_query only when the catalog cannot answer the question — label it as analyst sandbox mode.
-8. Always emit a chart when the user asks for a graph, chart, or trend line.
-9. Synthesise: answer, driver ranking, confidence, caveats, recommended actions.
+5. Prefer run_multi_metric_timeseries when the user wants two or more KPI lines on one chart.
+6. Prefer run_product_segment_timeseries for service/product segment charts (e.g. "general service sold each week").
+7. Prefer run_metric_query and run_segment_breakdown for single-metric catalog KPIs.
+8. Use run_lightspeed_sql_query only when the catalog cannot answer the question — label it as analyst sandbox mode.
+9. Always emit a chart when the user asks for a graph, chart, or trend line.
+10. Synthesise: answer, driver ranking, confidence, caveats, recommended actions.
 
 Never guess whether "revenue" means gross sales, net sales, or storefront views — resolve via the catalog first.
-Timezone for date interpretation: Australia/Melbourne.
+If the user says "sales" without net/gross, ask one sharp clarification before querying.
+Timezone for date interpretation: ${STORE_METRIC_TIMEZONE}.
 `.trim();
 }

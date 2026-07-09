@@ -1,4 +1,9 @@
-// Genie agent tools: Lightspeed data access, SQL reporting, visuals, proposals, Gmail, specialist agents, and buildAgentTools.
+import {
+  createBoundedVisualEmit,
+  resolveVisualEmissionBudget,
+  shouldEmitChart,
+  shouldEmitStructuredTable,
+} from '@/lib/genie/visual-emission-policy'
 
 import fs from 'fs'
 import path from 'path'
@@ -406,7 +411,7 @@ function visualPrefsForMessages(messages: Message[]): VisualPrefs {
   return {
     chart: /\b(bar|line|trend)\s*(chart|graph)\b|\b(chart|graph)\b|\bplot\b|\bvisuali[sz]e\b|\bbar\s+chart\b|\bbar\s+graph\b|\bline\s+chart\b|\bline\s+graph\b/.test(text),
     line: /\bline\s*(chart|graph)\b|\btrend\s*(line|chart|graph)\b/.test(text),
-    table: /\btable\b|\btabular\b|\bspreadsheet\b|\bbreakdown\b|\bcomparison\b|\branking\b|\brankings\b|\btop\b|\blist(?:ed|ing)?\b|\btransactions?\b|\breceipts?\b|\borders?\b|\bevery\s+sale\b|\beach\s+sale\b|\bwhich\s+products?\b|\bwhat\s+would\s+they\s+be\b|\bdiscount\s+\d+\s+products?\b|\bproducts?\s+.*\bdiscount\b|\bpivot(?:\s+table)?\b|\bcrosstab\b|\bcross[\s-]?tab\b/.test(text),
+    table: /\btable\b|\btabular\b|\bspreadsheet\b|\bbreakdown\b|\bcomparison\b|\bcompared\b|\bcompare\b|\bversus\b|\bvs\.?\b|\branking\b|\brankings\b|\btop\b|\blist(?:ed|ing)?\b|\btransactions?\b|\breceipts?\b|\borders?\b|\bevery\s+sale\b|\beach\s+sale\b|\bwhich\s+products?\b|\bwhat\s+would\s+they\s+be\b|\bdiscount\s+\d+\s+products?\b|\bproducts?\s+.*\bdiscount\b|\bpivot(?:\s+table)?\b|\bcrosstab\b|\bcross[\s-]?tab\b/.test(text),
   }
 }
 
@@ -5724,9 +5729,12 @@ function emitVisuals(
   prefs: VisualPrefs,
   visuals: { chart?: GenieChartPayload; table?: GenieTablePayload; pivot_table?: GeniePivotTablePayload },
 ) {
-  if (prefs.chart && visuals.chart) emit({ event: 'chart', chart: visuals.chart })
+  const chart = visuals.chart && shouldEmitChart(prefs, visuals.chart) ? visuals.chart : undefined
+  if (chart) emit({ event: 'chart', chart })
   if (visuals.pivot_table) emit({ event: 'pivot_table', pivot_table: visuals.pivot_table })
-  else if (prefs.table && visuals.table) emit({ event: 'table', table: visuals.table })
+  else if (shouldEmitStructuredTable(prefs, Boolean(visuals.table), Boolean(chart)) && visuals.table) {
+    emit({ event: 'table', table: visuals.table })
+  }
 }
 
 function buildSalesListTable(result: LightspeedSalesListResult): GenieTablePayload | undefined {
@@ -7235,20 +7243,50 @@ function buildGenericSqlTable(
 function buildGenericSqlChart(rows: SqlResultRow[], visual: LightspeedSqlVisualArgs | undefined): GenieChartPayload | undefined {
   if (!visual?.chart_kind || !visual.chart_x_key || !visual.chart_y_keys?.length || rows.length === 0) return undefined
   const xKey = visual.chart_x_key
-  const yKeys = visual.chart_y_keys.filter(key => rows.some(row => typeof row[key] === 'number')).slice(0, 5)
+  const yKeys = visual.chart_y_keys
+    .filter(key => rows.some(row => {
+      const value = row[key]
+      if (value == null || value === '') return false
+      return typeof value === 'number' ? Number.isFinite(value) : Number.isFinite(Number(value))
+    }))
+    .slice(0, 5)
   if (yKeys.length === 0) return undefined
+  const seriesFormats = yKeys.map(key => inferSqlValueFormat(key) ?? visual.value_format)
+  const sharedFormat = seriesFormats.every(format => format === seriesFormats[0])
+    ? seriesFormats[0]
+    : undefined
+
+  const primaryYKey = yKeys[0]
+  const chartRows = visual.chart_kind === 'bar' && rows.length > 8
+    ? [...rows]
+        .sort((left, right) => {
+          const leftValue = Math.abs(Number(left[primaryYKey]) || 0)
+          const rightValue = Math.abs(Number(right[primaryYKey]) || 0)
+          return rightValue - leftValue
+        })
+        .slice(0, 8)
+    : rows.slice(0, 120)
 
   return {
     kind: visual.chart_kind,
     title: visual.chart_title?.trim() || 'Lightspeed Chart',
     subtitle: visual.chart_subtitle?.trim() || undefined,
     xKey: 'label',
-    series: yKeys.map(key => ({ key, label: sqlColumnLabel(key) })),
-    data: rows.slice(0, 120).map(row => ({
-      label: String(row[xKey] ?? ''),
-      ...Object.fromEntries(yKeys.map(key => [key, typeof row[key] === 'number' ? row[key] : Number(row[key]) || 0])),
+    series: yKeys.map((key, index) => ({
+      key,
+      label: sqlColumnLabel(key),
+      format: seriesFormats[index],
     })),
-    valueFormatter: visual.value_format ?? inferSqlValueFormat(yKeys[0]),
+    data: chartRows.map(row => ({
+      label: String(row[xKey] ?? ''),
+      ...Object.fromEntries(yKeys.map(key => {
+        const value = row[key]
+        if (value == null || value === '') return [key, null]
+        const numeric = typeof value === 'number' ? value : Number(value)
+        return [key, Number.isFinite(numeric) ? numeric : null]
+      })),
+    })),
+    valueFormatter: sharedFormat,
   }
 }
 
@@ -9698,7 +9736,7 @@ function buildSpecialistAgentTools(
 function buildAgentTools(
   supabase: Supa,
   userId: string,
-  emit: Emit,
+  outerEmit: Emit,
   visualPrefs: VisualPrefs,
   latestUserMessage: string,
   route: GenieOrchestrationDecision['route'],
@@ -9712,6 +9750,12 @@ function buildAgentTools(
   verifyGate: { awaitingContinuation: boolean } = { awaitingContinuation: false },
   surface: 'default' | 'metrics' = 'default',
 ) {
+  const visualBudget = resolveVisualEmissionBudget(
+    latestUserMessage,
+    route,
+    executionPlan?.execution_steps.length ?? 0,
+  )
+  const emit = createBoundedVisualEmit(outerEmit, visualBudget)
   const allowedToolNames = toolNameSetForRoute(route, executionPlan?.primary_tools ?? [])
   if (userRequestsWebImages(latestUserMessage) && (route === 'web_research' || route === 'mixed')) {
     allowedToolNames.add('search_web_images')
@@ -9965,7 +10009,7 @@ function buildAgentTools(
             value_format: z.enum(['currency', 'number', 'percent']).optional(),
             show_totals: z.boolean().optional().describe('Show row/column totals. Defaults to true.'),
           }).optional().describe('Build a pivot/crosstab from the SQL rows instead of a flat table.'),
-          chart_kind: z.enum(['bar', 'line']).optional(),
+          chart_kind: z.enum(['bar', 'line']).optional().describe('Only when a chart adds value: line for 4+ time buckets, bar for 4+ categories. Omit entirely for two-period comparisons, single totals, and short lists — use table fields instead.'),
           chart_title: z.string().optional(),
           chart_subtitle: z.string().optional(),
           chart_x_key: z.string().optional().describe('Column name to use for chart labels.'),
@@ -10861,7 +10905,9 @@ function buildAgentTools(
     'record_lightspeed_plan',
     'search_lightspeed_inventory',
   ])
-  const allTools = surface === 'metrics'
+  const includeGovernedMetricTools =
+    surface === 'metrics' || route === 'lightspeed_sql' || route === 'business_analysis'
+  const allTools = includeGovernedMetricTools
     ? [...tools, ...buildMetricCatalogTools(userId, emit, visualPrefs)]
     : tools
 
@@ -10873,7 +10919,7 @@ function buildAgentTools(
     }
     if (!name) return true
     if (isToolExcludedForProfile(name, modelProfile)) return false
-    if (surface === 'metrics' && (metricToolSet.has(name) || metricsSqlTools.has(name))) return true
+    if (includeGovernedMetricTools && (metricToolSet.has(name) || metricsSqlTools.has(name))) return true
     return allowedToolNames.has(name)
   })
 }

@@ -22,7 +22,7 @@ export function MetricsWorkspace({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
-      <div className="flex items-center bg-gray-100 p-0.5 rounded-full w-fit">
+      <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
         <button
           type="button"
           onClick={() => setActiveTab("investigate")}

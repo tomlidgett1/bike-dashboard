@@ -26,6 +26,7 @@ import {
   type GenieModelProfile,
 } from './model-profiles'
 import {
+  buildAnalyticsChartTakeawayInstructions,
   buildCasualPrompt,
   buildDirectAnswerInstructions,
   buildSystemPrompt,
@@ -38,6 +39,9 @@ import type { ComposioSessionIds, Message, RawModelDeltaEvent, StreamToolItem } 
 import { compactCustomerProfileForContext, toAgentInputMessages } from './context'
 import { formatMetricCatalogForPrompt } from '@/lib/metrics/metric-catalog'
 import { buildMetricsAgentInstructions } from '@/lib/metrics/metric-tools'
+import { looksLikeQuickChartPrompt } from '@/lib/metrics/metric-chart-runner'
+import { buildGovernedChartNarrationGrounding, runGovernedQuickChart } from '@/lib/metrics/run-governed-quick-chart'
+import { looksLikeDriverExplanationPrompt } from '@/lib/genie/visual-emission-policy'
 import {
   buildAgentTools,
   buildLightspeedCustomerProfile,
@@ -242,13 +246,14 @@ async function streamGroundedDirectAnswer(args: {
   emit: (data: object) => void
   signal: AbortSignal
   onFirstText: () => void
+  instructions?: string
 }): Promise<void> {
   let produced = false
   try {
     const directAgent = new Agent({
       name: 'Yellow Jersey Direct Answer Agent',
       model: args.models.executor,
-      instructions: buildDirectAnswerInstructions(
+      instructions: args.instructions ?? buildDirectAnswerInstructions(
         args.storeName,
         args.groundingLabel,
         args.grounding,
@@ -343,7 +348,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
   let lastStatusText = 'Working'
   let finalRoute: GenieOrchestrationDecision['route'] | null = null
   let plannerUsed = false
-  let orchestrationSource: 'model' | null = null
+  let orchestrationSource: 'model' | 'governed_fast_path' | null = null
   let routerInvoked = false
   let executorModel: string | null = null
   let firstTextAt: number | null = null
@@ -494,6 +499,103 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
 
     const latestUserMessage = latestUserText(messages)
     const inputMessages = toAgentInputMessages(messages)
+
+    if (surface === 'default' && looksLikeQuickChartPrompt(latestUserMessage)) {
+      emit({ event: 'status', phase: 'metrics', text: 'Resolving metric definitions' })
+      const governedChart = await runGovernedQuickChart({
+        userId,
+        prompt: latestUserMessage,
+      })
+
+      if (governedChart.status === 'clarify') {
+        finalRoute = 'lightspeed_sql'
+        orchestrationSource = 'governed_fast_path'
+        executorModel = 'governed_metric_clarification'
+        firstTextAt = Date.now()
+        emit({ event: 'status', phase: 'responding', text: 'Confirming the right metric' })
+        emit({ event: 'text_delta', text: governedChart.response.content })
+        if (governedChart.response.suggested_prompts?.length) {
+          emit({
+            event: 'suggested_prompts',
+            prompts: governedChart.response.suggested_prompts,
+          })
+        }
+        emit({ event: 'done' })
+        return
+      }
+
+      if (governedChart.status === 'ok') {
+        finalRoute = 'lightspeed_sql'
+        orchestrationSource = 'governed_fast_path'
+        executorModel = 'governed_metric_chart'
+        toolCallCount += 1
+        toolCallNames.governed_metric_chart = 1
+        if (governedChart.response.sql) {
+          emit({
+            event: 'analysis_query',
+            query: {
+              id: randomUUID(),
+              at: new Date().toISOString(),
+              tool_name: 'governed_metric_chart',
+              purpose: `Governed chart for ${governedChart.response.metric_ids?.join(', ') ?? governedChart.response.segment_query ?? 'store metric'}`,
+              sql: governedChart.response.sql,
+              status: 'ok',
+              row_count: governedChart.rowCount,
+            },
+          })
+        }
+        emit({ event: 'status', phase: 'responding', text: 'Writing the chart takeaway' })
+        const chartGrounding = buildGovernedChartNarrationGrounding(governedChart.response)
+        await streamGroundedDirectAnswer({
+          storeName,
+          userId,
+          requestId,
+          route: 'lightspeed_sql',
+          question: latestUserMessage,
+          groundingLabel: 'governed chart results',
+          grounding: chartGrounding,
+          fallbackAnswer: governedChart.response.content,
+          instructions: buildAnalyticsChartTakeawayInstructions(storeName, chartGrounding),
+          models,
+          emit,
+          signal,
+          onFirstText: () => {
+            firstTextAt = Date.now()
+          },
+        })
+        if (governedChart.response.chart) {
+          emit({ event: 'chart', chart: governedChart.response.chart })
+        }
+        if (governedChart.response.table) {
+          emit({ event: 'table', table: governedChart.response.table })
+        }
+        emit({ event: 'done' })
+        return
+      }
+
+      emit({
+        event: '_debug',
+        stage: 'governed_metric_chart_fallback',
+        reason: governedChart.reason,
+      })
+      if (governedChart.sql) {
+        toolCallCount += 1
+        toolCallNames.governed_metric_chart = 1
+        emit({
+          event: 'analysis_query',
+          query: {
+            id: randomUUID(),
+            at: new Date().toISOString(),
+            tool_name: 'governed_metric_chart',
+            purpose: 'Governed chart attempt before analyst fallback',
+            sql: governedChart.sql,
+            status: 'error',
+            error: governedChart.reason,
+          },
+        })
+      }
+    }
+
     const orchestrationStartedAt = Date.now()
     routerInvoked = true
     orchestrationSource = 'model'
@@ -834,9 +936,14 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
     // tail of the prompt. Defensive: returns '' if the table/migration is absent.
     const learnedLessons = await getActiveLessonsForUser(supabase, userId, { route: orchestration.route })
     const learnedPlaybook = formatLessonsForPrompt(learnedLessons)
-    const metricsInstructions = surface === 'metrics'
+    const includeGovernedMetrics =
+      surface === 'metrics' ||
+      orchestration.route === 'lightspeed_sql' ||
+      orchestration.route === 'business_analysis'
+    const metricsInstructions = includeGovernedMetrics
       ? `\n\n${buildMetricsAgentInstructions()}\n\nAPPROVED METRIC CATALOG\n${formatMetricCatalogForPrompt()}`
       : ''
+    const driverExplanationMode = looksLikeDriverExplanationPrompt(latestUserMessage)
     const agent = new Agent({
       name: surface === 'metrics' ? 'Yellow Jersey Metrics Analyst' : 'Yellow Jersey Store Agent',
       model: executorModel,
@@ -847,6 +954,7 @@ export async function executeGenieAgent(options: ExecuteGenieAgentArgs): Promise
         runtime.fastAnswerPrompt,
         learnedPlaybook,
         useBusinessAnalysisSynthesis,
+        driverExplanationMode,
       ) + metricsInstructions,
       tools: agentTools,
       modelSettings: {

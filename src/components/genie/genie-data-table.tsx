@@ -135,7 +135,7 @@ export function GenieDataTable({
   };
 
   const shellClassName = cn(
-    "w-full overflow-hidden border border-border/70 bg-background",
+    "w-full min-w-0 max-w-full overflow-hidden border border-border/70 bg-background",
     isPanel ? "max-w-full rounded-md shadow-xs" : isDashboard ? "rounded-md shadow-sm" : "rounded-3xl shadow-sm",
   );
 

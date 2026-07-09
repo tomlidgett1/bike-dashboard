@@ -171,26 +171,46 @@ export function buildGenericSqlChart(
 
   const xKey = visual.chart_x_key;
   const yKeys = visual.chart_y_keys
-    .filter((key) => rows.some((row) => typeof row[key] === "number"))
+    .filter((key) =>
+      rows.some((row) => {
+        const value = row[key];
+        if (value === null || value === "") return false;
+        return typeof value === "number"
+          ? Number.isFinite(value)
+          : Number.isFinite(Number(value));
+      }),
+    )
     .slice(0, 5);
   if (yKeys.length === 0) return undefined;
+  const seriesFormats = yKeys.map(
+    (key) => inferSqlValueFormat(key) ?? visual.value_format,
+  );
+  const sharedFormat = seriesFormats.every((format) => format === seriesFormats[0])
+    ? seriesFormats[0]
+    : undefined;
 
   return {
     kind: visual.chart_kind,
     title: visual.chart_title?.trim() || "Lightspeed Chart",
     subtitle: visual.chart_subtitle?.trim() || undefined,
     xKey: "label",
-    series: yKeys.map((key) => ({ key, label: sqlColumnLabel(key) })),
+    series: yKeys.map((key, index) => ({
+      key,
+      label: sqlColumnLabel(key),
+      format: seriesFormats[index],
+    })),
     data: rows.slice(0, 120).map((row) => ({
       label: String(row[xKey] ?? ""),
       ...Object.fromEntries(
-        yKeys.map((key) => [
-          key,
-          typeof row[key] === "number" ? row[key] : Number(row[key]) || 0,
-        ]),
+        yKeys.map((key) => {
+          const value = row[key];
+          if (value === null || value === "") return [key, null];
+          const numeric = typeof value === "number" ? value : Number(value);
+          return [key, Number.isFinite(numeric) ? numeric : null];
+        }),
       ),
     })),
-    valueFormatter: visual.value_format ?? inferSqlValueFormat(yKeys[0]),
+    valueFormatter: sharedFormat,
   };
 }
 

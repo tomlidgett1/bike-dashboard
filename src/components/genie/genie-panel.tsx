@@ -685,7 +685,34 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         )}
       </AnimatePresence>
 
-      {/* 4. Lightspeed visuals */}
+      {/* 4. Text content — show the takeaway before supporting visuals */}
+      <AnimatePresence>
+        {(message.content || (!showShimmer && !showSpinner && message.isStreaming)) && (
+          <motion.div
+            key="text"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.2 }}
+            className="max-w-full rounded-md bg-white px-3.5 py-2.5 text-sm text-gray-900 ring-1 ring-border/60"
+          >
+            {message.isStreaming ? (
+              <span style={{ whiteSpace: 'pre-wrap' }} className="leading-snug text-sm">
+                {message.content}
+                <span className="inline-block h-[1em] w-0.5 ml-0.5 bg-primary animate-pulse align-text-bottom" />
+              </span>
+            ) : message.content ? (
+              <div
+                className="max-w-none [&>p+p]:mt-0.5 [&>p:first-child]:mt-0 [&_ul]:my-0.5 [&_ol]:my-0.5"
+                dangerouslySetInnerHTML={{ __html: renderGenieMarkdown(message.content, { compact: true, linkMode: 'text' }) }}
+              />
+            ) : (
+              <span className="text-muted-foreground text-xs">...</span>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 5. Lightspeed visuals */}
       <AnimatePresence>
         {message.charts && message.charts.length > 0 && (
           <motion.div key="charts" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
@@ -717,34 +744,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         )}
       </AnimatePresence>
 
-      {/* 5. Text content — word-by-word reveal, then switches to parsed markdown */}
-      <AnimatePresence>
-        {(message.content || (!showShimmer && !showSpinner && message.isStreaming)) && (
-          <motion.div
-            key="text"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.2 }}
-            className="max-w-full rounded-md rounded-bl-sm bg-muted px-3.5 py-2.5 text-sm text-foreground ring-1 ring-border/60"
-          >
-            {message.isStreaming ? (
-              <span style={{ whiteSpace: 'pre-wrap' }} className="leading-snug text-sm">
-                {message.content}
-                <span className="inline-block h-[1em] w-0.5 ml-0.5 bg-primary animate-pulse align-text-bottom" />
-              </span>
-            ) : message.content ? (
-              <div
-                className="max-w-none [&>p+p]:mt-0.5 [&>p:first-child]:mt-0 [&_ul]:my-0.5 [&_ol]:my-0.5"
-                dangerouslySetInnerHTML={{ __html: renderGenieMarkdown(message.content, { compact: true, linkMode: 'text' }) }}
-              />
-            ) : (
-              <span className="text-muted-foreground text-xs">...</span>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* 5b. Proposals — Store Agent action cards (preview → confirm) */}
+      {/* 6. Proposals — Store Agent action cards (preview → confirm) */}
       {message.proposals && message.proposals.length > 0 && (
         <div className="space-y-2">
           {message.proposals.map((p, i) => <GenieProposalCard key={i} proposal={p} />)}

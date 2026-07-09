@@ -35,7 +35,7 @@ export function HomePageQuietLayout({
         className="text-xl font-medium text-gray-800 sm:text-[1.375rem]"
         dateClassName="text-gray-500"
       />
-      <div className="flex w-full max-w-[50.4rem] flex-col gap-4">
+      <div className="flex w-full min-w-0 max-w-full flex-col gap-4">
         {input}
         <HomeV2MetricsCards tone="subtle" />
       </div>

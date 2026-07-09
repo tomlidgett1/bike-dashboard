@@ -36,6 +36,7 @@ export type AccumulatedGenieAssistant = {
   gmailConnect?: GmailConnectPayload;
   analysisPlan?: GenieAnalysisPlanPayload;
   analysisQueries?: GenieAnalysisQueryPayload[];
+  suggestedPrompts?: Array<{ label: string; prompt: string }>;
   sources?: unknown;
   reasoningSummary?: string;
   error?: string;
@@ -43,6 +44,18 @@ export type AccumulatedGenieAssistant = {
 
 export function createEmptyGenieAssistant(): AccumulatedGenieAssistant {
   return { role: "assistant", content: "" };
+}
+
+export function upsertGenieChart(
+  charts: GenieChartPayload[] | undefined,
+  incoming: GenieChartPayload,
+): GenieChartPayload[] {
+  const current = charts ?? [];
+  const existingIndex = current.findIndex(
+    (chart) => chart.title === incoming.title && chart.kind === incoming.kind,
+  );
+  if (existingIndex < 0) return [...current, incoming];
+  return current.map((chart, index) => (index === existingIndex ? incoming : chart));
 }
 
 export function applyGenieSseEvent(
@@ -109,7 +122,10 @@ export function applyGenieSseEvent(
   }
 
   if (event.event === "chart" && event.chart) {
-    next.charts = [...(next.charts ?? []), event.chart as GenieChartPayload];
+    next.charts = upsertGenieChart(
+      next.charts,
+      event.chart as GenieChartPayload,
+    );
   }
 
   if (event.event === "table" && event.table) {
@@ -121,6 +137,18 @@ export function applyGenieSseEvent(
       ...(next.pivotTables ?? []),
       event.pivot_table as GeniePivotTablePayload,
     ];
+  }
+
+  if (event.event === "suggested_prompts" && Array.isArray(event.prompts)) {
+    next.suggestedPrompts = event.prompts
+      .filter(
+        (item): item is { label: string; prompt: string } =>
+          Boolean(item) &&
+          typeof item === "object" &&
+          typeof (item as { label?: unknown }).label === "string" &&
+          typeof (item as { prompt?: unknown }).prompt === "string",
+      )
+      .slice(0, 3);
   }
 
   if (event.event === "proposal" && event.proposal) {

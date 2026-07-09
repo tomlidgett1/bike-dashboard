@@ -122,6 +122,7 @@ interface ChatMessage {
   processSteps?: ProcessStep[];
   analysisPlan?: GenieAnalysisPlanPayload;
   analysisQueries?: GenieAnalysisQueryPayload[];
+  suggestedPrompts?: Array<{ label: string; prompt: string }>;
   rawDebugLogs?: GenieRawDebugLogEntry[];
   isStreaming?: boolean;
   error?: string;
@@ -315,10 +316,15 @@ function AssistantResponseBody({
     answerSettled && (isPdfAnswer || isReport) ? extractPdfSendRecipient(question) : null;
   const canShowFeedback = Boolean(answerSettled && question && !isReport);
   const canShowFollowups = Boolean(
-    showFollowups && onAsk && question && answerSettled && answerText.trim().length > 24,
+    showFollowups &&
+      onAsk &&
+      question &&
+      answerSettled &&
+      answerText.trim().length > 24 &&
+      !message.suggestedPrompts?.length,
   );
   return (
-    <div className="genie-chat-selectable w-full text-sm text-foreground">
+    <div className="genie-chat-selectable w-full min-w-0 overflow-x-hidden text-sm text-foreground">
       <div className="space-y-4">
         {message.processSteps?.length
           || message.analysisPlan?.execution_steps.length
@@ -376,6 +382,7 @@ function AssistantResponseBody({
           />
         ) : (
           <>
+            <AssistantMessageContent content={message.content} streaming={message.isStreaming} />
             {message.charts?.map((chart, index) => (
               <GenieChart
                 key={`${chart.title}-${index}`}
@@ -394,7 +401,6 @@ function AssistantResponseBody({
                 table={table}
               />
             ))}
-            <AssistantMessageContent content={message.content} streaming={message.isStreaming} />
           </>
         )}
         {!message.isStreaming
@@ -404,6 +410,9 @@ function AssistantResponseBody({
           : null}
         {canShowFeedback ? (
           <AnswerFeedback messageId={message.id} question={question!} answer={answerText} />
+        ) : null}
+        {message.suggestedPrompts?.length && onAsk ? (
+          <SuggestedPromptChips prompts={message.suggestedPrompts} onAsk={onAsk} />
         ) : null}
         {canShowFollowups ? (
           <FollowupChips
@@ -674,9 +683,13 @@ function AssistantMessageContent({ content, streaming }: { content: string; stre
   }
 
   return (
-    <div className="genie-chat-selectable genie-chat-prose max-w-3xl cursor-text text-[15px] leading-relaxed" dir="ltr" style={{ unicodeBidi: "isolate" }}>
+    <div
+      className="genie-chat-selectable genie-chat-prose w-full min-w-0 max-w-3xl cursor-text text-[15px] leading-relaxed text-gray-700"
+      dir="ltr"
+      style={{ unicodeBidi: "isolate" }}
+    >
       <div
-        className="[&>p+p]:mt-1.5 [&_h2+p]:mt-1 [&_h3+p]:mt-1 [&_p+div]:mt-1.5 [&_div+h2]:mt-2.5 [&_strong]:font-semibold [&_.genie-caret]:ml-0.5 [&_.genie-caret]:inline-block [&_.genie-caret]:h-[1.05em] [&_.genie-caret]:w-[2px] [&_.genie-caret]:translate-y-[2px] [&_.genie-caret]:rounded-full [&_.genie-caret]:bg-foreground/60 [&_.genie-caret]:animate-pulse"
+        className="min-w-0 [&>h1]:text-2xl [&>h1]:font-semibold [&>h1]:leading-tight [&>h1]:text-gray-900 [&>h1]:mb-3 [&>h2]:text-xl [&>h2]:font-semibold [&>h2]:text-gray-900 [&>p+p]:mt-2 [&>p:first-child]:text-[15px] [&>p:first-child]:leading-relaxed [&>p:first-child]:text-gray-700 [&_blockquote]:my-2.5 [&_h1+p]:mt-2 [&_h2+p]:mt-1.5 [&_h3+p]:mt-1 [&_p+div]:mt-3 [&_div+h2]:mt-4 [&_div+h3]:mt-3 [&_hr]:my-3 [&_strong]:font-semibold [&_strong]:text-gray-900 [&_.genie-caret]:ml-0.5 [&_.genie-caret]:inline-block [&_.genie-caret]:h-[1.05em] [&_.genie-caret]:w-[2px] [&_.genie-caret]:translate-y-[2px] [&_.genie-caret]:rounded-full [&_.genie-caret]:bg-foreground/60 [&_.genie-caret]:animate-pulse"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>
@@ -686,6 +699,29 @@ function AssistantMessageContent({ content, streaming }: { content: string; stre
 // Cache suggestions per assistant message so toggling latest/historical or a
 // re-render never re-hits the model for the same answer.
 const followupCache = new Map<string, string[]>();
+
+function SuggestedPromptChips({
+  prompts,
+  onAsk,
+}: {
+  prompts: Array<{ label: string; prompt: string }>;
+  onAsk: (text: string) => void;
+}) {
+  return (
+    <div className="mt-3.5 flex flex-wrap gap-2">
+      {prompts.map((item) => (
+        <button
+          key={`${item.label}-${item.prompt}`}
+          type="button"
+          onClick={() => onAsk(item.prompt)}
+          className="inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-1.5 text-[13px] font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 /**
  * ChatGPT-style tappable follow-up questions under the most recent answer.
@@ -1901,7 +1937,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
       }
 
       setMessages((current) => {
-        let target = current.find((message) => message.id === assistantId);
+        const target = current.find((message) => message.id === assistantId);
         const forceStopped = stopRequestedAssistantIdsRef.current.has(assistantId);
 
         if (!target) {
@@ -1942,7 +1978,13 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
           target.rawDebugLogs?.length === nextMessage.rawDebugLogs?.length &&
           target.reasoningSummary === nextMessage.reasoningSummary &&
           target.analysisPlan === nextMessage.analysisPlan &&
-          target.analysisQueries?.length === nextMessage.analysisQueries?.length
+          target.analysisQueries?.length === nextMessage.analysisQueries?.length &&
+          target.charts?.length === nextMessage.charts?.length &&
+          target.tables?.length === nextMessage.tables?.length &&
+          target.pivotTables?.length === nextMessage.pivotTables?.length &&
+          target.products?.length === nextMessage.products?.length &&
+          target.proposals?.length === nextMessage.proposals?.length &&
+          target.suggestedPrompts?.length === nextMessage.suggestedPrompts?.length
         ) {
           return current;
         }
@@ -2257,7 +2299,7 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
 
   return (
     <div
-      className="relative flex h-[calc(100svh-57px)] flex-col overflow-hidden bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.10),transparent_34%),linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)]"
+      className="relative flex h-[calc(100svh-57px)] min-w-0 flex-col overflow-x-hidden overflow-y-hidden bg-[radial-gradient(circle_at_top,rgba(250,204,21,0.10),transparent_34%),linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)]"
     >
       {isDraggingPdf ? (
         <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm">
@@ -2314,9 +2356,9 @@ export function HomeV2Chat({ todayLabel }: { todayLabel: string }) {
           }
         />
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div ref={scrollRef} className="genie-chat-selectable min-h-0 flex-1 overflow-y-auto px-5 py-6">
-            <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div ref={scrollRef} className="genie-chat-selectable min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-6">
+            <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-8">
               {buildChatTurns(messages).map((turn, index, turns) => {
                 const isLatestTurn = index === turns.length - 1;
                 return (

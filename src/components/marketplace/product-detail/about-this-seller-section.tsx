@@ -88,6 +88,13 @@ function SellerAvatar({
   );
 }
 
+function getSellerBio(seller: ProductSellerProfile): string | null {
+  if (!seller.bio) return null;
+  const trimmed = seller.bio.trim();
+  if (!trimmed || /^(n\/?a|none|null|-)$/i.test(trimmed)) return null;
+  return trimmed;
+}
+
 function SellerDetailRows({
   seller,
   openStatus,
@@ -99,16 +106,18 @@ function SellerDetailRows({
   websiteHref: string | null;
   clampBio?: boolean;
 }) {
+  const bio = getSellerBio(seller);
+
   return (
     <div className="space-y-3">
-      {seller.bio && (
+      {bio && (
         <p
           className={cn(
             "text-sm leading-relaxed text-gray-600",
             clampBio && "line-clamp-3",
           )}
         >
-          {seller.bio}
+          {bio}
         </p>
       )}
 
@@ -179,6 +188,8 @@ export function AboutThisSellerSection({
   const sellerSubtitle = seller.is_bicycle_store
     ? seller.store_type || "Bicycle store"
     : "Individual seller";
+
+  const bioText = getSellerBio(seller);
 
   const mobileMeta = [sellerSubtitle, openStatus?.label].filter(Boolean).join(" · ");
 
@@ -266,7 +277,7 @@ export function AboutThisSellerSection({
         <button
           type="button"
           onClick={() => setIsSheetOpen(true)}
-          className="flex w-full items-center gap-3 rounded-md border border-gray-200 bg-white px-3 py-2.5 text-left transition-colors active:bg-gray-50"
+          className="flex w-full items-center gap-3 text-left"
         >
           <SellerAvatar
             seller={seller}
@@ -286,13 +297,13 @@ export function AboutThisSellerSection({
 
       {/* Tablet / desktop */}
       <div className="hidden sm:block">
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
+        <p className="mb-3 text-xs font-medium uppercase tracking-wide text-gray-500">
           About this seller
         </p>
 
         <Link
           href={profileHref}
-          className="group flex items-start gap-3 rounded-md border border-gray-200 bg-white px-3 py-3 transition-colors hover:bg-gray-50"
+          className="group flex items-start gap-3"
         >
           <SellerAvatar
             seller={seller}
@@ -304,7 +315,9 @@ export function AboutThisSellerSection({
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-gray-900">{seller.name}</p>
+                <p className="truncate text-sm font-medium text-gray-900 transition-colors group-hover:text-gray-600">
+                  {seller.name}
+                </p>
                 <p className="mt-0.5 truncate text-xs text-gray-500">
                   {[sellerSubtitle, openStatus?.label].filter(Boolean).join(" · ")}
                 </p>
@@ -312,9 +325,9 @@ export function AboutThisSellerSection({
               <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5" />
             </div>
 
-            {seller.bio ? (
+            {bioText ? (
               <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-gray-500">
-                {seller.bio}
+                {bioText}
               </p>
             ) : null}
 
@@ -334,7 +347,7 @@ export function AboutThisSellerSection({
     return (
       <div
         className={cn(
-          "border-t border-gray-100 px-4 pt-4 pb-3 sm:px-5 sm:pt-4 lg:px-0 lg:pb-0",
+          "border-t border-gray-100 px-4 pt-4 pb-5 sm:px-5 sm:pt-5 sm:pb-6 lg:px-0",
           className,
         )}
       >

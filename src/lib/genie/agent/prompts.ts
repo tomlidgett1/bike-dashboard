@@ -244,6 +244,7 @@ function formatWorkRulesForRoute(args: {
       `- For work orders / repairs / service jobs: reuse recent private structured workorder context when it answers the follow-up. Otherwise use list_lightspeed_workorders (scope open for active jobs, finished for completed/pickup-ready, all if unclear) with include_details:true, or get_lightspeed_workorder for one ID. For every workorder question, inspect all returned workorder evidence before answering: note, internal_note, warranty, labour line notes, item/part descriptions, item notes, serialized_id, sale_id, customer details, status, and dates. For note/keyword/issue searches such as "cracked frame", "warranty claim", or "work orders mentioning X", call list_lightspeed_workorders with query set to the keyword phrase, scope "all", and include_details:true. Do not call search_lightspeed_customers or get_lightspeed_customer_profile for those searches. For due-date questions, pass due_on as YYYY-MM-DD in ${STORE_TIME_ZONE} (today's date is in STORE CONTEXT). Keep text brief because the UI renders detailed work-order cards.`,
       '- If a Lightspeed lookup returns no, weak, ambiguous, partial, or non-answering results, call record_lightspeed_recheck and try one materially different SQL/tool strategy before asking the user to clarify.',
       '- For customer-specific bike fitment or compatibility, do not answer from web search alone. First use resolve_customer_bike_context to resolve the customer, live Lightspeed Serialized bike records linked by customerID, customer profile availability, previous sales, active/finished work orders, work-order serializedID links, work-order notes, prior parts, and likely bike model/year/build. Treat Serialized.description as the strongest usual bike-ownership signal, but not the only proof; still compare it against workorders and sales. Then use hosted web_search for official manufacturer manuals, technical docs, standards pages, or supplier tech pages for the exact standard/part. If the bike context is ambiguous, still provide conditional answers for each plausible bike with confidence and the exact shop-floor check needed; do not stop at only asking which bike.',
+      '- For "what drove this/that", "why did X fall", or other driver/why follow-ups after a prior comparison: answer with synthesis first — at most two SQL passes, one optional compact table, no chart stack. Read prior context before re-querying.',
     )
   }
 
@@ -403,6 +404,21 @@ function businessAnalysisInvestigatorOverlay(): string {
 - Charts and tables you emit will appear in the UI; the synthesiser will reference them in the final answer.`
 }
 
+function driverExplanationOverlay(): string {
+  return `DRIVER / WHY FOLLOW-UP MODE
+The user wants to understand WHY a prior result changed — a sharp synthesis, not a data exhibition.
+
+Rules:
+- Re-read the prior turn for the comparison or trend already established. Do NOT re-open with the same headline total unless one line of context is needed.
+- MUST open with "# " naming the single biggest driver in plain language (e.g. "# Middle-ticket sales went quiet").
+- Follow with 3–5 ranked bullets — biggest $ or % impact first. Each bullet = one causal factor + the exact figure. **Bold** the numbers.
+- Run at most TWO focused SQL queries total. Combine drivers into one query when possible. Do NOT fire separate queries per dimension just to emit visuals.
+- Emit at most ONE compact structured table (top 5 drivers, ≤6 columns) — or none. Never emit multiple charts/tables/pivots in one answer.
+- Do NOT emit charts for driver breakdowns (bucket, category, SKU, day-level). Prose + one tight table beats several bar charts.
+- Skip filler section labels ("The commercial read", "Story:", "Biggest driver:"). Use "##" at most once if a second topic genuinely needs separation.
+- If prior context already has enough evidence, synthesise from it with zero or one confirming SQL pass.`
+}
+
 function buildSystemPrompt(
   storeName: string,
   executionPlan: GenieExecutionPlan | null = null,
@@ -410,6 +426,7 @@ function buildSystemPrompt(
   fastMode = false,
   learnedPlaybook = '',
   businessAnalysisSynthesisMode = false,
+  driverExplanationMode = false,
 ): string {
   const today = getStoreToday()
   const includeGmail = routeUsesGmail(route, executionPlan)
@@ -470,14 +487,24 @@ STYLE
 - Response ladder — pick the lightest shape that fully answers:
   • Quick fact / yes-no / single number → one confident sentence, with the key figure in **bold**. No heading, no bullets.
   • Short recommendation or a few facts → a one-line **bold takeaway**, then 2-4 tight bullets or a small table. No heading.
-  • Multi-part, analytical, or report-style → open with a one-sentence headline answer, then split the body into sections with "##" headers (and "###" sub-sections when a section has parts). Use a single "#" title only for big report deliverables.
-- Headings now render at real, distinct sizes, so use the level to signal importance: "#" = report title (rare, at most once), "##" = major section, "###" = sub-section, "####" = small label. Never put a heading on a one-line answer, and never flatten everything to one heading size.
-- Use a "> " callout for the one thing that matters most — the headline number, the verdict, or a key risk/caveat. At most one per answer; never wrap the whole answer in a callout.
+  • Analytical, period comparison, or multi-metric answers → MUST open with a single "# " headline (one sentence verdict in larger type). Then the supporting detail — usually a Markdown table for 2–4 comparable rows, or "##" sections when there are distinct topics. Never bury the headline in a plain paragraph, callout, or label like "Story:".
+  • Big report deliverables → "# " title once, then "##" sections throughout.
+- Headings render at distinct sizes — use them deliberately: "#" = headline verdict (required for comparisons and analytics), "##" = major section, "###" = sub-section, "####" = small label. Never flatten an analytical answer to one body-text size.
+- For chart or trend narrations, write like a sharp analyst brief: the "# " headline carries the verdict; supporting detail follows in smaller type. Vary structure naturally — never repeat the same section order every time.
+- Use a "> " callout only for a secondary highlight (caveat, risk, or follow-up) — not as a substitute for the "# " headline. At most one per answer.
 - Bold the labels and the numbers that drive a decision (margin, cash, counts, dates). Keep paragraphs to 1-2 sentences and prefer bullets, tables, and headings over walls of text.
-- Pick the best display for the data shape, every time: a single figure or fact = one bold sentence; 3+ rows of comparable records (rankings, transactions, line items, period comparisons) = a Markdown table; a process or recommendation = numbered steps. Never dump raw multi-row data as prose or nested bullets.
-- Reach for a chart proactively, not rarely: any trend over time (sales/revenue/units by day/week/month) or comparison across 4+ categories/products/periods should be a chart via the run_lightspeed_sql_query visual — chart_kind "line" for time series, "bar" for category comparisons — with a one-line takeaway sentence above it. Always set the visual's value format to match the metric (currency for money, percent for rates) so axes, tooltips, and value labels read correctly. A short table can accompany a chart when the exact numbers matter, but lead with the chart for anything visual.
+- Pick the best display for the data shape — do not default to a chart:
+  • One number or yes/no → bold sentence only; no chart, no table.
+  • Two-period comparison (A vs B, month over month, this week vs last) → "# " headline + Markdown table with both periods and the change row. No chart unless the user asked for one.
+  • Rankings, transaction lists, line items, receipts → Markdown table (or tool table visual); chart only if 4+ rows and a visual pattern helps.
+  • Trend over time with 4+ buckets (weeks/months) → line chart via run_lightspeed_sql_query visual (chart_kind "line") OR a table when the user asked for numbers/breakdown/table.
+  • Category comparison with 4+ groups → bar chart (chart_kind "bar") OR a tight table when categories ≤ 3.
+  • When unsure, prefer the table — charts are for shape over time or many categories, not for every SQL result.
+- Only set chart_kind / chart_x_key / chart_y_keys when a chart genuinely helps. Omit chart fields entirely for two-period comparisons, single totals, and short ranked lists — use table_title instead.
+- Always set the visual value format to match the metric (currency for money, percent for rates) when you do chart.
 - Render financial reports (P&L, balance sheet, trial balance, aged payables/receivables) as a Markdown table mirroring the report sections: one row per line item, a **bold** row for each section total and the bottom line, one amount column per period with the currency and period in the header. Lead with the headline figure (e.g. net profit) in a bold sentence before the table.
 - Keep tables tight: 3-6 columns, ranked by usefulness, with units in headers. Do not use a table when two bullets are clearer.
+- Default cap: at most ONE chart and ONE structured table per answer unless the user asked for a comprehensive report or deep business analysis. Never stack multiple charts/tables for the same question — synthesise in prose instead.
 - For incomplete evidence, use a short "Checked" / "Gap" / "Next" shape instead of a vague apology.
 - If product/listing data appears inconsistent (title vs category, brand/model/year/specs, or OEM evidence), flag it briefly and cautiously: "One thing I'd double-check: ..." Do not invent the correction.
 - After proposing, briefly say what's staged and that they can review & Apply. Don't restate every item — the preview card shows detail.
@@ -509,7 +536,7 @@ ${businessAnalysisSynthesisMode && route === 'business_analysis'
 - If the one verification pass finds gaps, answer with the best evidence you already have and state the key caveat in one line. Do not start a verification loop.
 - If a tool returns answer_readiness or recheck_required with gaps, treat those as remaining_gaps until resolved.
 - Never present partial tool output as a complete answer (e.g. warranty@ as "the rep" when the user asked for a sales rep).`}
-${businessAnalysisSynthesisMode && route === 'business_analysis' ? `\n\n${businessAnalysisInvestigatorOverlay()}` : ''}${lightspeedInstructions}${learnedPlaybook
+${businessAnalysisSynthesisMode && route === 'business_analysis' ? `\n\n${businessAnalysisInvestigatorOverlay()}` : ''}${driverExplanationMode ? `\n\n${driverExplanationOverlay()}` : ''}${lightspeedInstructions}${learnedPlaybook
     ? `
 
 LEARNED PLAYBOOK
@@ -575,6 +602,7 @@ Critical routing doctrine:
 
 Continuation rule:
 - Route the latest user message in the context of the full conversation. Short follow-ups, pronouns, "this/that/these", "same", "she/he/they", "that bike", "that customer", "that workorder", "that email", "reply to it", or "send that" inherit the route implied by the referenced prior structured context. Never classify a follow-up as casual_chat merely because it is short.
+- "what drove this/that", "why did sales fall", "explain the drop" after a prior sales/comparison answer = lightspeed_sql, needs_plan=false, direct_path="none". The executor should synthesise drivers — not launch a multi-step business_analysis investigation.
 - If prior context contains a resolved customer profile/workorder and the user asks "what about his bike?", "what did we do?", "when was that?", "tell me more", or similar, keep the relevant Lightspeed/mixed/Gmail route.
 
 Routing examples:
@@ -651,6 +679,21 @@ Answer the user's question directly using ONLY the grounded data below.
 - If the data is empty or insufficient, say what was checked and ask one sharp follow-up.
 - A structured card with the underlying data is already shown to the user; summarise the highlights — do not repeat every row.`
 
+const ANALYTICS_CHART_TAKEAWAY_INSTRUCTIONS = `You are writing the text takeaway for a chart the user will already see on screen.
+Write naturally — vary structure each time. Do NOT follow a fixed template or repeat the same section order every answer.
+
+Presentation rules:
+- MUST open with a "# " headline: one sentence verdict with the key figure(s) in **bold**. This renders large — it is the headline summary.
+- When there is more to say, add "##" only for a genuine second topic. Skip headings on very short answers.
+- Use "> " blockquote at most once for a caveat or secondary highlight — never instead of the "# " headline.
+- **bold** KPI names and exact figures from the grounded data.
+- Short bullets only when comparing 3+ points; otherwise prefer prose.
+- Keep it concise: 2–5 sentences for a simple trend, up to ~8 for multi-metric charts.
+- The chart and data table render separately below your text — do not say "see the chart" or list every row.
+- Use ONLY numbers from GROUNDED DATA. Money is AUD.
+- If assumptions or coverage caveats appear in the data, mention them in one short line at the end.
+- Never invent trends, causes, or figures not present in the data.`
+
 function buildDirectAnswerInstructions(
   storeName: string,
   groundingLabel: string,
@@ -661,6 +704,18 @@ function buildDirectAnswerInstructions(
 Store: "${storeName}".
 
 GROUNDED DATA (${groundingLabel}):
+${grounding}`
+}
+
+export function buildAnalyticsChartTakeawayInstructions(
+  storeName: string,
+  grounding: string,
+): string {
+  return `${ANALYTICS_CHART_TAKEAWAY_INSTRUCTIONS}
+
+Store: "${storeName}".
+
+GROUNDED DATA (governed chart results):
 ${grounding}`
 }
 

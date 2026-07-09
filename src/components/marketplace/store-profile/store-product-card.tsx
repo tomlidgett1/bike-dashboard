@@ -4,13 +4,10 @@ import * as React from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
-  Check,
   Loader2,
   Package,
-  Plus,
   Wand2,
 } from "@/components/layout/app-sidebar/dashboard-icons";
-import { useCart, type CartItem } from "@/components/providers/cart-provider";
 import {
   formatPriceAUDFull,
   resolveLivePrice,
@@ -21,7 +18,6 @@ import {
   cloudinaryCardLoader,
   extractCloudinaryPublicId,
 } from "@/lib/utils/cloudinary-transforms";
-import { trackStoreBehaviourEvent } from "@/lib/tracking/store-analytics";
 import { cn } from "@/lib/utils";
 
 const CARD_BLUR_DATA_URL =
@@ -52,28 +48,6 @@ export interface StoreProductCardProps {
   backgroundRemoveBusy?: boolean;
 }
 
-function getCardActionImage(product: StoreProductCardData): string | null {
-  return product.card_url || product.primary_image_url || null;
-}
-
-function buildCartItem(product: StoreProductCardData, storeName: string): CartItem {
-  const live = resolveLivePrice(product);
-  return {
-    productId: product.id,
-    name: product.display_name || product.description || "Item",
-    image: getCardActionImage(product),
-    price: live.price,
-    sellerId: product.user_id,
-    sellerName: storeName,
-    uberDeliveryEligible:
-      product.uber_delivery_enabled === true &&
-      product.store_account_type === "bicycle_store" &&
-      product.store_bicycle_store === true,
-    quantity: 1,
-    maxQuantity: Math.max(1, Math.floor(Number(product.qoh) || 1)),
-  };
-}
-
 function resolveImageUrl(product: StoreProductCardData): string | null {
   if (product.card_url) return product.card_url;
 
@@ -92,16 +66,12 @@ function resolveImageUrl(product: StoreProductCardData): string | null {
 export const StoreProductCard = React.memo<StoreProductCardProps>(function StoreProductCard({
   product,
   storeId,
-  storeName: storeNameProp,
   priority = false,
   inCarousel = false,
   onBackgroundRemove,
   backgroundRemoveBusy = false,
 }) {
-  const { has, addItem, openCart } = useCart();
   const productData = product as StoreProductCardData;
-  const storeName = storeNameProp || productData.store_name || "Store";
-  const inCart = has(product.id);
   const live = resolveLivePrice(product);
   const title = product.display_name || product.description || "Product";
   const href = `/marketplace/product/${product.id}?store=${storeId}`;
@@ -156,29 +126,6 @@ export const StoreProductCard = React.memo<StoreProductCardProps>(function Store
     ? "42vw"
     : "(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 220px";
 
-  const handleAdd = (event: React.MouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (inCart) {
-      openCart();
-      return;
-    }
-    addItem(buildCartItem(productData, storeName));
-    trackStoreBehaviourEvent(
-      storeId,
-      "add_to_cart_click",
-      {
-        action: "add_to_cart",
-        label: "Add to cart",
-        source: "store_product_card",
-        category: product.marketplace_category,
-        price: live.price,
-      },
-      product.id,
-    );
-    openCart();
-  };
-
   return (
     <Link
       href={href}
@@ -215,6 +162,36 @@ export const StoreProductCard = React.memo<StoreProductCardProps>(function Store
             </span>
           )}
 
+          {isUberDeliveryEligible && (
+            <span
+              className={cn(
+                "absolute bottom-2 left-2 z-10 inline-flex shrink-0 items-center gap-0.5 rounded-md bg-gray-900",
+                inCarousel ? "px-1.5 py-0.5" : "px-1.5 py-0.5 sm:px-2 sm:py-1",
+              )}
+            >
+              <Image
+                src="/uberwhite.png"
+                alt="Uber"
+                width={22}
+                height={8}
+                quality={100}
+                unoptimized
+                className={cn(
+                  "w-auto object-contain",
+                  inCarousel ? "h-2" : "h-2 sm:h-2.5",
+                )}
+              />
+              <span
+                className={cn(
+                  "font-semibold leading-none text-green-500",
+                  inCarousel ? "text-[8px]" : "text-[9px] sm:text-[10px]",
+                )}
+              >
+                1hr
+              </span>
+            </span>
+          )}
+
           {onBackgroundRemove && (
             <button
               type="button"
@@ -242,22 +219,6 @@ export const StoreProductCard = React.memo<StoreProductCardProps>(function Store
               <span className="hidden sm:inline">Fix BG</span>
             </button>
           )}
-
-          <button
-            type="button"
-            onClick={handleAdd}
-            aria-label={inCart ? "View cart" : "Add to cart"}
-            className={cn(
-              "absolute right-2 top-2 z-10 flex items-center justify-center rounded-full bg-white text-gray-900 shadow-md transition-transform hover:scale-105",
-              inCarousel ? "h-7 w-7" : "h-9 w-9 sm:h-10 sm:w-10",
-            )}
-          >
-            {inCart ? (
-              <Check className={cn(inCarousel ? "h-3.5 w-3.5" : "h-4 w-4", "text-green-600")} />
-            ) : (
-              <Plus className={inCarousel ? "h-4 w-4" : "h-5 w-5"} />
-            )}
-          </button>
 
           {shouldMountImage && (useCloudinaryLoader || useDirectImage) ? (
             useCloudinaryLoader ? (
@@ -322,50 +283,23 @@ export const StoreProductCard = React.memo<StoreProductCardProps>(function Store
               inCarousel ? "mt-1 pt-1" : "mt-auto pt-2.5 sm:pt-3",
             )}
           >
-            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-              <div className="flex min-w-0 items-baseline gap-1">
-                <span
-                  className={cn(
-                    "shrink-0 font-bold text-gray-900",
-                    inCarousel ? "text-xs" : "text-sm sm:text-base lg:text-lg",
-                  )}
-                >
-                  {formatPriceAUDFull(live.price)}
-                </span>
-                {live.onSale && live.originalPrice != null && (
-                  <span
-                    className={cn(
-                      "truncate text-gray-400 line-through",
-                      inCarousel ? "text-[10px]" : "text-xs sm:text-sm",
-                    )}
-                  >
-                    {formatPriceAUDFull(live.originalPrice)}
-                  </span>
+            <div className="flex min-w-0 items-baseline gap-1">
+              <span
+                className={cn(
+                  "shrink-0 font-bold text-gray-900",
+                  inCarousel ? "text-xs" : "text-sm sm:text-base lg:text-lg",
                 )}
-              </div>
-              {isUberDeliveryEligible && (
+              >
+                {formatPriceAUDFull(live.price)}
+              </span>
+              {live.onSale && live.originalPrice != null && (
                 <span
                   className={cn(
-                    "inline-flex shrink-0 items-center rounded-full border border-gray-200 bg-white font-medium text-gray-700",
-                    inCarousel
-                      ? "gap-1 px-1.5 py-0.5 text-[9px]"
-                      : "gap-1 px-1.5 py-0.5 text-[10px] sm:px-1 sm:py-0.5",
+                    "truncate text-gray-400 line-through",
+                    inCarousel ? "text-[10px]" : "text-xs sm:text-sm",
                   )}
                 >
-                  <Image
-                    src="/uber.png"
-                    alt="Uber"
-                    width={32}
-                    height={12}
-                    unoptimized
-                    className={cn(
-                      "w-auto object-contain",
-                      inCarousel ? "h-2.5" : "h-2.5 sm:h-3",
-                    )}
-                  />
-                  <span className="sm:hidden">
-                    {inCarousel ? "Fast" : "Fast Delivery"}
-                  </span>
+                  {formatPriceAUDFull(live.originalPrice)}
                 </span>
               )}
             </div>
