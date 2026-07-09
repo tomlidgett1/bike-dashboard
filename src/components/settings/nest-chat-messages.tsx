@@ -17,6 +17,15 @@ const IMAGE_URL_PATTERN =
 const LINQ_CDN_PATTERN = /^https?:\/\/cdn\.linqapp\.com\/[^\s]+$/i;
 const ANY_HTTP_URL_PATTERN = /https?:\/\/[^\s]+/gi;
 
+const SYNTHETIC_INBOUND_PLACEHOLDERS = new Set([
+  "what's in this image?",
+  "whats in this image?",
+]);
+
+function isSyntheticInboundPlaceholder(text: string): boolean {
+  return SYNTHETIC_INBOUND_PLACEHOLDERS.has(text.trim().toLowerCase());
+}
+
 function isImageUrl(text: string): boolean {
   const trimmed = text.trim();
   return IMAGE_URL_PATTERN.test(trimmed) || LINQ_CDN_PATTERN.test(trimmed);
@@ -38,7 +47,12 @@ function asMediaItems(value: unknown): NestMediaItem[] {
     if (!url) continue;
     items.push({
       url,
-      mimeType: typeof row.mimeType === "string" ? row.mimeType : undefined,
+      mimeType:
+        typeof row.mimeType === "string"
+          ? row.mimeType
+          : typeof row.mime_type === "string"
+            ? row.mime_type
+            : undefined,
       filename: typeof row.filename === "string" ? row.filename : undefined,
     });
   }
@@ -75,6 +89,9 @@ function messageMedia(message: NestConversationMessage): {
     images.push(item);
   }
   const text = stripImageUrlsFromContent(message.content, images.map((item) => item.url));
+  if (isSyntheticInboundPlaceholder(text)) {
+    return { images, text: "" };
+  }
   return { images, text };
 }
 

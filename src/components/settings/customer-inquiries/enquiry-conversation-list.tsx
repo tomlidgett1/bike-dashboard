@@ -53,7 +53,7 @@ export function MessageKindBadge({ row }: { row: UnifiedInboxRow }) {
         "inline-flex shrink-0 items-center rounded-md border px-1.5 py-px text-[10px] font-medium leading-4",
         isStaff
           ? "border-blue-200 bg-blue-50 text-blue-700"
-          : "border-sky-200 bg-sky-50 text-sky-800",
+          : "border-gray-200 bg-gray-100 text-gray-600",
       )}
     >
       {isStaff ? "Staff Message" : "Bot Message"}

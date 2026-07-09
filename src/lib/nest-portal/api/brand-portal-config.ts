@@ -1414,6 +1414,7 @@ function buildConversationRecord(
   selectedRows: ConversationRow[],
   profilesByHandle: Map<string, UserProfileRow>,
   selectedChat: PortalChatListItem | null,
+  pendingImagesBySender: Map<string, unknown[]> = new Map(),
 ): Record<string, unknown> {
   const participantHandle = extractParticipantHandle(chatId, selectedRows)
   const profile = participantHandle ? profilesByHandle.get(participantHandle) ?? null : null
@@ -1426,15 +1427,83 @@ function buildConversationRecord(
     participantHandle,
     source: selectedChat?.source ?? (chatId.startsWith('portal-test#') || chatId.startsWith('portal-sim#') ? 'portal_test' : 'customer'),
     lastSeen: profile?.last_seen ?? null,
-    messages: selectedRows.map((row) => ({
-      id: row.id,
-      role: row.role,
-      content: row.content,
-      handle: row.handle,
-      createdAt: row.created_at,
-      metadata: row.metadata ?? {},
-    })),
+    messages: selectedRows.map((row) => sanitisePortalMessageRow(row, pendingImagesBySender)),
   }
+}
+
+const SYNTHETIC_INBOUND_PLACEHOLDER = /^what'?s in this image\??$/i
+
+function sanitisePortalMessageRow(
+  row: ConversationRow,
+  pendingImagesBySender: Map<string, unknown[]>,
+): {
+  id: number
+  role: string
+  content: string
+  handle: string | null
+  createdAt: string
+  metadata: Record<string, unknown>
+} {
+  const metadata: Record<string, unknown> = { ...(row.metadata ?? {}) }
+  let content = row.content ?? ''
+
+  const existingImages = Array.isArray(metadata.images) ? metadata.images : []
+  const senderHandle = row.handle ?? ''
+  const pendingImages = pendingImagesBySender.get(senderHandle) ?? []
+
+  if (row.role === 'user' && existingImages.length === 0 && pendingImages.length > 0) {
+    metadata.images = pendingImages
+  }
+
+  const images = Array.isArray(metadata.images) ? metadata.images : []
+  const trimmed = content.trim()
+
+  if (SYNTHETIC_INBOUND_PLACEHOLDER.test(trimmed)) {
+    content = images.length > 0
+      ? images
+          .map((item) =>
+            item && typeof item === 'object' && typeof (item as { url?: unknown }).url === 'string'
+              ? (item as { url: string }).url
+              : '',
+          )
+          .filter(Boolean)
+          .join('\n')
+      : ''
+  }
+
+  return {
+    id: row.id,
+    role: row.role,
+    content,
+    handle: row.handle,
+    createdAt: row.created_at,
+    metadata,
+  }
+}
+
+async function loadPendingInboundImagesBySender(
+  supabase: SupabaseClient,
+  chatId: string,
+  nowIso: string,
+): Promise<Map<string, unknown[]>> {
+  const { data, error } = await supabase
+    .from('pending_inbound_images')
+    .select('sender_handle, images, expires_at')
+    .eq('chat_id', chatId)
+    .gt('expires_at', nowIso)
+
+  if (error) {
+    console.error('[brand-portal] pending inbound images load failed:', error.message)
+    return new Map()
+  }
+
+  const map = new Map<string, unknown[]>()
+  for (const row of data ?? []) {
+    const handle = typeof row.sender_handle === 'string' ? row.sender_handle : ''
+    if (!handle || !Array.isArray(row.images) || row.images.length === 0) continue
+    map.set(handle, row.images)
+  }
+  return map
 }
 
 async function fetchConversationRows(
@@ -1603,7 +1672,18 @@ async function buildBrandPortalConversationsPayload(
       profilesByHandle = await fetchUserProfiles(supabase, [participantHandle])
     }
 
-    const conversation = buildConversationRecord(requestedChatId, selectedRows, profilesByHandle, null)
+    const pendingImagesBySender = await loadPendingInboundImagesBySender(
+      supabase,
+      requestedChatId,
+      nowIso,
+    )
+    const conversation = buildConversationRecord(
+      requestedChatId,
+      selectedRows,
+      profilesByHandle,
+      null,
+      pendingImagesBySender,
+    )
 
     return { chats: [], selectedChatId: requestedChatId, conversation }
   }
@@ -1647,7 +1727,18 @@ async function buildBrandPortalConversationsPayload(
   if (selectedChatId) {
     const selectedRows = await fetchScopedThreadRows(supabase, selectedChatId, session.brandKey, nowIso)
     const selectedChat = enrichedChats.find((chat) => chat.chatId === selectedChatId) ?? null
-    conversation = buildConversationRecord(selectedChatId, selectedRows, profilesByHandle, selectedChat)
+    const pendingImagesBySender = await loadPendingInboundImagesBySender(
+      supabase,
+      selectedChatId,
+      nowIso,
+    )
+    conversation = buildConversationRecord(
+      selectedChatId,
+      selectedRows,
+      profilesByHandle,
+      selectedChat,
+      pendingImagesBySender,
+    )
   }
 
   return {
