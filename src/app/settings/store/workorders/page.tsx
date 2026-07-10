@@ -2,22 +2,22 @@
 
 export const dynamic = "force-dynamic";
 
-import { Suspense } from "react";
 import nextDynamic from "next/dynamic";
 import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";
+import { FloatingCardPage } from "@/components/layout/floating-card-page";
 
 const WorkordersPageContent = nextDynamic(
   () =>
     import("./workorders-page-content").then(
       (mod) => mod.WorkordersPageContent,
     ),
-  { ssr: false, loading: () => <SettingsManagerLoading className="m-6 min-h-72" /> },
+  { ssr: false, loading: () => <SettingsManagerLoading fullPage /> },
 );
 
 export default function StoreWorkordersPage() {
   return (
-    <Suspense fallback={<SettingsManagerLoading className="m-6 min-h-72" />}>
+    <FloatingCardPage>
       <WorkordersPageContent />
-    </Suspense>
+    </FloatingCardPage>
   );
 }
