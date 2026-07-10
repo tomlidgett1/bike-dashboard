@@ -110,18 +110,23 @@ export function NestComposePill({
           {sendErr}
         </div>
       ) : null}
-      <div className="relative w-full">
+      <div className="w-full">
         {showRequestMoney ? (
-          <div className="absolute bottom-full left-0 z-10 mb-2 flex w-[85%] items-center justify-between gap-2 rounded-md border border-gray-200 bg-gray-100 px-3 py-2 shadow-sm">
-            <span className="text-xs font-medium text-gray-500">Quick actions</span>
-            <button
-              type="button"
-              onClick={() => setRequestMoneyOpen(true)}
-              className={cn(storeSettingsHeaderActionClass(), "h-auto px-2.5 py-1 text-xs")}
-            >
-              <Banknote className="size-[14px]" />
-              Request money
-            </button>
+          <div className="relative z-0 mx-auto -mb-5 w-[85%] overflow-hidden rounded-2xl border border-gray-200 bg-gray-100 shadow-sm">
+            <div className="flex h-9 items-center px-4">
+              <button
+                type="button"
+                onClick={() => setRequestMoneyOpen(true)}
+                className={cn(
+                  storeSettingsHeaderActionClass(),
+                  "inline-flex h-7 items-center gap-1.5 px-2.5 text-xs",
+                )}
+              >
+                <Banknote className="size-[14px]" />
+                Request money
+              </button>
+            </div>
+            <div className="h-5 bg-gray-100" aria-hidden />
           </div>
         ) : null}
         <form
@@ -129,9 +134,9 @@ export function NestComposePill({
             event.preventDefault();
             void send();
           }}
-          className="w-full"
+          className="relative z-10 w-full"
         >
-          <div className="flex w-full items-end gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 shadow-sm">
+          <div className="relative z-10 flex w-full items-end gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 shadow-sm">
             <Button
               type="button"
               variant="ghost"
@@ -202,7 +207,7 @@ export function NestFloatingCompose({
   return (
     <div className={cn(
       "pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-4",
-      showRequestMoney ? "pt-24" : "pt-16",
+      showRequestMoney ? "pt-20" : "pt-16",
     )}>
       <div
         aria-hidden
