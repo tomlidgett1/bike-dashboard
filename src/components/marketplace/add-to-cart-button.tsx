@@ -24,6 +24,8 @@ interface AddToCartButtonProps {
   productImage?: string | null;
   /** Max purchasable units (stock on hand). 1 for unique listings; qoh for shop inventory. */
   maxQuantity?: number;
+  quantity?: number;
+  label?: string;
   variant?: "default" | "outline";
   size?: "default" | "sm" | "lg";
   fullWidth?: boolean;
@@ -39,6 +41,8 @@ export function AddToCartButton({
   uberDeliveryEligible = false,
   productImage,
   maxQuantity = 1,
+  quantity = 1,
+  label,
   variant = "outline",
   size = "lg",
   fullWidth = false,
@@ -64,7 +68,7 @@ export function AddToCartButton({
       sellerId,
       sellerName,
       uberDeliveryEligible,
-      quantity: 1,
+      quantity: Math.min(Math.max(quantity, 1), maxQuantity),
       maxQuantity,
     });
 
@@ -94,7 +98,7 @@ export function AddToCartButton({
         ) : (
           <>
             <ShoppingCart className="h-4 w-4" />
-            Add to Cart
+            {label ?? "Add to Cart"}
           </>
         )}
       </Button>

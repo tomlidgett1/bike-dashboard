@@ -103,8 +103,13 @@ never writes facts — counts/prices/stores come from the DB; GLM only rewrites.
    supabase secrets set GOOGLE_SERVICE_ACCOUNT_JSON="$(cat sa.json)"
    # Gated — Merchant Center:
    supabase secrets set MERCHANT_ID=1234567
-   # Gated — Business Profile:
+   # Gated — Business Profile (see docs/GBP_SETUP.md for the full runbook):
    supabase secrets set GBP_ACCOUNT_ID=… GBP_LOCATION_ID=…
+   # optional — override the website link pushed to the listing:
+   supabase secrets set GBP_WEBSITE_URI=https://yellowjersey.store/marketplace/store/ashburton-cycles
+   # GBP writes are DRY-RUN by default; flip on only after eyeballing the diff
+   # in /admin/seo:
+   supabase secrets set GBP_APPLY=true
    supabase secrets set SITE_URL=https://yellowjersey.store
    ```
    `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected by the platform.

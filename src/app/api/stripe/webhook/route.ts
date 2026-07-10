@@ -246,6 +246,13 @@ async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
     return;
   }
 
+  // Store credit payment request — customer paid a /pay/<id> link texted
+  // from a Nest conversation. No product or purchase row involved.
+  if (metadata.payment_type === 'store_credit_request') {
+    await handleStoreCreditRequestComplete(session, metadata, supabase);
+    return;
+  }
+
   // Cart checkout — one payment split into one purchase row per product.
   // Handled separately because there is no single product_id in the metadata.
   if (metadata.cart === '1') {
@@ -814,6 +821,103 @@ function buyerNameFromProfile(profile: BuyerProfile | null): string | null {
 }
 
 // ============================================================
+// Handle Store Credit Payment Request
+// ============================================================
+// Customer paid a /pay/<id> link. Mark the request paid and record the amount
+// in the customer's credit ledger. Idempotent two ways: the status flip only
+// happens on rows still 'pending', and the ledger has a unique index on
+// payment_request_id so a webhook retry can never double-credit.
+
+async function handleStoreCreditRequestComplete(
+  session: Stripe.Checkout.Session,
+  metadata: Stripe.Metadata,
+  supabase: ReturnType<typeof getServiceClient>
+) {
+  console.log('[Stripe Webhook] ====== STORE CREDIT REQUEST START ======');
+  const requestId = metadata.payment_request_id;
+  console.log('[Stripe Webhook] Payment request ID:', requestId);
+
+  if (!requestId) {
+    console.error('[Stripe Webhook] store_credit_request without payment_request_id - ABORTING');
+    return;
+  }
+
+  if (session.payment_status !== 'paid') {
+    console.log('[Stripe Webhook] Store credit session not paid yet:', session.payment_status);
+    return;
+  }
+
+  const paymentIntentId =
+    typeof session.payment_intent === 'string'
+      ? session.payment_intent
+      : session.payment_intent?.id || null;
+
+  const { data: paymentRequest, error: fetchError } = await supabase
+    .from('store_payment_requests')
+    .select('id, store_user_id, customer_handle, customer_name, amount_cents, description, status')
+    .eq('id', requestId)
+    .maybeSingle();
+
+  if (fetchError) {
+    console.error('[Stripe Webhook] Failed to load payment request:', fetchError);
+    throw new Error(`Failed to load payment request ${requestId}`);
+  }
+
+  if (!paymentRequest) {
+    console.error('[Stripe Webhook] Payment request not found:', requestId);
+    return;
+  }
+
+  // Credit first, status flip second — both idempotent, so a retry after a
+  // partial failure completes the remainder without double-crediting.
+  const { error: creditError } = await supabase
+    .from('store_customer_credits')
+    .upsert(
+      {
+        store_user_id: paymentRequest.store_user_id,
+        customer_handle: paymentRequest.customer_handle || 'unknown',
+        customer_name: paymentRequest.customer_name,
+        amount_cents: paymentRequest.amount_cents,
+        entry_type: 'payment',
+        note: paymentRequest.description,
+        payment_request_id: paymentRequest.id,
+        stripe_payment_intent_id: paymentIntentId,
+      },
+      { onConflict: 'payment_request_id', ignoreDuplicates: true },
+    );
+
+  if (creditError) {
+    console.error('[Stripe Webhook] Failed to record customer credit:', creditError);
+    throw new Error(`Failed to record credit for payment request ${requestId}`);
+  }
+
+  const { error: updateError } = await supabase
+    .from('store_payment_requests')
+    .update({
+      status: 'paid',
+      paid_at: new Date().toISOString(),
+      stripe_session_id: session.id,
+      stripe_payment_intent_id: paymentIntentId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', requestId)
+    .eq('status', 'pending');
+
+  if (updateError) {
+    console.error('[Stripe Webhook] Failed to mark payment request paid:', updateError);
+    throw new Error(`Failed to mark payment request ${requestId} paid`);
+  }
+
+  console.log(
+    '[Stripe Webhook] ✓ Store credit recorded:',
+    paymentRequest.amount_cents / 100,
+    'for',
+    paymentRequest.customer_handle,
+  );
+  console.log('[Stripe Webhook] ====== STORE CREDIT REQUEST SUCCESS ======');
+}
+
+// ============================================================
 // Handle Successful Cart Checkout
 // ============================================================
 // One Stripe payment → one purchase row per product, all sharing the same
@@ -1178,6 +1282,12 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
   
   if (!metadata) {
     console.error('[Stripe Webhook] No metadata in payment intent - ABORTING');
+    return;
+  }
+
+  // Store credit requests are fully handled in checkout.session.completed.
+  if (metadata.payment_type === 'store_credit_request') {
+    console.log('[Stripe Webhook] Store credit payment intent - handled via checkout session, skipping');
     return;
   }
 

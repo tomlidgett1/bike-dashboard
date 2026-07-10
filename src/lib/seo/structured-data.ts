@@ -191,6 +191,47 @@ export function bikeStoreSchema(store: StoreProfile, url: string): Json {
   if (hours) schema.openingHoursSpecification = hours;
   if (sameAs.length) schema.sameAs = sameAs;
   if (brands.length) schema.brand = brands.map((name) => ({ '@type': 'Brand', name }));
+
+  // Bike servicing is a core search intent ("bike service near me") — surface the
+  // real workshop menu so Google understands this store repairs bikes, not just
+  // sells them. Prices come straight from the store's live service list.
+  const services = (store.services ?? []).filter((s) => s.is_active && s.name?.trim());
+  if (services.length) {
+    schema.hasOfferCatalog = {
+      '@type': 'OfferCatalog',
+      name: 'Bike servicing & repairs',
+      itemListElement: services.map((s) => {
+        const offer: Json = {
+          '@type': 'Offer',
+          itemOffered: {
+            '@type': 'Service',
+            name: s.name,
+            serviceType: 'Bicycle repair and maintenance',
+            ...(s.includes?.length ? { description: s.includes.join(', ') } : {}),
+          },
+        };
+        if (typeof s.price === 'number' && s.price > 0) {
+          offer.priceCurrency = 'AUD';
+          offer.price = s.price;
+          // "from $X" tiers are minimums, not fixed quotes.
+          if (s.price_from) {
+            offer.priceSpecification = {
+              '@type': 'PriceSpecification',
+              minPrice: s.price,
+              priceCurrency: 'AUD',
+            };
+          }
+        }
+        return offer;
+      }),
+    };
+    const prices = services
+      .map((s) => s.price)
+      .filter((p): p is number => typeof p === 'number' && p > 0);
+    if (prices.length) {
+      schema.priceRange = `$${Math.min(...prices)}-$${Math.max(...prices)}`;
+    }
+  }
   return schema;
 }
 

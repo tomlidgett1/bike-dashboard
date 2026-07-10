@@ -72,7 +72,16 @@ function summarise(type: string, r: any): string {
     case 'sitemap': return r.submitted ? `submitted ${r.submitted}` : '—';
     case 'url-inspection': return r.inspected != null ? `${r.inspected} URLs inspected (budget ${r.budget})` : '—';
     case 'merchant-sync': return `${r.synced ?? 0}/${r.eligible ?? 0} products synced`;
-    case 'business-profile-sync': return r.total != null ? `${r.total} reviews · ${r.average ?? '—'}★` : '—';
+    case 'business-profile-sync': {
+      const bits: string[] = [];
+      if (r.error) bits.push(r.error);
+      else if (r.patched?.length) bits.push(`synced ${r.patched.join(', ')}`);
+      else if (r.pending?.length) bits.push(`dry-run — would sync ${r.pending.join(', ')}`);
+      else if (r.diff) bits.push('listing in sync');
+      if (r.patch_error) bits.push(r.patch_error);
+      if (r.total != null) bits.push(`${r.total} reviews · ${r.average ?? '—'}★`);
+      return bits.join(' · ') || '—';
+    }
     case 'internal-links': return `${r.updated ?? 0}/${r.pages ?? 0} pages linked`;
     case 'alerts': return r.pages ? `${r.pages.indexable} indexable · ${r.tasks?.done ?? 0} tasks done` : 'run closed';
     default: return JSON.stringify(r).slice(0, 90);

@@ -1,12 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { createPortal } from "react-dom";
-import Image from "next/image";
 import Link from "next/link";
-import { ChevronRight, Clock, Globe, MapPin, Store, User, X } from '@/components/layout/app-sidebar/dashboard-icons';
-import { getStoreOpenStatus } from "@/components/marketplace/store-profile/store-profile-chrome";
-import type { OpeningHours } from "@/lib/types/store";
+import { Check } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 
 export interface ProductSellerProfile {
@@ -19,339 +15,145 @@ export interface ProductSellerProfile {
   address?: string | null;
   website?: string | null;
   bio?: string | null;
-  opening_hours?: OpeningHours | null;
+  opening_hours?: import("@/lib/types/store").OpeningHours | null;
 }
 
 interface AboutThisSellerSectionProps {
-  seller: ProductSellerProfile;
+  seller?: ProductSellerProfile | null;
   className?: string;
   /** When true, renders inside the product info card without outer page padding or card wrapper. */
   embedded?: boolean;
+  /** When true, renders inside the purchase panel below buyer protection. */
+  inPanel?: boolean;
+  featureBullets?: string[];
+  overviewContent?: React.ReactNode;
 }
 
-function hasMeaningfulStoreData(seller: ProductSellerProfile): boolean {
-  if (!seller.is_bicycle_store) {
-    return Boolean(seller.name);
-  }
-  return Boolean(
-    seller.name ||
-      seller.logo_url ||
-      seller.address ||
-      seller.store_type ||
-      seller.website ||
-      seller.bio ||
-      seller.opening_hours,
-  );
-}
-
-function SellerAvatar({
-  seller,
-  logoError,
-  onLogoError,
-  size = "md",
+function KeyFeaturesList({
+  featureBullets,
+  compact = false,
 }: {
-  seller: ProductSellerProfile;
-  logoError: boolean;
-  onLogoError: () => void;
-  size?: "sm" | "md" | "lg";
+  featureBullets: string[];
+  compact?: boolean;
 }) {
-  const dim =
-    size === "sm" ? "h-10 w-10" : size === "lg" ? "h-16 w-16" : "h-14 w-14";
-  const iconClass =
-    size === "sm" ? "h-4 w-4" : size === "lg" ? "h-6 w-6" : "h-5 w-5";
+  if (featureBullets.length === 0) return null;
 
   return (
-    <div
-      className={cn(
-        "relative shrink-0 overflow-hidden rounded-md border border-gray-200 bg-gray-50",
-        dim,
-      )}
-    >
-      {seller.logo_url && !logoError ? (
-        <Image
-          src={seller.logo_url}
-          alt={seller.name}
-          fill
-          className="object-cover"
-          onError={onLogoError}
-        />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center">
-          {seller.is_bicycle_store ? (
-            <Store className={cn(iconClass, "text-gray-400")} />
-          ) : (
-            <User className={cn(iconClass, "text-gray-400")} />
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function getSellerBio(seller: ProductSellerProfile): string | null {
-  if (!seller.bio) return null;
-  const trimmed = seller.bio.trim();
-  if (!trimmed || /^(n\/?a|none|null|-)$/i.test(trimmed)) return null;
-  return trimmed;
-}
-
-function SellerDetailRows({
-  seller,
-  openStatus,
-  websiteHref,
-  clampBio = false,
-}: {
-  seller: ProductSellerProfile;
-  openStatus: ReturnType<typeof getStoreOpenStatus> | null;
-  websiteHref: string | null;
-  clampBio?: boolean;
-}) {
-  const bio = getSellerBio(seller);
-
-  return (
-    <div className="space-y-3">
-      {bio && (
-        <p
-          className={cn(
-            "text-sm leading-relaxed text-gray-600",
-            clampBio && "line-clamp-3",
-          )}
-        >
-          {bio}
-        </p>
-      )}
-
-      <div className="space-y-2.5 text-sm text-gray-600">
-        {seller.address && (
-          <div className="flex items-start gap-2.5">
-            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-            <span>{seller.address}</span>
-          </div>
+    <div>
+      <h2
+        className={cn(
+          "font-bold text-gray-900",
+          compact ? "text-sm" : "text-lg",
         )}
-        {openStatus && (
-          <div className="flex items-center gap-2.5">
-            <Clock className="h-4 w-4 shrink-0 text-gray-400" />
-            <span>{openStatus.label}</span>
-          </div>
-        )}
-        {websiteHref && (
-          <a
-            href={websiteHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2.5 text-gray-600 transition-colors hover:text-gray-900"
+      >
+        Key Features
+      </h2>
+      <ul className={cn("space-y-2", compact ? "mt-2" : "mt-3 space-y-2.5")}>
+        {featureBullets.map((feature) => (
+          <li
+            key={feature}
+            className={cn(
+              "flex items-start gap-2 text-gray-600",
+              compact ? "gap-1.5 text-xs" : "gap-2.5 text-sm",
+            )}
           >
-            <Globe className="h-4 w-4 shrink-0 text-gray-400" />
-            Visit website
-          </a>
-        )}
-      </div>
+            <Check
+              className={cn(
+                "shrink-0 text-gray-900",
+                compact ? "mt-0.5 h-3 w-3" : "mt-0.5 h-4 w-4",
+              )}
+            />
+            <span>{feature}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
 export function AboutThisSellerSection({
-  seller,
+  seller = null,
   className,
   embedded = false,
+  inPanel = false,
+  featureBullets = [],
+  overviewContent = null,
 }: AboutThisSellerSectionProps) {
-  const [logoError, setLogoError] = React.useState(false);
-  const [isSheetOpen, setIsSheetOpen] = React.useState(false);
-  const [mounted, setMounted] = React.useState(false);
+  const hasOverview = !!overviewContent;
+  const hasFeatures = featureBullets.length > 0;
+  const hasSeller = !!seller?.name;
+  const profileHref = seller?.is_bicycle_store
+    ? `/marketplace/store/${seller.id}`
+    : `/marketplace/seller/${seller?.id}`;
 
-  const openStatus = seller.is_bicycle_store
-    ? getStoreOpenStatus(seller.opening_hours ?? undefined)
-    : null;
-  const profileHref = `/marketplace/${seller.is_bicycle_store ? "store" : "seller"}/${seller.id}`;
+  if (!inPanel && !hasSeller) return null;
+  if (inPanel && !hasOverview && !hasFeatures && !hasSeller) return null;
 
-  React.useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  React.useEffect(() => {
-    if (!isSheetOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [isSheetOpen]);
-
-  if (!hasMeaningfulStoreData(seller)) return null;
-
-  const websiteHref = seller.website?.startsWith("http")
-    ? seller.website
-    : seller.website
-      ? `https://${seller.website}`
-      : null;
-
-  const sellerSubtitle = seller.is_bicycle_store
-    ? seller.store_type || "Bicycle store"
-    : "Individual seller";
-
-  const bioText = getSellerBio(seller);
-
-  const mobileMeta = [sellerSubtitle, openStatus?.label].filter(Boolean).join(" · ");
-
-  const mobileSheet =
-    isSheetOpen && mounted
-      ? createPortal(
-          <div className="fixed inset-0 z-50 sm:hidden">
-            <button
-              type="button"
-              aria-label="Close about this seller"
-              className="absolute inset-0 bg-black/40 animate-in fade-in duration-200"
-              onClick={() => setIsSheetOpen(false)}
-            />
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="about-seller-title"
-              className="absolute inset-x-0 bottom-0 flex max-h-[min(88dvh,720px)] flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out"
+  const overviewAndFeatures =
+    hasOverview || hasFeatures ? (
+      <div
+        className={cn(
+          hasOverview && hasFeatures
+            ? "grid grid-cols-2 gap-x-4 gap-y-3"
+            : "space-y-4",
+        )}
+      >
+        {hasOverview && (
+          <div className="min-w-0">
+            <h2
+              className={cn(
+                "font-bold text-gray-900",
+                inPanel ? "text-sm" : "text-lg",
+              )}
             >
-              <div className="flex shrink-0 justify-center pb-1 pt-3">
-                <div className="h-1 w-8 rounded-full bg-gray-300/80" />
-              </div>
-
-              <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-4 pb-3">
-                <h2
-                  id="about-seller-title"
-                  className="text-base font-semibold text-gray-900"
-                >
-                  About this seller
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => setIsSheetOpen(false)}
-                  className="rounded-md p-2 transition-colors hover:bg-gray-100"
-                  aria-label="Close"
-                >
-                  <X className="h-5 w-5 text-gray-500" />
-                </button>
-              </div>
-
-              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-                <div className="flex items-start gap-3">
-                  <SellerAvatar
-                    seller={seller}
-                    logoError={logoError}
-                    onLogoError={() => setLogoError(true)}
-                    size="lg"
-                  />
-                  <div className="min-w-0 flex-1 pt-0.5">
-                    <p className="text-base font-medium text-gray-900">{seller.name}</p>
-                    <p className="mt-0.5 text-xs text-gray-500">{sellerSubtitle}</p>
-                  </div>
-                </div>
-
-                <div className="mt-5">
-                  <SellerDetailRows
-                    seller={seller}
-                    openStatus={openStatus}
-                    websiteHref={websiteHref}
-                  />
-                </div>
-              </div>
-
-              <div className="shrink-0 border-t border-gray-200 bg-white px-4 py-4">
-                <Link
-                  href={profileHref}
-                  onClick={() => setIsSheetOpen(false)}
-                  className="inline-flex h-11 w-full items-center justify-center gap-1 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                >
-                  {seller.is_bicycle_store ? "View store profile" : "View seller profile"}
-                  <ChevronRight className="h-4 w-4" />
-                </Link>
-              </div>
+              Overview
+            </h2>
+            <div
+              className={cn(
+                "text-gray-600",
+                inPanel ? "mt-2 text-xs leading-relaxed" : "mt-3 text-sm leading-relaxed",
+              )}
+            >
+              {overviewContent}
             </div>
-          </div>,
-          document.body,
-        )
-      : null;
+          </div>
+        )}
+        <KeyFeaturesList featureBullets={featureBullets} compact={inPanel} />
+      </div>
+    ) : null;
 
   const content = (
-    <>
-      {/* Mobile — opens bottom sheet */}
-      <div className="sm:hidden">
-        <p className="mb-2 text-xs font-medium text-gray-500">Seller</p>
-        <button
-          type="button"
-          onClick={() => setIsSheetOpen(true)}
-          className="flex w-full items-center gap-3 text-left"
-        >
-          <SellerAvatar
-            seller={seller}
-            logoError={logoError}
-            onLogoError={() => setLogoError(true)}
-            size="sm"
-          />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-gray-900">{seller.name}</p>
-            <p className="truncate text-xs text-gray-500">{mobileMeta}</p>
-          </div>
-          <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
-        </button>
-      </div>
+    <div className="space-y-4">
+      {overviewAndFeatures}
 
-      {mobileSheet}
-
-      {/* Tablet / desktop */}
-      <div className="hidden sm:block">
-        <p className="mb-3 text-xs font-medium uppercase tracking-wide text-gray-500">
-          About this seller
+      {hasSeller && (
+        <p className={cn("text-gray-600", inPanel ? "text-xs" : "text-sm")}>
+          Seller:{" "}
+          <Link href={profileHref} className="font-semibold text-gray-900 hover:underline">
+            {seller!.name}
+          </Link>
         </p>
-
-        <Link
-          href={profileHref}
-          className="group flex items-start gap-3"
-        >
-          <SellerAvatar
-            seller={seller}
-            logoError={logoError}
-            onLogoError={() => setLogoError(true)}
-            size="sm"
-          />
-
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-gray-900 transition-colors group-hover:text-gray-600">
-                  {seller.name}
-                </p>
-                <p className="mt-0.5 truncate text-xs text-gray-500">
-                  {[sellerSubtitle, openStatus?.label].filter(Boolean).join(" · ")}
-                </p>
-              </div>
-              <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5" />
-            </div>
-
-            {bioText ? (
-              <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-gray-500">
-                {bioText}
-              </p>
-            ) : null}
-
-            {seller.address ? (
-              <p className="mt-2 flex items-start gap-1.5 text-xs text-gray-500">
-                <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" />
-                <span className="line-clamp-1">{seller.address}</span>
-              </p>
-            ) : null}
-          </div>
-        </Link>
-      </div>
-    </>
+      )}
+    </div>
   );
+
+  if (inPanel) {
+    return (
+      <div className={cn("border-t border-gray-100 pt-4", className)}>
+        {content}
+      </div>
+    );
+  }
 
   if (embedded) {
     return (
       <div
         className={cn(
-          "border-t border-gray-100 px-4 pt-4 pb-5 sm:px-5 sm:pt-5 sm:pb-6 lg:px-0",
+          "border-t border-gray-100 px-4 pt-4 pb-5 sm:px-5 sm:pt-5 sm:pb-6 lg:px-4 xl:px-5",
           className,
         )}
       >
-        {content}
+        <div className="mx-auto max-w-[1536px]">{content}</div>
       </div>
     );
   }

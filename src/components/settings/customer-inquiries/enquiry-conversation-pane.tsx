@@ -273,6 +273,7 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
                 <NestFloatingCompose
                   chatId={row.nestChatId}
                   placeholder="Write a reply…"
+                  showRequestMoney
                   sendHandlers={{
                     onOptimistic: (message) =>
                       c.handleNestMessageOptimistic(message, row.nestChatId!),

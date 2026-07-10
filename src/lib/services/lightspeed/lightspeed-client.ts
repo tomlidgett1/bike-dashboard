@@ -1290,6 +1290,27 @@ export class LightspeedClient {
   }
 
   /**
+   * Update a workorder.
+   *
+   * Like Item, the Workorder endpoint uses PUT for partial updates: omitted
+   * fields retain their existing values, so sending just `note` is safe.
+   */
+  async updateWorkorder(
+    workorderId: string,
+    payload: { note?: string; internalNote?: string },
+  ): Promise<LightspeedWorkorder> {
+    const accountId = await this.getAccountId()
+    const response = await this.request<{ Workorder: LightspeedWorkorder }>(
+      `/Account/${accountId}/Workorder/${workorderId}.json`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      }
+    )
+    return response.Workorder
+  }
+
+  /**
    * List parts/items attached to a workorder (with Item description when available).
    */
   async getWorkorderItems(workorderId: string): Promise<LightspeedWorkorderItem[]> {

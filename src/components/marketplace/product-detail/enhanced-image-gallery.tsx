@@ -183,6 +183,9 @@ export function EnhancedImageGallery({
   const heroFloatingControlClassName =
     "border border-black/5 bg-white/80 text-gray-800 shadow-sm backdrop-blur-md";
 
+  const heroAspectClassName =
+    images.length > 1 ? "aspect-[4/3] sm:aspect-[4/2.85]" : "aspect-[4/3]";
+
   const renderImageCarousel = ({
     mobileSquare = false,
   }: {
@@ -191,7 +194,7 @@ export function EnhancedImageGallery({
     <div
       className={cn(
         "relative bg-gray-100 overflow-hidden",
-        mobileSquare ? "aspect-square rounded-md" : cn("aspect-[4/3]", heroFrameClassName),
+        mobileSquare ? "aspect-square rounded-md" : cn(heroAspectClassName, heroFrameClassName),
       )}
     >
       <div
@@ -273,6 +276,8 @@ export function EnhancedImageGallery({
           ))}
         </div>
       </div>
+
+      {renderThumbnailStrip({ overlay: true })}
     </div>
   );
 
@@ -283,25 +288,40 @@ export function EnhancedImageGallery({
     strip.scrollBy({ left: amount, behavior: "smooth" });
   };
 
-  const renderThumbnailStrip = () => {
+  const renderThumbnailStrip = ({ overlay = false }: { overlay?: boolean } = {}) => {
     if (images.length <= 1) return null;
 
     return (
-      <div className="relative mt-3 hidden sm:block">
+      <div
+        ref={thumbnailStripRef}
+        className={cn(
+          overlay
+            ? "absolute bottom-5 left-1/2 z-10 hidden w-full max-w-[calc(100%-2rem)] -translate-x-1/2 sm:flex sm:justify-center sm:gap-2"
+            : "relative mt-3 hidden sm:block",
+        )}
+      >
         <div
-          ref={thumbnailStripRef}
-          className="flex gap-2 overflow-x-auto scroll-smooth pb-1 pr-11 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className={cn(
+            "flex gap-2 overflow-x-auto scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+            overlay ? "justify-center pb-0" : "pr-11 pb-1",
+          )}
         >
           {images.map((image, index) => (
             <button
               key={index}
               type="button"
-              onClick={() => onIndexChange(index)}
+              onClick={(event) => {
+                event.stopPropagation();
+                onIndexChange(index);
+              }}
               className={cn(
                 "relative h-[72px] w-[72px] shrink-0 overflow-hidden rounded-md transition-all",
+                overlay && "shadow-md",
                 index === currentIndex
-                  ? "border-2 border-gray-900"
-                  : "border-2 border-transparent",
+                  ? "border-2 border-gray-900 ring-2 ring-white"
+                  : overlay
+                    ? "border-2 border-white opacity-90 hover:opacity-100"
+                    : "border-2 border-transparent opacity-80 hover:opacity-100",
               )}
               aria-label={`View image ${index + 1}`}
               aria-current={index === currentIndex}
@@ -319,7 +339,7 @@ export function EnhancedImageGallery({
           ))}
         </div>
 
-        {images.length > 4 ? (
+        {!overlay && images.length > 4 ? (
           <button
             type="button"
             onClick={() => scrollThumbnailStrip("right")}
@@ -335,13 +355,11 @@ export function EnhancedImageGallery({
 
   const renderHeroBlock = ({
     heroRefProp,
-    showThumbnails = false,
     mobileSquare = false,
   }: {
     heroRefProp?: React.Ref<HTMLDivElement>;
-    showThumbnails?: boolean;
     mobileSquare?: boolean;
-  }) => (
+  } = {}) => (
     <div className={cn("relative", mobileSquare && "px-4 pt-4")}>
       <div ref={heroRefProp} className="relative">
         {images.length === 1 ? (
@@ -364,7 +382,6 @@ export function EnhancedImageGallery({
         )}
         {renderHeroOverlays()}
       </div>
-      {showThumbnails && renderThumbnailStrip()}
     </div>
   );
 
@@ -476,7 +493,7 @@ export function EnhancedImageGallery({
           </div>
 
           <div className="hidden sm:block">
-            {renderHeroBlock({ showThumbnails: images.length > 1 })}
+            {renderHeroBlock()}
           </div>
 
           <div
@@ -492,7 +509,6 @@ export function EnhancedImageGallery({
           <div className="min-w-0 w-[62%]">
             {renderHeroBlock({
               heroRefProp: heroRef,
-              showThumbnails: images.length > 1,
             })}
           </div>
 
@@ -516,7 +532,7 @@ export function EnhancedImageGallery({
       </div>
 
       <div className="hidden sm:block">
-        {renderHeroBlock({ showThumbnails: images.length > 1 })}
+        {renderHeroBlock()}
       </div>
 
       {renderFullscreenModal()}

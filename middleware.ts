@@ -88,6 +88,8 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname.startsWith('/api/marketplace') ||
     request.nextUrl.pathname === '/api/store/analytics' || // Public storefront tracking; GET still enforces auth in the route handler.
     request.nextUrl.pathname.startsWith('/api/stripe') ||  // Stripe webhooks
+    request.nextUrl.pathname.startsWith('/pay/') ||        // Customer payment-request links (texted from Nest)
+    request.nextUrl.pathname.startsWith('/api/pay/') ||    // Payment-request checkout creation
     request.nextUrl.pathname.startsWith('/api/cron') ||    // Cron jobs
     request.nextUrl.pathname === '/api/genie' ||           // Public marketplace Genie chat
     request.nextUrl.pathname === '/api/genie/product-question' ||

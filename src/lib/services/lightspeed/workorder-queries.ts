@@ -581,6 +581,53 @@ export async function listGenieWorkorders(
   }
 }
 
+/** A workorder counts as "paid" once its status says so — everything else is still waiting on payment. */
+export function isPaidWorkorderStatus(status: LightspeedWorkorderStatus | undefined): boolean {
+  if (!status) return false
+  const systemValue = String(status.systemValue ?? '').trim().toLowerCase()
+  if (systemValue === 'paid') return true
+  return /paid/.test(String(status.name ?? '').trim().toLowerCase())
+}
+
+/**
+ * Every workorder still waiting for payment: not archived and not in a
+ * "paid" status. Includes finished-but-unpaid jobs awaiting collection.
+ * Reads live from Lightspeed so the list always matches the POS.
+ */
+export async function listUnpaidWorkorders(
+  userId: string,
+  options: { limit?: number } = {},
+): Promise<{ workorders: GenieWorkorderDetail[]; truncated: boolean }> {
+  const limit = Math.min(Math.max(options.limit ?? 60, 1), 100)
+
+  const client = createLightspeedClient(userId)
+  const statuses = await client.getWorkorderStatuses()
+  const statusById = new Map(statuses.map(status => [String(status.workorderStatusID), status]))
+
+  const unpaidStatusIds = statuses
+    .filter(status => !isPaidWorkorderStatus(status))
+    .map(status => String(status.workorderStatusID))
+
+  const perStatusLimit = Math.max(Math.ceil(limit / Math.max(unpaidStatusIds.length, 1)) + 6, 12)
+  const rawWorkorders = await fetchWorkordersByStatusIds(userId, unpaidStatusIds, {
+    limitPerStatus: perStatusLimit,
+    maxPagesPerStatus: 2,
+  })
+
+  const active = rawWorkorders.filter(workorder => String(workorder.archived ?? '') !== 'true')
+  const pool = active.slice(0, limit)
+  // includeDetails=false: name/status/note all come from the base fetch, and
+  // skipping per-workorder customer/item lookups keeps this to ~1 API call per
+  // status instead of ~2 per workorder (which drains the rate-limit bucket).
+  const workorders = await mapWithConcurrency(
+    pool,
+    ENRICH_CONCURRENCY,
+    workorder => enrichWorkorder(userId, workorder, statusById, false),
+  )
+
+  return { workorders, truncated: active.length > pool.length }
+}
+
 export async function getGenieWorkorder(
   userId: string,
   workorderId: string,

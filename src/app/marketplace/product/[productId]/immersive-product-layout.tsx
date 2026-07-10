@@ -5,7 +5,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Heart, Share2, ChevronLeft, ShieldCheck, BadgeCheck, Lock, Store, MapPin, Truck, ArrowRight } from '@/components/layout/app-sidebar/dashboard-icons';
+import { Heart, Share2, ChevronLeft, ShieldCheck, BadgeCheck, Lock, Store, MapPin, Truck, ArrowRight, Eye } from '@/components/layout/app-sidebar/dashboard-icons';
 import { BuyNowButton } from "@/components/marketplace/buy-now-button";
 import { AddToCartButton } from "@/components/marketplace/add-to-cart-button";
 import { MakeOfferButton } from "@/components/marketplace/make-offer-button";
@@ -36,6 +36,9 @@ interface ImmersiveProductLayoutProps {
   recommendationsPromise: Promise<ProductRecommendations>;
   brandName: string | null;
   isOwner: boolean;
+  isStoreOwner?: boolean;
+  viewAsCustomer?: boolean;
+  onViewAsCustomerChange?: (value: boolean) => void;
 }
 
 const fmtPrice = (v: number) =>
@@ -55,6 +58,9 @@ export function ImmersiveProductLayout({
   recommendationsPromise,
   brandName,
   isOwner,
+  isStoreOwner = false,
+  viewAsCustomer = false,
+  onViewAsCustomerChange,
 }: ImmersiveProductLayoutProps) {
   const [activeIdx, setActiveIdx] = React.useState(0);
   const [liked, setLiked] = React.useState(false);
@@ -191,6 +197,20 @@ export function ImmersiveProductLayout({
 
   return (
     <div className="relative bg-[#0b0b0e] text-white min-h-screen">
+      {isStoreOwner && viewAsCustomer && (
+        <div className="sticky top-0 z-40 border-b border-gray-200 bg-white px-4 py-3 sm:px-8">
+          <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-gray-600">You&apos;re viewing this product as a customer.</p>
+            <button
+              type="button"
+              onClick={() => onViewAsCustomerChange?.(false)}
+              className="shrink-0 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50"
+            >
+              Exit customer view
+            </button>
+          </div>
+        </div>
+      )}
       {/* ── Immersive top bar ─────────────────────────────────────────── */}
       <header className="absolute inset-x-0 top-0 z-30">
         <div className="mx-auto max-w-[1500px] px-4 sm:px-8 h-16 flex items-center justify-between">
@@ -278,6 +298,8 @@ export function ImmersiveProductLayout({
             <BuyCardBody
               isSold={isSold}
               isOwner={isOwner}
+              isStoreOwner={isStoreOwner}
+              onViewAsCustomerChange={onViewAsCustomerChange}
               live={live}
               product={product}
               heroStats={heroStats}
@@ -314,6 +336,8 @@ export function ImmersiveProductLayout({
           <BuyCardBody
             isSold={isSold}
             isOwner={isOwner}
+            isStoreOwner={isStoreOwner}
+            onViewAsCustomerChange={onViewAsCustomerChange}
             live={live}
             product={product}
             heroStats={heroStats}
@@ -543,6 +567,8 @@ export function ImmersiveProductLayout({
 function BuyCardBody({
   isSold,
   isOwner,
+  isStoreOwner = false,
+  onViewAsCustomerChange,
   live,
   product,
   heroStats,
@@ -550,6 +576,8 @@ function BuyCardBody({
 }: {
   isSold: boolean;
   isOwner: boolean;
+  isStoreOwner?: boolean;
+  onViewAsCustomerChange?: (value: boolean) => void;
   live: ReturnType<typeof resolveLivePrice>;
   product: MarketplaceProduct;
   heroStats: Array<[string, string | number]>;
@@ -580,9 +608,21 @@ function BuyCardBody({
             <p className="text-xs text-white/50 mt-0.5">This item is no longer available</p>
           </div>
         ) : isOwner ? (
-          <div className="rounded-xl bg-white/[0.06] ring-1 ring-white/12 py-3 px-4 text-center">
-            <p className="text-sm font-medium text-white">This is your listing</p>
-            <p className="text-xs text-white/50 mt-0.5">Manage it from your store dashboard</p>
+          <div className="space-y-2.5">
+            <div className="rounded-xl bg-white/[0.06] ring-1 ring-white/12 py-3 px-4 text-center">
+              <p className="text-sm font-medium text-white">This is your listing</p>
+              <p className="text-xs text-white/50 mt-0.5">Manage it from your store dashboard</p>
+            </div>
+            {isStoreOwner && onViewAsCustomerChange && (
+              <button
+                type="button"
+                onClick={() => onViewAsCustomerChange(true)}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 text-sm font-medium text-white transition-colors hover:bg-white/10"
+              >
+                <Eye className="h-4 w-4" />
+                View as customer
+              </button>
+            )}
           </div>
         ) : (
           buyActions

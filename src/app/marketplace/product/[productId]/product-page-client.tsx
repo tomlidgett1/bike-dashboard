@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
 import { StoreProductContextHeader } from "@/components/marketplace/product-detail/store-product-context-header";
 import { ProductBreadcrumbs } from "@/components/marketplace/product-breadcrumbs";
-import { ProductDetailsPanelSimple } from "@/components/marketplace/product-details-panel-simple";
+import { ProductPurchasePanel, ProductDetailTabs, shouldShowProductDetailTabs, getFeatureBullets } from "@/components/marketplace/product-details-panel-simple";
 import { ProductAskGenieFloatingPill } from "@/components/marketplace/product-ask-genie-floating-pill";
 import { ProductAskGenieImageBadge } from "@/components/marketplace/product-ask-genie-image-badge";
 import { ProductGeniePanel } from "@/components/genie/product-genie-panel";
@@ -15,10 +15,7 @@ import {
   ProductRecommendationsSection,
   type ProductRecommendations,
 } from "@/components/marketplace/product-detail/product-recommendations-section";
-import {
-  AboutThisSellerSection,
-  type ProductSellerProfile,
-} from "@/components/marketplace/product-detail/about-this-seller-section";
+import type { ProductSellerProfile } from "@/components/marketplace/product-detail/about-this-seller-section";
 import { BikeSpecsDisplay } from "@/components/products/bike-specs-display";
 import { BrandAboutSection } from "@/components/marketplace/product-detail/brand-about-section";
 import { hasBikeSpecs, parseBikeSpecs } from "@/lib/types/bike-specs";
@@ -96,8 +93,13 @@ export function ProductPageClient({
   const [showBanner, setShowBanner] = React.useState(showUploadBanner);
   const [localProduct, setLocalProduct] = React.useState(product);
   const [exploreSpec, setExploreSpec] = React.useState<BikeSpecSelection | null>(null);
+  const heroColumnRef = React.useRef<HTMLDivElement>(null);
+  const [heroHeight, setHeroHeight] = React.useState<number | undefined>();
 
   const isOwner = !!user && user.id === product.user_id;
+  const isStoreOwner = isOwner && product.store_account_type === "bicycle_store";
+  const [viewAsCustomer, setViewAsCustomer] = React.useState(false);
+  const showOwnerTools = isOwner && !viewAsCustomer;
 
   // Track product view with dwell time
   useProductView(product.id, user?.id);
@@ -150,6 +152,20 @@ export function ProductPageClient({
     return imgs.length > 0 ? imgs : ['/placeholder-product.svg'];
   }, [product]);
 
+  React.useEffect(() => {
+    const node = heroColumnRef.current;
+    if (!node) return;
+
+    const updateHeight = () => {
+      setHeroHeight(node.getBoundingClientRect().height);
+    };
+
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [images.length]);
+
   // Build the "See All" href for similar products
   const similarSeeAllHref = product.marketplace_subcategory
     ? `/marketplace?level1=${encodeURIComponent(product.marketplace_category)}&level2=${encodeURIComponent(product.marketplace_subcategory)}`
@@ -194,16 +210,39 @@ export function ProductPageClient({
     />
   );
 
+  const showProductDetailTabs = shouldShowProductDetailTabs(localProduct);
+
+  const featureBullets = React.useMemo(
+    () => getFeatureBullets(localProduct),
+    [localProduct],
+  );
+
+  const purchasePanel = (
+    <ProductPurchasePanel
+      product={localProduct}
+      brandLogoUrl={brandLogoUrl}
+      brandName={localProduct.brand || brandName}
+      isStoreOwner={isStoreOwner}
+      viewAsCustomer={viewAsCustomer}
+      onViewAsCustomerChange={setViewAsCustomer}
+      sellerProfile={sellerProfile}
+      featureBullets={featureBullets}
+    />
+  );
+
+  const detailTabs = (
+    <ProductDetailTabs
+      product={localProduct}
+      overviewOnly={!showProductDetailTabs}
+      hideOverviewDescription={!showOwnerTools && !isSold}
+      featureBullets={featureBullets}
+    />
+  );
+
   const infoPanelContent = (
     <>
-      <ProductDetailsPanelSimple
-        product={localProduct}
-        brandLogoUrl={brandLogoUrl}
-        brandName={localProduct.brand || brandName}
-      />
-      {sellerProfile && (
-        <AboutThisSellerSection seller={sellerProfile} embedded />
-      )}
+      {purchasePanel}
+      <div className="lg:hidden">{detailTabs}</div>
     </>
   );
 
@@ -216,7 +255,10 @@ export function ProductPageClient({
         sellerInfo={sellerInfo}
         recommendationsPromise={recommendationsPromise}
         brandName={brandName}
-        isOwner={isOwner}
+        isOwner={showOwnerTools}
+        isStoreOwner={isStoreOwner}
+        viewAsCustomer={viewAsCustomer}
+        onViewAsCustomerChange={setViewAsCustomer}
       />
     );
   }
@@ -238,6 +280,21 @@ export function ProductPageClient({
             onClose={() => setShowBanner(false)}
           />
         )}
+
+        {isStoreOwner && viewAsCustomer && (
+          <div className="mx-auto max-w-[1536px] px-4 pt-4 sm:px-4 lg:px-4 xl:px-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
+              <p className="text-sm text-gray-600">You&apos;re viewing this product as a customer.</p>
+              <button
+                type="button"
+                onClick={() => setViewAsCustomer(false)}
+                className="shrink-0 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50"
+              >
+                Exit customer view
+              </button>
+            </div>
+          </div>
+        )}
         
         <div>
           {/* Desktop: photos (white) + info (gray); white wrapper avoids gray dead space beside thumbnails */}
@@ -246,13 +303,24 @@ export function ProductPageClient({
               <div className="pt-6 pb-6">{productBreadcrumbs}</div>
             </div>
             <div className="mx-auto flex max-w-[1536px] items-start">
-              <div className="min-w-0 w-[62%] bg-white pl-3 pr-4 xl:pl-4 xl:pr-6">
+              <div
+                ref={heroColumnRef}
+                className="min-w-0 w-[57%] bg-white pl-3 pr-4 xl:pl-4 xl:pr-6"
+              >
                 <EnhancedImageGallery {...galleryProps} />
               </div>
-              <div className="sticky top-0 min-w-0 w-[38%] shrink-0 self-start bg-white px-4 max-h-screen overflow-y-auto [scrollbar-width:thin] xl:px-5">
+              <div
+                className="sticky top-0 min-w-0 w-[43%] shrink-0 self-start overflow-y-auto overflow-x-hidden bg-white px-4 xl:px-5"
+                style={
+                  heroHeight
+                    ? { height: heroHeight, maxHeight: heroHeight }
+                    : undefined
+                }
+              >
                 {infoPanelContent}
               </div>
             </div>
+            {detailTabs && <div className="hidden lg:block">{detailTabs}</div>}
           </div>
 
           {/* Mobile / tablet: stacked gallery + flat gray info */}

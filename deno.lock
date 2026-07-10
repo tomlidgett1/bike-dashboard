@@ -8551,6 +8551,7 @@
         "npm:sharp@~0.34.5",
         "npm:sonner@^2.0.7",
         "npm:stripe@20",
+        "npm:svix@^1.96.1",
         "npm:swr@^2.3.6",
         "npm:tailwind-merge@^3.6.0",
         "npm:tailwindcss@4",

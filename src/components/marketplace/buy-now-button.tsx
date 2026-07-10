@@ -12,7 +12,7 @@ import { useAuth } from '@/components/providers/auth-provider';
 import { useAuthModal } from '@/components/providers/auth-modal-provider';
 import { useCart } from '@/components/providers/cart-provider';
 import { Button } from '@/components/ui/button';
-import { ShoppingBag } from '@/components/layout/app-sidebar/dashboard-icons';
+import { ShoppingBag, Zap } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 
@@ -26,6 +26,8 @@ interface BuyNowButtonProps {
   productImage?: string | null;
   /** Max purchasable units (stock on hand). 1 for unique listings; qoh for shop inventory. */
   maxQuantity?: number;
+  quantity?: number;
+  buttonLabel?: string;
   shippingAvailable?: boolean;
   shippingCost?: number;
   pickupLocation?: string | null;
@@ -50,6 +52,8 @@ export function BuyNowButton({
   uberDeliveryEligible = false,
   productImage,
   maxQuantity = 1,
+  quantity = 1,
+  buttonLabel,
   variant = 'default',
   size = 'default',
   fullWidth = false,
@@ -84,7 +88,7 @@ export function BuyNowButton({
       sellerId,
       sellerName: sellerName ?? 'Seller',
       uberDeliveryEligible,
-      quantity: 1,
+      quantity: Math.min(Math.max(quantity, 1), maxQuantity),
       maxQuantity,
     });
   };
@@ -103,8 +107,12 @@ export function BuyNowButton({
         )}
       >
         <div className="flex items-center justify-center w-full">
-          <ShoppingBag className="h-4 w-4 mr-2" />
-          <span>{`Buy Now · $${productPrice.toLocaleString('en-AU')}`}</span>
+          {variant === 'outline' ? (
+            <Zap className="h-4 w-4 mr-2" />
+          ) : (
+            <ShoppingBag className="h-4 w-4 mr-2" />
+          )}
+          <span>{buttonLabel ?? `Buy Now · $${productPrice.toLocaleString('en-AU')}`}</span>
           {showStripeBranding && (
             <>
               <div className="w-px h-4 bg-white/20 mx-2.5" />

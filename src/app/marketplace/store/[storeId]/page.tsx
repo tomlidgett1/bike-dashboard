@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
 import { permanentRedirect } from 'next/navigation'
 import { StoreProfilePageClient } from './store-profile-page-client'
+import { listPublishedPages } from '@/lib/seo/agent-pages'
 import {
   fetchCachedPublicStoreHomepageProfile,
   resolveStoreUserId,
@@ -106,6 +108,36 @@ export default async function StoreProfilePage({
       {/* The client + its APIs are keyed by user_id (UUID), so always pass the
           resolved id even when the URL is a slug. */}
       <StoreProfilePageClient storeId={userId ?? param} initialStore={initialStore} />
+      <ServicePageLinks />
     </>
+  )
+}
+
+/**
+ * Quiet crawl links to the published bike-service landing pages. The storefront
+ * hides the site footer (showFooter={false}), so without this strip Google has
+ * no path from the shop's landing page to its service-intent pages. Renders
+ * nothing when no service pages are published. Plain gray text — no pills.
+ */
+async function ServicePageLinks() {
+  const pages = (await listPublishedPages(['store_directory'], 50)).filter((p) =>
+    p.url.startsWith('/bike-service/'),
+  )
+  if (!pages.length) return null
+  return (
+    <nav aria-label="Bike servicing" className="mx-auto max-w-6xl px-5 py-6 sm:px-6">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+        Bike servicing &amp; repairs
+      </h2>
+      <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+        {pages.map((p) => (
+          <li key={p.url}>
+            <Link href={p.url} className="text-sm text-gray-500 hover:text-gray-700 hover:underline">
+              {p.h1 || p.title}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </nav>
   )
 }

@@ -120,11 +120,9 @@ function CustomerEnquiriesFilterBar({
 
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2.5 rounded-t-xl border-b border-border/60 bg-gray-50 px-4 py-3 md:px-5">
+      <NestNewMessageButton disabled={!c.nestConfigured} onOpen={onNewMessage} />
       <EnquiriesNavTabs items={statusItems} value={c.statusTab} onChange={c.setStatusTab} />
       <InboxSourceSelect value={c.sourceTab} onChange={c.setSourceTab} />
-      <div className="ml-auto flex shrink-0 items-center gap-2">
-        <NestNewMessageButton disabled={!c.nestConfigured} onOpen={onNewMessage} />
-      </div>
     </div>
   );
 }

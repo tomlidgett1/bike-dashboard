@@ -1,9 +1,16 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Plus, Send } from "@/components/layout/app-sidebar/dashboard-icons";
+import { Banknote, Loader2, Plus, Send } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { NestRequestMoneyDialog } from "@/components/settings/customer-inquiries/nest-request-money-dialog";
 import { cn } from "@/lib/utils";
 import type { NestConversationMessage } from "@/lib/nest/types";
 
@@ -46,15 +53,18 @@ export function NestComposePill({
   sendHandlers,
   placeholder = "iMessage",
   className,
+  showRequestMoney = false,
 }: {
   chatId: string;
   sendHandlers: NestComposeSendHandlers;
   placeholder?: string;
   className?: string;
+  showRequestMoney?: boolean;
 }) {
   const [text, setText] = React.useState("");
   const [inFlight, setInFlight] = React.useState(0);
   const [sendErr, setSendErr] = React.useState<string | null>(null);
+  const [requestMoneyOpen, setRequestMoneyOpen] = React.useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
   function onInput(event: React.ChangeEvent<HTMLTextAreaElement>) {
@@ -64,14 +74,9 @@ export function NestComposePill({
     el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
   }
 
-  async function send() {
-    const content = text.trim();
-    if (!content) return;
-
+  async function sendContent(content: string) {
     const optimistic = buildOptimisticStaffMessage(content);
-    setText("");
     setSendErr(null);
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
     sendHandlers.onOptimistic(optimistic);
 
     setInFlight((count) => count + 1);
@@ -82,8 +87,22 @@ export function NestComposePill({
       const errMessage = error instanceof Error ? error.message : "Could not send";
       sendHandlers.onFailed(optimistic.id, errMessage);
       setSendErr(errMessage);
+      throw error;
     } finally {
       setInFlight((count) => Math.max(0, count - 1));
+    }
+  }
+
+  async function send() {
+    const content = text.trim();
+    if (!content) return;
+
+    setText("");
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
+    try {
+      await sendContent(content);
+    } catch {
+      // Error already surfaced via sendErr + onFailed.
     }
   }
 
@@ -104,15 +123,44 @@ export function NestComposePill({
         className="w-full"
       >
         <div className="flex w-full items-end gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 shadow-sm">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="mb-0.5 h-8 w-8 shrink-0 rounded-full text-gray-500 hover:text-gray-700"
-            aria-label="Add attachment"
-          >
-            <Plus className="h-5 w-5" />
-          </Button>
+          {showRequestMoney ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="mb-0.5 h-8 w-8 shrink-0 rounded-full text-gray-500 hover:text-gray-700"
+                  aria-label="More actions"
+                >
+                  <Plus className="h-5 w-5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                side="top"
+                align="start"
+                className="min-w-44 rounded-lg bg-white p-1.5"
+              >
+                <DropdownMenuItem
+                  className="gap-2 rounded-md"
+                  onSelect={() => setRequestMoneyOpen(true)}
+                >
+                  <Banknote className="size-[15px] text-gray-500" />
+                  Request money
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="mb-0.5 h-8 w-8 shrink-0 rounded-full text-gray-500 hover:text-gray-700"
+              aria-label="Add attachment"
+            >
+              <Plus className="h-5 w-5" />
+            </Button>
+          )}
           <Textarea
             ref={textareaRef}
             rows={1}
@@ -146,6 +194,15 @@ export function NestComposePill({
           </Button>
         </div>
       </form>
+
+      {showRequestMoney ? (
+        <NestRequestMoneyDialog
+          open={requestMoneyOpen}
+          onOpenChange={setRequestMoneyOpen}
+          chatId={chatId}
+          onSendMessage={sendContent}
+        />
+      ) : null}
     </div>
   );
 }
@@ -154,10 +211,12 @@ export function NestFloatingCompose({
   chatId,
   sendHandlers,
   placeholder,
+  showRequestMoney,
 }: {
   chatId: string;
   sendHandlers: NestComposeSendHandlers;
   placeholder?: string;
+  showRequestMoney?: boolean;
 }) {
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-4 pt-16">
@@ -166,7 +225,12 @@ export function NestFloatingCompose({
         className="pointer-events-none absolute inset-x-0 bottom-0 top-0 bg-gradient-to-t from-white from-25% via-white/95 to-transparent"
       />
       <div className="pointer-events-auto relative w-full max-w-lg">
-        <NestComposePill chatId={chatId} sendHandlers={sendHandlers} placeholder={placeholder} />
+        <NestComposePill
+          chatId={chatId}
+          sendHandlers={sendHandlers}
+          placeholder={placeholder}
+          showRequestMoney={showRequestMoney}
+        />
       </div>
     </div>
   );

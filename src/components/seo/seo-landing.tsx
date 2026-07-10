@@ -71,6 +71,16 @@ export function SeoLanding({ page, listings }: { page: AgentPage; listings: Mark
     );
   }
   if (content.faqs?.length) schemas.push(faqSchema(content.faqs));
+  // Page-specific JSON-LD authored into the row (e.g. Service/LocalBusiness on
+  // the /bike-service pages). Stored as JSON strings; skip anything unparsable.
+  for (const raw of content.schema ?? []) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') schemas.push(parsed);
+    } catch {
+      // ignore malformed schema strings
+    }
+  }
 
   return (
     <MarketingShell>
