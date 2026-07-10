@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { getStripe } from "@/lib/stripe";
+import { logStorePaymentRequestEvent } from "@/lib/store-payments/audit";
 
 export async function POST(
   _request: NextRequest,
@@ -42,6 +43,18 @@ export async function POST(
     if (paymentRequest.status !== "pending") {
       return NextResponse.json({ error: "This payment link is no longer active." }, { status: 400 });
     }
+
+    await logStorePaymentRequestEvent({
+      paymentRequestId: paymentRequest.id,
+      storeUserId: paymentRequest.store_user_id,
+      eventType: "checkout_started",
+      actor: "customer",
+      message: "Customer opened checkout for this payment link.",
+      metadata: {
+        amountCents: paymentRequest.amount_cents,
+        customerHandle: paymentRequest.customer_handle,
+      },
+    });
 
     const { data: store } = await supabase
       .from("users")
@@ -94,6 +107,13 @@ export async function POST(
     });
 
     if (!session.url) {
+      await logStorePaymentRequestEvent({
+        paymentRequestId: paymentRequest.id,
+        storeUserId: paymentRequest.store_user_id,
+        eventType: "checkout_failed",
+        actor: "system",
+        message: "Stripe Checkout session created without a URL.",
+      });
       return NextResponse.json(
         { error: "Could not start the payment. Please try again." },
         { status: 500 },
@@ -106,9 +126,37 @@ export async function POST(
       .update({ stripe_session_id: session.id, updated_at: new Date().toISOString() })
       .eq("id", paymentRequest.id);
 
+    await logStorePaymentRequestEvent({
+      paymentRequestId: paymentRequest.id,
+      storeUserId: paymentRequest.store_user_id,
+      eventType: "checkout_session_created",
+      actor: "stripe",
+      message: "Stripe Checkout session created.",
+      metadata: { stripeSessionId: session.id },
+    });
+
     return NextResponse.json({ url: session.url });
   } catch (error) {
     console.error("[pay-checkout] failed:", error);
+    try {
+      const supabase = createServiceRoleClient();
+      const { data: paymentRequest } = await supabase
+        .from("store_payment_requests")
+        .select("id, store_user_id")
+        .eq("id", id)
+        .maybeSingle();
+      if (paymentRequest) {
+        await logStorePaymentRequestEvent({
+          paymentRequestId: paymentRequest.id,
+          storeUserId: paymentRequest.store_user_id,
+          eventType: "checkout_failed",
+          actor: "system",
+          message: error instanceof Error ? error.message : "Checkout failed.",
+        });
+      }
+    } catch {
+      // Best-effort audit only.
+    }
     return NextResponse.json(
       { error: "Could not start the payment. Please try again." },
       { status: 500 },

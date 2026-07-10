@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   AltArrowRight,
   Bag,
+  Banknote,
   Box,
   Database,
   Help,
@@ -98,6 +99,7 @@ const NAV: NavGroup[] = [
     label: "Customer service",
     items: [
       { title: "Customer inquiries", href: "/settings/store/customer-inquiries", icon: Letter, exact: true },
+      { title: "Payments", href: "/settings/store/payments", icon: Banknote, exact: true },
       { title: "Outreach", href: "/settings/store/crm", icon: Mailbox, exact: true },
     ],
   },

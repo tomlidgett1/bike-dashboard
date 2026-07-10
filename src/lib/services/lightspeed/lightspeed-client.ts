@@ -13,6 +13,7 @@ import {
   YELLOW_JERSEY_CUSTOMER,
   YELLOW_JERSEY_WORKORDER_TITLE,
 } from './workorder'
+import { buildCreditDepositSalePayload } from './payment-credit'
 import type {
   LightspeedAccountResponse,
   LightspeedItemsResponse,
@@ -1549,6 +1550,173 @@ export class LightspeedClient {
     }
 
     return workorder
+  }
+
+  /**
+   * Deposit funds onto a customer's Lightspeed Credit Account via a completed
+   * Sale with paired SalePayments (inbound money + Credit Account deposit).
+   */
+  async createCustomerCreditDeposit(params: {
+    customerID: string
+    creditAccountID: string
+    amountCents: number
+    paymentRequestId: string
+    description?: string | null
+    stripePaymentIntentId?: string | null
+  }): Promise<{
+    saleID: string
+    creditAccountID: string
+    balanceAfter: number | null
+  }> {
+    const accountId = await this.getAccountId()
+
+    const shops = await this.getShops({ archived: 'false' })
+    const shop = shops[0]
+    if (!shop?.shopID) {
+      throw new Error('[Lightspeed] No active shop found — cannot deposit credit')
+    }
+
+    const registersResponse = await this.getRegisters({ archived: 'false' })
+      const registers = this.ensureArray(registersResponse.Register)
+    const register =
+      registers.find((entry) => String(entry.open) === 'true') ?? registers[0]
+    if (!register?.registerID) {
+      throw new Error('[Lightspeed] No register found — cannot deposit credit')
+    }
+
+    const empsResponse = await this.getEmployees({ archived: 'false', lockOut: 'false' })
+    const employees = this.ensureArray(empsResponse.Employee)
+    const employee = employees[0]
+    if (!employee?.employeeID) {
+      throw new Error('[Lightspeed] No active employee found — cannot deposit credit')
+    }
+
+    const paymentTypesResponse = await this.request<{
+      PaymentType?:
+        | Array<{ paymentTypeID: string; type?: string; name?: string; archived?: string }>
+        | { paymentTypeID: string; type?: string; name?: string; archived?: string }
+    }>(`/Account/${accountId}/PaymentType.json`)
+    const paymentTypes = this.ensureArray(paymentTypesResponse.PaymentType).filter(
+      (type) => type.archived !== 'true',
+    )
+
+    const creditAccountPaymentType = paymentTypes.find(
+      (type) => type.type === 'credit account' || type.name === 'Credit Account',
+    )
+    if (!creditAccountPaymentType?.paymentTypeID) {
+      throw new Error('[Lightspeed] Credit Account payment type not found')
+    }
+
+    const inboundPaymentType =
+      paymentTypes.find((type) => type.type === 'ecom' || type.name === 'eCom') ||
+      paymentTypes.find((type) => type.type === 'credit card' || type.name === 'Credit Card') ||
+      paymentTypes.find((type) => type.type === 'cash' || type.name === 'Cash')
+    if (!inboundPaymentType?.paymentTypeID) {
+      throw new Error('[Lightspeed] No inbound payment type found for credit deposit')
+    }
+
+    const payload = buildCreditDepositSalePayload(
+      {
+        shopID: shop.shopID,
+        registerID: register.registerID,
+        employeeID: employee.employeeID,
+        customerID: params.customerID,
+        creditAccountID: params.creditAccountID,
+        inboundPaymentTypeID: inboundPaymentType.paymentTypeID,
+        creditAccountPaymentTypeID: creditAccountPaymentType.paymentTypeID,
+      },
+      {
+        paymentRequestId: params.paymentRequestId,
+        amountCents: params.amountCents,
+        description: params.description,
+        stripePaymentIntentId: params.stripePaymentIntentId,
+      },
+    )
+
+    const saleResponse = await this.request<{ Sale: LightspeedSale }>(
+      `/Account/${accountId}/Sale.json`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    )
+
+    const saleID = saleResponse.Sale?.saleID
+    if (!saleID) {
+      throw new Error('[Lightspeed] Credit deposit sale created without a saleID')
+    }
+
+    let balanceAfter: number | null = null
+    try {
+      const credit = await this.request<{
+        CreditAccount?: { balance?: string }
+      }>(`/Account/${accountId}/CreditAccount/${params.creditAccountID}.json`)
+      const raw = credit.CreditAccount?.balance
+      if (raw != null && raw !== '') {
+        const parsed = Number.parseFloat(raw)
+        balanceAfter = Number.isFinite(parsed) ? parsed : null
+      }
+    } catch (error) {
+      console.warn('[Lightspeed] Could not re-read credit account balance after deposit:', error)
+    }
+
+    return {
+      saleID,
+      creditAccountID: params.creditAccountID,
+      balanceAfter,
+    }
+  }
+
+  /**
+   * Find or create the non-gift-card CreditAccount for a customer.
+   */
+  async findOrCreateCustomerCreditAccount(customerID: string): Promise<{
+    creditAccountID: string
+    balance: number | null
+    created: boolean
+  }> {
+    const accountId = await this.getAccountId()
+
+    const customer = await this.getCustomer(customerID, {
+      load_relations: '["CreditAccount"]',
+    })
+
+    const existingId =
+      customer.creditAccountID && customer.creditAccountID !== '0'
+        ? customer.creditAccountID
+        : (customer as { CreditAccount?: { creditAccountID?: string } }).CreditAccount
+            ?.creditAccountID
+
+    if (existingId && existingId !== '0') {
+      let balance: number | null = null
+      const raw = (customer as { CreditAccount?: { balance?: string } }).CreditAccount?.balance
+      if (raw != null && raw !== '') {
+        const parsed = Number.parseFloat(raw)
+        balance = Number.isFinite(parsed) ? parsed : null
+      }
+      return { creditAccountID: existingId, balance, created: false }
+    }
+
+    const created = await this.request<{
+      CreditAccount: { creditAccountID: string; balance?: string }
+    }>(`/Account/${accountId}/CreditAccount.json`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'Customer Credit Account',
+        customerID,
+        giftCard: 'false',
+      }),
+    })
+
+    const creditAccountID = created.CreditAccount?.creditAccountID
+    if (!creditAccountID) {
+      throw new Error('[Lightspeed] Failed to create customer credit account')
+    }
+
+    const raw = created.CreditAccount?.balance
+    const balance =
+      raw != null && raw !== '' && Number.isFinite(Number.parseFloat(raw))
+        ? Number.parseFloat(raw)
+        : null
+
+    return { creditAccountID, balance, created: true }
   }
 
   /**

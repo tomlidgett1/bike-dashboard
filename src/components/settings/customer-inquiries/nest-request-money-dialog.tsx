@@ -22,7 +22,7 @@ function formatAud(amount: number) {
 
 function buildRequestMessage(amount: number, description: string, url: string) {
   const forPart = description ? ` for ${description}` : "";
-  return `Here's a secure payment link${forPart} — ${formatAud(amount)}: ${url}\n\nOnce paid, it's added to your account with us as store credit.`;
+  return `Here's a secure payment link${forPart} — ${formatAud(amount)}: ${url}\n\nOnce paid, it's added to your store credit in Lightspeed.`;
 }
 
 export function NestRequestMoneyDialog({
@@ -112,10 +112,10 @@ export function NestRequestMoneyDialog({
       >
         <h3 className="text-base font-semibold text-gray-900">Request money</h3>
         <p className="mt-1 text-sm text-gray-500">
-          Texts the customer a secure Stripe link. Once paid, the amount is added to
-          their account as store credit.
+          Texts the customer a secure Stripe link. Once paid, the amount is deposited
+          onto their Lightspeed credit account.
           {creditBalance != null && creditBalance > 0
-            ? ` Current credit: ${formatAud(creditBalance)}.`
+            ? ` Current Yellow Jersey credit: ${formatAud(creditBalance)}.`
             : ""}
         </p>
 

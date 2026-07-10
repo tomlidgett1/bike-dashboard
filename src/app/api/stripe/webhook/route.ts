@@ -9,6 +9,8 @@ import { createClient } from '@supabase/supabase-js';
 import { getStripe, calculatePlatformFee, calculateSellerPayout } from '@/lib/stripe';
 import Stripe from 'stripe';
 import { LightspeedClient } from '@/lib/services/lightspeed/lightspeed-client';
+import { logStorePaymentRequestEvent } from '@/lib/store-payments/audit';
+import { syncPaymentRequestToLightspeed } from '@/lib/store-payments/lightspeed-sync';
 
 // Use service role client for webhook operations (bypasses RLS)
 function getServiceClient() {
@@ -868,6 +870,19 @@ async function handleStoreCreditRequestComplete(
     return;
   }
 
+  await logStorePaymentRequestEvent({
+    paymentRequestId: requestId,
+    storeUserId: paymentRequest.store_user_id,
+    eventType: 'stripe_webhook_received',
+    actor: 'stripe',
+    message: 'Stripe checkout.session.completed received for store credit payment.',
+    metadata: {
+      sessionId: session.id,
+      paymentStatus: session.payment_status,
+      paymentIntentId,
+    },
+  });
+
   // Credit first, status flip second — both idempotent, so a retry after a
   // partial failure completes the remainder without double-crediting.
   const { error: creditError } = await supabase
@@ -891,7 +906,7 @@ async function handleStoreCreditRequestComplete(
     throw new Error(`Failed to record credit for payment request ${requestId}`);
   }
 
-  const { error: updateError } = await supabase
+  const { data: updatedRows, error: updateError } = await supabase
     .from('store_payment_requests')
     .update({
       status: 'paid',
@@ -901,11 +916,48 @@ async function handleStoreCreditRequestComplete(
       updated_at: new Date().toISOString(),
     })
     .eq('id', requestId)
-    .eq('status', 'pending');
+    .eq('status', 'pending')
+    .select('id');
 
   if (updateError) {
     console.error('[Stripe Webhook] Failed to mark payment request paid:', updateError);
     throw new Error(`Failed to mark payment request ${requestId} paid`);
+  }
+
+  const newlyPaid = (updatedRows?.length ?? 0) > 0;
+
+  if (newlyPaid) {
+    await logStorePaymentRequestEvent({
+      paymentRequestId: requestId,
+      storeUserId: paymentRequest.store_user_id,
+      eventType: 'credit_recorded',
+      actor: 'stripe',
+      message: `Recorded $${(paymentRequest.amount_cents / 100).toFixed(2)} store credit for ${paymentRequest.customer_handle || paymentRequest.customer_name || 'customer'}.`,
+      metadata: {
+        amountCents: paymentRequest.amount_cents,
+        stripePaymentIntentId: paymentIntentId,
+        stripeSessionId: session.id,
+      },
+    });
+
+    await logStorePaymentRequestEvent({
+      paymentRequestId: requestId,
+      storeUserId: paymentRequest.store_user_id,
+      eventType: 'marked_paid',
+      actor: 'stripe',
+      message: 'Payment request marked paid.',
+      metadata: { paidAt: new Date().toISOString() },
+    });
+  }
+
+  // Non-fatal — credit is already recorded; Lightspeed sync can be retried.
+  const syncResult = await syncPaymentRequestToLightspeed(requestId);
+  if (!syncResult.ok) {
+    console.warn(
+      '[Stripe Webhook] Lightspeed payment sync did not complete:',
+      syncResult.status,
+      syncResult.error,
+    );
   }
 
   console.log(
@@ -913,6 +965,7 @@ async function handleStoreCreditRequestComplete(
     paymentRequest.amount_cents / 100,
     'for',
     paymentRequest.customer_handle,
+    newlyPaid ? '(new)' : '(idempotent retry)',
   );
   console.log('[Stripe Webhook] ====== STORE CREDIT REQUEST SUCCESS ======');
 }
