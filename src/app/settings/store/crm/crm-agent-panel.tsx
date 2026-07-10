@@ -57,6 +57,7 @@ import { applyMergeTags } from "@/lib/crm/merge-tags";
 import { buildPremadeTemplates, isPremadeTemplateId } from "@/lib/crm/premade-templates";
 import { type StoreBranding } from "@/lib/crm/templates";
 import { formatAud } from "@/lib/crm/types";
+import type { CampaignContent } from "@/lib/crm/types";
 import type { AgentComposeResult, AgentProductPick } from "@/lib/crm/agent/types";
 import type {
   CampaignVerification,
@@ -109,12 +110,22 @@ const STARTER_IDEAS = [
   },
 ];
 
+export type CampaignTemplateSeed = {
+  id: string;
+  subject: string;
+  templateKey: string;
+  content: CampaignContent;
+  label: string;
+};
+
 export function CrmAgentPanel(props: {
   store: StoreBranding;
   onOpenComposer: (seed: ComposerSeed, contactIds: string[]) => void;
   onCampaignCreated: () => void;
+  templateSeed?: CampaignTemplateSeed | null;
+  onTemplateSeedConsumed?: () => void;
 }) {
-  const { store, onOpenComposer, onCampaignCreated } = props;
+  const { store, onOpenComposer, onCampaignCreated, templateSeed, onTemplateSeedConsumed } = props;
 
   // Conversation
   const [prompt, setPrompt] = React.useState("");
@@ -451,32 +462,70 @@ export function CrmAgentPanel(props: {
     }
   };
 
+  const loadCampaignDesign = React.useCallback(
+    (opts: {
+      subject: string;
+      templateKey: string;
+      content: CampaignContent;
+      label: string;
+      source: "template" | "campaign";
+      isPremade?: boolean;
+    }) => {
+      const applied: AgentComposeResult = {
+        subject: opts.subject,
+        subjectVariants: [opts.subject],
+        templateKey: opts.templateKey,
+        content: opts.content,
+        reasoning:
+          opts.source === "campaign"
+            ? `Loaded from sent campaign “${opts.label}”.`
+            : `Loaded from saved template “${opts.label}”.`,
+      };
+      setCampaign(applied);
+      setVerification(null);
+      setSelectedSubject(0);
+      setPreviewDesignMode(false);
+      setTemplatesOpen(false);
+      appliedTemplateRef.current = opts.label;
+      setTranscript((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          kind: "assistant",
+          content:
+            opts.source === "campaign"
+              ? `Loaded "${opts.label}" into the preview. Tell me what to change: copy, products, or who it should go to.`
+              : opts.isPremade
+                ? `Loaded the “${opts.label}” template into the preview. Tell me your offer, dates, and audience and I'll make it yours.`
+                : `Loaded your “${opts.label}” template into the preview. Tell me what to change: copy, products, or who it should go to.`,
+        },
+      ]);
+    },
+    [],
+  );
+
   const applyTemplate = (template: CrmEmailTemplateRecord) => {
-    const applied: AgentComposeResult = {
+    loadCampaignDesign({
       subject: template.subject,
-      subjectVariants: [template.subject],
       templateKey: template.template_key,
       content: template.content,
-      reasoning: `Loaded from saved template “${template.name}”.`,
-    };
-    setCampaign(applied);
-    setVerification(null);
-    setSelectedSubject(0);
-    setPreviewDesignMode(false);
-    setTemplatesOpen(false);
-    appliedTemplateRef.current = template.name;
-    const isPremade = isPremadeTemplateId(template.id);
-    setTranscript((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        kind: "assistant",
-        content: isPremade
-          ? `Loaded the “${template.name}” template into the preview. Tell me your offer, dates, and audience and I'll make it yours.`
-          : `Loaded your “${template.name}” template into the preview. Tell me what to change: copy, products, or who it should go to.`,
-      },
-    ]);
+      label: template.name,
+      source: "template",
+      isPremade: isPremadeTemplateId(template.id),
+    });
   };
+
+  React.useEffect(() => {
+    if (!templateSeed) return;
+    loadCampaignDesign({
+      subject: templateSeed.subject,
+      templateKey: templateSeed.templateKey,
+      content: templateSeed.content,
+      label: templateSeed.label,
+      source: "campaign",
+    });
+    onTemplateSeedConsumed?.();
+  }, [templateSeed, loadCampaignDesign, onTemplateSeedConsumed]);
 
   const saveTemplate = async () => {
     if (!campaign || !templateNameDraft.trim()) return;

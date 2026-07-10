@@ -63,7 +63,7 @@ import { CampaignDetailDialog } from "./campaign-detail-dialog";
 import { ContactGroupFilterDropdown, ContactSortDropdown } from "./contact-sort-dropdown";
 import { crmFilterPillClass, crmFilterPillsClass } from "./crm-page-button-styles";
 import { ContactGroupsPanel } from "./contact-groups-panel";
-import { CrmAgentPanel } from "./crm-agent-panel";
+import { CrmAgentPanel, type CampaignTemplateSeed } from "./crm-agent-panel";
 
 type ContactStats = { total: number; optedOut: number; eligible: number };
 type ContactFilter = "all" | "opted_in" | "opted_out";
@@ -223,6 +223,7 @@ const PEOPLE_TABS = [
 export function CrmPageContent() {
   const [section, setSection] = React.useState<CrmSection>("create");
   const [peopleTab, setPeopleTab] = React.useState<PeopleTab>("contacts");
+  const [createTemplateSeed, setCreateTemplateSeed] = React.useState<CampaignTemplateSeed | null>(null);
   const { open, setOpen, isMobile, openMobile, setOpenMobile } = useSidebar();
 
   const goToCampaigns = React.useCallback(() => {
@@ -415,6 +416,20 @@ export function CrmPageContent() {
     });
   };
 
+  const useCampaignAsTemplate = React.useCallback(
+    (campaign: CrmCampaign) => {
+      setCreateTemplateSeed({
+        id: `${campaign.id}-${Date.now()}`,
+        subject: campaign.subject,
+        templateKey: campaign.template_key,
+        content: campaign.content,
+        label: campaign.subject,
+      });
+      handleSectionChange("create");
+    },
+    [handleSectionChange],
+  );
+
   const deleteCampaign = async (campaignId: string) => {
     setBusyCampaignId(campaignId);
     try {
@@ -584,6 +599,8 @@ export function CrmPageContent() {
                 goToCampaigns();
                 void loadCampaigns();
               }}
+              templateSeed={createTemplateSeed}
+              onTemplateSeedConsumed={() => setCreateTemplateSeed(null)}
             />
           ) : section === "activity" ? (
             <CampaignsView
@@ -599,6 +616,7 @@ export function CrmPageContent() {
                   content: campaign.content,
                 })
               }
+              onUseTemplate={useCampaignAsTemplate}
               onDelete={(campaignId) => void deleteCampaign(campaignId)}
               onSendDraft={(campaign) => void sendDraft(campaign)}
             />
@@ -940,10 +958,21 @@ function CampaignsView(props: {
   store: StoreBranding;
   onNewCampaign: () => void;
   onDuplicate: (campaign: CrmCampaign) => void;
+  onUseTemplate: (campaign: CrmCampaign) => void;
   onDelete: (campaignId: string) => void;
   onSendDraft: (campaign: CrmCampaign) => void;
 }) {
-  const { campaigns, loading, busyCampaignId, store, onNewCampaign, onDuplicate, onDelete, onSendDraft } = props;
+  const {
+    campaigns,
+    loading,
+    busyCampaignId,
+    store,
+    onNewCampaign,
+    onDuplicate,
+    onUseTemplate,
+    onDelete,
+    onSendDraft,
+  } = props;
   const [detailCampaign, setDetailCampaign] = React.useState<CrmCampaign | null>(null);
   const [detailTab, setDetailTab] = React.useState<"email" | "recipients">("email");
   const [detailOpen, setDetailOpen] = React.useState(false);
@@ -1246,6 +1275,10 @@ function CampaignsView(props: {
         open={detailOpen}
         onOpenChange={setDetailOpen}
         initialTab={detailTab}
+        onUseTemplate={(campaign) => {
+          setDetailOpen(false);
+          onUseTemplate(campaign);
+        }}
       />
     </>
   );

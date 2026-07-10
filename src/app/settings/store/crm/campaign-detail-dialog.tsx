@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Eye, Loader2, Users } from "@/components/layout/app-sidebar/dashboard-icons";
+import { Eye, Layers, Loader2, Users } from "@/components/layout/app-sidebar/dashboard-icons";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -64,8 +65,9 @@ export function CampaignDetailDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialTab?: DetailTab;
+  onUseTemplate?: (campaign: CrmCampaign) => void;
 }) {
-  const { campaign, store, open, onOpenChange, initialTab = "email" } = props;
+  const { campaign, store, open, onOpenChange, initialTab = "email", onUseTemplate } = props;
   const [tab, setTab] = React.useState<DetailTab>(initialTab);
   const [recipients, setRecipients] = React.useState<CrmCampaignRecipient[]>([]);
   const [loadingRecipients, setLoadingRecipients] = React.useState(false);
@@ -183,6 +185,17 @@ export function CampaignDetailDialog(props: {
                   className="min-h-0 flex-1 w-full bg-white"
                 />
               </div>
+              {sentOrAttempted && onUseTemplate ? (
+                <div className="mt-4 flex shrink-0 justify-end">
+                  <Button
+                    className="rounded-full"
+                    onClick={() => onUseTemplate(campaign)}
+                  >
+                    <Layers className="mr-1.5 size-4" />
+                    Use this template
+                  </Button>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-5">
