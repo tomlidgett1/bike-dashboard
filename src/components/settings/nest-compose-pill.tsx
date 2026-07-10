@@ -4,13 +4,8 @@ import * as React from "react";
 import { Banknote, Loader2, Plus, Send } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { NestRequestMoneyDialog } from "@/components/settings/customer-inquiries/nest-request-money-dialog";
+import { storeSettingsHeaderActionClass } from "@/components/settings/actions-page-header";
 import { cn } from "@/lib/utils";
 import type { NestConversationMessage } from "@/lib/nest/types";
 
@@ -115,42 +110,28 @@ export function NestComposePill({
           {sendErr}
         </div>
       ) : null}
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void send();
-        }}
-        className="w-full"
-      >
-        <div className="flex w-full items-end gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 shadow-sm">
-          {showRequestMoney ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="mb-0.5 h-8 w-8 shrink-0 rounded-full text-gray-500 hover:text-gray-700"
-                  aria-label="More actions"
-                >
-                  <Plus className="h-5 w-5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                side="top"
-                align="start"
-                className="min-w-44 rounded-lg bg-white p-1.5"
-              >
-                <DropdownMenuItem
-                  className="gap-2 rounded-md"
-                  onSelect={() => setRequestMoneyOpen(true)}
-                >
-                  <Banknote className="size-[15px] text-gray-500" />
-                  Request money
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : (
+      <div className="relative w-full">
+        {showRequestMoney ? (
+          <div className="absolute bottom-full left-0 z-10 mb-2 flex w-[85%] items-center justify-between gap-2 rounded-md border border-gray-200 bg-gray-100 px-3 py-2 shadow-sm">
+            <span className="text-xs font-medium text-gray-500">Quick actions</span>
+            <button
+              type="button"
+              onClick={() => setRequestMoneyOpen(true)}
+              className={cn(storeSettingsHeaderActionClass(), "h-auto px-2.5 py-1 text-xs")}
+            >
+              <Banknote className="size-[14px]" />
+              Request money
+            </button>
+          </div>
+        ) : null}
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void send();
+          }}
+          className="w-full"
+        >
+          <div className="flex w-full items-end gap-2 rounded-full border border-gray-300 bg-white px-3 py-2 shadow-sm">
             <Button
               type="button"
               variant="ghost"
@@ -160,40 +141,40 @@ export function NestComposePill({
             >
               <Plus className="h-5 w-5" />
             </Button>
-          )}
-          <Textarea
-            ref={textareaRef}
-            rows={1}
-            value={text}
-            onChange={onInput}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                event.preventDefault();
-                void send();
-              }
-            }}
-            placeholder={placeholder}
-            className="max-h-[132px] min-h-[28px] flex-1 resize-none border-0 bg-transparent px-1 py-1.5 text-[15px] leading-snug shadow-none focus-visible:ring-0"
-            style={{ height: "auto" }}
-          />
-          <Button
-            type="submit"
-            size="icon"
-            disabled={!text.trim()}
-            className={cn(
-              "mb-0.5 h-8 w-8 shrink-0 rounded-full",
-              text.trim() ? "bg-[#007AFF] text-white hover:bg-[#007AFF]/90" : "bg-transparent text-gray-400",
-            )}
-            aria-label="Send message"
-          >
-            {sending && !text.trim() ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-      </form>
+            <Textarea
+              ref={textareaRef}
+              rows={1}
+              value={text}
+              onChange={onInput}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                  event.preventDefault();
+                  void send();
+                }
+              }}
+              placeholder={placeholder}
+              className="max-h-[132px] min-h-[28px] flex-1 resize-none border-0 bg-transparent px-1 py-1.5 text-[15px] leading-snug shadow-none focus-visible:ring-0"
+              style={{ height: "auto" }}
+            />
+            <Button
+              type="submit"
+              size="icon"
+              disabled={!text.trim()}
+              className={cn(
+                "mb-0.5 h-8 w-8 shrink-0 rounded-full",
+                text.trim() ? "bg-[#007AFF] text-white hover:bg-[#007AFF]/90" : "bg-transparent text-gray-400",
+              )}
+              aria-label="Send message"
+            >
+              {sending && !text.trim() ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+        </form>
+      </div>
 
       {showRequestMoney ? (
         <NestRequestMoneyDialog
@@ -219,12 +200,15 @@ export function NestFloatingCompose({
   showRequestMoney?: boolean;
 }) {
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-4 pt-16">
+    <div className={cn(
+      "pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center px-4 pb-4",
+      showRequestMoney ? "pt-24" : "pt-16",
+    )}>
       <div
         aria-hidden
         className="pointer-events-none absolute inset-x-0 bottom-0 top-0 bg-gradient-to-t from-white from-25% via-white/95 to-transparent"
       />
-      <div className="pointer-events-auto relative w-full max-w-lg">
+      <div className="pointer-events-auto relative w-full max-w-3xl">
         <NestComposePill
           chatId={chatId}
           sendHandlers={sendHandlers}
