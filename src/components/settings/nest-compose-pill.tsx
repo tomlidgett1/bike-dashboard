@@ -101,6 +101,19 @@ export function NestComposePill({
     }
   }
 
+  function draftIntoInput(content: string) {
+    setText(content);
+    setSendErr(null);
+    window.requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.style.height = "auto";
+      el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+  }
+
   const sending = inFlight > 0;
 
   return (
@@ -186,7 +199,7 @@ export function NestComposePill({
           open={requestMoneyOpen}
           onOpenChange={setRequestMoneyOpen}
           chatId={chatId}
-          onSendMessage={sendContent}
+          onDraftMessage={draftIntoInput}
         />
       ) : null}
     </div>

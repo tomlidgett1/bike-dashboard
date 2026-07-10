@@ -1,20 +1,25 @@
 "use client";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Workorders — open jobs waiting for payment, with voice dictation.
+// Workorders — open jobs waiting for payment, with one-click voice dictation.
 //
-// A mechanic picks a job, holds the phone/laptop mic, and says what they did
-// to the bike. The recording is transcribed (gpt-4o-transcribe, bike-shop
-// vocabulary), reshaped to the selected note template, shown for a quick
-// review, then APPENDED to the bottom of the customer note on the Lightspeed
-// workorder.
+// Single narrow-row table (most recently edited first). Tap Dictate to start
+// recording immediately; stop opens a review popup where staff can re-pick a
+// note format, edit, then append to the Lightspeed workorder note.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as React from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertCircle,
-  ChevronLeft,
+  ChevronDown,
+  ClipboardList,
+  DocumentText,
+  Microphone,
+  Notes,
+  Notebook,
   Search,
+  Stop,
   Wrench,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import {
@@ -27,13 +32,6 @@ import {
   storeSettingsHeaderActionClass,
 } from "@/components/settings/actions-page-header";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { floatingCardPageHeaderNudgeClass } from "@/lib/layout/floating-card-page";
@@ -48,6 +46,7 @@ type Workorder = {
   note: string;
   time_in: string;
   eta_out: string;
+  updated_at: string;
   items_subtotal: number | null;
   lines: Array<{ line_id: string; note: string; done: boolean }>;
 };
@@ -59,10 +58,13 @@ type NoteTemplate = {
   created_at: string;
 };
 
-type DictationStep = "idle" | "recording" | "transcribing" | "review" | "saving" | "saved";
+type DictationStep = "recording" | "transcribing" | "review" | "saving" | "saved";
 
 const SELECTED_TEMPLATE_KEY = "workorders.selectedTemplateId";
+const STANDARD_TEMPLATE_ID = "none";
 const MAX_RECORDING_MS = 3 * 60 * 1000;
+
+const TEMPLATE_ICONS = [DocumentText, Notes, ClipboardList, Notebook] as const;
 
 // ── Small helpers ────────────────────────────────────────────────────────────
 
@@ -75,6 +77,20 @@ function formatDay(iso: string): string | null {
     month: "short",
     timeZone: "Australia/Melbourne",
   }).format(new Date(parsed));
+}
+
+function formatRelativeEdited(iso: string): string | null {
+  const parsed = Date.parse(iso);
+  if (Number.isNaN(parsed)) return null;
+  const diffMs = Date.now() - parsed;
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return formatDay(iso);
 }
 
 function pickRecorderMimeType(): string | undefined {
@@ -106,27 +122,21 @@ function filterWorkorders(workorders: Workorder[], query: string): Workorder[] {
   });
 }
 
-// ── Icons ────────────────────────────────────────────────────────────────────
-
-function MicIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden>
-      <rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" strokeWidth="1.6" />
-      <path
-        d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
+function sortByMostRecentlyEdited(workorders: Workorder[]): Workorder[] {
+  return [...workorders].sort((a, b) => {
+    const aTs = Date.parse(a.updated_at) || 0;
+    const bTs = Date.parse(b.updated_at) || 0;
+    return bTs - aTs;
+  });
 }
 
-function StopIcon({ className }: { className?: string }) {
+function WorkordersPageSpinner({ label = "Loading workorders" }: { label?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
-      <rect x="7" y="7" width="10" height="10" rx="2" />
-    </svg>
+    <div
+      role="status"
+      aria-label={label}
+      className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-gray-500"
+    />
   );
 }
 
@@ -144,27 +154,20 @@ function CheckIcon({ className }: { className?: string }) {
   );
 }
 
-function WorkordersPageSpinner({ label = "Loading workorders" }: { label?: string }) {
-  return (
-    <div
-      role="status"
-      aria-label={label}
-      className="h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-gray-500"
-    />
-  );
-}
-
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export function WorkordersPageContent() {
   const [workorders, setWorkorders] = React.useState<Workorder[] | null>(null);
   const [listError, setListError] = React.useState<string | null>(null);
   const [templates, setTemplates] = React.useState<NoteTemplate[]>([]);
-  const [selectedTemplateId, setSelectedTemplateId] = React.useState<string>("none");
+  const [selectedTemplateId, setSelectedTemplateId] = React.useState<string>(STANDARD_TEMPLATE_ID);
   const [manageOpen, setManageOpen] = React.useState(false);
-  const [dictating, setDictating] = React.useState<Workorder | null>(null);
-  const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [searchQuery, setSearchQuery] = React.useState("");
+  const [activeSession, setActiveSession] = React.useState<{
+    workorder: Workorder;
+    templateId: string;
+  } | null>(null);
+  const stopRecordingRef = React.useRef<(() => void) | null>(null);
 
   const loadWorkorders = React.useCallback(async () => {
     setListError(null);
@@ -172,7 +175,8 @@ export function WorkordersPageContent() {
       const res = await fetch("/api/workorders/open");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load workorders");
-      setWorkorders(data.workorders ?? []);
+      const next = sortByMostRecentlyEdited((data.workorders ?? []) as Workorder[]);
+      setWorkorders(next);
     } catch (error) {
       setListError(error instanceof Error ? error.message : "Failed to load workorders");
       setWorkorders((prev) => prev ?? []);
@@ -190,8 +194,8 @@ export function WorkordersPageContent() {
   }, []);
 
   React.useEffect(() => {
-    loadWorkorders();
-    loadTemplates();
+    void loadWorkorders();
+    void loadTemplates();
     const stored = window.localStorage.getItem(SELECTED_TEMPLATE_KEY);
     if (stored) setSelectedTemplateId(stored);
   }, [loadWorkorders, loadTemplates]);
@@ -201,34 +205,38 @@ export function WorkordersPageContent() {
     window.localStorage.setItem(SELECTED_TEMPLATE_KEY, value);
   };
 
-  const selectedTemplate =
-    templates.find((template) => template.id === selectedTemplateId) ?? null;
+  const resolveTemplate = React.useCallback(
+    (templateId: string) =>
+      templateId === STANDARD_TEMPLATE_ID
+        ? null
+        : (templates.find((template) => template.id === templateId) ?? null),
+    [templates],
+  );
 
   const filteredWorkorders = React.useMemo(
     () => filterWorkorders(workorders ?? [], searchQuery),
     [workorders, searchQuery],
   );
 
-  const selectedWorkorder =
-    workorders?.find((workorder) => workorder.workorder_id === selectedId) ?? null;
-
-  React.useEffect(() => {
-    if (selectedId && workorders && !workorders.some((w) => w.workorder_id === selectedId)) {
-      setSelectedId(null);
-    }
-  }, [selectedId, workorders]);
-
   const handleNoteAppended = (workorderId: string, note: string) => {
-    setWorkorders((prev) =>
-      prev
-        ? prev.map((workorder) =>
-            workorder.workorder_id === workorderId ? { ...workorder, note } : workorder,
-          )
-        : prev,
-    );
+    setWorkorders((prev) => {
+      if (!prev) return prev;
+      const next = prev.map((workorder) =>
+        workorder.workorder_id === workorderId
+          ? { ...workorder, note, updated_at: new Date().toISOString() }
+          : workorder,
+      );
+      return sortByMostRecentlyEdited(next);
+    });
   };
 
-  const showPane = Boolean(selectedWorkorder);
+  const startDictation = (workorder: Workorder, templateId?: string) => {
+    if (activeSession) return;
+    setActiveSession({
+      workorder,
+      templateId: templateId ?? selectedTemplateId,
+    });
+  };
 
   return (
     <>
@@ -243,67 +251,45 @@ export function WorkordersPageContent() {
 
       <FloatingCardPageBody>
         <FloatingCard>
-          <WorkordersFilterBar
+          <WorkordersToolbar
             selectedTemplateId={selectedTemplateId}
             templates={templates}
             onTemplateChange={handleTemplateChange}
             onOpenFormats={() => setManageOpen(true)}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
           />
 
-          <div className="flex min-h-0 flex-1">
-            <div
-              className={cn(
-                "flex min-h-0 w-full min-w-0 flex-col md:flex md:w-[340px] md:shrink-0 md:border-r md:border-border/60 lg:w-[380px]",
-                showPane ? "hidden" : "flex",
-              )}
-            >
-              <div className="shrink-0 border-b border-gray-100 px-3 py-2.5">
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-                  <Input
-                    type="search"
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    placeholder="Search customer, job number…"
-                    className="h-8 rounded-full border-gray-200 bg-white pl-8 text-sm shadow-sm"
-                  />
-                </div>
-              </div>
-
-              <WorkorderList
-                workorders={filteredWorkorders}
-                loading={workorders === null}
-                error={listError}
-                searchActive={searchQuery.trim().length > 0}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-                onRetry={() => {
-                  setWorkorders(null);
-                  void loadWorkorders();
-                }}
-              />
-            </div>
-
-            <div className={cn("min-w-0 flex-1 flex-col md:flex", showPane ? "flex" : "hidden")}>
-              {selectedWorkorder ? (
-                <WorkorderDetailPane
-                  workorder={selectedWorkorder}
-                  onBack={() => setSelectedId(null)}
-                  onDictate={() => setDictating(selectedWorkorder)}
-                />
-              ) : (
-                <WorkorderEmptyPane />
-              )}
-            </div>
-          </div>
+          <WorkorderTable
+            workorders={filteredWorkorders}
+            loading={workorders === null}
+            error={listError}
+            searchActive={searchQuery.trim().length > 0}
+            selectedTemplateId={selectedTemplateId}
+            templates={templates}
+            recordingWorkorderId={
+              activeSession ? activeSession.workorder.workorder_id : null
+            }
+            onDictate={startDictation}
+            onStopRecording={() => stopRecordingRef.current?.()}
+            onRetry={() => {
+              setWorkorders(null);
+              void loadWorkorders();
+            }}
+          />
         </FloatingCard>
       </FloatingCardPageBody>
 
-      <DictationDialog
-        workorder={dictating}
-        template={selectedTemplate}
-        onClose={() => setDictating(null)}
+      <DictationSession
+        session={activeSession}
+        templates={templates}
+        resolveTemplate={resolveTemplate}
+        stopRecordingRef={stopRecordingRef}
+        onClose={() => setActiveSession(null)}
         onAppended={handleNoteAppended}
+        onTemplateIdChange={(templateId) =>
+          setActiveSession((prev) => (prev ? { ...prev, templateId } : prev))
+        }
       />
 
       <TemplatesDialog
@@ -316,66 +302,123 @@ export function WorkordersPageContent() {
   );
 }
 
-// ── Filter bar ───────────────────────────────────────────────────────────────
+// ── Toolbar ──────────────────────────────────────────────────────────────────
 
-function WorkordersFilterBar({
+function WorkordersToolbar({
   selectedTemplateId,
   templates,
   onTemplateChange,
   onOpenFormats,
+  searchQuery,
+  onSearchChange,
 }: {
   selectedTemplateId: string;
   templates: NoteTemplate[];
   onTemplateChange: (value: string) => void;
   onOpenFormats: () => void;
+  searchQuery: string;
+  onSearchChange: (value: string) => void;
 }) {
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2.5 rounded-t-xl border-b border-border/60 bg-gray-50 px-4 py-3 md:px-5">
-      <Select value={selectedTemplateId} onValueChange={onTemplateChange}>
-        <SelectTrigger className={cn(storeSettingsHeaderActionClass(), "h-auto w-auto min-w-[9rem] px-3.5 py-1.5")}>
-          <SelectValue placeholder="Note format" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="none">No format</SelectItem>
-          {templates.map((template) => (
-            <SelectItem key={template.id} value={template.id}>
-              {template.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <button type="button" className={storeSettingsHeaderActionClass()} onClick={onOpenFormats}>
-        Formats
-      </button>
-      <p className="ml-auto hidden text-xs text-gray-500 md:block">
-        Open jobs waiting for payment — tap the mic and say what you&apos;ve done to the bike.
-      </p>
+    <div className="flex shrink-0 flex-col gap-3 border-b border-border/60 bg-gray-50 px-4 py-3 md:flex-row md:items-center md:px-5">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <TemplateChip
+          active={selectedTemplateId === STANDARD_TEMPLATE_ID}
+          icon={DocumentText}
+          label="Standard"
+          onClick={() => onTemplateChange(STANDARD_TEMPLATE_ID)}
+        />
+        {templates.map((template, index) => {
+          const Icon = TEMPLATE_ICONS[index % TEMPLATE_ICONS.length];
+          return (
+            <TemplateChip
+              key={template.id}
+              active={selectedTemplateId === template.id}
+              icon={Icon}
+              label={template.name}
+              onClick={() => onTemplateChange(template.id)}
+            />
+          );
+        })}
+        <button
+          type="button"
+          className={cn(storeSettingsHeaderActionClass(), "ml-1")}
+          onClick={onOpenFormats}
+        >
+          Formats
+        </button>
+      </div>
+
+      <div className="relative w-full md:ml-auto md:max-w-xs">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+        <Input
+          type="search"
+          value={searchQuery}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Search customer, job number…"
+          className="h-8 rounded-md border-gray-200 bg-white pl-8 text-sm shadow-sm"
+        />
+      </div>
     </div>
   );
 }
 
-// ── List ─────────────────────────────────────────────────────────────────────
+function TemplateChip({
+  active,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: React.ComponentType<{ className?: string; size?: number }>;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+        active
+          ? "bg-white text-gray-800 shadow-sm ring-1 ring-gray-200"
+          : "text-gray-600 hover:bg-gray-200/70",
+      )}
+    >
+      <Icon className="h-3.5 w-3.5 shrink-0" size={14} />
+      <span className="max-w-[9rem] truncate">{label}</span>
+    </button>
+  );
+}
 
-function WorkorderList({
+// ── Table ────────────────────────────────────────────────────────────────────
+
+function WorkorderTable({
   workorders,
   loading,
   error,
   searchActive,
-  selectedId,
-  onSelect,
+  selectedTemplateId,
+  templates,
+  recordingWorkorderId,
+  onDictate,
+  onStopRecording,
   onRetry,
 }: {
   workorders: Workorder[];
   loading: boolean;
   error: string | null;
   searchActive: boolean;
-  selectedId: string | null;
-  onSelect: (id: string) => void;
+  selectedTemplateId: string;
+  templates: NoteTemplate[];
+  recordingWorkorderId: string | null;
+  onDictate: (workorder: Workorder, templateId?: string) => void;
+  onStopRecording: () => void;
   onRetry: () => void;
 }) {
   if (loading) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center">
+      <div className="flex min-h-0 flex-1 items-center justify-center py-20">
         <WorkordersPageSpinner />
       </div>
     );
@@ -383,7 +426,7 @@ function WorkorderList({
 
   if (error) {
     return (
-      <div className="mx-3 mt-4 rounded-md border border-gray-200 bg-white p-4">
+      <div className="m-4 rounded-md border border-gray-200 bg-white p-4">
         <div className="flex items-start gap-2 text-sm text-gray-700">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
           <div className="min-w-0 flex-1">
@@ -406,7 +449,7 @@ function WorkorderList({
         <p className="mt-4 text-sm font-medium text-gray-900">
           {searchActive ? "No workorders match your search" : "No open workorders waiting for payment"}
         </p>
-        <p className="mt-1 max-w-[240px] text-xs text-gray-500">
+        <p className="mt-1 max-w-[260px] text-xs text-gray-500">
           {searchActive
             ? "Try a different customer name or job number."
             : "Nice one — nothing is waiting on payment right now."}
@@ -416,193 +459,263 @@ function WorkorderList({
   }
 
   return (
-    <div className="min-h-0 flex-1 divide-y divide-gray-100 overflow-y-auto overscroll-contain">
-      {workorders.map((workorder) => (
-        <WorkorderListRow
-          key={workorder.workorder_id}
-          workorder={workorder}
-          selected={selectedId === workorder.workorder_id}
-          onSelect={() => onSelect(workorder.workorder_id)}
-        />
-      ))}
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      <div className="sticky top-0 z-[1] hidden grid-cols-[minmax(0,1.4fr)_5.5rem_minmax(0,1fr)_minmax(0,1.2fr)_auto] gap-3 border-b border-gray-100 bg-white/95 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-gray-400 backdrop-blur md:grid md:px-5">
+        <span>Customer</span>
+        <span>Job</span>
+        <span>Status</span>
+        <span>Latest note</span>
+        <span className="text-right">Dictate</span>
+      </div>
+      <div className="divide-y divide-gray-100">
+        {workorders.map((workorder) => (
+          <WorkorderRow
+            key={workorder.workorder_id}
+            workorder={workorder}
+            selectedTemplateId={selectedTemplateId}
+            templates={templates}
+            isRecording={recordingWorkorderId === workorder.workorder_id}
+            dictationLocked={recordingWorkorderId !== null}
+            onDictate={onDictate}
+            onStopRecording={onStopRecording}
+          />
+        ))}
+      </div>
     </div>
   );
 }
 
-function WorkorderListRow({
+function WorkorderRow({
   workorder,
-  selected,
-  onSelect,
+  selectedTemplateId,
+  templates,
+  isRecording,
+  dictationLocked,
+  onDictate,
+  onStopRecording,
 }: {
   workorder: Workorder;
-  selected: boolean;
-  onSelect: () => void;
+  selectedTemplateId: string;
+  templates: NoteTemplate[];
+  isRecording: boolean;
+  dictationLocked: boolean;
+  onDictate: (workorder: Workorder, templateId?: string) => void;
+  onStopRecording: () => void;
 }) {
-  const due = formatDay(workorder.eta_out);
-  const preview = workorder.note.split("\n").filter(Boolean).slice(-1)[0] ?? "No notes yet";
+  const [rowTemplateId, setRowTemplateId] = React.useState(selectedTemplateId);
+  const [templateMenuOpen, setTemplateMenuOpen] = React.useState(false);
+  const menuRef = React.useRef<HTMLDivElement>(null);
 
+  React.useEffect(() => {
+    setRowTemplateId(selectedTemplateId);
+  }, [selectedTemplateId]);
+
+  React.useEffect(() => {
+    if (!templateMenuOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setTemplateMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [templateMenuOpen]);
+
+  const due = formatDay(workorder.eta_out);
+  const edited = formatRelativeEdited(workorder.updated_at);
+  const preview = workorder.note.split("\n").filter(Boolean).slice(-1)[0] ?? "No notes yet";
+  const activeTemplateName =
+    rowTemplateId === STANDARD_TEMPLATE_ID
+      ? "Standard"
+      : (templates.find((template) => template.id === rowTemplateId)?.name ?? "Standard");
+
+  return (
+    <div
+      className={cn(
+        "grid grid-cols-1 items-center gap-2 px-4 py-2 transition-colors md:grid-cols-[minmax(0,1.4fr)_5.5rem_minmax(0,1fr)_minmax(0,1.2fr)_auto] md:gap-3 md:px-5 md:py-1.5",
+        isRecording ? "bg-gray-50" : "hover:bg-gray-50/80",
+      )}
+    >
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <p className="truncate text-sm font-medium text-gray-900">{workorder.customer_name}</p>
+          {edited ? (
+            <span className="hidden shrink-0 rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 sm:inline">
+              {edited}
+            </span>
+          ) : null}
+        </div>
+        <p className="truncate text-[11px] text-gray-400 md:hidden">
+          #{workorder.workorder_id}
+          {due ? ` · Due ${due}` : ""}
+        </p>
+      </div>
+
+      <p className="hidden truncate text-xs tabular-nums text-gray-500 md:block">
+        #{workorder.workorder_id}
+      </p>
+
+      <p className="hidden truncate text-xs text-gray-500 md:block">
+        {workorder.status_name}
+        {due ? ` · Due ${due}` : ""}
+      </p>
+
+      <p className="hidden truncate text-xs text-gray-400 md:block">{preview}</p>
+
+      <div className="flex items-center justify-end gap-1.5">
+        <div className="relative" ref={menuRef}>
+          <button
+            type="button"
+            disabled={dictationLocked && !isRecording}
+            onClick={() => setTemplateMenuOpen((open) => !open)}
+            className={cn(
+              "inline-flex h-8 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 text-xs text-gray-600 shadow-sm transition-colors hover:bg-gray-50",
+              (dictationLocked && !isRecording) && "opacity-50",
+            )}
+            aria-label="Choose note format for this dictation"
+          >
+            <Notes className="h-3.5 w-3.5" />
+            <span className="hidden max-w-[5.5rem] truncate sm:inline">{activeTemplateName}</span>
+            <ChevronDown
+              className={cn(
+                "h-3.5 w-3.5 text-gray-400 transition-transform duration-200",
+                templateMenuOpen && "rotate-180",
+              )}
+            />
+          </button>
+
+          <AnimatePresence>
+            {templateMenuOpen ? (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+                className="absolute right-0 top-full z-20 mt-1 w-48 overflow-hidden rounded-md border border-gray-200 bg-white shadow-lg"
+              >
+                <div className="py-1">
+                  <TemplateMenuItem
+                    active={rowTemplateId === STANDARD_TEMPLATE_ID}
+                    label="Standard"
+                    onClick={() => {
+                      setRowTemplateId(STANDARD_TEMPLATE_ID);
+                      setTemplateMenuOpen(false);
+                    }}
+                  />
+                  {templates.map((template) => (
+                    <TemplateMenuItem
+                      key={template.id}
+                      active={rowTemplateId === template.id}
+                      label={template.name}
+                      onClick={() => {
+                        setRowTemplateId(template.id);
+                        setTemplateMenuOpen(false);
+                      }}
+                    />
+                  ))}
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
+
+        <button
+          type="button"
+          disabled={dictationLocked && !isRecording}
+          aria-label={
+            isRecording
+              ? `Stop dictation for ${workorder.customer_name}`
+              : `Dictate notes for ${workorder.customer_name}`
+          }
+          className={cn(
+            "inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium shadow-sm transition-colors",
+            isRecording
+              ? "bg-gray-900 text-white hover:bg-gray-800"
+              : "border border-gray-200 bg-white text-gray-800 hover:bg-gray-50",
+            dictationLocked && !isRecording && "opacity-50",
+          )}
+          onClick={() => {
+            if (isRecording) {
+              onStopRecording();
+              return;
+            }
+            onDictate(workorder, rowTemplateId);
+          }}
+        >
+          {isRecording ? (
+            <>
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/60" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
+              </span>
+              Recording…
+            </>
+          ) : (
+            <>
+              <Microphone className="h-3.5 w-3.5" />
+              Dictate
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TemplateMenuItem({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
-      onClick={onSelect}
+      onClick={onClick}
       className={cn(
-        "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors",
-        selected ? "bg-gray-100" : "hover:bg-gray-50",
+        "flex w-full items-center px-3 py-2 text-left text-xs transition-colors",
+        active ? "bg-gray-50 font-medium text-gray-900" : "text-gray-600 hover:bg-gray-50",
       )}
     >
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-gray-200 bg-white">
-        <Wrench className="h-4 w-4 text-gray-500" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-2">
-          <p className="min-w-0 flex-1 truncate text-sm font-medium text-gray-900">
-            {workorder.customer_name}
-          </p>
-          <span className="shrink-0 text-[11px] tabular-nums text-gray-400">
-            #{workorder.workorder_id}
-          </span>
-        </div>
-        <p className="mt-0.5 truncate text-xs text-gray-500">
-          {workorder.status_name}
-          {due ? ` · Due ${due}` : ""}
-        </p>
-        <p className="mt-0.5 truncate text-xs text-gray-400">{preview}</p>
-      </div>
+      {label}
     </button>
   );
 }
 
-// ── Detail pane ──────────────────────────────────────────────────────────────
+// ── Dictation session (record immediately → review popup on stop) ────────────
 
-function WorkorderEmptyPane() {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center px-6 py-20 text-center">
-      <span className="flex h-12 w-12 items-center justify-center rounded-md border border-gray-200 bg-white">
-        <Wrench className="h-5 w-5 text-gray-400" />
-      </span>
-      <p className="mt-4 text-sm font-medium text-gray-900">Select a workorder</p>
-      <p className="mt-1 max-w-xs text-sm text-gray-500">
-        Choose a job on the left to view notes and dictate what you&apos;ve done to the bike.
-      </p>
-    </div>
-  );
-}
-
-function WorkorderDetailPane({
-  workorder,
-  onBack,
-  onDictate,
-}: {
-  workorder: Workorder;
-  onBack: () => void;
-  onDictate: () => void;
-}) {
-  const due = formatDay(workorder.eta_out);
-  const meta = [workorder.status_name, due ? `Due ${due}` : null].filter(Boolean).join(" · ");
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-3 border-b border-gray-100 px-4 py-3 md:px-5">
-        <button
-          type="button"
-          onClick={onBack}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 shadow-sm transition-colors hover:bg-gray-50 md:hidden"
-          aria-label="Back to workorders"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-base font-semibold text-gray-900">{workorder.customer_name}</h2>
-          <p className="truncate text-xs text-gray-500">
-            #{workorder.workorder_id}
-            {meta ? ` · ${meta}` : ""}
-          </p>
-        </div>
-        <button
-          type="button"
-          aria-label={`Dictate notes for ${workorder.customer_name}`}
-          className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-200 bg-white px-3 text-sm font-medium text-gray-800 shadow-sm transition-colors hover:bg-gray-50"
-          onClick={onDictate}
-        >
-          <MicIcon className="size-4" />
-          Dictate
-        </button>
-      </div>
-
-      <div
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-white px-5 py-5"
-        style={{ WebkitOverflowScrolling: "touch" }}
-      >
-        {workorder.lines.length > 0 ? (
-          <div className="mb-5 space-y-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Line items</p>
-            <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
-              {workorder.lines.map((line, index) => (
-                <div
-                  key={line.line_id}
-                  className={cn(
-                    "flex items-start gap-2 px-3 py-2.5 text-sm text-gray-700",
-                    index > 0 && "border-t border-gray-100",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-md border text-[10px] font-medium",
-                      line.done
-                        ? "border-gray-300 bg-gray-100 text-gray-700"
-                        : "border-gray-200 bg-white text-gray-400",
-                    )}
-                  >
-                    {line.done ? "✓" : ""}
-                  </span>
-                  <span className="min-w-0 flex-1">{line.note || "Untitled line"}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        <div className="space-y-2">
-          <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Customer note</p>
-          {workorder.note.trim() ? (
-            <div className="rounded-md border border-gray-200 bg-white p-4">
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">
-                {workorder.note}
-              </p>
-            </div>
-          ) : (
-            <p className="rounded-md border border-dashed border-gray-300 bg-white px-4 py-8 text-center text-sm text-gray-500">
-              No notes on this workorder yet — tap Dictate to add what you&apos;ve done.
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Dictation dialog ─────────────────────────────────────────────────────────
-
-function DictationDialog({
-  workorder,
-  template,
+function DictationSession({
+  session,
+  templates,
+  resolveTemplate,
+  stopRecordingRef,
   onClose,
   onAppended,
+  onTemplateIdChange,
 }: {
-  workorder: Workorder | null;
-  template: NoteTemplate | null;
+  session: { workorder: Workorder; templateId: string } | null;
+  templates: NoteTemplate[];
+  resolveTemplate: (templateId: string) => NoteTemplate | null;
+  stopRecordingRef: React.MutableRefObject<(() => void) | null>;
   onClose: () => void;
   onAppended: (workorderId: string, note: string) => void;
+  onTemplateIdChange: (templateId: string) => void;
 }) {
-  const [step, setStep] = React.useState<DictationStep>("idle");
+  const [step, setStep] = React.useState<DictationStep>("recording");
   const [note, setNote] = React.useState("");
+  const [transcript, setTranscript] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [elapsedMs, setElapsedMs] = React.useState(0);
+  const [reformatting, setReformatting] = React.useState(false);
 
   const recorderRef = React.useRef<MediaRecorder | null>(null);
   const chunksRef = React.useRef<Blob[]>([]);
   const timerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const discardRef = React.useRef(false);
+  const startedForIdRef = React.useRef<string | null>(null);
 
   const cleanupRecorder = React.useCallback(() => {
     if (timerRef.current) {
@@ -617,40 +730,36 @@ function DictationDialog({
     recorderRef.current = null;
   }, []);
 
-  React.useEffect(() => {
-    if (workorder) {
-      setStep("idle");
-      setNote("");
-      setError(null);
-      setElapsedMs(0);
-      discardRef.current = false;
-    }
-    return cleanupRecorder;
-  }, [workorder, cleanupRecorder]);
+  const template = session ? resolveTemplate(session.templateId) : null;
 
-  const transcribe = React.useCallback(
-    async (blob: Blob, mimeType: string) => {
-      setStep("transcribing");
-      try {
-        const form = new FormData();
-        form.append("audio", new File([blob], "dictation", { type: mimeType }));
-        if (template) form.append("template", template.template);
-
-        const res = await fetch("/api/workorders/dictate", { method: "POST", body: form });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Transcription failed");
-        setNote(data.note ?? "");
-        setStep("review");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Transcription failed");
-        setStep("idle");
+  const formatNote = React.useCallback(
+    async (args: { audio?: Blob; mimeType?: string; transcriptText?: string; templateText: string }) => {
+      const form = new FormData();
+      if (args.audio && args.mimeType) {
+        form.append("audio", new File([args.audio], "dictation", { type: args.mimeType }));
       }
+      if (args.transcriptText) form.append("transcript", args.transcriptText);
+      if (args.templateText) form.append("template", args.templateText);
+
+      const res = await fetch("/api/workorders/dictate", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Transcription failed");
+      return {
+        transcript: String(data.transcript ?? ""),
+        note: String(data.note ?? ""),
+      };
     },
-    [template],
+    [],
   );
 
-  const startRecording = async () => {
+  const startRecording = React.useCallback(async () => {
+    if (!session) return;
     setError(null);
+    setStep("recording");
+    setNote("");
+    setTranscript("");
+    setElapsedMs(0);
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = pickRecorderMimeType();
@@ -668,22 +777,33 @@ function DictationDialog({
           timerRef.current = null;
         }
         if (discardRef.current) return;
+
         const type = recorder.mimeType || mimeType || "audio/webm";
         const blob = new Blob(chunksRef.current, { type });
         if (blob.size === 0) {
           setError("Nothing recorded — try again");
-          setStep("idle");
+          setStep("review");
           return;
         }
-        transcribe(blob, type);
+
+        setStep("transcribing");
+        const templateText = resolveTemplate(session.templateId)?.template ?? "";
+        void formatNote({ audio: blob, mimeType: type, templateText })
+          .then((result) => {
+            setTranscript(result.transcript);
+            setNote(result.note);
+            setStep("review");
+          })
+          .catch((err) => {
+            setError(err instanceof Error ? err.message : "Transcription failed");
+            setStep("review");
+          });
       };
 
       recorderRef.current = recorder;
       recorder.start();
-      setStep("recording");
 
       const startedAt = Date.now();
-      setElapsedMs(0);
       timerRef.current = setInterval(() => {
         const elapsed = Date.now() - startedAt;
         setElapsedMs(elapsed);
@@ -693,16 +813,61 @@ function DictationDialog({
       }, 200);
     } catch {
       setError("Microphone access is needed to dictate — check browser permissions.");
+      setStep("review");
+    }
+  }, [formatNote, resolveTemplate, session]);
+
+  React.useEffect(() => {
+    if (!session) {
+      startedForIdRef.current = null;
+      cleanupRecorder();
+      return;
+    }
+
+    const sessionKey = session.workorder.workorder_id;
+    if (startedForIdRef.current === sessionKey) return;
+    startedForIdRef.current = sessionKey;
+    void startRecording();
+
+    return cleanupRecorder;
+  }, [cleanupRecorder, session, startRecording]);
+
+  const stopRecording = React.useCallback(() => {
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state === "recording") recorder.stop();
+  }, []);
+
+  React.useEffect(() => {
+    stopRecordingRef.current = stopRecording;
+    return () => {
+      stopRecordingRef.current = null;
+    };
+  }, [stopRecording, stopRecordingRef]);
+
+  const reformatWithTemplate = async (templateId: string) => {
+    if (!transcript.trim()) {
+      onTemplateIdChange(templateId);
+      return;
+    }
+    onTemplateIdChange(templateId);
+    setReformatting(true);
+    setError(null);
+    try {
+      const templateText = resolveTemplate(templateId)?.template ?? "";
+      const result = await formatNote({
+        transcriptText: transcript,
+        templateText,
+      });
+      setNote(result.note);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not reformat note");
+    } finally {
+      setReformatting(false);
     }
   };
 
-  const stopRecording = () => {
-    const recorder = recorderRef.current;
-    if (recorder && recorder.state === "recording") recorder.stop();
-  };
-
   const appendNote = async () => {
-    if (!workorder) return;
+    if (!session) return;
     const text = note.trim();
     if (!text) return;
     setStep("saving");
@@ -711,130 +876,185 @@ function DictationDialog({
       const res = await fetch("/api/workorders/append-note", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workorderId: workorder.workorder_id, text }),
+        body: JSON.stringify({ workorderId: session.workorder.workorder_id, text }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to update workorder");
-      onAppended(workorder.workorder_id, data.note ?? text);
+      onAppended(session.workorder.workorder_id, data.note ?? text);
       setStep("saved");
-      setTimeout(onClose, 1200);
+      setTimeout(onClose, 1100);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update workorder");
       setStep("review");
     }
   };
 
-  if (!workorder) return null;
+  if (!session) return null;
+
+  const showPopup = step !== "recording";
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
-      <button
-        type="button"
-        aria-label="Close dialog"
-        className="absolute inset-0 bg-black/40 animate-in fade-in duration-200"
-        onClick={() => {
-          if (step === "saving") return;
-          cleanupRecorder();
-          onClose();
-        }}
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="relative z-10 w-full max-w-md overflow-hidden rounded-md border border-gray-200 bg-white p-6 animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out sm:mx-4"
-      >
-        <div className="text-center">
-          <h3 className="text-lg font-semibold text-gray-900">{workorder.customer_name}</h3>
-          <p className="mt-1 text-[13px] text-gray-500">
-            {step === "review" || step === "saving"
-              ? template
-                ? `Formatted with “${template.name}” — review, then add.`
-                : "Review the note, then add it to the workorder."
-              : step === "saved"
-                ? "Added to the workorder."
-                : `Workorder #${workorder.workorder_id}${template ? ` · ${template.name}` : ""}`}
-          </p>
-        </div>
-
-        {step === "idle" || step === "recording" ? (
-          <div className="flex flex-col items-center gap-5 py-4">
+    <>
+      {/* Inline recording bar — no popup until stop */}
+      {step === "recording" ? (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex justify-center px-4 pb-6">
+          <div className="pointer-events-auto flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-lg animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-gray-400" />
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-gray-800" />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-gray-900">
+                Listening to {session.workorder.customer_name}
+              </p>
+              <p className="text-xs text-gray-500">
+                {formatElapsed(elapsedMs)}
+                {template ? ` · ${template.name}` : " · Standard"}
+              </p>
+            </div>
             <button
               type="button"
-              onClick={step === "recording" ? stopRecording : startRecording}
-              aria-label={step === "recording" ? "Stop recording" : "Start recording"}
-              className={cn(
-                "relative flex size-24 items-center justify-center rounded-full shadow-lg transition-all active:scale-95",
-                "bg-gray-900 text-white hover:scale-105",
-              )}
+              onClick={stopRecording}
+              className="inline-flex h-9 items-center gap-1.5 rounded-md bg-gray-900 px-3 text-sm font-medium text-white hover:bg-gray-800"
             >
-              {step === "recording" ? (
-                <>
-                  <span className="absolute inset-0 animate-ping rounded-full bg-gray-900/20" />
-                  <StopIcon className="size-9" />
-                </>
-              ) : (
-                <MicIcon className="size-10" />
-              )}
+              <Stop className="h-4 w-4" />
+              Stop
             </button>
-            <p className="text-sm text-gray-500">
-              {step === "recording"
-                ? `Listening… ${formatElapsed(elapsedMs)}`
-                : "Tap and say what you've done to the bike"}
-            </p>
+            <button
+              type="button"
+              onClick={() => {
+                cleanupRecorder();
+                onClose();
+              }}
+              className="rounded-md px-2 text-xs text-gray-500 hover:text-gray-800"
+            >
+              Cancel
+            </button>
           </div>
-        ) : null}
+        </div>
+      ) : null}
 
-        {step === "transcribing" ? (
-          <div className="flex flex-col items-center gap-4 py-8">
-            <WorkordersPageSpinner label="Transcribing" />
-            <p className="text-sm text-gray-500">Transcribing…</p>
-          </div>
-        ) : null}
-
-        {step === "review" || step === "saving" ? (
-          <div className="mt-4 space-y-4">
-            <Textarea
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              rows={9}
-              className="rounded-md text-sm leading-relaxed"
-              disabled={step === "saving"}
-            />
-            <div className="flex items-center justify-between gap-2">
-              <Button
-                variant="ghost"
-                className="rounded-md text-gray-500"
-                disabled={step === "saving"}
-                onClick={() => {
-                  setNote("");
-                  setStep("idle");
-                }}
-              >
-                Re-record
-              </Button>
-              <Button
-                className="rounded-md px-6"
-                onClick={appendNote}
-                disabled={step === "saving" || !note.trim()}
-              >
-                {step === "saving" ? "Adding…" : "Add to workorder"}
-              </Button>
+      {showPopup ? (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
+          <button
+            type="button"
+            aria-label="Close dialog"
+            className="absolute inset-0 bg-black/40 animate-in fade-in duration-200"
+            onClick={() => {
+              if (step === "saving" || step === "transcribing") return;
+              cleanupRecorder();
+              onClose();
+            }}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="relative z-10 w-full max-w-md overflow-hidden rounded-xl border border-gray-200 bg-white p-6 animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out sm:mx-4"
+          >
+            <div className="text-center">
+              <h3 className="text-lg font-semibold text-gray-900">
+                {session.workorder.customer_name}
+              </h3>
+              <p className="mt-1 text-[13px] text-gray-500">
+                {step === "transcribing"
+                  ? "Transcribing your notes…"
+                  : step === "saved"
+                    ? "Added to the workorder."
+                    : "Review the note, switch format if needed, then add."}
+              </p>
             </div>
-          </div>
-        ) : null}
 
-        {step === "saved" ? (
-          <div className="flex flex-col items-center gap-3 py-8">
-            <div className="flex size-14 items-center justify-center rounded-md border border-gray-200 bg-gray-50">
-              <CheckIcon className="size-7 text-gray-900" />
-            </div>
-            <p className="text-sm text-gray-500">Note added in Lightspeed</p>
-          </div>
-        ) : null}
+            {step === "transcribing" ? (
+              <div className="flex flex-col items-center gap-4 py-8">
+                <WorkordersPageSpinner label="Transcribing" />
+              </div>
+            ) : null}
 
-        {error ? <p className="mt-3 text-center text-[13px] text-destructive">{error}</p> : null}
-      </div>
-    </div>
+            {step === "review" || step === "saving" ? (
+              <div className="mt-4 space-y-4">
+                <div>
+                  <p className="mb-1.5 text-xs font-medium text-gray-500">Note format</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <TemplateChip
+                      active={session.templateId === STANDARD_TEMPLATE_ID}
+                      icon={DocumentText}
+                      label="Standard"
+                      onClick={() => {
+                        if (step === "saving" || reformatting) return;
+                        void reformatWithTemplate(STANDARD_TEMPLATE_ID);
+                      }}
+                    />
+                    {templates.map((item, index) => {
+                      const Icon = TEMPLATE_ICONS[index % TEMPLATE_ICONS.length];
+                      return (
+                        <TemplateChip
+                          key={item.id}
+                          active={session.templateId === item.id}
+                          icon={Icon}
+                          label={item.name}
+                          onClick={() => {
+                            if (step === "saving" || reformatting) return;
+                            void reformatWithTemplate(item.id);
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="relative">
+                  <Textarea
+                    value={note}
+                    onChange={(event) => setNote(event.target.value)}
+                    rows={9}
+                    className="rounded-md text-sm leading-relaxed"
+                    disabled={step === "saving" || reformatting}
+                  />
+                  {reformatting ? (
+                    <div className="absolute inset-0 flex items-center justify-center rounded-md bg-white/70">
+                      <WorkordersPageSpinner label="Reformatting" />
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  <Button
+                    variant="ghost"
+                    className="rounded-md text-gray-500"
+                    disabled={step === "saving" || reformatting}
+                    onClick={() => {
+                      cleanupRecorder();
+                      startedForIdRef.current = null;
+                      void startRecording();
+                    }}
+                  >
+                    Re-record
+                  </Button>
+                  <Button
+                    className="rounded-md px-6"
+                    onClick={() => void appendNote()}
+                    disabled={step === "saving" || reformatting || !note.trim()}
+                  >
+                    {step === "saving" ? "Adding…" : "Add to workorder"}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            {step === "saved" ? (
+              <div className="flex flex-col items-center gap-3 py-8">
+                <div className="flex size-14 items-center justify-center rounded-md border border-gray-200 bg-gray-50">
+                  <CheckIcon className="size-7 text-gray-900" />
+                </div>
+                <p className="text-sm text-gray-500">Note added in Lightspeed</p>
+              </div>
+            ) : null}
+
+            {error ? <p className="mt-3 text-center text-[13px] text-destructive">{error}</p> : null}
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -942,7 +1162,7 @@ function TemplatesDialog({
       <div
         role="dialog"
         aria-modal="true"
-        className="relative z-10 w-full max-w-lg overflow-hidden rounded-md border border-gray-200 bg-white p-6 animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out sm:mx-4"
+        className="relative z-10 w-full max-w-lg overflow-hidden rounded-xl border border-gray-200 bg-white p-6 animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out sm:mx-4"
       >
         <div>
           <h3 className="text-lg font-semibold text-gray-900">Note formats</h3>
@@ -985,7 +1205,7 @@ function TemplatesDialog({
                       variant="ghost"
                       size="sm"
                       className="rounded-md text-gray-500"
-                      onClick={() => remove(template)}
+                      onClick={() => void remove(template)}
                     >
                       Delete
                     </Button>
@@ -1028,7 +1248,7 @@ function TemplatesDialog({
               </Button>
               <Button
                 className="rounded-md px-6"
-                onClick={save}
+                onClick={() => void save()}
                 disabled={saving || !name.trim() || !body.trim()}
               >
                 {saving ? "Saving…" : "Save format"}

@@ -625,6 +625,9 @@ export async function listUnpaidWorkorders(
     workorder => enrichWorkorder(userId, workorder, statusById, false),
   )
 
+  // Most recently edited (Lightspeed timeStamp) first — staff interact with these first.
+  workorders.sort((a, b) => parseTimestamp(b.updated_at) - parseTimestamp(a.updated_at))
+
   return { workorders, truncated: active.length > pool.length }
 }
 

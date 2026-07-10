@@ -29,12 +29,13 @@ export function NestRequestMoneyDialog({
   open,
   onOpenChange,
   chatId,
-  onSendMessage,
+  onDraftMessage,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   chatId: string;
-  onSendMessage: (content: string) => Promise<void>;
+  /** Puts the payment-link message into the compose input for staff to edit — does not send. */
+  onDraftMessage: (content: string) => void;
 }) {
   const [amountText, setAmountText] = React.useState("");
   const [description, setDescription] = React.useState("");
@@ -86,7 +87,8 @@ export function NestRequestMoneyDialog({
       if (!res.ok || !data.url) {
         throw new Error(data.error || "Could not create the payment link.");
       }
-      await onSendMessage(buildRequestMessage(amount, description.trim(), data.url));
+      // Draft into the compose box so staff can edit before sending — never auto-send.
+      onDraftMessage(buildRequestMessage(amount, description.trim(), data.url));
       onOpenChange(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create the payment link.");
@@ -108,12 +110,13 @@ export function NestRequestMoneyDialog({
       <div
         role="dialog"
         aria-modal="true"
-        className="relative z-10 w-full max-w-md overflow-hidden rounded-md border border-gray-200 bg-white p-5 animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out sm:mx-4"
+        className="relative z-10 w-full max-w-md overflow-hidden rounded-xl border border-gray-200 bg-white p-5 animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out sm:mx-4"
       >
         <h3 className="text-base font-semibold text-gray-900">Request money</h3>
         <p className="mt-1 text-sm text-gray-500">
-          Texts the customer a secure Stripe link. Once paid, the amount is deposited
-          onto their Lightspeed credit account.
+          Creates a secure Stripe link and drops it into your message box so you can
+          edit before sending. Once paid, the amount is deposited onto their Lightspeed
+          credit account.
           {creditBalance != null && creditBalance > 0
             ? ` Current Yellow Jersey credit: ${formatAud(creditBalance)}.`
             : ""}
@@ -178,7 +181,7 @@ export function NestRequestMoneyDialog({
             </Button>
             <Button type="submit" className="rounded-md" disabled={!amountValid || submitting}>
               {submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
-              {submitting ? "Sending…" : "Send request"}
+              {submitting ? "Creating link…" : "Add to message"}
             </Button>
           </div>
         </form>

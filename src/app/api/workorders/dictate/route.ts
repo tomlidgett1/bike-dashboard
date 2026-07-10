@@ -51,10 +51,10 @@ function pickExtension(mime: string): string {
 /**
  * POST /api/workorders/dictate
  *
- * FormData: `audio` (recorded blob) + optional `template` (text the note
- * must adhere to). Transcribes with OpenAI's latest transcription model,
- * then reshapes the transcript to the template. Returns the note for the
- * mechanic to review before it is appended to the workorder.
+ * FormData modes:
+ * 1. `audio` (+ optional `template`) — transcribe then format
+ * 2. `transcript` (+ optional `template`) — re-format an existing transcript
+ *    when the mechanic switches note format in the review popup
  */
 export async function POST(request: NextRequest) {
   try {
@@ -67,29 +67,34 @@ export async function POST(request: NextRequest) {
     }
 
     const form = await request.formData()
-    const audio = form.get('audio')
     const template = String(form.get('template') ?? '').trim()
+    const existingTranscript = String(form.get('transcript') ?? '').trim()
+    const audio = form.get('audio')
 
-    if (!(audio instanceof File) || audio.size === 0) {
-      return NextResponse.json({ error: 'No audio received' }, { status: 400 })
-    }
-    if (audio.size > MAX_AUDIO_BYTES) {
-      return NextResponse.json({ error: 'Recording too long — keep it under a few minutes' }, { status: 413 })
-    }
+    let transcript = existingTranscript
 
-    const mime = audio.type || 'audio/webm'
-    const file = new File([await audio.arrayBuffer()], `dictation.${pickExtension(mime)}`, { type: mime })
-
-    const transcription = await openai.audio.transcriptions.create({
-      file,
-      model: 'gpt-4o-transcribe',
-      language: 'en',
-      prompt: TRANSCRIPTION_PROMPT,
-    })
-
-    const transcript = transcription.text?.trim()
     if (!transcript) {
-      return NextResponse.json({ error: "Couldn't hear anything — try again closer to the mic" }, { status: 422 })
+      if (!(audio instanceof File) || audio.size === 0) {
+        return NextResponse.json({ error: 'No audio received' }, { status: 400 })
+      }
+      if (audio.size > MAX_AUDIO_BYTES) {
+        return NextResponse.json({ error: 'Recording too long — keep it under a few minutes' }, { status: 413 })
+      }
+
+      const mime = audio.type || 'audio/webm'
+      const file = new File([await audio.arrayBuffer()], `dictation.${pickExtension(mime)}`, { type: mime })
+
+      const transcription = await openai.audio.transcriptions.create({
+        file,
+        model: 'gpt-4o-transcribe',
+        language: 'en',
+        prompt: TRANSCRIPTION_PROMPT,
+      })
+
+      transcript = transcription.text?.trim() ?? ''
+      if (!transcript) {
+        return NextResponse.json({ error: "Couldn't hear anything — try again closer to the mic" }, { status: 422 })
+      }
     }
 
     const formatResponse = await openai.responses.create({
