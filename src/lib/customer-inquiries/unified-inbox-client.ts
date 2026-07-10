@@ -104,29 +104,55 @@ export async function reopenNestCaseOnServer(chatId: string): Promise<void> {
   notifyInboxNeedsActionChanged();
 }
 
-const pendingNestReadPosts = new Map<string, Promise<void>>();
+const pendingNestReadPosts = new Map<string, { lastReadAt: string; promise: Promise<void> }>();
+const pendingGmailReadPosts = new Map<string, { lastReadAt: string; promise: Promise<void> }>();
+
+async function postMarkReadWithRetry(
+  body: Record<string, unknown>,
+  errorLabel: string,
+): Promise<void> {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch("/api/store/unified-inbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        cache: "no-store",
+      });
+      if (res.ok) return;
+      const data = (await res.json()) as { error?: string };
+      lastError = new Error(data.error || errorLabel);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(errorLabel);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+  }
+  throw lastError ?? new Error(errorLabel);
+}
+
+function toMillis(iso: string): number {
+  const ms = new Date(iso).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
 
 export async function markNestReadOnServer(chatId: string, lastReadAt: string): Promise<void> {
-  const key = `${chatId}:${lastReadAt}`;
-  const pending = pendingNestReadPosts.get(key);
-  if (pending) return pending;
+  const pending = pendingNestReadPosts.get(chatId);
+  if (pending && toMillis(pending.lastReadAt) >= toMillis(lastReadAt)) {
+    return pending.promise;
+  }
 
-  const request = (async () => {
-    const res = await fetch("/api/store/unified-inbox", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "mark_nest_read", chatId, lastReadAt }),
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      const data = (await res.json()) as { error?: string };
-      throw new Error(data.error || "Could not mark conversation read.");
+  const request = postMarkReadWithRetry(
+    { action: "mark_nest_read", chatId, lastReadAt },
+    "Could not mark conversation read.",
+  ).finally(() => {
+    const current = pendingNestReadPosts.get(chatId);
+    if (current?.promise === request) {
+      pendingNestReadPosts.delete(chatId);
     }
-  })().finally(() => {
-    pendingNestReadPosts.delete(key);
   });
 
-  pendingNestReadPosts.set(key, request);
+  pendingNestReadPosts.set(chatId, { lastReadAt, promise: request });
   return request;
 }
 
@@ -134,16 +160,23 @@ export async function markGmailInquiryReadOnServer(
   inquiryId: string,
   lastReadAt: string,
 ): Promise<void> {
-  const res = await fetch("/api/store/unified-inbox", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "mark_gmail_read", inquiryId, lastReadAt }),
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    const data = (await res.json()) as { error?: string };
-    throw new Error(data.error || "Could not mark enquiry read.");
+  const pending = pendingGmailReadPosts.get(inquiryId);
+  if (pending && toMillis(pending.lastReadAt) >= toMillis(lastReadAt)) {
+    return pending.promise;
   }
+
+  const request = postMarkReadWithRetry(
+    { action: "mark_gmail_read", inquiryId, lastReadAt },
+    "Could not mark enquiry read.",
+  ).finally(() => {
+    const current = pendingGmailReadPosts.get(inquiryId);
+    if (current?.promise === request) {
+      pendingGmailReadPosts.delete(inquiryId);
+    }
+  });
+
+  pendingGmailReadPosts.set(inquiryId, { lastReadAt, promise: request });
+  return request;
 }
 
 export async function markAllInboxReadOnServer(payload: {

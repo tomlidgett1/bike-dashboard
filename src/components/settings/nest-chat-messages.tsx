@@ -97,12 +97,15 @@ function messageMedia(message: NestConversationMessage): {
     if (item.mimeType?.startsWith("image/")) return true;
     return isImageUrl(item.url);
   });
-  const fromContent = extractImageUrlsFromContent(message.content).map((url) => ({ url }));
+  const fromContent: NestMediaItem[] = extractImageUrlsFromContent(message.content).map((url) => ({
+    url,
+  }));
   const seen = new Set<string>();
   const images: NestMediaItem[] = [];
   for (const item of [...fromMeta, ...fromContent]) {
-    if (seen.has(item.url)) continue;
-    seen.add(item.url);
+    const key = item.attachmentId?.trim() || item.url;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
     images.push(item);
   }
   const text = stripImageUrlsFromContent(message.content, images.map((item) => item.url));

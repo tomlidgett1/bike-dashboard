@@ -369,6 +369,28 @@ export async function markNestReadInSupabase(
   chatId: string,
   lastReadAt: string,
 ): Promise<void> {
+  // Prefer idempotent RPC (GREATEST) so concurrent/stale writes never move the
+  // high-water mark backwards. Fall back to upsert if the migration is not applied yet.
+  const { error: rpcError } = await supabase.rpc("mark_nest_conversation_read", {
+    p_user_id: userId,
+    p_chat_id: chatId,
+    p_last_read_at: lastReadAt,
+  });
+
+  if (!rpcError) return;
+
+  if (rpcError.message && !/mark_nest_conversation_read|Could not find the function/i.test(rpcError.message)) {
+    console.error("[nest-inbox-supabase] mark read rpc failed:", rpcError.message);
+  }
+
+  const existingMap = await loadNestReadMapFromSupabase(supabase, userId);
+  const existing = existingMap[chatId];
+  const existingMs = existing ? new Date(existing).getTime() : 0;
+  const nextMs = new Date(lastReadAt).getTime();
+  if (Number.isFinite(existingMs) && Number.isFinite(nextMs) && existingMs >= nextMs) {
+    return;
+  }
+
   const now = new Date().toISOString();
   const { error } = await supabase.from("store_nest_conversation_reads").upsert(
     {
