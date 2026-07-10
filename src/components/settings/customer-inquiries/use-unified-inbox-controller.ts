@@ -21,14 +21,18 @@ import {
 import {
   isGmailInquiryUnread,
   markGmailInquiryRead,
+  gmailInquiryReadAnchor,
   GMAIL_INQUIRY_READ_STATE_EVENT,
   setGmailInquiryReadMapFromServer,
+  readGmailInquiryLastReadMap,
 } from "@/lib/customer-inquiries/inquiry-read-state";
 import {
   isNestConversationUnread,
   markNestConversationRead,
+  nestConversationReadAnchor,
   NEST_READ_STATE_EVENT,
   setNestReadMapFromServer,
+  readNestLastReadMap,
 } from "@/lib/nest/conversation-read-state";
 import {
   fetchUnifiedInbox,
@@ -52,6 +56,7 @@ import {
   loadUnifiedInboxFromStorage,
   saveUnifiedInboxToStorage,
 } from "@/lib/customer-inquiries/unified-inbox-cache";
+import { mergeGmailAndNestReadMaps } from "@/lib/customer-inquiries/unified-inbox-unread";
 import { inquiryListItemNeedsAction } from "@/lib/customer-inquiries/unified-inbox-needs-action";
 import { notifyInboxNeedsActionChanged } from "@/lib/customer-inquiries/inbox-needs-action-events";
 import type { CustomerInquiryListItem, CustomerInquiryStatus } from "@/lib/customer-inquiries/types";
@@ -404,11 +409,21 @@ export function useUnifiedInboxController() {
       if (data.nestReadMap) setNestReadMapFromServer(data.nestReadMap);
       if (data.gmailReadMap) setGmailInquiryReadMapFromServer(data.gmailReadMap);
       if (data.nestCloseMap) setNestCloseMapFromServer(data.nestCloseMap);
+
+      // Persist the merged high-water marks (server ∪ local) so a refresh never
+      // reloads a stale cache that drops a read the server has not caught up on yet.
+      const { gmailReadMap, nestReadMap } = mergeGmailAndNestReadMaps({
+        gmailReadMap: data.gmailReadMap ?? {},
+        nestReadMap: data.nestReadMap ?? {},
+        localGmailReadMap: readGmailInquiryLastReadMap(),
+        localNestReadMap: readNestLastReadMap(),
+      });
+
       saveUnifiedInboxToStorage({
         inquiries: data.inquiries ?? [],
         nestChats: data.nestChats ?? [],
-        nestReadMap: data.nestReadMap ?? {},
-        gmailReadMap: data.gmailReadMap ?? {},
+        nestReadMap,
+        gmailReadMap,
         nestCloseMap: data.nestCloseMap ?? {},
         gmail: data.gmail,
         nestConfigured: data.nestConfigured,
@@ -509,7 +524,7 @@ export function useUnifiedInboxController() {
     [allRows, selectedKey],
   );
 
-  const markedSelectionRef = React.useRef<string | null>(null);
+  const markedSelectionRef = React.useRef<{ key: string; anchor: string } | null>(null);
 
   const setSelectedId = c.setSelectedId;
   const setSelectedIdRef = React.useRef(setSelectedId);
@@ -551,25 +566,59 @@ export function useUnifiedInboxController() {
     [],
   );
 
+  // Mark the open conversation read whenever its unread anchor advances (list
+  // refresh, thread load, photo message sync, etc.). Idempotent on the client
+  // and server — never moves last_read_at backwards.
   React.useEffect(() => {
     if (!selectedKey) {
       markedSelectionRef.current = null;
       return;
     }
-    if (markedSelectionRef.current === selectedKey) return;
 
     const row = allRows.find((item) => item.key === selectedKey);
     if (!row) return;
 
-    markedSelectionRef.current = selectedKey;
+    let anchor: string | null = null;
     if (row.source === "gmail" && row.gmailItem) {
-      markGmailInquiryRead(row.gmailItem);
+      anchor = gmailInquiryReadAnchor(row.gmailItem);
+    } else if (row.source === "nest" && row.nestItem) {
+      anchor = nestConversationReadAnchor(row.nestItem);
+
+      // Prefer the latest customer message from the open thread when available —
+      // list metadata can lag (especially for image-only inbound messages).
+      if (nestDetail && nestDetail.chatId === row.nestChatId) {
+        for (let i = nestDetail.messages.length - 1; i >= 0; i--) {
+          const message = nestDetail.messages[i];
+          if (message.role !== "user") continue;
+          const messageAt = message.createdAt;
+          if (!anchor || new Date(messageAt).getTime() > new Date(anchor).getTime()) {
+            anchor = messageAt;
+          }
+          break;
+        }
+      }
+    }
+
+    if (!anchor) return;
+
+    const previous = markedSelectionRef.current;
+    if (
+      previous &&
+      previous.key === selectedKey &&
+      new Date(previous.anchor).getTime() >= new Date(anchor).getTime()
+    ) {
+      return;
+    }
+
+    markedSelectionRef.current = { key: selectedKey, anchor };
+    if (row.source === "gmail" && row.gmailItem) {
+      markGmailInquiryRead(row.gmailItem, anchor);
       return;
     }
     if (row.source === "nest" && row.nestItem) {
-      markNestConversationRead(row.nestItem);
+      markNestConversationRead(row.nestItem, anchor);
     }
-  }, [selectedKey, allRows]);
+  }, [selectedKey, allRows, nestDetail]);
 
   React.useEffect(() => {
     if (!selectedRow) {

@@ -5,30 +5,51 @@ export const NEST_READ_STATE_EVENT = "nest-read-state-changed";
 
 let serverReadMap: Record<string, string> = {};
 
-export function setNestReadMapFromServer(map: Record<string, string>) {
-  const local = readNestLastReadMap();
-  const merged: Record<string, string> = { ...map };
-  for (const [chatId, localTs] of Object.entries(local)) {
-    const serverTs = merged[chatId];
-    if (!serverTs || new Date(localTs).getTime() > new Date(serverTs).getTime()) {
-      merged[chatId] = localTs;
+function toMillis(iso: string | null | undefined): number {
+  if (!iso) return 0;
+  const ms = new Date(iso).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function mergeReadMaps(
+  base: Record<string, string>,
+  incoming: Record<string, string>,
+): Record<string, string> {
+  const merged = { ...base };
+  for (const [chatId, incomingTs] of Object.entries(incoming)) {
+    if (toMillis(incomingTs) > toMillis(merged[chatId])) {
+      merged[chatId] = incomingTs;
     }
   }
+  return merged;
+}
 
+function persistReadMap(map: Record<string, string>) {
+  serverReadMap = { ...map };
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(NEST_LAST_READ_KEY, JSON.stringify(serverReadMap));
+  } catch {
+    // ignore quota errors
+  }
+  window.dispatchEvent(new CustomEvent(NEST_READ_STATE_EVENT));
+}
+
+export function setNestReadMapFromServer(map: Record<string, string>) {
+  const local = readNestLastReadMap();
+  const merged = mergeReadMaps(map, local);
   const unchanged =
     Object.keys(merged).length === Object.keys(serverReadMap).length &&
     Object.entries(merged).every(([chatId, iso]) => serverReadMap[chatId] === iso);
   if (unchanged) return;
+  persistReadMap(merged);
+}
 
-  serverReadMap = merged;
-  if (typeof window !== "undefined") {
-    try {
-      localStorage.setItem(NEST_LAST_READ_KEY, JSON.stringify(serverReadMap));
-    } catch {
-      // ignore
-    }
-    window.dispatchEvent(new CustomEvent(NEST_READ_STATE_EVENT));
-  }
+/** Stable unread anchor — prefer last customer activity, fall back to latest message. */
+export function nestConversationReadAnchor(
+  chat: Pick<NestConversationListItem, "lastCustomerMessageAt" | "lastMessageAt">,
+): string | null {
+  return chat.lastCustomerMessageAt || chat.lastMessageAt || null;
 }
 
 export function readNestLastReadMap(): Record<string, string> {
@@ -48,60 +69,63 @@ export function readNestLastReadMap(): Record<string, string> {
 
 export function writeNestLastRead(chatId: string, iso: string) {
   const map = readNestLastReadMap();
-  const existing = map[chatId];
-  if (existing && new Date(existing).getTime() >= new Date(iso).getTime()) {
-    return;
+  if (toMillis(map[chatId]) >= toMillis(iso)) {
+    return false;
   }
-
-  serverReadMap[chatId] = iso;
-  if (typeof window === "undefined") return;
   map[chatId] = iso;
-  localStorage.setItem(NEST_LAST_READ_KEY, JSON.stringify(map));
-  window.dispatchEvent(new CustomEvent(NEST_READ_STATE_EVENT));
+  persistReadMap(map);
+  return true;
 }
 
 export function isNestConversationUnread(chat: NestConversationListItem): boolean {
-  const anchor = chat.lastCustomerMessageAt || chat.lastMessageAt;
+  const anchor = nestConversationReadAnchor(chat);
   if (!anchor) return false;
   const lastRead = readNestLastReadMap()[chat.chatId];
   if (!lastRead) return true;
-  return new Date(anchor).getTime() > new Date(lastRead).getTime();
+  return toMillis(anchor) > toMillis(lastRead);
 }
 
+function persistNestReadToServer(chatId: string, anchor: string) {
+  void import("@/lib/customer-inquiries/unified-inbox-client")
+    .then(({ markNestReadOnServer }) => markNestReadOnServer(chatId, anchor))
+    .catch(() => {});
+}
+
+/**
+ * Mark a Nest conversation read up to `anchor` (idempotent — never moves backwards).
+ * Returns true when local state advanced.
+ */
 export function markNestConversationRead(
   chat: Pick<NestConversationListItem, "chatId" | "lastCustomerMessageAt" | "lastMessageAt">,
+  explicitAnchor?: string | null,
 ) {
-  const anchor = chat.lastCustomerMessageAt || chat.lastMessageAt;
-  if (!anchor) return;
+  const anchor = explicitAnchor || nestConversationReadAnchor(chat);
+  if (!anchor) return false;
 
-  const existing = readNestLastReadMap()[chat.chatId];
-  if (existing && new Date(existing).getTime() >= new Date(anchor).getTime()) {
-    return;
-  }
-
-  writeNestLastRead(chat.chatId, anchor);
-  void import("@/lib/customer-inquiries/unified-inbox-client")
-    .then(({ markNestReadOnServer }) => markNestReadOnServer(chat.chatId, anchor))
-    .catch(() => {});
+  const advanced = writeNestLastRead(chat.chatId, anchor);
+  // Always re-post the effective high-water mark so a failed earlier write can catch up.
+  const effective = readNestLastReadMap()[chat.chatId] ?? anchor;
+  persistNestReadToServer(chat.chatId, effective);
+  return advanced;
 }
 
 export function markAllNestConversationsRead(chats: NestConversationListItem[]) {
   if (typeof window === "undefined") return;
   const map = readNestLastReadMap();
   for (const chat of chats) {
-    const anchor = chat.lastCustomerMessageAt || chat.lastMessageAt;
-    if (anchor) map[chat.chatId] = anchor;
+    const anchor = nestConversationReadAnchor(chat);
+    if (anchor && toMillis(anchor) > toMillis(map[chat.chatId])) {
+      map[chat.chatId] = anchor;
+    }
   }
-  serverReadMap = { ...map };
-  localStorage.setItem(NEST_LAST_READ_KEY, JSON.stringify(map));
-  window.dispatchEvent(new CustomEvent(NEST_READ_STATE_EVENT));
+  persistReadMap(map);
 }
 
 export function buildNestReadPayload(
   chats: NestConversationListItem[],
 ): Array<{ chatId: string; lastReadAt: string }> {
   return chats.flatMap((chat) => {
-    const anchor = chat.lastCustomerMessageAt || chat.lastMessageAt;
+    const anchor = nestConversationReadAnchor(chat);
     return anchor ? [{ chatId: chat.chatId, lastReadAt: anchor }] : [];
   });
 }

@@ -26,7 +26,7 @@ import { EnquiriesNavTabs, type EnquiriesNavTabItem } from "./enquiries-nav-tabs
 import type { UnifiedInboxController } from "./use-unified-inbox-controller";
 import type { LightspeedContext } from "./use-inquiries-controller";
 import { NestThreadMessage, sameMessageGroup } from "@/components/settings/nest-chat-messages";
-import { NestFloatingCompose } from "@/components/settings/nest-compose-pill";
+import { NestComposePill } from "@/components/settings/nest-compose-pill";
 
 type ConversationPaneTab = "conversation" | "lightspeed";
 
@@ -86,7 +86,7 @@ function NestThread({
   return (
     <div
       ref={scrollRef}
-      className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-white px-5 py-5 pb-28"
+      className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-white px-5 py-5"
       style={{ WebkitOverflowScrolling: "touch" }}
     >
       {messages.map((message, index) => {
@@ -269,18 +269,25 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
                 loading={c.nestDetailLoading}
                 scrollRef={nestThreadScrollRef}
               />
-              {row.nestChatId && !c.selectedNestClosed ? (
-                <NestFloatingCompose
-                  chatId={row.nestChatId}
-                  placeholder="Write a reply…"
-                  sendHandlers={{
-                    onOptimistic: (message) =>
-                      c.handleNestMessageOptimistic(message, row.nestChatId!),
-                    onConfirmed: (tempId, message) =>
-                      c.handleNestMessageConfirmed(tempId, message, row.nestChatId!),
-                    onFailed: (tempId) => c.handleNestMessageFailed(tempId, row.nestChatId!),
-                  }}
-                />
+              {/* Always show the reply box for Nest threads. Closed-case state must
+                  not hide it — close-case UI was removed, and image-heavy threads
+                  previously lost the absolute floating composer intermittently. */}
+              {row.nestChatId ? (
+                <div className="shrink-0 border-t border-gray-100 bg-white px-4 py-3 md:px-5">
+                  <div className="mx-auto w-full max-w-lg">
+                    <NestComposePill
+                      chatId={row.nestChatId}
+                      placeholder="Write a reply…"
+                      sendHandlers={{
+                        onOptimistic: (message) =>
+                          c.handleNestMessageOptimistic(message, row.nestChatId!),
+                        onConfirmed: (tempId, message) =>
+                          c.handleNestMessageConfirmed(tempId, message, row.nestChatId!),
+                        onFailed: (tempId) => c.handleNestMessageFailed(tempId, row.nestChatId!),
+                      }}
+                    />
+                  </div>
+                </div>
               ) : null}
             </>
           ) : (

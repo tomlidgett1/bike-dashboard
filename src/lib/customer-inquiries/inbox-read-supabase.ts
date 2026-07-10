@@ -29,6 +29,31 @@ export async function markGmailInquiryReadInSupabase(
   inquiryId: string,
   lastReadAt: string,
 ): Promise<void> {
+  // Prefer idempotent RPC (GREATEST) so concurrent/stale writes never move the
+  // high-water mark backwards. Fall back to upsert if the migration is not applied yet.
+  const { error: rpcError } = await supabase.rpc("mark_customer_inquiry_read", {
+    p_user_id: userId,
+    p_inquiry_id: inquiryId,
+    p_last_read_at: lastReadAt,
+  });
+
+  if (!rpcError) return;
+
+  if (
+    rpcError.message &&
+    !/mark_customer_inquiry_read|Could not find the function/i.test(rpcError.message)
+  ) {
+    console.error("[inbox-read-supabase] gmail mark read rpc failed:", rpcError.message);
+  }
+
+  const existingMap = await loadGmailInquiryReadMapFromSupabase(supabase, userId);
+  const existing = existingMap[inquiryId];
+  const existingMs = existing ? new Date(existing).getTime() : 0;
+  const nextMs = new Date(lastReadAt).getTime();
+  if (Number.isFinite(existingMs) && Number.isFinite(nextMs) && existingMs >= nextMs) {
+    return;
+  }
+
   const now = new Date().toISOString();
   const { error } = await supabase.from("store_customer_inquiry_reads").upsert(
     {
@@ -51,13 +76,25 @@ export async function markAllGmailInquiryReadsInSupabase(
   reads: Array<{ inquiryId: string; lastReadAt: string }>,
 ): Promise<void> {
   if (reads.length === 0) return;
+
+  // Merge with existing so bulk mark-all never regresses a newer per-thread mark.
+  const existingMap = await loadGmailInquiryReadMapFromSupabase(supabase, userId);
   const now = new Date().toISOString();
-  const rows = reads.map((read) => ({
-    user_id: userId,
-    inquiry_id: read.inquiryId,
-    last_read_at: read.lastReadAt,
-    updated_at: now,
-  }));
+  const rows = reads.map((read) => {
+    const existing = existingMap[read.inquiryId];
+    const existingMs = existing ? new Date(existing).getTime() : 0;
+    const nextMs = new Date(read.lastReadAt).getTime();
+    const lastReadAt =
+      Number.isFinite(existingMs) && existingMs > nextMs && existing
+        ? existing
+        : read.lastReadAt;
+    return {
+      user_id: userId,
+      inquiry_id: read.inquiryId,
+      last_read_at: lastReadAt,
+      updated_at: now,
+    };
+  });
   const { error } = await supabase
     .from("store_customer_inquiry_reads")
     .upsert(rows, { onConflict: "user_id,inquiry_id" });
@@ -73,13 +110,39 @@ export async function markAllNestReadInSupabase(
   reads: Array<{ chatId: string; lastReadAt: string }>,
 ): Promise<void> {
   if (reads.length === 0) return;
+
+  const { data: existingRows, error: loadError } = await supabase
+    .from("store_nest_conversation_reads")
+    .select("chat_id, last_read_at")
+    .eq("user_id", userId);
+
+  if (loadError) {
+    console.error("[inbox-read-supabase] nest read map load failed:", loadError.message);
+  }
+
+  const existingMap: Record<string, string> = {};
+  for (const row of existingRows ?? []) {
+    if (row.chat_id && row.last_read_at) {
+      existingMap[row.chat_id] = row.last_read_at;
+    }
+  }
+
   const now = new Date().toISOString();
-  const rows = reads.map((read) => ({
-    user_id: userId,
-    chat_id: read.chatId,
-    last_read_at: read.lastReadAt,
-    updated_at: now,
-  }));
+  const rows = reads.map((read) => {
+    const existing = existingMap[read.chatId];
+    const existingMs = existing ? new Date(existing).getTime() : 0;
+    const nextMs = new Date(read.lastReadAt).getTime();
+    const lastReadAt =
+      Number.isFinite(existingMs) && existingMs > nextMs && existing
+        ? existing
+        : read.lastReadAt;
+    return {
+      user_id: userId,
+      chat_id: read.chatId,
+      last_read_at: lastReadAt,
+      updated_at: now,
+    };
+  });
   const { error } = await supabase
     .from("store_nest_conversation_reads")
     .upsert(rows, { onConflict: "user_id,chat_id" });

@@ -5,18 +5,34 @@ export const GMAIL_INQUIRY_READ_STATE_EVENT = "gmail-inquiry-read-state-changed"
 
 let serverReadMap: Record<string, string> = {};
 
+function toMillis(iso: string | null | undefined): number {
+  if (!iso) return 0;
+  const ms = new Date(iso).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
 function mergeReadMaps(
   base: Record<string, string>,
   incoming: Record<string, string>,
 ): Record<string, string> {
   const merged = { ...base };
   for (const [id, incomingTs] of Object.entries(incoming)) {
-    const existingTs = merged[id];
-    if (!existingTs || new Date(incomingTs).getTime() > new Date(existingTs).getTime()) {
+    if (toMillis(incomingTs) > toMillis(merged[id])) {
       merged[id] = incomingTs;
     }
   }
   return merged;
+}
+
+function persistReadMap(map: Record<string, string>) {
+  serverReadMap = { ...map };
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(GMAIL_INQUIRY_LAST_READ_KEY, JSON.stringify(serverReadMap));
+  } catch {
+    // ignore quota errors
+  }
+  window.dispatchEvent(new CustomEvent(GMAIL_INQUIRY_READ_STATE_EVENT));
 }
 
 export function setGmailInquiryReadMapFromServer(map: Record<string, string>) {
@@ -27,15 +43,7 @@ export function setGmailInquiryReadMapFromServer(map: Record<string, string>) {
     Object.entries(merged).every(([id, iso]) => serverReadMap[id] === iso);
   if (unchanged) return;
 
-  serverReadMap = merged;
-  if (typeof window !== "undefined") {
-    try {
-      localStorage.setItem(GMAIL_INQUIRY_LAST_READ_KEY, JSON.stringify(serverReadMap));
-    } catch {
-      // ignore
-    }
-    window.dispatchEvent(new CustomEvent(GMAIL_INQUIRY_READ_STATE_EVENT));
-  }
+  persistReadMap(merged);
 }
 
 /** Stable customer-activity anchor — ignores sync bumps on updated_at. */
@@ -60,21 +68,14 @@ export function readGmailInquiryLastReadMap(): Record<string, string> {
   }
 }
 
-function writeGmailInquiryLastReadMap(map: Record<string, string>) {
-  serverReadMap = { ...map };
-  if (typeof window === "undefined") return;
-  localStorage.setItem(GMAIL_INQUIRY_LAST_READ_KEY, JSON.stringify(map));
-  window.dispatchEvent(new CustomEvent(GMAIL_INQUIRY_READ_STATE_EVENT));
-}
-
-function writeGmailInquiryLastRead(inquiryId: string, anchor: string) {
+function writeGmailInquiryLastRead(inquiryId: string, anchor: string): boolean {
   const map = readGmailInquiryLastReadMap();
-  const existing = map[inquiryId];
-  if (existing && new Date(existing).getTime() >= new Date(anchor).getTime()) {
-    return;
+  if (toMillis(map[inquiryId]) >= toMillis(anchor)) {
+    return false;
   }
   map[inquiryId] = anchor;
-  writeGmailInquiryLastReadMap(map);
+  persistReadMap(map);
+  return true;
 }
 
 export function isGmailInquiryUnread(item: CustomerInquiryListItem): boolean {
@@ -82,22 +83,31 @@ export function isGmailInquiryUnread(item: CustomerInquiryListItem): boolean {
   if (!anchor) return false;
   const lastRead = readGmailInquiryLastReadMap()[item.id];
   if (!lastRead) return true;
-  return new Date(anchor).getTime() > new Date(lastRead).getTime();
+  return toMillis(anchor) > toMillis(lastRead);
 }
 
-export function markGmailInquiryRead(item: CustomerInquiryListItem) {
-  const anchor = gmailInquiryReadAnchor(item);
-  if (!anchor) return;
+function persistGmailReadToServer(inquiryId: string, anchor: string) {
+  void import("@/lib/customer-inquiries/unified-inbox-client")
+    .then(({ markGmailInquiryReadOnServer }) => markGmailInquiryReadOnServer(inquiryId, anchor))
+    .catch(() => {});
+}
 
-  const existing = readGmailInquiryLastReadMap()[item.id];
-  if (existing && new Date(existing).getTime() >= new Date(anchor).getTime()) {
-    return;
-  }
+/**
+ * Mark a Gmail enquiry read up to its customer-activity anchor (idempotent).
+ * Returns true when local state advanced.
+ */
+export function markGmailInquiryRead(
+  item: CustomerInquiryListItem,
+  explicitAnchor?: string | null,
+) {
+  const anchor = explicitAnchor || gmailInquiryReadAnchor(item);
+  if (!anchor) return false;
 
   writeGmailInquiryLastRead(item.id, anchor);
-  void import("@/lib/customer-inquiries/unified-inbox-client")
-    .then(({ markGmailInquiryReadOnServer }) => markGmailInquiryReadOnServer(item.id, anchor))
-    .catch(() => {});
+  // Always re-post the effective high-water mark so a failed earlier write can catch up.
+  const effective = readGmailInquiryLastReadMap()[item.id] ?? anchor;
+  persistGmailReadToServer(item.id, effective);
+  return true;
 }
 
 export function markAllGmailInquiriesRead(inquiries: CustomerInquiryListItem[]) {
@@ -105,9 +115,11 @@ export function markAllGmailInquiriesRead(inquiries: CustomerInquiryListItem[]) 
   const map = readGmailInquiryLastReadMap();
   for (const item of inquiries) {
     const anchor = gmailInquiryReadAnchor(item);
-    if (anchor) map[item.id] = anchor;
+    if (anchor && toMillis(anchor) > toMillis(map[item.id])) {
+      map[item.id] = anchor;
+    }
   }
-  writeGmailInquiryLastReadMap(map);
+  persistReadMap(map);
 }
 
 export function buildGmailInquiryReadPayload(
