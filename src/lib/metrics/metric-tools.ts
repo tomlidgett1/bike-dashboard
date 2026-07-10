@@ -556,6 +556,7 @@ export function buildMetricCatalogTools(userId: string, emit: Emit, visualPrefs:
           };
         }
 
+        const metricRows = result.rows;
         const title =
           args.purpose ??
           `${metrics.map((metric) => metric.label).join(" and ")} by ${args.group_by_time}`;
@@ -563,7 +564,7 @@ export function buildMetricCatalogTools(userId: string, emit: Emit, visualPrefs:
         const chart = buildMultiMetricTimeseriesChartForRows({
           title,
           subtitle,
-          rows: result.rows,
+          rows: metricRows,
           metrics,
           kind: args.chart_kind ?? "line",
           sourceLabel: "Lightspeed sales mirror",
@@ -582,7 +583,7 @@ export function buildMetricCatalogTools(userId: string, emit: Emit, visualPrefs:
               format: metricValueFormat(metric.id),
             })),
           ],
-          rows: result.rows.slice(0, 120).map((row) => ({
+          rows: metricRows.slice(0, 120).map((row) => ({
             period: formatPeriodLabel(row.period),
             ...Object.fromEntries(
               metrics.map((metric) => [metric.id, Number(row[metric.id]) || 0]),
@@ -594,8 +595,8 @@ export function buildMetricCatalogTools(userId: string, emit: Emit, visualPrefs:
         return {
           status: "ok",
           metric_ids: metrics.map((metric) => metric.id),
-          row_count: result.row_count ?? result.rows.length,
-          rows: result.rows.slice(0, 50),
+          row_count: result.row_count ?? metricRows.length,
+          rows: metricRows.slice(0, 50),
           sql,
           chart_emitted: Boolean(chart),
           table_emitted: Boolean(table),
