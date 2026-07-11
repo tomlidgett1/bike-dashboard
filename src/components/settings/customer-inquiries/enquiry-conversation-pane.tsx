@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   ChevronLeft,
   Inbox,
+  Instagram,
   Loader2,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { GmailLogo } from "@/components/genie/gmail-logo";
@@ -27,6 +28,10 @@ import type { UnifiedInboxController } from "./use-unified-inbox-controller";
 import type { LightspeedContext } from "./use-inquiries-controller";
 import { NestThreadMessage, sameMessageGroup } from "@/components/settings/nest-chat-messages";
 import { NestComposePill } from "@/components/settings/nest-compose-pill";
+import {
+  InstagramReplyComposer,
+  InstagramThread,
+} from "./instagram-conversation-thread";
 
 type ConversationPaneTab = "conversation" | "lightspeed";
 
@@ -123,7 +128,10 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
   const row = c.selectedRow;
   const isGmail = row?.source === "gmail";
   const isNest = row?.source === "nest";
+  const isInstagram = row?.source === "instagram";
+  const instagramConversation = row?.instagramItem ?? null;
   const nestThreadScrollRef = React.useRef<HTMLDivElement>(null);
+  const instagramThreadScrollRef = React.useRef<HTMLDivElement>(null);
   const nestMessages = c.nestDetail?.messages ?? [];
   const [paneTab, setPaneTab] = React.useState<ConversationPaneTab>("conversation");
 
@@ -148,14 +156,30 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
     return () => window.clearTimeout(timeout);
   }, [isNest, c.selectedKey, nestMessages.length, c.nestDetailLoading]);
 
+  const instagramMessageCount = instagramConversation?.messages.length ?? 0;
+  React.useEffect(() => {
+    if (!isInstagram) return;
+    const el = instagramThreadScrollRef.current;
+    if (!el) return;
+    const scrollToBottom = () => {
+      el.scrollTop = el.scrollHeight;
+    };
+    requestAnimationFrame(scrollToBottom);
+    const timeout = window.setTimeout(scrollToBottom, 50);
+    return () => window.clearTimeout(timeout);
+  }, [isInstagram, c.selectedKey, instagramMessageCount]);
+
   if (!row) {
     return <EmptyConversationState />;
   }
 
-  const paneTabs: EnquiriesNavTabItem<ConversationPaneTab>[] = [
-    { id: "conversation", label: isGmail ? "Enquiry" : "Messages" },
-    { id: "lightspeed", label: "Lightspeed", icon: LightspeedMark },
-  ];
+  // Instagram DMs carry no phone/email, so there is no Lightspeed match to show.
+  const paneTabs: EnquiriesNavTabItem<ConversationPaneTab>[] = isInstagram
+    ? [{ id: "conversation", label: "Messages" }]
+    : [
+        { id: "conversation", label: isGmail ? "Enquiry" : "Messages" },
+        { id: "lightspeed", label: "Lightspeed", icon: LightspeedMark },
+      ];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-white">
@@ -176,7 +200,13 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
               {isGmail && row.subject ? row.subject : row.customerName}
             </h2>
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-gray-500">
-              {isGmail ? <GmailLogo className="h-3.5 w-auto" /> : <NestLogo className="h-3.5 w-3.5" />}
+              {isGmail ? (
+                <GmailLogo className="h-3.5 w-auto" />
+              ) : isInstagram ? (
+                <Instagram className="h-3.5 w-3.5 text-gray-500" />
+              ) : (
+                <NestLogo className="h-3.5 w-3.5" />
+              )}
               <span className="truncate">{row.customerContact}</span>
             </div>
           </div>
@@ -203,6 +233,7 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
           isNest && paneTab === "lightspeed" && "overflow-y-auto px-4 pb-6 pt-4 md:px-5",
           isGmail && paneTab === "conversation" && "flex flex-col overflow-hidden bg-[#f6f6f7]",
           isGmail && paneTab === "lightspeed" && "overflow-y-auto px-4 pb-6 pt-4 md:px-5",
+          isInstagram && "relative flex flex-col overflow-hidden",
         )}
       >
         {isGmail ? (
@@ -261,6 +292,24 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
           )
         ) : null}
 
+        {isInstagram && instagramConversation ? (
+          <>
+            <InstagramThread
+              conversation={instagramConversation}
+              scrollRef={instagramThreadScrollRef}
+            />
+            <div className="shrink-0 bg-white px-4 py-3 md:px-5">
+              <div className="mx-auto w-full max-w-lg">
+                <InstagramReplyComposer
+                  conversation={instagramConversation}
+                  onSend={c.handleInstagramSend}
+                  sending={c.instagramSending}
+                />
+              </div>
+            </div>
+          </>
+        ) : null}
+
         {isNest ? (
           paneTab === "conversation" ? (
             <>
@@ -273,7 +322,7 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
                   not hide it — close-case UI was removed, and image-heavy threads
                   previously lost the absolute floating composer intermittently. */}
               {row.nestChatId ? (
-                <div className="shrink-0 border-t border-gray-100 bg-white px-4 py-3 md:px-5">
+                <div className="shrink-0 bg-white px-4 py-3 md:px-5">
                   <div className="mx-auto w-full max-w-lg">
                     <NestComposePill
                       chatId={row.nestChatId}

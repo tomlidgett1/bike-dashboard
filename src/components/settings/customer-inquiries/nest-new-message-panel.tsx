@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { searchNestCustomers, startNestMessage } from "@/lib/nest/messages-client";
+import type { NestComposeInitialRecipient } from "@/lib/customer-inquiries/enquiries-deep-link";
 import type { NestPickupSuggestion } from "@/lib/nest/pickup-suggestions";
 import {
   parseWorkorderSuggestionsResponse,
@@ -112,9 +113,11 @@ async function fetchRecentFinishedWorkorderCustomers(): Promise<NestPickupSugges
 export function NestNewMessagePanel({
   onClose,
   onStarted,
+  initialRecipient,
 }: {
   onClose: () => void;
   onStarted?: (chatId: string, message: NestConversationMessage) => void;
+  initialRecipient?: NestComposeInitialRecipient | null;
 }) {
   const [text, setText] = React.useState("");
   const [recipientQuery, setRecipientQuery] = React.useState("");
@@ -149,8 +152,22 @@ export function NestNewMessagePanel({
     !hasSelectedCustomer && recipientQuery.trim().length === 0 && recentWorkorders.length > 0;
 
   React.useEffect(() => {
+    if (initialRecipient) return;
     searchInputRef.current?.focus();
-  }, []);
+  }, [initialRecipient]);
+
+  React.useEffect(() => {
+    if (!initialRecipient) return;
+    setSelectedMobile(initialRecipient.mobile?.trim() || "");
+    setSelectedCustomerName(initialRecipient.customerName);
+    setSelectedCustomerId(
+      initialRecipient.customerId?.trim() || initialRecipient.customerName,
+    );
+    setRecipientQuery("");
+    setCustomers([]);
+    setCustomerSearchError(null);
+    window.setTimeout(() => textareaRef.current?.focus(), 0);
+  }, [initialRecipient]);
 
   React.useEffect(() => {
     let cancelled = false;

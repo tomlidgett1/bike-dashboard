@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   BarChart3,
   ChevronDown,
   Inbox,
+  Instagram,
   Loader2,
   Mail,
   Search,
@@ -46,6 +48,12 @@ import {
   FloatingCardPageTitleRow,
 } from "@/components/layout/floating-card-page";
 import { floatingCardPageHeaderNudgeClass } from "@/lib/layout/floating-card-page";
+import {
+  findNestInboxRowKeyByPhone,
+  parseCustomerEnquiriesNestPrefill,
+  prefillToNestComposeRecipient,
+  type NestComposeInitialRecipient,
+} from "@/lib/customer-inquiries/enquiries-deep-link";
 import { cn } from "@/lib/utils";
 
 function EnquiriesPageSpinner({ label = "Loading enquiries" }: { label?: string }) {
@@ -131,10 +139,12 @@ function EnquiriesSplitView({
   c,
   composing,
   onCloseCompose,
+  composePrefill,
 }: {
   c: UnifiedInboxController;
   composing: boolean;
   onCloseCompose: () => void;
+  composePrefill: NestComposeInitialRecipient | null;
 }) {
   const hasSelection = Boolean(c.selectedKey && c.selectedRow);
   const showPane = composing || hasSelection;
@@ -171,6 +181,7 @@ function EnquiriesSplitView({
           <NestNewMessagePanel
             onClose={onCloseCompose}
             onStarted={c.handleNestStarted}
+            initialRecipient={composePrefill}
           />
         ) : (
           <EnquiryConversationPane c={c} />
@@ -244,22 +255,102 @@ function CustomerEnquiriesHeaderActions({
           Connect Gmail
         </button>
       ) : null}
+      {c.instagramStatusReady && c.instagramConfigured && !c.instagramConnected ? (
+        <button
+          type="button"
+          onClick={() => void c.handleConnectInstagram()}
+          disabled={c.instagramConnecting}
+          className={storeSettingsHeaderActionClass(false, c.instagramConnecting)}
+        >
+          {c.instagramConnecting ? (
+            <Loader2 className="size-[15px] animate-spin" />
+          ) : (
+            <Instagram className="size-[15px]" />
+          )}
+          Connect Instagram
+        </button>
+      ) : null}
     </>
   );
 }
 
 export function StoreCustomerInquiriesPanel() {
   const c = useUnifiedInboxController();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [trainNestOpen, setTrainNestOpen] = useState(false);
   const [composing, setComposing] = useState(false);
+  const [composePrefill, setComposePrefill] = useState<NestComposeInitialRecipient | null>(
+    null,
+  );
+  const handledDeepLinkRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (c.selectedKey) setComposing(false);
   }, [c.selectedKey]);
 
+  useEffect(() => {
+    const prefill = parseCustomerEnquiriesNestPrefill(searchParams);
+    if (!prefill) return;
+
+    const deepLinkKey = searchParams.toString();
+    if (handledDeepLinkRef.current === deepLinkKey) return;
+    if (c.listLoading && c.allRows.length === 0) return;
+
+    handledDeepLinkRef.current = deepLinkKey;
+    router.replace(pathname, { scroll: false });
+
+    if (prefill.chatId) {
+      const row = c.allRows.find((item) => item.nestChatId === prefill.chatId);
+      if (row) {
+        c.setSourceTab("nest");
+        c.openRow(row);
+        return;
+      }
+    }
+
+    if (prefill.phone) {
+      const matchedKey = findNestInboxRowKeyByPhone(c.allRows, prefill.phone);
+      if (matchedKey) {
+        const row = c.allRows.find((item) => item.key === matchedKey);
+        if (row) {
+          c.setSourceTab("nest");
+          c.openRow(row);
+          return;
+        }
+      }
+    }
+
+    if (prefill.compose) {
+      const recipient = prefillToNestComposeRecipient(prefill);
+      if (recipient) {
+        c.closePanel();
+        setComposePrefill(recipient);
+        setComposing(true);
+        c.setSourceTab("nest");
+      }
+    }
+  }, [
+    c.allRows,
+    c.closePanel,
+    c.listLoading,
+    c.openRow,
+    c.setSourceTab,
+    pathname,
+    router,
+    searchParams,
+  ]);
+
   const openCompose = () => {
     c.closePanel();
+    setComposePrefill(null);
     setComposing(true);
+  };
+
+  const closeCompose = () => {
+    setComposePrefill(null);
+    setComposing(false);
   };
 
   const headerActions = (
@@ -365,7 +456,8 @@ export function StoreCustomerInquiriesPanel() {
           <EnquiriesSplitView
             c={c}
             composing={composing}
-            onCloseCompose={() => setComposing(false)}
+            onCloseCompose={closeCompose}
+            composePrefill={composePrefill}
           />
         </FloatingCard>
       </FloatingCardPageBody>

@@ -1,5 +1,6 @@
 import type { GenieWorkorderCard, GenieWorkorderCardsPayload } from '@/lib/types/genie-agent'
 import { createLightspeedClient } from './lightspeed-client'
+import { normalizeLightspeedId } from './normalize-lightspeed-id'
 import type {
   LightspeedCustomer,
   LightspeedWorkorderItem,
@@ -131,6 +132,7 @@ export type GenieWorkorderDetail = {
   employee_id: string
   shop_id: string
   sale_id: string | null
+  sale_line_id: string | null
   serialized_id: string | null
   lines: GenieWorkorderLine[]
   items: GenieWorkorderItem[]
@@ -337,7 +339,8 @@ async function enrichWorkorder(
     customer_email: customerEmail,
     employee_id: String(workorder.employeeID ?? ''),
     shop_id: String(workorder.shopID ?? ''),
-    sale_id: workorder.saleID ? String(workorder.saleID) : null,
+    sale_id: normalizeLightspeedId(workorder.saleID),
+    sale_line_id: normalizeLightspeedId(workorder.saleLineID),
     serialized_id: String(workorder.serializedID ?? '').trim() && String(workorder.serializedID ?? '').trim() !== '0'
       ? String(workorder.serializedID).trim()
       : null,

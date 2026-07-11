@@ -16,9 +16,7 @@ import {
   Mailbox,
   Settings,
   Shop,
-  Sparkles,
   Tag,
-  TestTube,
   Widget,
   Wrench,
   type SidebarIcon,
@@ -74,7 +72,6 @@ const NAV: NavGroup[] = [
     items: [
       { title: "Home", href: "/settings/store/home", icon: HomeSmile, exact: true },
       { title: "To Do", href: "/settings/store/actions", icon: Widget, exact: true },
-      { title: "Domestique", href: "/settings/store/domestique", icon: Sparkles, exact: true },
       { title: "Workorders", href: "/settings/store/workorders", icon: Wrench, exact: true },
       { title: "Product Catalogue", href: "/products", icon: Box },
       {
@@ -99,7 +96,6 @@ const NAV: NavGroup[] = [
     label: "Customer service",
     items: [
       { title: "Customer inquiries", href: "/settings/store/customer-inquiries", icon: Letter, exact: true },
-      { title: "Payments", href: "/settings/store/payments", icon: Banknote, exact: true },
       { title: "Outreach", href: "/settings/store/crm", icon: Mailbox, exact: true },
     ],
   },
@@ -120,7 +116,7 @@ const NAV: NavGroup[] = [
     label: "Operations",
     items: [
       { title: "Data", href: "/settings/data", icon: Database },
-      { title: "Test", href: "/settings/test", icon: TestTube, exact: true },
+      { title: "Payments", href: "/settings/store/payments", icon: Banknote, exact: true },
       { title: "Lightspeed", href: "/connect-lightspeed", icon: LightspeedSidebarIcon },
     ],
   },

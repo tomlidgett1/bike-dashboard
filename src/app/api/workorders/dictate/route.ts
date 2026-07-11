@@ -20,25 +20,58 @@ const TRANSCRIPTION_PROMPT =
   'trued wheel, spoke tension, bar tape, Shimano, SRAM, Di2, AXS, 105, Ultegra, GX, ' +
   'torqued, indexed gears, safety check, test ride.'
 
-const FORMAT_MODEL = 'gpt-5.4-mini'
+const FORMAT_MODEL = 'gpt-5.4'
 
-const FORMAT_INSTRUCTIONS = `You format a bike mechanic's dictated service notes so they can be appended to the customer-facing notes on a workorder.
+// The transcript is a raw, unstructured spoken brain-dump. This framing is
+// shared by both modes: the mechanic thinks out loud — rambling, repeating,
+// pausing mid-thought, correcting themselves, jumping between jobs. Pauses,
+// filler and the ORDER things were said in carry no meaning. The model must
+// DISTILL the whole stream into precise points, not transcribe it line by line.
+const DISTILL_CONTEXT = `The text you receive is a bike mechanic thinking out loud while dictating what they did to a customer's bike. It is a raw, messy stream of consciousness: they ramble, repeat themselves, trail off, pause mid-sentence, say "um" and "yeah" and "let me think", correct themselves, and jump back and forth between jobs.
 
-Rules:
-- Rewrite the transcript to follow the provided template EXACTLY — same headings, same ordering, same style.
-- Only use information the mechanic actually said. Never invent work, parts, or prices. If a template section has no matching content, omit that section entirely.
-- Fix dictation artefacts (um/ah, false starts, mis-hearings that are obvious from bike context) but keep the mechanic's meaning.
-- Keep it concise and customer-readable. Australian English.
-- Return ONLY the formatted note text — no preamble, no code fences.`
+Critically: the pauses, the filler, and the ORDER things were said in mean NOTHING. Sentence breaks and line breaks in the transcript are just where they drew breath — they are NOT point boundaries. Treat the entire transcript as ONE continuous brain-dump to be distilled.
 
-const CLEANUP_INSTRUCTIONS = `You tidy a bike mechanic's dictated service notes so they can be appended to the customer-facing notes on a workorder.
+Your job is to DISTILL, never to transcribe:
+- Extract only the real substance: work actually done, parts fitted, and findings or recommendations.
+- MERGE every mention of the same job or part into a SINGLE point, even when it is scattered across the whole recording. If they circle back to something three times, it is still one point.
+- Delete filler, false starts, thinking-out-loud, and anything a later correction supersedes.
+- One bullet = one distinct action or finding. A two-minute ramble about one job becomes ONE tight bullet, not many.
+- Reorder into a sensible service order: work performed first, recommendations/next-visit items last.
+- Write like a mechanic writing up a job card: short past-tense phrases ("Replaced worn chain and cassette", "Bled spongy rear brake"). Australian English. Customer-readable.
+- NEVER invent work, parts, prices, or any detail that was not actually said.`
 
-Rules:
-- Keep everything the mechanic said, in the order they said it.
-- Remove filler words and false starts; fix punctuation and obvious mis-hearings from bike context.
-- Break the work into short "- " bullet points, one per job done.
-- Never invent work, parts, or prices. Australian English.
-- Return ONLY the note text — no preamble, no code fences.`
+const DISTILL_EXAMPLE = `Example of the distillation expected —
+RAW BRAIN-DUMP:
+"Okay so this one, um, yeah I did a full service on it. The chain was pretty worn so I replaced the chain. Oh and the cassette, that was, that was shot as well so that's done too. Gears were skipping a bit, indexed them front and rear. Um. Let me think. The rear brake felt a bit spongy so I gave it a bleed. Yeah so chain and cassette both replaced. Front wheel had a slight wobble in it, trued that up. I'd say they'll want new tyres next time, they're getting a bit low but they're alright for now. Took it for a test ride, all good."
+DISTILLED NOTES:
+- Full service completed
+- Replaced worn chain and cassette
+- Indexed gears front and rear (were skipping)
+- Bled spongy rear brake
+- Trued front wheel
+- Test ridden — all good
+- Recommend new tyres at next service (getting low)`
+
+const FORMAT_INSTRUCTIONS = `You turn a bike mechanic's raw spoken brain-dump into clean service notes that follow a specific template.
+
+${DISTILL_CONTEXT}
+
+Then fit the distilled points into the provided template:
+- Follow the template's headings, ordering and style EXACTLY.
+- Place each distilled point under the heading it belongs to.
+- If a template section has no matching content, omit that section entirely.
+
+${DISTILL_EXAMPLE}
+
+Return ONLY the finished notes in the template's shape — no preamble, no commentary, no code fences.`
+
+const CLEANUP_INSTRUCTIONS = `You turn a bike mechanic's raw spoken brain-dump into a clean, precise set of service notes.
+
+${DISTILL_CONTEXT}
+
+${DISTILL_EXAMPLE}
+
+Return ONLY the finished notes as "- " bullet points — no headings, no preamble, no commentary, no code fences.`
 
 function pickExtension(mime: string): string {
   if (mime.includes('webm')) return 'webm'
@@ -96,6 +129,12 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Couldn't hear anything — try again closer to the mic" }, { status: 422 })
       }
     }
+
+    // Collapse the transcript to a single continuous run of text. gpt-4o-transcribe
+    // inserts line/sentence breaks where the speaker paused; if those survive, the
+    // formatter reads them as point boundaries and emits one bullet per pause. Wiping
+    // them forces true distillation from the meaning, not the breath pattern.
+    transcript = transcript.replace(/\s+/g, ' ').trim()
 
     const formatResponse = await openai.responses.create({
       model: FORMAT_MODEL,

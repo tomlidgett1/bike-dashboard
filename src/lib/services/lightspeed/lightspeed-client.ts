@@ -29,6 +29,7 @@ import type {
   LightspeedItemShop,
   LightspeedCategory,
   LightspeedSale,
+  LightspeedSaleLine,
   LightspeedCustomer,
   LightspeedShop,
   LightspeedEmployee,
@@ -1163,6 +1164,24 @@ export class LightspeedClient {
   }
 
   /**
+   * Fetch a single sale line (used to resolve parent sale from workorder saleLineID).
+   */
+  async getSaleLine(saleLineId: string): Promise<LightspeedSaleLine | null> {
+    const accountId = await this.getAccountId()
+    const normalizedId = String(saleLineId).trim()
+    if (!normalizedId || normalizedId === '0') return null
+    try {
+      const response = await this.request<{ SaleLine: LightspeedSaleLine }>(
+        `/Account/${accountId}/SaleLine/${normalizedId}.json`,
+      )
+      return response.SaleLine ?? null
+    } catch (error) {
+      if (isLightspeedApiError(error, 404)) return null
+      throw error
+    }
+  }
+
+  /**
    * Render a sale receipt as HTML via DisplayTemplate (not structured JSON).
    */
   async renderSaleReceiptHtml(
@@ -1191,6 +1210,38 @@ export class LightspeedClient {
 
     return this.requestText(
       `/Account/${accountId}/DisplayTemplate/Sale/${encodeURIComponent(saleId)}.html?${params.toString()}`,
+    )
+  }
+
+  /**
+   * Render a workorder receipt/invoice as HTML via DisplayTemplate.
+   */
+  async renderWorkorderReceiptHtml(
+    workorderId: string,
+    options?: {
+      template?: string
+      print?: boolean
+      pageWidth?: string
+      pageHeight?: string
+    },
+  ): Promise<string> {
+    const accountId = await this.getAccountId()
+    const params = new URLSearchParams({
+      template: options?.template?.trim() || 'WorkorderReceipt',
+    })
+
+    if (options?.print) {
+      params.set('print', '1')
+    }
+    if (options?.pageWidth?.trim()) {
+      params.set('page_width', options.pageWidth.trim())
+    }
+    if (options?.pageHeight?.trim()) {
+      params.set('page_height', options.pageHeight.trim())
+    }
+
+    return this.requestText(
+      `/Account/${accountId}/DisplayTemplate/Workorder/${encodeURIComponent(workorderId)}.html?${params.toString()}`,
     )
   }
 

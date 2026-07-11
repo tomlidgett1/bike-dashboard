@@ -1,14 +1,15 @@
 import type * as React from "react";
 import {
   Globe,
+  Instagram,
   Mail,
   PhoneMissed,
   Send,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import type { NestChannel } from "@/lib/nest/types";
 
-/** Every way an enquiry can reach the store, across Gmail and Nest. */
-export type InboxChannel = "email" | NestChannel;
+/** Every way an enquiry can reach the store, across Gmail, Instagram and Nest. */
+export type InboxChannel = "email" | "instagram" | NestChannel;
 
 export type ChannelMeta = {
   label: string;
@@ -25,6 +26,12 @@ export const CHANNEL_META: Record<InboxChannel, ChannelMeta> = {
     icon: Mail,
     chipClass: "border-gray-200 bg-gray-50 text-gray-600",
     origin: "This customer emailed your store inbox.",
+  },
+  instagram: {
+    label: "Instagram",
+    icon: Instagram,
+    chipClass: "border-gray-200 bg-gray-50 text-gray-600",
+    origin: "This customer sent your store a direct message on Instagram.",
   },
   website_chat: {
     label: "Website chat",

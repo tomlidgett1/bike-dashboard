@@ -114,9 +114,24 @@ async function linqCreateChat(from: string, to: string, text: string): Promise<L
   return { chatId, providerMessageId: extractProviderMessageId(payload) }
 }
 
-async function linqSendMessage(chatId: string, text: string): Promise<LinqMessageResult> {
+async function linqSendMessage(
+  chatId: string,
+  text: string,
+  attachmentIds: string[] = [],
+): Promise<LinqMessageResult> {
   const token = pickServerEnv(['LINQ_API_TOKEN'])
   if (!token) throw new Error('LINQ_API_TOKEN is not configured')
+
+  const parts: Array<{ type: string; value?: string; attachment_id?: string }> = []
+  const trimmed = text.trim()
+  if (trimmed) parts.push({ type: 'text', value: trimmed })
+  for (const attachmentId of attachmentIds) {
+    const id = attachmentId.trim()
+    if (id) parts.push({ type: 'media', attachment_id: id })
+  }
+  if (parts.length === 0) {
+    throw new Error('Message must include text or an attachment')
+  }
 
   const res = await fetch(`${LINQ_BASE_URL}/chats/${encodeURIComponent(chatId)}/messages`, {
     method: 'POST',
@@ -125,7 +140,7 @@ async function linqSendMessage(chatId: string, text: string): Promise<LinqMessag
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      message: { parts: [{ type: 'text', value: text }] },
+      message: { parts },
     }),
   })
   const payload = await parseLinqResponse(res)
@@ -2823,8 +2838,14 @@ async function handleBrandPortalConfig(req: VercelRequest, res: VercelResponse):
     if (body.action === 'send_message') {
       const chatId = typeof body.chatId === 'string' ? body.chatId.trim() : ''
       const content = typeof body.content === 'string' ? body.content.trim() : ''
+      const attachmentIds = Array.isArray(body.mediaAttachmentIds)
+        ? body.mediaAttachmentIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+        : []
       if (!chatId) { res.status(400).json({ error: 'chatId is required' }); return }
-      if (!content) { res.status(400).json({ error: 'content is required' }); return }
+      if (!content && attachmentIds.length === 0) {
+        res.status(400).json({ error: 'content or mediaAttachmentIds is required' })
+        return
+      }
 
       // Verify chatId belongs to this brand
       const { data: brandMessages } = await supabase
@@ -2870,7 +2891,7 @@ async function handleBrandPortalConfig(req: VercelRequest, res: VercelResponse):
           return
         }
         try {
-          const sent = await linqSendMessage(chatId, content)
+          const sent = await linqSendMessage(chatId, content, attachmentIds)
           providerMessageId = sent.providerMessageId
         } catch (err) {
           res.status(502).json({ error: err instanceof Error ? err.message : 'Could not send via Linq' })

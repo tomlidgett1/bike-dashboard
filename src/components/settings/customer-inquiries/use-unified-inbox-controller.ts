@@ -56,6 +56,23 @@ import {
   loadUnifiedInboxFromStorage,
   saveUnifiedInboxToStorage,
 } from "@/lib/customer-inquiries/unified-inbox-cache";
+import type {
+  InstagramConversationItem,
+  InstagramInboxMessage,
+  InstagramInboxState,
+} from "@/lib/customer-inquiries/instagram-types";
+import {
+  fetchInstagramInbox,
+  mintInstagramConnectUrl,
+  sendInstagramReplyOnServer,
+} from "@/lib/customer-inquiries/instagram-inbox-client";
+import {
+  INSTAGRAM_READ_STATE_EVENT,
+  instagramConversationReadAnchor,
+  isInstagramConversationUnread,
+  markAllInstagramConversationsRead,
+  markInstagramConversationRead,
+} from "@/lib/customer-inquiries/instagram-read-state";
 import { mergeGmailAndNestReadMaps } from "@/lib/customer-inquiries/unified-inbox-unread";
 import { inquiryListItemNeedsAction } from "@/lib/customer-inquiries/unified-inbox-needs-action";
 import { notifyInboxNeedsActionChanged } from "@/lib/customer-inquiries/inbox-needs-action-events";
@@ -70,6 +87,7 @@ import {
 } from "./parts";
 import {
   Inbox,
+  Instagram,
   Letter,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { GmailLogo } from "@/components/genie/gmail-logo";
@@ -92,15 +110,16 @@ function NestInboxTabIcon() {
 
 export type InboxStatusTab = "all" | "unread";
 
-export type InboxSourceTab = "all" | "gmail" | "nest";
+export type InboxSourceTab = "all" | "gmail" | "instagram" | "nest";
 
-export type InboxSource = "gmail" | "nest";
+export type InboxSource = "gmail" | "instagram" | "nest";
 
 export type UnifiedInboxRow = {
   key: string;
   source: InboxSource;
   gmailId?: string;
   nestChatId?: string;
+  instagramConversationId?: string;
   customerName: string;
   customerContact: string;
   subject: string;
@@ -117,6 +136,7 @@ export type UnifiedInboxRow = {
   channel: InboxChannel;
   gmailItem?: CustomerInquiryListItem;
   nestItem?: NestConversationListItem;
+  instagramItem?: InstagramConversationItem;
 };
 
 export const INBOX_STATUS_TABS: Array<{ id: InboxStatusTab; label: string; icon: InboxTabIcon }> = [
@@ -127,6 +147,7 @@ export const INBOX_STATUS_TABS: Array<{ id: InboxStatusTab; label: string; icon:
 export const INBOX_SOURCE_OPTIONS: Array<{ id: InboxSourceTab; label: string; icon: InboxTabIcon }> = [
   { id: "all", label: "All sources", icon: Inbox },
   { id: "gmail", label: "Gmail", icon: GmailInboxTabIcon },
+  { id: "instagram", label: "Instagram", icon: Instagram },
   { id: "nest", label: "Nest", icon: NestInboxTabIcon },
 ];
 
@@ -282,7 +303,7 @@ function gmailRow(item: CustomerInquiryListItem): UnifiedInboxRow {
   };
 }
 
-const NEST_CHANNEL_SUBJECTS: Record<Exclude<InboxChannel, "email">, string> = {
+const NEST_CHANNEL_SUBJECTS: Record<Exclude<InboxChannel, "email" | "instagram">, string> = {
   website_chat: "Website chat",
   missed_call: "Missed call",
   store_outreach: "Store message",
@@ -311,6 +332,38 @@ function nestRow(chat: NestConversationListItem): UnifiedInboxRow {
   };
 }
 
+function instagramDisplayName(conversation: InstagramConversationItem): string {
+  const username = conversation.participant_username?.trim();
+  if (username) return `@${username}`;
+  return "Instagram customer";
+}
+
+function instagramRow(conversation: InstagramConversationItem): UnifiedInboxRow {
+  const unread = isInstagramConversationUnread(conversation);
+  const awaitingReply = conversation.preview_role === "customer";
+  const name = instagramDisplayName(conversation);
+  return {
+    key: `instagram:${conversation.conversation_id}`,
+    source: "instagram",
+    instagramConversationId: conversation.conversation_id,
+    customerName: name,
+    customerContact: name,
+    subject: "Instagram DM",
+    preview: conversation.preview || "No preview",
+    receivedAt: conversation.updated_at,
+    statusLabel: awaitingReply ? "Needs reply" : "Responded",
+    statusTone: awaitingReply ? "unread" : "responded",
+    needsReply: awaitingReply,
+    needsAction: unread,
+    isUnread: unread,
+    intentLabel: null,
+    threadCount: conversation.messages.length,
+    nestMissedCall: false,
+    channel: "instagram",
+    instagramItem: conversation,
+  };
+}
+
 function inboxRowSearchHaystack(row: UnifiedInboxRow): string {
   const parts = [
     row.customerName,
@@ -330,6 +383,8 @@ function inboxRowSearchHaystack(row: UnifiedInboxRow): string {
     row.nestItem?.participantHandle,
     row.nestItem?.preview,
     row.nestItem?.chatId,
+    row.instagramItem?.participant_username,
+    row.instagramItem?.preview,
   ];
   return parts.filter(Boolean).join(" ").toLowerCase();
 }
@@ -378,6 +433,12 @@ export function useUnifiedInboxController() {
   const nestLightspeedCacheRef = React.useRef<
     Map<string, { phone: string; context: LightspeedContext }>
   >(new Map());
+  const [instagramChats, setInstagramChats] = React.useState<InstagramConversationItem[]>([]);
+  const [instagramState, setInstagramState] = React.useState<InstagramInboxState | undefined>(
+    undefined,
+  );
+  const [instagramConnecting, setInstagramConnecting] = React.useState(false);
+  const [instagramSending, setInstagramSending] = React.useState(false);
 
   React.useEffect(() => {
     if (c.filter !== "all") c.setFilter("all");
@@ -462,15 +523,47 @@ export function useUnifiedInboxController() {
     void loadUnifiedInbox();
   }, [loadUnifiedInbox]);
 
+  const loadInstagramInbox = React.useCallback(async (options?: { forceRefresh?: boolean }) => {
+    try {
+      const data = await fetchInstagramInbox(options);
+      setInstagramState({
+        configured: data.configured,
+        connected: data.connected,
+        accounts: data.accounts,
+      });
+      setInstagramChats(data.conversations);
+    } catch {
+      // Instagram is an optional channel — never block the rest of the inbox.
+    }
+  }, []);
+
+  const instagramFetchedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (instagramFetchedRef.current) return;
+    instagramFetchedRef.current = true;
+    void loadInstagramInbox();
+  }, [loadInstagramInbox]);
+
+  // Same background cadence as the unified inbox poll below.
+  React.useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.hidden) return;
+      void loadInstagramInbox();
+    }, 30_000);
+    return () => window.clearInterval(interval);
+  }, [loadInstagramInbox]);
+
   React.useEffect(() => {
     const onStateChange = () => setReadTick((n) => n + 1);
     window.addEventListener(NEST_READ_STATE_EVENT, onStateChange);
     window.addEventListener(GMAIL_INQUIRY_READ_STATE_EVENT, onStateChange);
     window.addEventListener(NEST_CLOSE_STATE_EVENT, onStateChange);
+    window.addEventListener(INSTAGRAM_READ_STATE_EVENT, onStateChange);
     return () => {
       window.removeEventListener(NEST_READ_STATE_EVENT, onStateChange);
       window.removeEventListener(GMAIL_INQUIRY_READ_STATE_EVENT, onStateChange);
       window.removeEventListener(NEST_CLOSE_STATE_EVENT, onStateChange);
+      window.removeEventListener(INSTAGRAM_READ_STATE_EVENT, onStateChange);
     };
   }, []);
 
@@ -479,13 +572,14 @@ export function useUnifiedInboxController() {
     const rows = [
       ...c.inquiries.map(gmailRow),
       ...(nestConfigured ? nestChats.map(nestRow) : []),
+      ...instagramChats.map(instagramRow),
     ];
     return rows.sort((a, b) => {
       const aTime = a.receivedAt ? new Date(a.receivedAt).getTime() : 0;
       const bTime = b.receivedAt ? new Date(b.receivedAt).getTime() : 0;
       return bTime - aTime;
     });
-  }, [c.inquiries, nestChats, nestConfigured, readTick]);
+  }, [c.inquiries, nestChats, nestConfigured, instagramChats, readTick]);
 
   const filteredRows = React.useMemo(
     () =>
@@ -514,6 +608,7 @@ export function useUnifiedInboxController() {
     const counts: Record<InboxSourceTab, number> = {
       all: statusRows.length,
       gmail: statusRows.filter((row) => row.source === "gmail").length,
+      instagram: statusRows.filter((row) => row.source === "instagram").length,
       nest: statusRows.filter((row) => row.source === "nest").length,
     };
     return counts;
@@ -581,6 +676,8 @@ export function useUnifiedInboxController() {
     let anchor: string | null = null;
     if (row.source === "gmail" && row.gmailItem) {
       anchor = gmailInquiryReadAnchor(row.gmailItem);
+    } else if (row.source === "instagram" && row.instagramItem) {
+      anchor = instagramConversationReadAnchor(row.instagramItem);
     } else if (row.source === "nest" && row.nestItem) {
       anchor = nestConversationReadAnchor(row.nestItem);
 
@@ -615,6 +712,10 @@ export function useUnifiedInboxController() {
       markGmailInquiryRead(row.gmailItem, anchor);
       return;
     }
+    if (row.source === "instagram" && row.instagramItem) {
+      markInstagramConversationRead(row.instagramItem, anchor);
+      return;
+    }
     if (row.source === "nest" && row.nestItem) {
       markNestConversationRead(row.nestItem, anchor);
     }
@@ -632,6 +733,14 @@ export function useUnifiedInboxController() {
     if (selectedRow.source === "gmail" && selectedRow.gmailId) {
       nestThreadLoadKeyRef.current = null;
       setSelectedIdRef.current(selectedRow.gmailId);
+      setNestDetail(null);
+      setNestDetailLoading(false);
+      return;
+    }
+
+    if (selectedRow.source === "instagram") {
+      nestThreadLoadKeyRef.current = null;
+      setSelectedIdRef.current(null);
       setNestDetail(null);
       setNestDetailLoading(false);
       return;
@@ -728,6 +837,7 @@ export function useUnifiedInboxController() {
   const handleRefreshAll = React.useCallback(async () => {
     setRefreshing(true);
     setNestError(null);
+    void loadInstagramInbox({ forceRefresh: true });
     try {
       const data = await refreshUnifiedInbox();
       applyUnifiedPayload(data);
@@ -743,7 +853,7 @@ export function useUnifiedInboxController() {
     } finally {
       setRefreshing(false);
     }
-  }, [applyUnifiedPayload]);
+  }, [applyUnifiedPayload, loadInstagramInbox]);
 
   const openRow = React.useCallback((row: UnifiedInboxRow) => {
     setSelectedKey(row.key);
@@ -871,6 +981,91 @@ export function useUnifiedInboxController() {
     setSelectedKey(`nest:${chatId}`);
   }, []);
 
+  const handleConnectInstagram = React.useCallback(async () => {
+    setInstagramConnecting(true);
+    setNestError(null);
+    try {
+      const url = await mintInstagramConnectUrl();
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      setNestError(
+        err instanceof Error ? err.message : "Could not start Instagram connection.",
+      );
+    } finally {
+      setInstagramConnecting(false);
+    }
+  }, []);
+
+  const patchInstagramConversation = React.useCallback(
+    (
+      conversationId: string,
+      updater: (conversation: InstagramConversationItem) => InstagramConversationItem,
+    ) => {
+      setInstagramChats((prev) =>
+        prev.map((item) => (item.conversation_id === conversationId ? updater(item) : item)),
+      );
+    },
+    [],
+  );
+
+  const handleInstagramSend = React.useCallback(
+    async (conversation: InstagramConversationItem, text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      if (!conversation.participant_id) {
+        throw new Error(
+          "This conversation has no reply recipient yet — open it in Instagram to reply.",
+        );
+      }
+
+      const tempId = `local:${Date.now()}`;
+      const sentAt = new Date().toISOString();
+      const optimistic: InstagramInboxMessage = {
+        id: tempId,
+        role: "shop",
+        text: trimmed,
+        from_id: null,
+        from_username: null,
+        created_at: sentAt,
+        has_attachments: false,
+      };
+      patchInstagramConversation(conversation.conversation_id, (item) => ({
+        ...item,
+        preview: trimmed.replace(/\s+/g, " ").slice(0, 180),
+        preview_role: "shop",
+        updated_at: sentAt,
+        messages: [...item.messages, optimistic],
+      }));
+
+      setInstagramSending(true);
+      try {
+        const result = await sendInstagramReplyOnServer({
+          conversationId: conversation.conversation_id,
+          connectedAccountId: conversation.connected_account_id,
+          recipientId: conversation.participant_id,
+          text: trimmed,
+        });
+        if (result.message_id) {
+          patchInstagramConversation(conversation.conversation_id, (item) => ({
+            ...item,
+            messages: item.messages.map((message) =>
+              message.id === tempId ? { ...message, id: result.message_id! } : message,
+            ),
+          }));
+        }
+      } catch (error) {
+        patchInstagramConversation(conversation.conversation_id, (item) => ({
+          ...item,
+          messages: item.messages.filter((message) => message.id !== tempId),
+        }));
+        throw error;
+      } finally {
+        setInstagramSending(false);
+      }
+    },
+    [patchInstagramConversation],
+  );
+
   const needsActionCount = React.useMemo(
     () => allRows.filter((row) => row.needsAction).length,
     [allRows],
@@ -883,6 +1078,13 @@ export function useUnifiedInboxController() {
     try {
       if (selectedRow.source === "gmail") {
         await c.handleIgnore();
+        closePanel();
+        return;
+      }
+      if (selectedRow.source === "instagram" && selectedRow.instagramItem) {
+        // Instagram threads have no server-side case state — clearing the
+        // unread mark is what removes them from "needs action".
+        markInstagramConversationRead(selectedRow.instagramItem);
         closePanel();
         return;
       }
@@ -932,6 +1134,11 @@ export function useUnifiedInboxController() {
         const closedAt = nestCloses.find((item) => item.chatId === chat.chatId)?.closedAt;
         if (closedAt) markNestConversationClosed(chat, closedAt);
       }
+
+      const instagramTargets = targets
+        .filter((row) => row.source === "instagram" && row.instagramItem)
+        .map((row) => row.instagramItem as InstagramConversationItem);
+      markAllInstagramConversationsRead(instagramTargets);
 
       const data = await closeInboxCases({ gmailIds, nestCloses });
       applyUnifiedPayload(data);
@@ -1077,6 +1284,14 @@ export function useUnifiedInboxController() {
     nestLightspeedContext,
     nestLightspeedLoading,
     ensureNestLightspeedContext,
+    instagramChats,
+    instagramConfigured: instagramState?.configured === true,
+    instagramConnected: instagramState?.connected === true,
+    instagramStatusReady: instagramState !== undefined,
+    instagramConnecting,
+    instagramSending,
+    handleConnectInstagram,
+    handleInstagramSend,
   };
 }
 

@@ -378,6 +378,7 @@ export interface LightspeedSale {
 
 export interface LightspeedSaleLine {
   saleLineID: string
+  saleID?: string
   createTime: string
   timeStamp: string
   unitQuantity: string

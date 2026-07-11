@@ -9,9 +9,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as React from "react";
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertCircle,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   ChevronDown,
   ClipboardList,
   DocumentText,
@@ -34,7 +38,16 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { floatingCardPageHeaderNudgeClass } from "@/lib/layout/floating-card-page";
+import { buildCustomerEnquiriesNestUrl } from "@/lib/customer-inquiries/enquiries-deep-link";
+import { NestLogo } from "@/components/genie/nest-logo";
+import { LightspeedLogo } from "@/components/genie/lightspeed-logo";
 import { cn } from "@/lib/utils";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -42,7 +55,10 @@ import { cn } from "@/lib/utils";
 type Workorder = {
   workorder_id: string;
   status_name: string;
+  customer_id: string;
   customer_name: string;
+  customer_phone: string | null;
+  customer_email: string | null;
   note: string;
   time_in: string;
   eta_out: string;
@@ -106,6 +122,43 @@ function formatElapsed(ms: number): string {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+function workorderStatusBadgeClass(statusName: string): string {
+  const value = statusName.trim().toLowerCase();
+  if (/(today|due today)/.test(value)) {
+    return "border-amber-200 bg-amber-50 text-amber-800";
+  }
+  if (/(finish|finished|done|complete|ready|pickup)/.test(value)) {
+    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  }
+  if (/(progress|working|service|repair)/.test(value)) {
+    return "border-sky-200 bg-sky-50 text-sky-800";
+  }
+  if (/(wait|pending|hold|parts)/.test(value)) {
+    return "border-orange-200 bg-orange-50 text-orange-800";
+  }
+  if (/(paid|closed)/.test(value)) {
+    return "border-gray-200 bg-gray-100 text-gray-700";
+  }
+  if (/(quote|estimate)/.test(value)) {
+    return "border-violet-200 bg-violet-50 text-violet-800";
+  }
+  return "border-gray-200 bg-gray-50 text-gray-700";
+}
+
+function WorkorderStatusBadge({ status }: { status: string }) {
+  const label = status.trim() || "Unknown";
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-full truncate rounded-md border px-1.5 py-0.5 text-[11px] font-medium leading-4",
+        workorderStatusBadgeClass(label),
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
 function filterWorkorders(workorders: Workorder[], query: string): Workorder[] {
   const trimmed = query.trim().toLowerCase();
   if (!trimmed) return workorders;
@@ -128,6 +181,89 @@ function sortByMostRecentlyEdited(workorders: Workorder[]): Workorder[] {
     const bTs = Date.parse(b.updated_at) || 0;
     return bTs - aTs;
   });
+}
+
+type WorkorderSortKey = "updated" | "customer" | "job" | "status" | "note";
+type WorkorderSortDirection = "asc" | "desc";
+
+function latestNotePreview(workorder: Workorder): string {
+  return workorder.note.split("\n").filter(Boolean).slice(-1)[0]?.trim() ?? "";
+}
+
+function sortWorkorders(
+  workorders: Workorder[],
+  sortKey: WorkorderSortKey,
+  sortDirection: WorkorderSortDirection,
+): Workorder[] {
+  const direction = sortDirection === "asc" ? 1 : -1;
+
+  return [...workorders].sort((a, b) => {
+    let result = 0;
+
+    switch (sortKey) {
+      case "customer":
+        result = a.customer_name.localeCompare(b.customer_name, "en-AU", { sensitivity: "base" });
+        break;
+      case "job":
+        result = Number(a.workorder_id) - Number(b.workorder_id);
+        break;
+      case "status":
+        result = a.status_name.localeCompare(b.status_name, "en-AU", { sensitivity: "base" });
+        break;
+      case "note": {
+        const aNote = latestNotePreview(a);
+        const bNote = latestNotePreview(b);
+        if (!aNote && bNote) result = 1;
+        else if (aNote && !bNote) result = -1;
+        else result = aNote.localeCompare(bNote, "en-AU", { sensitivity: "base" });
+        break;
+      }
+      case "updated":
+      default:
+        result = (Date.parse(a.updated_at) || 0) - (Date.parse(b.updated_at) || 0);
+        break;
+    }
+
+    if (result === 0 && sortKey !== "updated") {
+      result = (Date.parse(a.updated_at) || 0) - (Date.parse(b.updated_at) || 0);
+    }
+
+    return result * direction;
+  });
+}
+
+function WorkorderSortButton({
+  label,
+  column,
+  sortKey,
+  sortDirection,
+  onSort,
+  align = "left",
+}: {
+  label: string;
+  column: WorkorderSortKey;
+  sortKey: WorkorderSortKey;
+  sortDirection: WorkorderSortDirection;
+  onSort: (column: WorkorderSortKey) => void;
+  align?: "left" | "right";
+}) {
+  const active = sortKey === column;
+  const Icon = !active ? ArrowUpDown : sortDirection === "asc" ? ArrowUp : ArrowDown;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(column)}
+      aria-sort={active ? (sortDirection === "asc" ? "ascending" : "descending") : "none"}
+      className={cn(
+        "inline-flex items-center gap-0.5 rounded-md px-0.5 py-0.5 transition-colors hover:text-gray-600",
+        align === "right" && "ml-auto",
+      )}
+    >
+      {label}
+      <Icon className={cn("h-3 w-3 shrink-0", active ? "text-gray-500" : "text-gray-300")} />
+    </button>
+  );
 }
 
 function WorkordersPageSpinner({ label = "Loading workorders" }: { label?: string }) {
@@ -200,11 +336,6 @@ export function WorkordersPageContent() {
     if (stored) setSelectedTemplateId(stored);
   }, [loadWorkorders, loadTemplates]);
 
-  const handleTemplateChange = (value: string) => {
-    setSelectedTemplateId(value);
-    window.localStorage.setItem(SELECTED_TEMPLATE_KEY, value);
-  };
-
   const resolveTemplate = React.useCallback(
     (templateId: string) =>
       templateId === STANDARD_TEMPLATE_ID
@@ -252,9 +383,6 @@ export function WorkordersPageContent() {
       <FloatingCardPageBody>
         <FloatingCard>
           <WorkordersToolbar
-            selectedTemplateId={selectedTemplateId}
-            templates={templates}
-            onTemplateChange={handleTemplateChange}
             onOpenFormats={() => setManageOpen(true)}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
@@ -305,16 +433,10 @@ export function WorkordersPageContent() {
 // ── Toolbar ──────────────────────────────────────────────────────────────────
 
 function WorkordersToolbar({
-  selectedTemplateId,
-  templates,
-  onTemplateChange,
   onOpenFormats,
   searchQuery,
   onSearchChange,
 }: {
-  selectedTemplateId: string;
-  templates: NoteTemplate[];
-  onTemplateChange: (value: string) => void;
   onOpenFormats: () => void;
   searchQuery: string;
   onSearchChange: (value: string) => void;
@@ -322,29 +444,12 @@ function WorkordersToolbar({
   return (
     <div className="flex shrink-0 flex-col gap-3 border-b border-border/60 bg-gray-50 px-4 py-3 md:flex-row md:items-center md:px-5">
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <TemplateChip
-          active={selectedTemplateId === STANDARD_TEMPLATE_ID}
-          icon={DocumentText}
-          label="Standard"
-          onClick={() => onTemplateChange(STANDARD_TEMPLATE_ID)}
-        />
-        {templates.map((template, index) => {
-          const Icon = TEMPLATE_ICONS[index % TEMPLATE_ICONS.length];
-          return (
-            <TemplateChip
-              key={template.id}
-              active={selectedTemplateId === template.id}
-              icon={Icon}
-              label={template.name}
-              onClick={() => onTemplateChange(template.id)}
-            />
-          );
-        })}
         <button
           type="button"
-          className={cn(storeSettingsHeaderActionClass(), "ml-1")}
+          className={storeSettingsHeaderActionClass()}
           onClick={onOpenFormats}
         >
+          <ClipboardList className="h-3.5 w-3.5 shrink-0" size={14} />
           Formats
         </button>
       </div>
@@ -356,7 +461,7 @@ function WorkordersToolbar({
           value={searchQuery}
           onChange={(event) => onSearchChange(event.target.value)}
           placeholder="Search customer, job number…"
-          className="h-8 rounded-md border-gray-200 bg-white pl-8 text-sm shadow-sm"
+          className="h-8 rounded-full border-gray-200 bg-white pl-8 text-sm shadow-sm"
         />
       </div>
     </div>
@@ -416,6 +521,26 @@ function WorkorderTable({
   onStopRecording: () => void;
   onRetry: () => void;
 }) {
+  const [sortKey, setSortKey] = React.useState<WorkorderSortKey>("updated");
+  const [sortDirection, setSortDirection] = React.useState<WorkorderSortDirection>("desc");
+
+  const sortedWorkorders = React.useMemo(
+    () => sortWorkorders(workorders, sortKey, sortDirection),
+    [workorders, sortKey, sortDirection],
+  );
+
+  const handleSort = React.useCallback(
+    (column: WorkorderSortKey) => {
+      if (sortKey === column) {
+        setSortDirection((currentDirection) => (currentDirection === "asc" ? "desc" : "asc"));
+        return;
+      }
+      setSortKey(column);
+      setSortDirection(column === "updated" ? "desc" : "asc");
+    },
+    [sortKey],
+  );
+
   if (loading) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center py-20">
@@ -461,14 +586,38 @@ function WorkorderTable({
   return (
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
       <div className="sticky top-0 z-[1] hidden grid-cols-[minmax(0,1.4fr)_5.5rem_minmax(0,1fr)_minmax(0,1.2fr)_auto] gap-3 border-b border-gray-100 bg-white/95 px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-gray-400 backdrop-blur md:grid md:px-5">
-        <span>Customer</span>
-        <span>Job</span>
-        <span>Status</span>
-        <span>Latest note</span>
+        <WorkorderSortButton
+          label="Customer"
+          column="customer"
+          sortKey={sortKey}
+          sortDirection={sortDirection}
+          onSort={handleSort}
+        />
+        <WorkorderSortButton
+          label="Job"
+          column="job"
+          sortKey={sortKey}
+          sortDirection={sortDirection}
+          onSort={handleSort}
+        />
+        <WorkorderSortButton
+          label="Status"
+          column="status"
+          sortKey={sortKey}
+          sortDirection={sortDirection}
+          onSort={handleSort}
+        />
+        <WorkorderSortButton
+          label="Latest note"
+          column="note"
+          sortKey={sortKey}
+          sortDirection={sortDirection}
+          onSort={handleSort}
+        />
         <span className="text-right">Dictate</span>
       </div>
       <div className="divide-y divide-gray-100">
-        {workorders.map((workorder) => (
+        {sortedWorkorders.map((workorder) => (
           <WorkorderRow
             key={workorder.workorder_id}
             workorder={workorder}
@@ -524,10 +673,17 @@ function WorkorderRow({
   const due = formatDay(workorder.eta_out);
   const edited = formatRelativeEdited(workorder.updated_at);
   const preview = workorder.note.split("\n").filter(Boolean).slice(-1)[0] ?? "No notes yet";
+  const fullNote = workorder.note.trim();
   const activeTemplateName =
     rowTemplateId === STANDARD_TEMPLATE_ID
       ? "Standard"
       : (templates.find((template) => template.id === rowTemplateId)?.name ?? "Standard");
+  const messageHref = buildCustomerEnquiriesNestUrl({
+    compose: true,
+    phone: workorder.customer_phone ?? undefined,
+    name: workorder.customer_name,
+    customerId: workorder.customer_id,
+  });
 
   return (
     <div
@@ -536,40 +692,69 @@ function WorkorderRow({
         isRecording ? "bg-gray-50" : "hover:bg-gray-50/80",
       )}
     >
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="truncate text-sm font-medium text-gray-900">{workorder.customer_name}</p>
-          {edited ? (
-            <span className="hidden shrink-0 rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 sm:inline">
-              {edited}
-            </span>
-          ) : null}
+      <div className="flex min-w-0 items-center gap-2.5">
+        <LightspeedLogo className="h-6 w-6 shrink-0 rounded-full object-cover" />
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="truncate text-sm font-medium text-gray-900">{workorder.customer_name}</p>
+            {edited ? (
+              <span className="hidden shrink-0 rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 sm:inline">
+                {edited}
+              </span>
+            ) : null}
+          </div>
+          <p className="truncate text-[11px] text-gray-400 md:hidden">
+            #{workorder.workorder_id}
+            {due ? ` · Due ${due}` : ""}
+          </p>
         </div>
-        <p className="truncate text-[11px] text-gray-400 md:hidden">
-          #{workorder.workorder_id}
-          {due ? ` · Due ${due}` : ""}
-        </p>
       </div>
 
       <p className="hidden truncate text-xs tabular-nums text-gray-500 md:block">
         #{workorder.workorder_id}
       </p>
 
-      <p className="hidden truncate text-xs text-gray-500 md:block">
-        {workorder.status_name}
-        {due ? ` · Due ${due}` : ""}
-      </p>
+      <div className="hidden min-w-0 items-center gap-1.5 md:flex">
+        <WorkorderStatusBadge status={workorder.status_name} />
+        {due ? <span className="truncate text-xs text-gray-400">Due {due}</span> : null}
+      </div>
 
-      <p className="hidden truncate text-xs text-gray-400 md:block">{preview}</p>
+      {fullNote ? (
+        <TooltipProvider delayDuration={1000}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <p className="hidden truncate text-xs text-gray-400 md:block">{preview}</p>
+            </TooltipTrigger>
+            <TooltipContent
+              side="top"
+              sideOffset={6}
+              className="max-w-sm whitespace-pre-wrap rounded-xl border border-gray-200 bg-white px-3 py-2 text-left text-xs leading-relaxed text-gray-700 shadow-md"
+            >
+              {fullNote}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ) : (
+        <p className="hidden truncate text-xs text-gray-400 md:block">{preview}</p>
+      )}
 
       <div className="flex items-center justify-end gap-1.5">
+        <Link
+          href={messageHref}
+          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 text-xs font-medium text-gray-800 shadow-sm transition-colors hover:bg-gray-50 sm:px-3"
+          aria-label={`Send Nest message to ${workorder.customer_name}`}
+        >
+          <NestLogo className="h-[14px] w-[14px]" />
+          <span className="hidden sm:inline">Send message</span>
+        </Link>
+
         <div className="relative" ref={menuRef}>
           <button
             type="button"
             disabled={dictationLocked && !isRecording}
             onClick={() => setTemplateMenuOpen((open) => !open)}
             className={cn(
-              "inline-flex h-8 items-center gap-1 rounded-md border border-gray-200 bg-white px-2 text-xs text-gray-600 shadow-sm transition-colors hover:bg-gray-50",
+              "inline-flex h-8 items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 text-xs text-gray-600 shadow-sm transition-colors hover:bg-gray-50",
               (dictationLocked && !isRecording) && "opacity-50",
             )}
             aria-label="Choose note format for this dictation"
@@ -628,7 +813,7 @@ function WorkorderRow({
               : `Dictate notes for ${workorder.customer_name}`
           }
           className={cn(
-            "inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium shadow-sm transition-colors",
+            "inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium shadow-sm transition-colors",
             isRecording
               ? "bg-gray-900 text-white hover:bg-gray-800"
               : "border border-gray-200 bg-white text-gray-800 hover:bg-gray-50",

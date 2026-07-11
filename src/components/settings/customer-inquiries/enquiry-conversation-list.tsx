@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Inbox } from "@/components/layout/app-sidebar/dashboard-icons";
+import { AlertCircle, Inbox, Instagram } from "@/components/layout/app-sidebar/dashboard-icons";
 import { GmailLogo } from "@/components/genie/gmail-logo";
 import { NestLogo } from "@/components/genie/nest-logo";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,8 @@ function SourceMark({ row }: { row: UnifiedInboxRow }) {
     <span className="flex h-9 w-9 shrink-0 overflow-hidden rounded-md border border-gray-200 bg-white">
       {row.source === "gmail" ? (
         <GmailLogo className="m-auto h-4 w-auto max-w-[22px] object-contain" />
+      ) : row.source === "instagram" ? (
+        <Instagram className="m-auto h-4 w-4 text-gray-500" />
       ) : (
         <NestLogo className="h-full w-full rounded-none object-cover" />
       )}
@@ -171,7 +173,7 @@ export function EnquiryConversationList({ c }: { c: UnifiedInboxController }) {
         <p className="mt-1 max-w-[240px] text-xs text-gray-500">
           {c.searchActive
             ? "Try a different name, email, or subject line."
-            : "New Gmail and Nest messages will show up here automatically."}
+            : "New Gmail, Instagram and Nest messages will show up here automatically."}
         </p>
       </div>
     );
