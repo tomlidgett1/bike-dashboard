@@ -129,7 +129,8 @@ export class LightspeedApiError extends Error {
     rateLimitType?: string | null
     cfRay?: string | null
   }) {
-    super(message)
+    const detail = summariseLightspeedErrorBody(args.body)
+    super(detail ? `${message} — ${detail}` : message)
     this.name = 'LightspeedApiError'
     this.status = args.status
     this.body = args.body
@@ -137,6 +138,24 @@ export class LightspeedApiError extends Error {
     this.rateLimitType = args.rateLimitType ?? null
     this.cfRay = args.cfRay ?? null
   }
+}
+
+function summariseLightspeedErrorBody(body: string): string | null {
+  const trimmed = body?.trim()
+  if (!trimmed) return null
+  try {
+    const parsed = JSON.parse(trimmed) as { message?: unknown; httpMessage?: unknown }
+    const message =
+      typeof parsed.message === 'string'
+        ? parsed.message.trim()
+        : typeof parsed.httpMessage === 'string'
+          ? parsed.httpMessage.trim()
+          : ''
+    if (message) return message.slice(0, 280)
+  } catch {
+    // fall through to raw body
+  }
+  return trimmed.replace(/\s+/g, ' ').slice(0, 280)
 }
 
 function isAbortError(error: unknown): boolean {
@@ -1606,10 +1625,16 @@ export class LightspeedClient {
   /**
    * Deposit funds onto a customer's Lightspeed Credit Account via a completed
    * Sale with paired SalePayments (inbound money + Credit Account deposit).
+   *
+   * If the customer has no primary credit account yet, omit creditAccountID on
+   * the Credit Account SalePayment — Lightspeed creates and links one as part
+   * of the sale. Do NOT POST /CreditAccount.json for this: that endpoint either
+   * requires a gift-card code or creates gift-card accounts that cannot receive
+   * Credit Account deposits ("SalePayment.creditAccountID != Customer.creditAccountID").
    */
   async createCustomerCreditDeposit(params: {
     customerID: string
-    creditAccountID: string
+    creditAccountID?: string | null
     amountCents: number
     paymentRequestId: string
     description?: string | null
@@ -1618,6 +1643,7 @@ export class LightspeedClient {
     saleID: string
     creditAccountID: string
     balanceAfter: number | null
+    creditAccountCreated: boolean
   }> {
     const accountId = await this.getAccountId()
 
@@ -1666,13 +1692,33 @@ export class LightspeedClient {
       throw new Error('[Lightspeed] No inbound payment type found for credit deposit')
     }
 
+    let creditAccountID =
+      params.creditAccountID && params.creditAccountID !== '0'
+        ? params.creditAccountID
+        : null
+    let creditAccountCreated = false
+
+    if (!creditAccountID) {
+      const customer = await this.getCustomer(params.customerID, {
+        load_relations: '["CreditAccount"]',
+      })
+      const existingId =
+        customer.creditAccountID && customer.creditAccountID !== '0'
+          ? customer.creditAccountID
+          : (customer as { CreditAccount?: { creditAccountID?: string } }).CreditAccount
+              ?.creditAccountID
+      if (existingId && existingId !== '0') {
+        creditAccountID = existingId
+      }
+    }
+
     const payload = buildCreditDepositSalePayload(
       {
         shopID: shop.shopID,
         registerID: register.registerID,
         employeeID: employee.employeeID,
         customerID: params.customerID,
-        creditAccountID: params.creditAccountID,
+        creditAccountID,
         inboundPaymentTypeID: inboundPaymentType.paymentTypeID,
         creditAccountPaymentTypeID: creditAccountPaymentType.paymentTypeID,
       },
@@ -1684,21 +1730,60 @@ export class LightspeedClient {
       },
     )
 
-    const saleResponse = await this.request<{ Sale: LightspeedSale }>(
-      `/Account/${accountId}/Sale.json`,
-      { method: 'POST', body: JSON.stringify(payload) },
-    )
+    const saleResponse = await this.request<{
+      Sale: LightspeedSale & {
+        Customer?: { creditAccountID?: string }
+        SalePayments?: {
+          SalePayment?:
+            | Array<{ creditAccountID?: string }>
+            | { creditAccountID?: string }
+        }
+      }
+    }>(`/Account/${accountId}/Sale.json`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
 
     const saleID = saleResponse.Sale?.saleID
     if (!saleID) {
       throw new Error('[Lightspeed] Credit deposit sale created without a saleID')
     }
 
+    if (!creditAccountID) {
+      creditAccountCreated = true
+      const fromCustomer = saleResponse.Sale?.Customer?.creditAccountID
+      const payments = this.ensureArray(saleResponse.Sale?.SalePayments?.SalePayment)
+      const fromPayment = payments.find(
+        (payment) => payment.creditAccountID && payment.creditAccountID !== '0',
+      )?.creditAccountID
+      creditAccountID =
+        (fromCustomer && fromCustomer !== '0' ? fromCustomer : null) ||
+        fromPayment ||
+        null
+
+      if (!creditAccountID) {
+        const refreshed = await this.getCustomer(params.customerID, {
+          load_relations: '["CreditAccount"]',
+        })
+        creditAccountID =
+          refreshed.creditAccountID && refreshed.creditAccountID !== '0'
+            ? refreshed.creditAccountID
+            : (refreshed as { CreditAccount?: { creditAccountID?: string } }).CreditAccount
+                ?.creditAccountID || null
+      }
+    }
+
+    if (!creditAccountID) {
+      throw new Error(
+        '[Lightspeed] Credit deposit sale succeeded but no primary credit account ID was returned',
+      )
+    }
+
     let balanceAfter: number | null = null
     try {
       const credit = await this.request<{
         CreditAccount?: { balance?: string }
-      }>(`/Account/${accountId}/CreditAccount/${params.creditAccountID}.json`)
+      }>(`/Account/${accountId}/CreditAccount/${creditAccountID}.json`)
       const raw = credit.CreditAccount?.balance
       if (raw != null && raw !== '') {
         const parsed = Number.parseFloat(raw)
@@ -1710,21 +1795,25 @@ export class LightspeedClient {
 
     return {
       saleID,
-      creditAccountID: params.creditAccountID,
+      creditAccountID,
       balanceAfter,
+      creditAccountCreated,
     }
   }
 
   /**
-   * Find or create the non-gift-card CreditAccount for a customer.
+   * Resolve the customer's primary (non-gift-card) CreditAccount.
+   *
+   * Primary accounts cannot be created via POST /CreditAccount.json (that path
+   * either rejects without a gift-card code, or creates gift cards that are not
+   * linked to Customer.creditAccountID). Creation happens inside
+   * createCustomerCreditDeposit by omitting creditAccountID on the sale.
    */
   async findOrCreateCustomerCreditAccount(customerID: string): Promise<{
-    creditAccountID: string
+    creditAccountID: string | null
     balance: number | null
     created: boolean
   }> {
-    const accountId = await this.getAccountId()
-
     const customer = await this.getCustomer(customerID, {
       load_relations: '["CreditAccount"]',
     })
@@ -1745,29 +1834,7 @@ export class LightspeedClient {
       return { creditAccountID: existingId, balance, created: false }
     }
 
-    const created = await this.request<{
-      CreditAccount: { creditAccountID: string; balance?: string }
-    }>(`/Account/${accountId}/CreditAccount.json`, {
-      method: 'POST',
-      body: JSON.stringify({
-        name: 'Customer Credit Account',
-        customerID,
-        giftCard: 'false',
-      }),
-    })
-
-    const creditAccountID = created.CreditAccount?.creditAccountID
-    if (!creditAccountID) {
-      throw new Error('[Lightspeed] Failed to create customer credit account')
-    }
-
-    const raw = created.CreditAccount?.balance
-    const balance =
-      raw != null && raw !== '' && Number.isFinite(Number.parseFloat(raw))
-        ? Number.parseFloat(raw)
-        : null
-
-    return { creditAccountID, balance, created: true }
+    return { creditAccountID: null, balance: null, created: false }
   }
 
   /**
@@ -2126,10 +2193,14 @@ export function createLightspeedClient(userId: string): LightspeedClient {
 }
 
 /**
- * Deep link to view a purchase order in the Lightspeed Retail (R-Series) web UI.
- * Example: https://aus.merchantos.com/?name=purchase.views.purchase&form_name=view&id=4272&tab=main
+ * Deep link helpers live in ./web-urls so client components can import them
+ * without pulling in the full Lightspeed API client.
  */
-export function lightspeedPurchaseOrderUrl(orderId: string): string {
-  const base = process.env.LIGHTSPEED_WEB_BASE_URL?.replace(/\/$/, '') || 'https://aus.merchantos.com'
-  return `${base}/?name=purchase.views.purchase&form_name=view&id=${encodeURIComponent(orderId)}&tab=main`
-}
+export {
+  lightspeedWebBaseUrl,
+  lightspeedPurchaseOrderUrl,
+  lightspeedSaleUrl,
+  lightspeedCustomerUrl,
+  lightspeedWorkorderUrl,
+} from "./web-urls";
+

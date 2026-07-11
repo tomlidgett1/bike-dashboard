@@ -5,7 +5,6 @@ import {
 } from "@/lib/nest/enrich-chats-with-lightspeed";
 import { proxyNestBrandPortalRequest } from "@/lib/nest/brand-portal-client";
 import {
-  annotateNestChatChannels,
   loadNestChatsFromSupabase,
   loadNestThreadSyncState,
   touchNestSyncTimestamp,
@@ -132,7 +131,7 @@ export async function syncNestInboxFromPortal(
     });
   }
 
-  return annotateNestChatChannels(supabase, userId, chats);
+  return loadNestChatsFromSupabase(supabase, userId);
 }
 
 export async function syncNestThreadFromPortal(

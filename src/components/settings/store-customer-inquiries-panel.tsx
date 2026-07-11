@@ -13,6 +13,7 @@ import {
   Search,
   Send,
   Settings,
+  Star,
   UserX,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { GmailLogo } from "@/components/genie/gmail-logo";
@@ -41,6 +42,7 @@ import {
   useUnifiedInboxController,
   type UnifiedInboxController,
 } from "@/components/settings/customer-inquiries/use-unified-inbox-controller";
+import { SHOW_GOOGLE_BUSINESS_CONNECT } from "@/components/settings/customer-inquiries/google-business-connect-card";
 import {
   FloatingCard,
   FloatingCardPageBody,
@@ -268,6 +270,20 @@ function CustomerEnquiriesHeaderActions({
             <Instagram className="size-[15px]" />
           )}
           Connect Instagram
+        </button>
+      ) : null}
+      {SHOW_GOOGLE_BUSINESS_CONNECT &&
+      c.googleReviewsStatusReady &&
+      !c.googleReviewsConnected ? (
+        <button
+          type="button"
+          onClick={() => {
+            window.location.href = "/api/store/google-business/auth/initiate";
+          }}
+          className={storeSettingsHeaderActionClass(false, false)}
+        >
+          <Star className="size-[15px]" />
+          Connect Google Business
         </button>
       ) : null}
     </>

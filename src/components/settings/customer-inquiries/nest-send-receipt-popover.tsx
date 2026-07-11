@@ -17,6 +17,81 @@ type WorkorderReceiptOption = {
   can_send_receipt: boolean;
 };
 
+type ReceiptOptionsPayload = {
+  workorders: WorkorderReceiptOption[];
+  customer_name: string | null;
+  error?: string;
+};
+
+const CLIENT_CACHE_TTL_MS = 60_000;
+const clientCache = new Map<
+  string,
+  { expiresAt: number; payload: ReceiptOptionsPayload; inflight?: Promise<ReceiptOptionsPayload> }
+>();
+
+function cacheKey(chatId: string, customerId?: string | null): string {
+  return `${chatId}:${customerId?.trim() || ""}`;
+}
+
+function buildReceiptOptionsUrl(
+  chatId: string,
+  customerId?: string | null,
+  customerName?: string | null,
+): string {
+  const params = new URLSearchParams();
+  if (chatId) params.set("chatId", chatId);
+  if (customerId?.trim()) params.set("customerId", customerId.trim());
+  if (customerName?.trim()) params.set("customerName", customerName.trim());
+  return `/api/store/workorders/receipt-options?${params.toString()}`;
+}
+
+async function fetchReceiptOptions(
+  chatId: string,
+  customerId?: string | null,
+  customerName?: string | null,
+): Promise<ReceiptOptionsPayload> {
+  const key = cacheKey(chatId, customerId);
+  const cached = clientCache.get(key);
+  if (cached && cached.expiresAt > Date.now() && !cached.inflight) {
+    return cached.payload;
+  }
+  if (cached?.inflight) return cached.inflight;
+
+  const inflight = (async () => {
+    const res = await fetch(buildReceiptOptionsUrl(chatId, customerId, customerName), {
+      cache: "no-store",
+    });
+    const data = (await res.json()) as {
+      workorders?: WorkorderReceiptOption[];
+      customer_name?: string;
+      error?: string;
+    };
+    if (!res.ok) {
+      throw new Error(data.error || "Could not load workorders.");
+    }
+    const payload: ReceiptOptionsPayload = {
+      workorders: data.workorders ?? [],
+      customer_name: data.customer_name ?? null,
+    };
+    clientCache.set(key, {
+      expiresAt: Date.now() + CLIENT_CACHE_TTL_MS,
+      payload,
+    });
+    return payload;
+  })().catch((error) => {
+    clientCache.delete(key);
+    throw error;
+  });
+
+  clientCache.set(key, {
+    expiresAt: Date.now() + CLIENT_CACHE_TTL_MS,
+    payload: cached?.payload ?? { workorders: [], customer_name: null },
+    inflight,
+  });
+
+  return inflight;
+}
+
 function formatEdited(value: string): string {
   const parsed = Date.parse(value);
   if (Number.isNaN(parsed)) return "";
@@ -71,9 +146,13 @@ function useAnchoredPanelStyle(
 
 export function NestSendReceiptPopover({
   chatId,
+  customerId,
+  customerName: customerNameProp,
   onPrepared,
 }: {
   chatId: string;
+  customerId?: string | null;
+  customerName?: string | null;
   onPrepared: (payload: {
     attachmentId: string;
     filename: string;
@@ -85,7 +164,9 @@ export function NestSendReceiptPopover({
   const [loading, setLoading] = React.useState(false);
   const [isPreparing, setIsPreparing] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [customerName, setCustomerName] = React.useState<string | null>(null);
+  const [customerName, setCustomerName] = React.useState<string | null>(
+    customerNameProp ?? null,
+  );
   const [workorders, setWorkorders] = React.useState<WorkorderReceiptOption[]>([]);
   const anchorRef = React.useRef<HTMLButtonElement>(null);
   const panelRef = React.useRef<HTMLDivElement>(null);
@@ -95,31 +176,49 @@ export function NestSendReceiptPopover({
     setMounted(true);
   }, []);
 
+  // Prefetch as soon as the composer mounts so the popover is warm on click.
+  React.useEffect(() => {
+    let cancelled = false;
+    void fetchReceiptOptions(chatId, customerId, customerNameProp)
+      .then((payload) => {
+        if (cancelled) return;
+        setWorkorders(payload.workorders);
+        setCustomerName(payload.customer_name ?? customerNameProp ?? null);
+        setError(null);
+      })
+      .catch(() => {
+        // Keep quiet until the user opens the popover.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chatId, customerId, customerNameProp]);
+
   React.useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setLoading(true);
+    const key = cacheKey(chatId, customerId);
+    const cached = clientCache.get(key);
+    if (cached && cached.expiresAt > Date.now() && !cached.inflight) {
+      setWorkorders(cached.payload.workorders);
+      setCustomerName(cached.payload.customer_name ?? customerNameProp ?? null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    // Prefetch may already have filled the list — keep it visible while refreshing.
+    setLoading((current) => current || workorders.length === 0);
     setError(null);
-    void fetch(`/api/store/workorders/receipt-options?chatId=${encodeURIComponent(chatId)}`)
-      .then(async (res) => {
-        const data = (await res.json()) as {
-          workorders?: WorkorderReceiptOption[];
-          customer_name?: string;
-          error?: string;
-        };
-        if (!res.ok) {
-          throw new Error(data.error || "Could not load workorders.");
-        }
-        return data;
-      })
-      .then((data) => {
+    void fetchReceiptOptions(chatId, customerId, customerNameProp)
+      .then((payload) => {
         if (cancelled) return;
-        setWorkorders(data.workorders ?? []);
-        setCustomerName(data.customer_name ?? null);
+        setWorkorders(payload.workorders);
+        setCustomerName(payload.customer_name ?? customerNameProp ?? null);
       })
       .catch((err) => {
         if (!cancelled) {
-          setWorkorders([]);
+          if (workorders.length === 0) setWorkorders([]);
           setError(err instanceof Error ? err.message : "Could not load workorders.");
         }
       })
@@ -129,7 +228,8 @@ export function NestSendReceiptPopover({
     return () => {
       cancelled = true;
     };
-  }, [open, chatId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only refetch when the popover opens / identity changes
+  }, [open, chatId, customerId, customerNameProp]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -212,37 +312,37 @@ export function NestSendReceiptPopover({
               </p>
             ) : (
               workorders.map((workorder) => (
-                  <button
-                    key={workorder.workorder_id}
-                    type="button"
-                    disabled={!workorder.can_send_receipt || isPreparing}
-                    onClick={() => void prepareReceipt(workorder.workorder_id)}
-                    className={cn(
-                      "flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors",
-                      workorder.can_send_receipt
-                        ? "hover:bg-gray-50"
-                        : "cursor-not-allowed opacity-50",
-                    )}
-                  >
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-medium text-gray-900">
-                        #{workorder.workorder_id}
-                      </span>
-                      <span className="shrink-0 text-[10px] text-gray-400">
-                        {formatEdited(workorder.updated_at)}
-                      </span>
+                <button
+                  key={workorder.workorder_id}
+                  type="button"
+                  disabled={!workorder.can_send_receipt || isPreparing}
+                  onClick={() => void prepareReceipt(workorder.workorder_id)}
+                  className={cn(
+                    "flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors",
+                    workorder.can_send_receipt
+                      ? "hover:bg-gray-50"
+                      : "cursor-not-allowed opacity-50",
+                  )}
+                >
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-gray-900">
+                      #{workorder.workorder_id}
                     </span>
-                    <span className="truncate text-[11px] text-gray-500">
-                      {workorder.status_name}
-                      {workorder.note_preview ? ` · ${workorder.note_preview}` : ""}
+                    <span className="shrink-0 text-[10px] text-gray-400">
+                      {formatEdited(workorder.updated_at)}
                     </span>
-                    {!workorder.can_send_receipt ? (
-                      <span className="text-[10px] text-gray-400">No linked sale receipt yet</span>
-                    ) : (
-                      <span className="text-[10px] text-gray-400">Tap to attach receipt PDF</span>
-                    )}
-                  </button>
-                ))
+                  </span>
+                  <span className="truncate text-[11px] text-gray-500">
+                    {workorder.status_name}
+                    {workorder.note_preview ? ` · ${workorder.note_preview}` : ""}
+                  </span>
+                  {!workorder.can_send_receipt ? (
+                    <span className="text-[10px] text-gray-400">No linked sale receipt yet</span>
+                  ) : (
+                    <span className="text-[10px] text-gray-400">Tap to attach receipt PDF</span>
+                  )}
+                </button>
+              ))
             )}
           </div>
 
@@ -275,7 +375,7 @@ export function NestSendReceiptPopover({
         {isPreparing ? (
           <Loader2 className="size-[14px] animate-spin" />
         ) : (
-          <ReceiptText className="size-[14px]" />
+          <ReceiptText className="size-[14px] text-amber-600" />
         )}
         Send receipt
       </button>

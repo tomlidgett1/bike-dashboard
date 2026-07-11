@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import {
+  NEST_COMPOSE_QUICK_ACTIONS_PREFS_KEY,
+  parseNestComposeQuickActions,
+  resolveGoogleReviewUrl,
+  serializeNestComposeQuickActions,
+  type NestComposeQuickAction,
+} from "@/lib/nest/compose-quick-actions";
+import {
   DEFAULT_NEST_MESSAGE_INTRO,
   DEFAULT_NEST_MESSAGE_SIGNOFF,
   resolveNestMessageTemplates,
@@ -28,7 +35,7 @@ async function requireStoreUser() {
   const { data: profile, error: profileError } = await supabase
     .from("users")
     .select(
-      "account_type, bicycle_store, business_name, nest_message_intro, nest_message_signoff",
+      "account_type, bicycle_store, business_name, phone, nest_message_intro, nest_message_signoff, preferences",
     )
     .eq("user_id", user.id)
     .maybeSingle();
@@ -42,6 +49,28 @@ async function requireStoreUser() {
   }
 
   return { supabase, userId: user.id, profile } as const;
+}
+
+function preferencesObject(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    return { ...(raw as Record<string, unknown>) };
+  }
+  return {};
+}
+
+function quickActionsFromProfile(preferences: unknown): NestComposeQuickAction[] {
+  const prefs = preferencesObject(preferences);
+  return parseNestComposeQuickActions(prefs[NEST_COMPOSE_QUICK_ACTIONS_PREFS_KEY]);
+}
+
+function googleReviewUrlFromProfile(preferences: unknown): string | null {
+  return resolveGoogleReviewUrl({
+    preferences,
+    envUrl:
+      process.env.GOOGLE_REVIEW_URL?.trim() ||
+      process.env.NEXT_PUBLIC_GOOGLE_REVIEW_URL?.trim() ||
+      null,
+  });
 }
 
 export async function GET() {
@@ -60,6 +89,9 @@ export async function GET() {
       signoff: DEFAULT_NEST_MESSAGE_SIGNOFF,
     },
     storeName: auth.profile.business_name ?? null,
+    storePhone: auth.profile.phone ?? null,
+    quickActions: quickActionsFromProfile(auth.profile.preferences),
+    googleReviewUrl: googleReviewUrlFromProfile(auth.profile.preferences),
   });
 }
 
@@ -75,6 +107,8 @@ export async function PATCH(request: NextRequest) {
   }
 
   const updates: Partial<NestMessageTemplateSettings> = {};
+  let nextQuickActions: NestComposeQuickAction[] | null = null;
+  let nextPreferences: Record<string, unknown> | null = null;
 
   if ("intro" in body) {
     if (typeof body.intro !== "string") {
@@ -90,15 +124,24 @@ export async function PATCH(request: NextRequest) {
     updates.signoff = body.signoff.trim();
   }
 
-  if (!("intro" in body) && !("signoff" in body)) {
+  if ("quickActions" in body) {
+    nextQuickActions = serializeNestComposeQuickActions(body.quickActions);
+    nextPreferences = {
+      ...preferencesObject(auth.profile.preferences),
+      [NEST_COMPOSE_QUICK_ACTIONS_PREFS_KEY]: nextQuickActions,
+    };
+  }
+
+  if (!("intro" in body) && !("signoff" in body) && !("quickActions" in body)) {
     return json({ error: "Nothing to update." }, 400);
   }
 
   const { error } = await auth.supabase
     .from("users")
     .update({
-      ...( "intro" in body ? { nest_message_intro: updates.intro || null } : {}),
-      ...( "signoff" in body ? { nest_message_signoff: updates.signoff ?? null } : {}),
+      ...("intro" in body ? { nest_message_intro: updates.intro || null } : {}),
+      ...("signoff" in body ? { nest_message_signoff: updates.signoff ?? null } : {}),
+      ...(nextPreferences ? { preferences: nextPreferences } : {}),
     })
     .eq("user_id", auth.userId);
 
@@ -115,5 +158,11 @@ export async function PATCH(request: NextRequest) {
   return json({
     templates,
     storeName: auth.profile.business_name ?? null,
+    storePhone: auth.profile.phone ?? null,
+    quickActions:
+      nextQuickActions ?? quickActionsFromProfile(auth.profile.preferences),
+    googleReviewUrl: googleReviewUrlFromProfile(
+      nextPreferences ?? auth.profile.preferences,
+    ),
   });
 }

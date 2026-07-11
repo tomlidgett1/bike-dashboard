@@ -9,9 +9,8 @@ import {
   upsertPhoneContactToDb,
 } from '@/lib/customer-inquiries/lightspeed-phone-directory'
 import {
-  customerRecordMatchesPhone,
+  findCustomerByPhone,
   findLightspeedCustomerForInquiry,
-  lookupLightspeedCustomerForLab,
   normalizeAustralianMobileLocal,
 } from '@/lib/services/lightspeed/customer-search'
 import { createLightspeedClient } from '@/lib/services/lightspeed'
@@ -24,6 +23,16 @@ import type {
 import type { LightspeedInquiryContext } from '@/lib/customer-inquiries/types'
 
 type InquiryWorkorder = NonNullable<LightspeedInquiryContext['recent_workorders']>[number]
+
+const CONTEXT_CACHE_TTL_MS = 60_000
+const contextCache = new Map<
+  string,
+  { expiresAt: number; context: LightspeedInquiryContext; inflight?: Promise<LightspeedInquiryContext> }
+>()
+
+function contextCacheKey(userId: string, phone: string): string {
+  return `${userId}:${normalizePhoneForDirectory(phone) ?? phone}`
+}
 
 function ensureWorkorderArray<T>(value: T | T[] | undefined): T[] {
   if (!value) return []
@@ -65,34 +74,24 @@ function mapWorkorderLines(lines: LightspeedWorkorderLine[]): InquiryWorkorder['
     .filter((line) => line.note.length > 0)
 }
 
-async function mapRecentWorkorders(
-  client: ReturnType<typeof createLightspeedClient>,
+/** Map workorders from the list payload only — no per-row item fetches. */
+function mapRecentWorkorders(
   workorders: LightspeedWorkorderWithRelations[],
-): Promise<InquiryWorkorder[]> {
-  const top = workorders.slice(0, 5)
-  return Promise.all(
-    top.map(async (workorder) => {
-      const id = String(workorder.workorderID ?? '')
-      let items = ensureWorkorderArray(workorder.WorkorderItems?.WorkorderItem)
-      if (items.length === 0 && id) {
-        try {
-          items = await client.getWorkorderItems(id)
-        } catch {
-          items = []
-        }
-      }
-      const lines = ensureWorkorderArray(workorder.WorkorderLines?.WorkorderLine)
-      const statusName = String(workorder.WorkorderStatus?.name ?? '').trim()
-      return {
-        id,
-        title: String(workorder.note ?? workorder.internalNote ?? '').trim() || null,
-        status: statusName || String(workorder.workorderStatusID ?? '') || null,
-        updated_at: String(workorder.timeStamp ?? workorder.timeIn ?? '') || null,
-        items: mapWorkorderItems(items),
-        lines: mapWorkorderLines(lines),
-      }
-    }),
-  )
+): InquiryWorkorder[] {
+  return workorders.slice(0, 5).map((workorder) => {
+    const id = String(workorder.workorderID ?? '')
+    const items = ensureWorkorderArray(workorder.WorkorderItems?.WorkorderItem)
+    const lines = ensureWorkorderArray(workorder.WorkorderLines?.WorkorderLine)
+    const statusName = String(workorder.WorkorderStatus?.name ?? '').trim()
+    return {
+      id,
+      title: String(workorder.note ?? workorder.internalNote ?? '').trim() || null,
+      status: statusName || String(workorder.workorderStatusID ?? '') || null,
+      updated_at: String(workorder.timeStamp ?? workorder.timeIn ?? '') || null,
+      items: mapWorkorderItems(items),
+      lines: mapWorkorderLines(lines),
+    }
+  })
 }
 
 function ensureArray<T>(value: T | T[] | undefined): T[] {
@@ -130,7 +129,45 @@ function customerPhone(customer: LightspeedCustomer): string | null {
   return first?.number?.trim() ?? null
 }
 
-export async function buildLightspeedContextFromPhone(args: {
+/**
+ * Resolve customer for a phone as cheaply as possible:
+ * directory id → direct getCustomer → phone filter → short scan.
+ */
+async function resolveCustomerForPhone(args: {
+  userId: string
+  phone: string
+  supabase?: SupabaseClient
+}): Promise<LightspeedCustomer | null> {
+  const client = createLightspeedClient(args.userId)
+
+  if (args.supabase) {
+    const directory = await loadPhoneContactsFromDb(args.supabase, args.userId, [args.phone])
+    const contact = directory.get(args.phone)
+    if (contact?.lightspeedCustomerId) {
+      try {
+        const cachedCustomer = await client.getCustomer(contact.lightspeedCustomerId, {
+          load_relations: '["Contact"]',
+        })
+        if (cachedCustomer) return cachedCustomer
+      } catch {
+        // Fall through to live phone lookup.
+      }
+    }
+  }
+
+  // Filter-only first (1–2 requests). Scan only if that misses.
+  const fromFilter = await findCustomerByPhone(args.userId, args.phone, {
+    allowScan: false,
+  })
+  if (fromFilter) return fromFilter
+
+  return findCustomerByPhone(args.userId, args.phone, {
+    allowScan: true,
+    maxScanPages: 5,
+  })
+}
+
+async function buildLightspeedContextFromPhoneUncached(args: {
   userId: string
   phone: string
   supabase?: SupabaseClient
@@ -146,31 +183,11 @@ export async function buildLightspeedContextFromPhone(args: {
   const normalizedPhone = normalizeAustralianMobileLocal(phone)
 
   try {
-    let customer: LightspeedCustomer | null = null
-
-    const lookup = await lookupLightspeedCustomerForLab(args.userId, {
+    const customer = await resolveCustomerForPhone({
+      userId: args.userId,
       phone,
-      maxScanPages: 10,
+      supabase: args.supabase,
     })
-    customer = lookup.customer
-
-    if (!customer && args.supabase) {
-      const cached = await loadPhoneContactsFromDb(args.supabase, args.userId, [phone])
-      const contact = cached.get(phone)
-      if (contact?.lightspeedCustomerId) {
-        try {
-          const client = createLightspeedClient(args.userId)
-          const cachedCustomer = await client.getCustomer(contact.lightspeedCustomerId, {
-            load_relations: '["Contact"]',
-          })
-          if (customerRecordMatchesPhone(cachedCustomer, phone)) {
-            customer = cachedCustomer
-          }
-        } catch {
-          customer = null
-        }
-      }
-    }
 
     if (!customer) {
       return {
@@ -183,7 +200,7 @@ export async function buildLightspeedContextFromPhone(args: {
 
     if (args.supabase) {
       const phoneNormalized = normalizePhoneForDirectory(phone) ?? phone
-      await upsertPhoneContactToDb(args.supabase, args.userId, phone, {
+      void upsertPhoneContactToDb(args.supabase, args.userId, phone, {
         phoneNormalized,
         firstName: customer.firstName ?? null,
         lastName: customer.lastName ?? null,
@@ -202,12 +219,10 @@ export async function buildLightspeedContextFromPhone(args: {
           sort: '-timeStamp',
           load_relations: '["WorkorderLines","WorkorderStatus","WorkorderItems"]',
         },
-        { targetCount: 5, maxPages: 2, limit: 25 },
+        { targetCount: 5, maxPages: 1, limit: 5 },
       ),
       fetchCustomerSalesSummary(args.userId, customerId),
     ])
-
-    const recentWorkorders = await mapRecentWorkorders(client, workorders)
 
     return {
       matched: true,
@@ -220,7 +235,7 @@ export async function buildLightspeedContextFromPhone(args: {
         serial: bike.serial,
         item_id: bike.itemId,
       })),
-      recent_workorders: recentWorkorders,
+      recent_workorders: mapRecentWorkorders(workorders),
       sales_summary: salesSummary,
       summary: `Matched Lightspeed customer ${customerName(customer)} (${customerId}).`,
     }
@@ -231,6 +246,51 @@ export async function buildLightspeedContextFromPhone(args: {
       summary: 'Lightspeed lookup unavailable for this mobile number.',
     }
   }
+}
+
+export async function buildLightspeedContextFromPhone(args: {
+  userId: string
+  phone: string
+  supabase?: SupabaseClient
+}): Promise<LightspeedInquiryContext> {
+  const phone = sanitizePhoneForLookup(args.phone) ?? args.phone.trim()
+  if (!phone || !isLikelyPhone(phone)) {
+    return {
+      matched: false,
+      summary: 'No valid mobile number provided for Lightspeed lookup.',
+    }
+  }
+
+  const key = contextCacheKey(args.userId, phone)
+  const cached = contextCache.get(key)
+  if (cached && cached.expiresAt > Date.now() && !cached.inflight) {
+    return cached.context
+  }
+  if (cached?.inflight) return cached.inflight
+
+  const inflight = buildLightspeedContextFromPhoneUncached({
+    ...args,
+    phone,
+  })
+    .then((context) => {
+      contextCache.set(key, {
+        expiresAt: Date.now() + CONTEXT_CACHE_TTL_MS,
+        context,
+      })
+      return context
+    })
+    .catch((error) => {
+      contextCache.delete(key)
+      throw error
+    })
+
+  contextCache.set(key, {
+    expiresAt: Date.now() + CONTEXT_CACHE_TTL_MS,
+    context: cached?.context ?? { matched: false },
+    inflight,
+  })
+
+  return inflight
 }
 
 export async function buildLightspeedInquiryContext(args: {
@@ -271,12 +331,10 @@ export async function buildLightspeedInquiryContext(args: {
           sort: '-timeStamp',
           load_relations: '["WorkorderLines","WorkorderStatus","WorkorderItems"]',
         },
-        { targetCount: 5, maxPages: 2, limit: 25 },
+        { targetCount: 5, maxPages: 1, limit: 5 },
       ),
       fetchCustomerSalesSummary(args.userId, customerId),
     ])
-
-    const recentWorkorders = await mapRecentWorkorders(client, workorders)
 
     const context: LightspeedInquiryContext = {
       matched: true,
@@ -289,7 +347,7 @@ export async function buildLightspeedInquiryContext(args: {
         serial: bike.serial,
         item_id: bike.itemId,
       })),
-      recent_workorders: recentWorkorders,
+      recent_workorders: mapRecentWorkorders(workorders),
       sales_summary: salesSummary,
       summary: `Matched Lightspeed customer ${customerName(customer)} (${customerId}).`,
     }

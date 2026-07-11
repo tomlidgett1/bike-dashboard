@@ -116,6 +116,7 @@ export async function POST(request: NextRequest) {
       conversation_id?: string;
       connected_account_id?: string;
       recipient_id?: string;
+      business_messaging_id?: string;
       text?: string;
     };
     const action = String(body.action ?? "").trim();
@@ -140,6 +141,7 @@ export async function POST(request: NextRequest) {
         connectedAccountId,
         recipientId,
         text,
+        businessMessagingId: String(body.business_messaging_id ?? "").trim() || null,
       });
 
       // Fold the sent message into the cached snapshot so the next poll
@@ -163,6 +165,8 @@ export async function POST(request: NextRequest) {
                     text,
                     from_id: null,
                     from_username: null,
+                    from_name: null,
+                    to_ids: [],
                     created_at: sentAt,
                     has_attachments: false,
                   },

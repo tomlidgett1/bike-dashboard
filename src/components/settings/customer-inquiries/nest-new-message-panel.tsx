@@ -135,6 +135,7 @@ export function NestNewMessagePanel({
   );
   const [sending, setSending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [resolvingMobile, setResolvingMobile] = React.useState(false);
   const [activeTemplateId, setActiveTemplateId] = React.useState<string | null>(null);
   const searchInputRef = React.useRef<HTMLInputElement>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
@@ -158,15 +159,53 @@ export function NestNewMessagePanel({
 
   React.useEffect(() => {
     if (!initialRecipient) return;
-    setSelectedMobile(initialRecipient.mobile?.trim() || "");
+    const mobile = initialRecipient.mobile?.trim() || "";
+    const customerId = initialRecipient.customerId?.trim() || "";
+    setSelectedMobile(mobile);
     setSelectedCustomerName(initialRecipient.customerName);
-    setSelectedCustomerId(
-      initialRecipient.customerId?.trim() || initialRecipient.customerName,
-    );
+    setSelectedCustomerId(customerId || initialRecipient.customerName);
     setRecipientQuery("");
     setCustomers([]);
     setCustomerSearchError(null);
+    setError(null);
     window.setTimeout(() => textareaRef.current?.focus(), 0);
+
+    // Workorder deep-links sometimes only carry customerId — look up the mobile.
+    if (mobile || !customerId || !/^\d+$/.test(customerId)) {
+      setResolvingMobile(false);
+      return;
+    }
+
+    let cancelled = false;
+    setResolvingMobile(true);
+    void searchNestCustomers(customerId)
+      .then((matches) => {
+        if (cancelled) return;
+        const match =
+          matches.find((customer) => customer.customerId === customerId) ?? matches[0];
+        if (match?.phone?.trim()) {
+          setSelectedMobile(match.phone.trim());
+          if (match.name?.trim()) setSelectedCustomerName(match.name.trim());
+          setError(null);
+        } else {
+          setError("No mobile number on file for this customer in Lightspeed.");
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Could not look up this customer’s mobile number.",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setResolvingMobile(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [initialRecipient]);
 
   React.useEffect(() => {
@@ -323,7 +362,7 @@ export function NestNewMessagePanel({
     }
   }
 
-  const canSend = Boolean(resolvedMobile && text.trim() && !sending);
+  const canSend = Boolean(resolvedMobile && text.trim() && !sending && !resolvingMobile);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-[#f6f6f7]">
@@ -352,7 +391,11 @@ export function NestNewMessagePanel({
                   <p className="truncate text-sm font-medium text-gray-900">{selectedCustomerName}</p>
                   {selectedMobile.trim() ? (
                     <p className="truncate text-xs text-gray-500">{selectedMobile}</p>
-                  ) : null}
+                  ) : resolvingMobile ? (
+                    <p className="truncate text-xs text-gray-500">Looking up mobile…</p>
+                  ) : (
+                    <p className="truncate text-xs text-gray-500">No mobile on file</p>
+                  )}
                 </div>
                 <button
                   type="button"

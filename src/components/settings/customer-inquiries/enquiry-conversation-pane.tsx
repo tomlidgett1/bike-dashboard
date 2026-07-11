@@ -2,12 +2,14 @@
 
 import * as React from "react";
 import {
+  ChatRound,
   ChevronLeft,
   Inbox,
-  Instagram,
   Loader2,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { GmailLogo } from "@/components/genie/gmail-logo";
+import { GoogleReviewsLogo } from "@/components/genie/google-reviews-logo";
+import { InstagramLogo } from "@/components/genie/instagram-logo";
 import { NestLogo } from "@/components/genie/nest-logo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -28,10 +30,19 @@ import type { UnifiedInboxController } from "./use-unified-inbox-controller";
 import type { LightspeedContext } from "./use-inquiries-controller";
 import { NestThreadMessage, sameMessageGroup } from "@/components/settings/nest-chat-messages";
 import { NestComposePill } from "@/components/settings/nest-compose-pill";
+import { NestPaymentStatusBanner } from "./nest-payment-status-banner";
 import {
   InstagramReplyComposer,
   InstagramThread,
 } from "./instagram-conversation-thread";
+import {
+  GoogleReviewReplyComposer,
+  GoogleReviewThread,
+} from "./google-review-pane";
+import {
+  GoogleBusinessConnectCard,
+  SHOW_GOOGLE_BUSINESS_CONNECT,
+} from "./google-business-connect-card";
 
 type ConversationPaneTab = "conversation" | "lightspeed";
 
@@ -91,7 +102,7 @@ function NestThread({
   return (
     <div
       ref={scrollRef}
-      className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-white px-5 py-5"
+      className="min-h-0 min-w-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden overscroll-contain bg-white px-5 py-5"
       style={{ WebkitOverflowScrolling: "touch" }}
     >
       {messages.map((message, index) => {
@@ -129,7 +140,9 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
   const isGmail = row?.source === "gmail";
   const isNest = row?.source === "nest";
   const isInstagram = row?.source === "instagram";
+  const isGoogle = row?.source === "google";
   const instagramConversation = row?.instagramItem ?? null;
+  const googleReview = row?.googleReviewItem ?? null;
   const nestThreadScrollRef = React.useRef<HTMLDivElement>(null);
   const instagramThreadScrollRef = React.useRef<HTMLDivElement>(null);
   const nestMessages = c.nestDetail?.messages ?? [];
@@ -173,13 +186,19 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
     return <EmptyConversationState />;
   }
 
-  // Instagram DMs carry no phone/email, so there is no Lightspeed match to show.
-  const paneTabs: EnquiriesNavTabItem<ConversationPaneTab>[] = isInstagram
-    ? [{ id: "conversation", label: "Messages" }]
-    : [
-        { id: "conversation", label: isGmail ? "Enquiry" : "Messages" },
-        { id: "lightspeed", label: "Lightspeed", icon: LightspeedMark },
-      ];
+  // Instagram DMs and Google reviews carry no phone/email, so there is no
+  // Lightspeed match to show.
+  const paneTabs: EnquiriesNavTabItem<ConversationPaneTab>[] =
+    isInstagram || isGoogle
+      ? [{ id: "conversation", label: isGoogle ? "Review" : "Messages", icon: ChatRound }]
+      : [
+          {
+            id: "conversation",
+            label: isGmail ? "Enquiry" : "Messages",
+            icon: ChatRound,
+          },
+          { id: "lightspeed", label: "Lightspeed", icon: LightspeedMark },
+        ];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-white">
@@ -203,7 +222,11 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
               {isGmail ? (
                 <GmailLogo className="h-3.5 w-auto" />
               ) : isInstagram ? (
-                <Instagram className="h-3.5 w-3.5 text-gray-500" />
+                <InstagramLogo className="h-3.5 w-3.5 rounded-sm" />
+              ) : isGoogle ? (
+                <span className="flex h-3.5 w-3.5 items-center justify-center overflow-hidden rounded-sm border border-gray-200">
+                  <GoogleReviewsLogo />
+                </span>
               ) : (
                 <NestLogo className="h-3.5 w-3.5" />
               )}
@@ -212,6 +235,9 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          {isNest && row.nestChatId ? (
+            <NestPaymentStatusBanner chatId={row.nestChatId} />
+          ) : null}
           <EnquiriesNavTabs
             size="sm"
             items={paneTabs}
@@ -234,6 +260,7 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
           isGmail && paneTab === "conversation" && "flex flex-col overflow-hidden bg-[#f6f6f7]",
           isGmail && paneTab === "lightspeed" && "overflow-y-auto px-4 pb-6 pt-4 md:px-5",
           isInstagram && "relative flex flex-col overflow-hidden",
+          isGoogle && "relative flex flex-col overflow-hidden",
         )}
       >
         {isGmail ? (
@@ -299,7 +326,7 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
               scrollRef={instagramThreadScrollRef}
             />
             <div className="shrink-0 bg-white px-4 py-3 md:px-5">
-              <div className="mx-auto w-full max-w-lg">
+              <div className="mx-auto w-full max-w-2xl">
                 <InstagramReplyComposer
                   conversation={instagramConversation}
                   onSend={c.handleInstagramSend}
@@ -308,6 +335,43 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
               </div>
             </div>
           </>
+        ) : null}
+
+        {isGoogle && googleReview ? (
+          <>
+            <GoogleReviewThread review={googleReview} />
+            <div className="shrink-0 bg-white px-4 py-3 md:px-5">
+              <div className="mx-auto w-full max-w-2xl">
+                <GoogleReviewReplyComposer
+                  review={googleReview}
+                  onSend={c.handleGoogleReviewReply}
+                  sending={c.googleReviewSending}
+                />
+              </div>
+            </div>
+          </>
+        ) : null}
+
+        {isGoogle && !googleReview ? (
+          <div className="flex flex-1 flex-col items-center justify-center px-4 py-10">
+            {SHOW_GOOGLE_BUSINESS_CONNECT ? (
+              <GoogleBusinessConnectCard
+                compact
+                onConnected={() => void c.handleRefreshAll()}
+                className="w-full max-w-md"
+              />
+            ) : (
+              <div className="text-center">
+                <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-md border border-gray-200 bg-white">
+                  <Inbox className="h-5 w-5 text-gray-400" />
+                </span>
+                <p className="mt-4 text-sm font-medium text-gray-900">No Google review selected</p>
+                <p className="mt-1 max-w-[240px] text-xs text-gray-500">
+                  Google reviews will show up here when they&rsquo;re available.
+                </p>
+              </div>
+            )}
+          </div>
         ) : null}
 
         {isNest ? (
@@ -323,11 +387,14 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
                   previously lost the absolute floating composer intermittently. */}
               {row.nestChatId ? (
                 <div className="shrink-0 bg-white px-4 py-3 md:px-5">
-                  <div className="mx-auto w-full max-w-lg">
+                  <div className="mx-auto w-full max-w-2xl">
                     <NestComposePill
                       chatId={row.nestChatId}
                       placeholder="Write a reply…"
                       showRequestMoney
+                      customerName={row.customerName}
+                      lightspeedCustomerId={c.nestLightspeedContext?.customer_id ?? null}
+                      lightspeedCustomerName={c.nestLightspeedContext?.customer_name ?? null}
                       sendHandlers={{
                         onOptimistic: (message) =>
                           c.handleNestMessageOptimistic(message, row.nestChatId!),

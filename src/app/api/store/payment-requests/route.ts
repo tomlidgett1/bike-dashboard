@@ -230,11 +230,13 @@ export async function GET(request: NextRequest) {
 
   const { data: requests, error: requestsError } = await auth.supabase
     .from("store_payment_requests")
-    .select("id, amount_cents, description, status, created_at, paid_at, customer_handle")
+    .select(
+      "id, amount_cents, description, status, created_at, paid_at, customer_handle, lightspeed_sale_id, lightspeed_credit_account_id, lightspeed_customer_id, lightspeed_synced_at, lightspeed_sync_status, lightspeed_sync_error",
+    )
     .eq("store_user_id", auth.userId)
     .eq("nest_chat_id", chatId)
     .order("created_at", { ascending: false })
-    .limit(5);
+    .limit(10);
 
   if (requestsError) {
     console.error("[payment-requests] list failed:", requestsError);
@@ -271,6 +273,12 @@ export async function GET(request: NextRequest) {
       createdAt: row.created_at,
       paidAt: row.paid_at,
       url: `${appUrl()}/pay/${row.id}`,
+      lightspeedSaleId: row.lightspeed_sale_id,
+      lightspeedCreditAccountId: row.lightspeed_credit_account_id,
+      lightspeedCustomerId: row.lightspeed_customer_id,
+      lightspeedSyncedAt: row.lightspeed_synced_at,
+      lightspeedSyncStatus: row.lightspeed_sync_status ?? "pending",
+      lightspeedSyncError: row.lightspeed_sync_error,
     })),
     creditBalance: creditBalanceCents / 100,
   });

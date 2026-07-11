@@ -1,0 +1,1723 @@
+import { getOpenAIClient, MODEL_MAP, REASONING_EFFORT, isGeminiModel } from './ai/models.ts';
+import { geminiSimpleText } from './ai/gemini.ts';
+import {
+  type MemoryItem,
+  type MemoryType,
+  type SourceKind,
+  type UnsummarisedMessage,
+  type ConversationSummary,
+  type ToolTrace,
+  insertMemoryItem,
+  supersedeMemoryItem,
+  confirmMemoryItem,
+  getActiveMemoryItems,
+} from './state.ts';
+import { EXTRACTOR_VERSION, USER_PROFILES_TABLE } from './env.ts';
+import { increment, METRICS } from './telemetry.ts';
+import { memoryContextHeader, contentHash } from './chunker.ts';
+import { embedChunks, type ChunkToEmbed } from './embedder.ts';
+import { softDeleteSource, insertEmbeddedChunks } from './ingestion-helpers.ts';
+import { getAdminClient } from './supabase.ts';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface CandidateMemory {
+  handle: string;
+  memoryType: MemoryType;
+  category: string;
+  valueText: string;
+  normalizedValue: string | null;
+  confidence: number;
+  durability: 'durable' | 'temporary' | 'uncertain' | 'corrected';
+  sourceMessageIds: number[];
+  sourceKind: SourceKind;
+  metadata?: Record<string, unknown>;
+}
+
+export type AdjudicationAction =
+  | { type: 'ADD_NEW' }
+  | { type: 'CONFIRM_EXISTING'; existingId: number }
+  | { type: 'SUPERSEDE_EXISTING'; existingId: number }
+  | { type: 'MARK_UNCERTAIN' }
+  | { type: 'REJECT' };
+
+const VALID_MEMORY_TYPES: Set<string> = new Set([
+  'identity', 'preference', 'plan', 'task_commitment',
+  'relationship', 'emotional_context', 'bio_fact', 'contextual_note',
+]);
+
+export const CATEGORY_TAXONOMY = {
+  singular: [
+    'location', 'employment', 'education', 'age', 'birthday',
+    'relationship_status', 'nationality', 'native_language',
+  ],
+  multi: [
+    'sport_team', 'music', 'food', 'pet', 'hobby', 'interest',
+    'skill', 'travel', 'health', 'preference', 'language',
+  ],
+  fallback: 'general',
+} as const;
+
+const ALL_CATEGORIES: Set<string> = new Set([
+  ...CATEGORY_TAXONOMY.singular,
+  ...CATEGORY_TAXONOMY.multi,
+  CATEGORY_TAXONOMY.fallback,
+]);
+
+const SINGULAR_CATEGORIES: Set<string> = new Set(CATEGORY_TAXONOMY.singular);
+
+const CATEGORY_ALIASES: Record<string, string> = {
+  'job': 'employment', 'work': 'employment', 'career': 'employment', 'occupation': 'employment', 'employer': 'employment',
+  'home': 'location', 'city': 'location', 'country': 'location', 'address': 'location', 'lives': 'location', 'residence': 'location',
+  'school': 'education', 'university': 'education', 'uni': 'education', 'college': 'education', 'degree': 'education', 'study': 'education',
+  'sports team': 'sport_team', 'sports': 'sport_team', 'team': 'sport_team', 'club': 'sport_team', 'supporter': 'sport_team',
+  'food preference': 'food', 'diet': 'food', 'cuisine': 'food', 'allergy': 'health', 'allergies': 'health',
+  'relationship': 'relationship_status', 'married': 'relationship_status', 'partner': 'relationship_status',
+  'born': 'birthday', 'dob': 'birthday', 'date of birth': 'birthday',
+  'language spoken': 'language', 'speaks': 'language',
+  'nationality': 'nationality', 'citizen': 'nationality', 'citizenship': 'nationality',
+  'native language': 'native_language', 'mother tongue': 'native_language',
+  'fitness': 'health', 'medical': 'health', 'condition': 'health',
+  'trip': 'travel', 'vacation': 'travel', 'holiday': 'travel', 'flight': 'travel',
+};
+
+const LOCATION_ROLE_VALUES = new Set(['home', 'current', 'frequent']);
+const LOCATION_CURRENT_PATTERN =
+  /\b(currently|right now|at the moment|for now|staying|visiting|in town|travelling|traveling|back in|this week|today|tonight)\b/i;
+const LOCATION_FREQUENT_PATTERN =
+  /\b(often|usually|regularly|frequently|office in|work in|parents in|family in|weekends in)\b/i;
+const LOCATION_ADDRESS_PATTERN =
+  /\b\d{1,5}\s+[\w'.-]+\s+(street|st|road|rd|avenue|ave|boulevard|blvd|drive|dr|lane|ln|way|place|pl|court|ct|crescent|cr|parade|pde|highway|hwy|circuit)\b/i;
+const LOCATION_STATE_PATTERN =
+  /\b(vic|victoria|nsw|new south wales|qld|queensland|wa|western australia|sa|south australia|tas|tasmania|act|nt|california|new york|texas|england|scotland|wales)\b/i;
+const LOCATION_SUBURB_PATTERN =
+  /\b(cbd|suburb|district|neighbourhood|neighborhood|borough|shire)\b/i;
+
+export function normaliseCategory(raw: string): string {
+  const cleaned = raw.toLowerCase().trim().replace(/[\s_-]+/g, '_');
+  if (ALL_CATEGORIES.has(cleaned)) return cleaned;
+  const aliased = CATEGORY_ALIASES[raw.toLowerCase().trim()];
+  if (aliased) return aliased;
+  return CATEGORY_TAXONOMY.fallback;
+}
+
+function readMetaString(
+  metadata: Record<string, unknown> | undefined,
+  key: string,
+): string | null {
+  const value = metadata?.[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function inferLocationRoleFromText(value: string): 'home' | 'current' | 'frequent' {
+  if (LOCATION_CURRENT_PATTERN.test(value)) return 'current';
+  if (LOCATION_FREQUENT_PATTERN.test(value)) return 'frequent';
+  return 'home';
+}
+
+function inferLocationPrecisionFromText(value: string): string {
+  if (LOCATION_ADDRESS_PATTERN.test(value)) return 'address';
+  if (LOCATION_SUBURB_PATTERN.test(value)) return 'suburb';
+  if (LOCATION_STATE_PATTERN.test(value) && value.includes(',')) return 'suburb';
+  if (LOCATION_STATE_PATTERN.test(value)) return 'state';
+  if (value.split(',').length >= 2) return 'city';
+  if (value.trim().split(/\s+/).length <= 3) return 'city';
+  return 'unknown';
+}
+
+function getCandidateLocationRole(candidate: CandidateMemory): 'home' | 'current' | 'frequent' {
+  const metaRole = readMetaString(candidate.metadata, 'role')?.toLowerCase();
+  if (metaRole && LOCATION_ROLE_VALUES.has(metaRole)) {
+    return metaRole as 'home' | 'current' | 'frequent';
+  }
+  return inferLocationRoleFromText(candidate.valueText);
+}
+
+function getMemoryLocationRole(memory: MemoryItem): 'home' | 'current' | 'frequent' {
+  const metaRole = readMetaString(memory.metadata, 'role')?.toLowerCase();
+  if (metaRole && LOCATION_ROLE_VALUES.has(metaRole)) {
+    return metaRole as 'home' | 'current' | 'frequent';
+  }
+  return inferLocationRoleFromText(memory.valueText);
+}
+
+function getCandidateSingularScope(candidate: CandidateMemory): string | null {
+  if (!SINGULAR_CATEGORIES.has(candidate.category)) return null;
+  if (candidate.category !== 'location') return candidate.category;
+
+  const role = getCandidateLocationRole(candidate);
+  if (role === 'frequent') return null;
+  return `location:${role}`;
+}
+
+function getMemorySingularScope(memory: MemoryItem): string | null {
+  if (!SINGULAR_CATEGORIES.has(memory.category)) return null;
+  if (memory.category !== 'location') return memory.category;
+
+  const role = getMemoryLocationRole(memory);
+  if (role === 'frequent') return null;
+  return `location:${role}`;
+}
+
+function buildCandidateMetadata(candidate: CandidateMemory): Record<string, unknown> {
+  const metadata = { ...(candidate.metadata ?? {}) };
+
+  if (candidate.category === 'location') {
+    if (!readMetaString(metadata, 'role')) {
+      metadata.role = getCandidateLocationRole(candidate);
+    }
+    if (!readMetaString(metadata, 'precision')) {
+      metadata.precision = inferLocationPrecisionFromText(candidate.valueText);
+    }
+    if (!readMetaString(metadata, 'freshness_hint')) {
+      metadata.freshness_hint = metadata.role === 'current'
+        ? 'short_lived'
+        : metadata.role === 'frequent'
+        ? 'recurring'
+        : 'stable';
+    }
+  }
+
+  if (!readMetaString(metadata, 'explicitness')) {
+    metadata.explicitness = candidate.sourceKind === 'legacy_migration'
+      ? 'inferred'
+      : 'explicit';
+  }
+
+  return metadata;
+}
+
+const CLASSIFY_CATEGORY_PROMPT = `You are a memory category classifier. Given a fact about a person, pick the single best category from this list:
+
+SINGULAR (only one can be active at a time):
+- location: where they live (e.g. "Lives in Melbourne")
+- employment: job or employer (e.g. "Works at Blacklane")
+- education: school, degree (e.g. "Studying CS at MIT")
+- age: how old they are (e.g. "28 years old")
+- birthday: date of birth (e.g. "Birthday is March 15")
+- relationship_status: partner status (e.g. "Married", "Dating someone")
+- nationality: citizenship (e.g. "Australian citizen")
+- native_language: mother tongue (e.g. "Native Mandarin speaker")
+
+MULTI (multiple can coexist):
+- sport_team: favourite teams (e.g. "Supports Sydney Swans")
+- music: music taste (e.g. "Loves jazz")
+- food: food preferences, diet (e.g. "Vegetarian", "Loves sushi")
+- pet: animals they have (e.g. "Has a golden retriever")
+- hobby: activities (e.g. "Plays guitar", "Into rock climbing")
+- interest: general interests (e.g. "Interested in AI")
+- skill: abilities (e.g. "Fluent in Python")
+- travel: travel plans or history (e.g. "Going to Japan next month")
+- health: medical, fitness (e.g. "Allergic to peanuts")
+- preference: other preferences (e.g. "Prefers morning meetings")
+- language: languages spoken (e.g. "Speaks French")
+- general: anything that doesn't fit above
+
+Reply with ONLY the category slug, nothing else.`;
+
+export async function classifyCategory(fact: string): Promise<string> {
+  try {
+    const model = MODEL_MAP.orchestration;
+    let text: string | undefined;
+
+    if (isGeminiModel(model)) {
+      const result = await geminiSimpleText({
+        model,
+        systemPrompt: CLASSIFY_CATEGORY_PROMPT,
+        userMessage: fact,
+        maxOutputTokens: 256,
+      });
+      text = result.text;
+    } else {
+      const client = getOpenAIClient();
+      const response = await client.responses.create({
+        model,
+        instructions: CLASSIFY_CATEGORY_PROMPT,
+        input: fact,
+        max_output_tokens: 256,
+        store: false,
+        prompt_cache_key: 'nest-memory',
+        reasoning: { effort: REASONING_EFFORT.orchestration },
+      } as Parameters<typeof client.responses.create>[0]);
+      text = response.output_text;
+    }
+
+    if (!text) return CATEGORY_TAXONOMY.fallback;
+
+    return normaliseCategory(text);
+  } catch (error) {
+    console.error('[memory] Category classification error:', error);
+    return CATEGORY_TAXONOMY.fallback;
+  }
+}
+
+export async function resolveCategory(fact: string, providedCategory?: string): Promise<string> {
+  if (providedCategory) {
+    const normalised = normaliseCategory(providedCategory);
+    if (normalised !== CATEGORY_TAXONOMY.fallback) return normalised;
+  }
+  return classifyCategory(fact);
+}
+
+// ============================================================================
+// Step A: Candidate Extraction (LLM)
+// ============================================================================
+
+const EXTRACTION_PROMPT = `You are a memory extraction system for a messaging assistant called Nest. Given a conversation, extract candidate memory items about the participants.
+
+Respond with ONLY valid JSON in this exact format:
+{
+  "candidates": [
+    {
+      "handle": "+61400000000",
+      "memory_type": "bio_fact",
+      "category": "food",
+      "value_text": "Prefers spicy food",
+      "confidence": 0.85,
+      "durability": "durable"
+    }
+  ]
+}
+
+Allowed memory_type values: identity, preference, plan, task_commitment, relationship, emotional_context, bio_fact, contextual_note
+
+Allowed durability values: durable, temporary, uncertain, corrected
+
+## Category Taxonomy (REQUIRED — pick the best match)
+
+SINGULAR categories (only one active per person):
+- location: where they live ("Lives in Melbourne", "Moved to Sydney")
+- employment: job or employer ("Works at Google", "Software engineer")
+- education: school, degree ("Studying CS at MIT", "Graduated from UNSW")
+- age: how old they are ("28 years old", "Born in 1997")
+- birthday: date of birth ("Birthday is March 15")
+- relationship_status: partner status ("Married", "Has a girlfriend")
+- nationality: citizenship ("Australian", "British citizen")
+- native_language: mother tongue ("Native Mandarin speaker")
+
+MULTI categories (multiple can coexist):
+- sport_team: favourite teams ("Supports Sydney Swans", "Arsenal fan")
+- music: music taste ("Loves jazz", "Favourite artist is Drake")
+- food: food preferences, diet ("Vegetarian", "Loves sushi", "Hates olives")
+- pet: animals they have ("Has a golden retriever named Max")
+- hobby: activities ("Plays guitar", "Into rock climbing", "Surfs on weekends")
+- interest: general interests ("Interested in AI", "Reads a lot of sci-fi")
+- skill: abilities ("Fluent in Python", "Good at chess")
+- travel: travel plans or history ("Going to Japan next month", "Visited Italy last year")
+- health: medical, fitness, allergies ("Allergic to peanuts", "Runs 5k daily")
+- preference: other preferences ("Prefers morning meetings", "Night owl")
+- language: languages spoken ("Speaks French and German")
+- general: anything that doesn't fit above
+
+Rules:
+- You MUST include a category for every candidate — pick the best match from the taxonomy above
+- Only extract genuinely meaningful personal information
+- Skip trivial conversational filler ("said hi", "asked how I am")
+- Each value_text should be a concise, standalone statement
+- Include the handle of who the fact is about
+- If speaker attribution is ambiguous, set confidence below 0.5
+- Do NOT convert quoted third-party speech into first-party memory
+- Do NOT store facts about others in someone's personal memory space
+- Preserve uncertainty qualifiers ("might", "thinking about")
+- For temporary plans, set durability to "temporary"
+- For emotional context, set durability to "temporary" and confidence conservatively
+- For corrections ("no, I said Melbourne not Sydney"), set durability to "corrected"
+- If no meaningful facts were shared, return {"candidates": []}
+- Be conservative: prefer missing a memory over writing a wrong one`;
+
+export async function extractCandidateMemories(
+  messages: UnsummarisedMessage[],
+): Promise<CandidateMemory[]> {
+  if (messages.length === 0) return [];
+
+  const conversationText = messages
+    .map((m) => {
+      const sender = m.role === 'assistant' ? 'Nest' : (m.handle || 'User');
+      return `[${sender}]: ${m.content}`;
+    })
+    .join('\n');
+
+  const messageIds = messages.map((m) => m.id);
+
+  try {
+    const model = MODEL_MAP.orchestration;
+    let text: string | undefined;
+
+    if (isGeminiModel(model)) {
+      const result = await geminiSimpleText({
+        model,
+        systemPrompt: EXTRACTION_PROMPT,
+        userMessage: conversationText,
+        maxOutputTokens: 1024,
+      });
+      text = result.text;
+    } else {
+      const client = getOpenAIClient();
+      const response = await client.responses.create({
+        model,
+        instructions: EXTRACTION_PROMPT,
+        input: conversationText,
+        max_output_tokens: 1024,
+        store: false,
+        prompt_cache_key: 'nest-memory',
+        reasoning: { effort: REASONING_EFFORT.orchestration },
+      } as Parameters<typeof client.responses.create>[0]);
+      text = response.output_text;
+    }
+
+    if (!text) return [];
+
+    let rawText = text.trim();
+    const fenceMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fenceMatch) {
+      rawText = fenceMatch[1].trim();
+    }
+
+    const parsed = JSON.parse(rawText);
+    const rawCandidates = parsed?.candidates;
+    if (!Array.isArray(rawCandidates)) return [];
+
+    return rawCandidates
+      .filter((c: Record<string, unknown>) =>
+        typeof c.handle === 'string' &&
+        typeof c.value_text === 'string' &&
+        VALID_MEMORY_TYPES.has(c.memory_type as string),
+      )
+      .map((c: Record<string, unknown>) => ({
+        handle: c.handle as string,
+        memoryType: c.memory_type as MemoryType,
+        category: normaliseCategory((c.category as string) || 'general'),
+        valueText: c.value_text as string,
+        normalizedValue: null,
+        confidence: typeof c.confidence === 'number' ? Math.min(1, Math.max(0, c.confidence)) : 0.5,
+        durability: (['durable', 'temporary', 'uncertain', 'corrected'].includes(c.durability as string)
+          ? c.durability
+          : 'durable') as CandidateMemory['durability'],
+        sourceMessageIds: messageIds,
+        sourceKind: 'background_extraction' as SourceKind,
+      }));
+  } catch (error) {
+    console.error('[memory] Extraction error:', error);
+    return [];
+  }
+}
+
+// ============================================================================
+// Step B: Deterministic Normalisation
+// ============================================================================
+
+export function normaliseCandidate(candidate: CandidateMemory): CandidateMemory | null {
+  const value = candidate.valueText.trim();
+
+  if (value.length === 0) return null;
+
+  const isIdentity = candidate.memoryType === 'identity';
+
+  if (!isIdentity) {
+    if (value.length < 5) return null;
+    if (value.split(/\s+/).length < 2) return null;
+  }
+
+  const trivialPatterns = [
+    /^(said|says|asked|mentioned|told|replied)\s+(hi|hello|hey|ok|okay|yes|no|sure|thanks|bye)/i,
+    /^(greeted|acknowledged)/i,
+    /^(is|was) (here|there|online|offline)$/i,
+  ];
+  for (const pattern of trivialPatterns) {
+    if (pattern.test(value)) return null;
+  }
+
+  const normalized = isIdentity
+    ? value.replace(/\s+/g, ' ').trim()
+    : value
+        .replace(/\s+/g, ' ')
+        .replace(/^(they|the user|user|this person)\s+(is|are|was|were|has|have|had)\s+/i, '')
+        .trim();
+
+  if (normalized.length === 0) return null;
+
+  return {
+    ...candidate,
+    valueText: value,
+    normalizedValue: normalized.toLowerCase(),
+  };
+}
+
+// ============================================================================
+// Step C: Deterministic Filters
+// ============================================================================
+
+export type FilterResult = 'pass' | 'reject' | 'needs_adjudication';
+
+export function filterCandidate(
+  candidate: CandidateMemory,
+  existingMemories: MemoryItem[],
+): FilterResult {
+  if (candidate.confidence < 0.3) return 'reject';
+
+  if (candidate.memoryType === 'emotional_context' && candidate.confidence < 0.6) return 'reject';
+
+  if (!candidate.normalizedValue) return 'reject';
+
+  const candidateSingularScope = getCandidateSingularScope(candidate);
+  const candidateLocationRole = candidate.category === 'location'
+    ? getCandidateLocationRole(candidate)
+    : null;
+
+  const exactMatch = existingMemories.find(
+    (m) =>
+      m.status === 'active' &&
+      m.normalizedValue === candidate.normalizedValue &&
+      (
+        candidate.category !== 'location' ||
+        getMemoryLocationRole(m) === candidateLocationRole
+      ),
+  );
+  if (exactMatch) return 'reject';
+
+  const sameTypeMemories = existingMemories.filter(
+    (m) => m.memoryType === candidate.memoryType && m.status === 'active',
+  );
+
+  if (candidateSingularScope) {
+    const sameCategoryExists = sameTypeMemories.some(
+      (m) => getMemorySingularScope(m) === candidateSingularScope,
+    );
+    if (sameCategoryExists) return 'needs_adjudication';
+  }
+
+  for (const existing of sameTypeMemories) {
+    if (!existing.normalizedValue || !candidate.normalizedValue) continue;
+
+    const sameSemanticBucket = candidate.category === 'location'
+      ? getMemoryLocationRole(existing) === candidateLocationRole
+      : existing.category !== 'general' && existing.category === candidate.category;
+
+    if (sameSemanticBucket) {
+      return 'needs_adjudication';
+    }
+
+    if (candidate.category === 'location') continue;
+
+    const similarity = computeStringSimilarity(
+      existing.normalizedValue,
+      candidate.normalizedValue,
+    );
+
+    if (similarity > 0.5) return 'needs_adjudication';
+  }
+
+  if (candidate.durability === 'corrected') return 'needs_adjudication';
+
+  return 'pass';
+}
+
+function computeStringSimilarity(a: string, b: string): number {
+  const wordsA = new Set(a.split(/\s+/));
+  const wordsB = new Set(b.split(/\s+/));
+  const intersection = [...wordsA].filter((w) => wordsB.has(w)).length;
+  const union = new Set([...wordsA, ...wordsB]).size;
+  return union === 0 ? 0 : intersection / union;
+}
+
+// ============================================================================
+// Step D: LLM Adjudication (ambiguous cases only)
+// ============================================================================
+
+export async function adjudicateCandidate(
+  candidate: CandidateMemory,
+  existingMemories: MemoryItem[],
+): Promise<AdjudicationAction> {
+  const candidateSingularScope = getCandidateSingularScope(candidate);
+  const candidateLocationRole = candidate.category === 'location'
+    ? getCandidateLocationRole(candidate)
+    : null;
+  const relevantExisting = existingMemories
+    .filter((m) => m.status === 'active')
+    .filter((m) =>
+      candidate.category !== 'location' ||
+      getMemoryLocationRole(m) === candidateLocationRole ||
+      m.normalizedValue === candidate.normalizedValue
+    )
+    .slice(0, 10);
+
+  const existingList = relevantExisting
+    .map((m, i) => {
+      const locationRole = m.category === 'location'
+        ? `, role=${getMemoryLocationRole(m)}`
+        : '';
+      return `${i + 1}. [id=${m.id}] (${m.memoryType}, category=${m.category}${locationRole}) "${m.valueText}"`;
+    })
+    .join('\n');
+
+  const isSingular = candidateSingularScope !== null;
+  const sameCategoryExisting = relevantExisting.filter((m) =>
+    getMemorySingularScope(m) === candidateSingularScope
+  );
+
+  let singularHint = '';
+  if (isSingular && sameCategoryExisting.length > 0) {
+    const ids = sameCategoryExisting.map((m) => m.id).join(', ');
+    singularHint = `\n\nIMPORTANT: "${candidate.category}" is a SINGULAR category — a person can only have one active value. The new candidate and existing memory id(s) ${ids} share this category. Unless the new candidate is clearly wrong, you should SUPERSEDE the old one.`;
+  }
+
+  const locationRoleHint = candidate.category === 'location'
+    ? `\n\nSpecial location role rules:
+- Candidate location role: ${candidateLocationRole}
+- home and current locations are distinct roles and should NOT supersede each other.
+- frequent locations can coexist with home and current locations.`
+    : '';
+
+  const prompt = `You are a memory adjudication system. Given existing memories and a new candidate, decide what to do.
+
+Existing memories for this person:
+${existingList || '(none)'}
+
+New candidate: (${candidate.memoryType}, category=${candidate.category}${candidateLocationRole ? `, role=${candidateLocationRole}` : ''}) "${candidate.valueText}" confidence=${candidate.confidence}${singularHint}${locationRoleHint}
+
+Category types:
+- SINGULAR categories (location, employment, education, age, birthday, relationship_status, nationality, native_language): Only ONE value should be active at a time. If the new candidate shares a singular category with an existing memory, it almost certainly SUPERSEDES it.
+- MULTI categories (sport_team, music, food, pet, hobby, interest, skill, travel, health, preference, language, general): Multiple values can coexist.
+
+Reply with EXACTLY one of:
+- ADD_NEW — this is genuinely new information
+- CONFIRM_EXISTING:<id> — this confirms an existing memory (use the id number)
+- SUPERSEDE_EXISTING:<id> — this updates/replaces an existing memory (use the id number)
+- MARK_UNCERTAIN — this might be true but evidence is weak
+- REJECT — this is a duplicate, trivial, or should not be stored`;
+
+  try {
+    const model = MODEL_MAP.orchestration;
+    let text: string | undefined;
+
+    if (isGeminiModel(model)) {
+      const result = await geminiSimpleText({
+        model,
+        systemPrompt: 'You are a memory adjudication system. Respond with exactly one action line.',
+        userMessage: prompt,
+        maxOutputTokens: 256,
+      });
+      text = result.text;
+    } else {
+      const client = getOpenAIClient();
+      const response = await client.responses.create({
+        model,
+        instructions: 'You are a memory adjudication system. Respond with exactly one action line.',
+        input: prompt,
+        max_output_tokens: 256,
+        store: false,
+        prompt_cache_key: 'nest-memory',
+        reasoning: { effort: REASONING_EFFORT.orchestration },
+      } as Parameters<typeof client.responses.create>[0]);
+      text = response.output_text;
+    }
+
+    if (!text) {
+      return isSingular && sameCategoryExisting.length > 0
+        ? { type: 'SUPERSEDE_EXISTING', existingId: sameCategoryExisting[0].id }
+        : { type: 'REJECT' };
+    }
+
+    const answer = text.trim().toUpperCase();
+
+    if (answer.startsWith('ADD_NEW')) return { type: 'ADD_NEW' };
+    if (answer.startsWith('MARK_UNCERTAIN')) return { type: 'MARK_UNCERTAIN' };
+    if (answer.startsWith('REJECT')) return { type: 'REJECT' };
+
+    const confirmMatch = answer.match(/CONFIRM_EXISTING[:\s]*(\d+)/);
+    if (confirmMatch) {
+      const existingId = parseInt(confirmMatch[1], 10);
+      const found = relevantExisting.find((m) => m.id === existingId);
+      if (found) return { type: 'CONFIRM_EXISTING', existingId };
+    }
+
+    const supersedeMatch = answer.match(/SUPERSEDE_EXISTING[:\s]*(\d+)/);
+    if (supersedeMatch) {
+      const existingId = parseInt(supersedeMatch[1], 10);
+      const found = relevantExisting.find((m) => m.id === existingId);
+      if (found) return { type: 'SUPERSEDE_EXISTING', existingId };
+    }
+
+    if (isSingular && sameCategoryExisting.length > 0) {
+      return { type: 'SUPERSEDE_EXISTING', existingId: sameCategoryExisting[0].id };
+    }
+
+    return { type: 'REJECT' };
+  } catch (error) {
+    console.error('[memory] Adjudication error:', error);
+    if (isSingular && sameCategoryExisting.length > 0) {
+      return { type: 'SUPERSEDE_EXISTING', existingId: sameCategoryExisting[0].id };
+    }
+    return { type: 'REJECT' };
+  }
+}
+
+// ============================================================================
+// Step E: Memory Write
+// ============================================================================
+
+const DEFAULT_MEMORY_TIMEZONE = 'Australia/Melbourne';
+const TEMPORAL_MEMORY_TYPES: ReadonlySet<MemoryType> = new Set([
+  'plan',
+  'task_commitment',
+  'emotional_context',
+  'contextual_note',
+]);
+const WEEKDAY_TO_INDEX: Record<string, number> = {
+  sunday: 0,
+  monday: 1,
+  tuesday: 2,
+  wednesday: 3,
+  thursday: 4,
+  friday: 5,
+  saturday: 6,
+};
+const MONTH_TO_INDEX: Record<string, number> = {
+  january: 1,
+  jan: 1,
+  february: 2,
+  feb: 2,
+  march: 3,
+  mar: 3,
+  april: 4,
+  apr: 4,
+  may: 5,
+  june: 6,
+  jun: 6,
+  july: 7,
+  jul: 7,
+  august: 8,
+  aug: 8,
+  september: 9,
+  sep: 9,
+  sept: 9,
+  october: 10,
+  oct: 10,
+  november: 11,
+  nov: 11,
+  december: 12,
+  dec: 12,
+};
+const TODAY_PATTERN = /\b(today|tonight|later today|this morning|this afternoon|this evening)\b/i;
+const TOMORROW_PATTERN = /\b(tomorrow|tomorrow morning|tomorrow afternoon|tomorrow evening|tomorrow night)\b/i;
+const WEEKDAY_PATTERN = /\b(this|next)\s+(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/i;
+const ISO_DATE_PATTERN = /\b(20\d{2})-(\d{2})-(\d{2})\b/;
+const MONTH_DAY_PATTERN = /\b(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,\s*(\d{4}))?\b/i;
+const BARE_TIME_PATTERN = /\b(?:at|from)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i;
+const TEMPORAL_ANCHOR_PATTERN = new RegExp(
+  [
+    TODAY_PATTERN.source,
+    TOMORROW_PATTERN.source,
+    WEEKDAY_PATTERN.source,
+    ISO_DATE_PATTERN.source,
+    MONTH_DAY_PATTERN.source,
+  ].join('|'),
+  'i',
+);
+const MEMORY_TIMEZONE_CACHE = new Map<string, string>();
+
+interface LocalDateParts {
+  year: number;
+  month: number;
+  day: number;
+  weekday: number;
+}
+
+interface LocalDateTimeParts extends LocalDateParts {
+  hour: number;
+  minute: number;
+  second: number;
+}
+
+function normaliseMemoryTimezone(timezone: string | null | undefined): string {
+  const candidate = timezone?.trim();
+  if (!candidate) return DEFAULT_MEMORY_TIMEZONE;
+  try {
+    new Intl.DateTimeFormat('en-AU', { timeZone: candidate }).format(new Date());
+    return candidate;
+  } catch {
+    return DEFAULT_MEMORY_TIMEZONE;
+  }
+}
+
+async function resolveMemoryTimezone(handle: string): Promise<string> {
+  const cached = MEMORY_TIMEZONE_CACHE.get(handle);
+  if (cached) return cached;
+
+  const fallback = DEFAULT_MEMORY_TIMEZONE;
+  if (!handle.trim()) return fallback;
+
+  try {
+    const supabase = getAdminClient();
+    const { data, error } = await supabase
+      .from(USER_PROFILES_TABLE)
+      .select('timezone')
+      .eq('handle', handle)
+      .maybeSingle<{ timezone: string | null }>();
+
+    if (error) {
+      console.warn(`[memory] Failed to resolve timezone for ${handle}:`, error.message);
+      MEMORY_TIMEZONE_CACHE.set(handle, fallback);
+      return fallback;
+    }
+
+    const timezone = normaliseMemoryTimezone(data?.timezone);
+    MEMORY_TIMEZONE_CACHE.set(handle, timezone);
+    return timezone;
+  } catch (error) {
+    console.warn(`[memory] Error resolving timezone for ${handle}:`, (error as Error).message);
+    MEMORY_TIMEZONE_CACHE.set(handle, fallback);
+    return fallback;
+  }
+}
+
+function buildLocalDateParts(year: number, month: number, day: number): LocalDateParts | null {
+  const test = new Date(Date.UTC(year, month - 1, day));
+  if (
+    Number.isNaN(test.getTime()) ||
+    test.getUTCFullYear() !== year ||
+    test.getUTCMonth() + 1 !== month ||
+    test.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return {
+    year,
+    month,
+    day,
+    weekday: test.getUTCDay(),
+  };
+}
+
+function readFormatterPart(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes): string {
+  return parts.find((part) => part.type === type)?.value ?? '';
+}
+
+function getZonedDateParts(date: Date, timeZone: string): LocalDateParts {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+
+  const year = parseInt(readFormatterPart(parts, 'year'), 10);
+  const month = parseInt(readFormatterPart(parts, 'month'), 10);
+  const day = parseInt(readFormatterPart(parts, 'day'), 10);
+  return buildLocalDateParts(year, month, day) ?? buildLocalDateParts(1970, 1, 1)!;
+}
+
+function getZonedDateTimeParts(date: Date, timeZone: string): LocalDateTimeParts {
+  const dateParts = getZonedDateParts(date, timeZone);
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    hourCycle: 'h23',
+  }).formatToParts(date);
+
+  return {
+    ...dateParts,
+    hour: parseInt(readFormatterPart(parts, 'hour'), 10),
+    minute: parseInt(readFormatterPart(parts, 'minute'), 10),
+    second: parseInt(readFormatterPart(parts, 'second'), 10),
+  };
+}
+
+function addCalendarDays(dateParts: LocalDateParts, days: number): LocalDateParts {
+  const date = new Date(Date.UTC(dateParts.year, dateParts.month - 1, dateParts.day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return buildLocalDateParts(
+    date.getUTCFullYear(),
+    date.getUTCMonth() + 1,
+    date.getUTCDate(),
+  ) ?? dateParts;
+}
+
+function zonedDateTimeToUtc(args: {
+  timeZone: string;
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+}): Date {
+  const desiredUtcMs = Date.UTC(
+    args.year,
+    args.month - 1,
+    args.day,
+    args.hour,
+    args.minute,
+    args.second,
+  );
+
+  let guess = new Date(desiredUtcMs);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const actual = getZonedDateTimeParts(guess, args.timeZone);
+    const actualUtcMs = Date.UTC(
+      actual.year,
+      actual.month - 1,
+      actual.day,
+      actual.hour,
+      actual.minute,
+      actual.second,
+    );
+    const diffMs = desiredUtcMs - actualUtcMs;
+    if (diffMs === 0) break;
+    guess = new Date(guess.getTime() + diffMs);
+  }
+
+  return guess;
+}
+
+function endOfLocalDate(dateParts: LocalDateParts, timeZone: string): Date {
+  return zonedDateTimeToUtc({
+    timeZone,
+    year: dateParts.year,
+    month: dateParts.month,
+    day: dateParts.day,
+    hour: 23,
+    minute: 59,
+    second: 59,
+  });
+}
+
+function defaultExpiryDate(memoryType: MemoryType, now = new Date()): Date | null {
+  switch (memoryType) {
+    case 'plan':
+      return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    case 'task_commitment':
+      return new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+    case 'emotional_context':
+      return new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+    case 'contextual_note':
+      return new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    default:
+      return null;
+  }
+}
+
+function calculateTemporalExpiryDate(
+  memoryType: MemoryType,
+  valueText: string,
+  timeZone: string,
+  now = new Date(),
+): Date | null {
+  if (!TEMPORAL_MEMORY_TYPES.has(memoryType)) return null;
+
+  const text = valueText.trim();
+  if (!text) return null;
+
+  const today = getZonedDateParts(now, timeZone);
+
+  if (TODAY_PATTERN.test(text)) {
+    return endOfLocalDate(today, timeZone);
+  }
+
+  if (TOMORROW_PATTERN.test(text)) {
+    return endOfLocalDate(addCalendarDays(today, 1), timeZone);
+  }
+
+  const weekdayMatch = text.match(WEEKDAY_PATTERN);
+  if (weekdayMatch) {
+    const modifier = weekdayMatch[1].toLowerCase();
+    const targetWeekday = WEEKDAY_TO_INDEX[weekdayMatch[2].toLowerCase()];
+    const thisDelta = (targetWeekday - today.weekday + 7) % 7;
+    const dayOffset = modifier === 'next'
+      ? (thisDelta === 0 ? 7 : thisDelta + 7)
+      : thisDelta;
+
+    return endOfLocalDate(addCalendarDays(today, dayOffset), timeZone);
+  }
+
+  const isoDateMatch = text.match(ISO_DATE_PATTERN);
+  if (isoDateMatch) {
+    const explicitDate = buildLocalDateParts(
+      parseInt(isoDateMatch[1], 10),
+      parseInt(isoDateMatch[2], 10),
+      parseInt(isoDateMatch[3], 10),
+    );
+    if (explicitDate) return endOfLocalDate(explicitDate, timeZone);
+  }
+
+  const monthDateMatch = text.match(MONTH_DAY_PATTERN);
+  if (monthDateMatch) {
+    const month = MONTH_TO_INDEX[monthDateMatch[1].toLowerCase()];
+    const day = parseInt(monthDateMatch[2], 10);
+    const year = monthDateMatch[3] ? parseInt(monthDateMatch[3], 10) : today.year;
+    const explicitDate = buildLocalDateParts(year, month, day);
+    if (explicitDate) return endOfLocalDate(explicitDate, timeZone);
+  }
+
+  if (BARE_TIME_PATTERN.test(text) && !TEMPORAL_ANCHOR_PATTERN.test(text)) {
+    return endOfLocalDate(today, timeZone);
+  }
+
+  return null;
+}
+
+export function calculateExpiry(
+  memoryType: MemoryType,
+  valueText: string,
+  timeZone: string | null,
+  _confidence: number,
+  now = new Date(),
+): string | null {
+  const userTimeZone = normaliseMemoryTimezone(timeZone);
+  const defaultExpiry = defaultExpiryDate(memoryType, now);
+  const temporalExpiry = calculateTemporalExpiryDate(memoryType, valueText, userTimeZone, now);
+
+  if (defaultExpiry && temporalExpiry) {
+    return new Date(Math.min(defaultExpiry.getTime(), temporalExpiry.getTime())).toISOString();
+  }
+
+  return temporalExpiry?.toISOString() ?? defaultExpiry?.toISOString() ?? null;
+}
+
+export async function writeMemoryItem(
+  candidate: CandidateMemory,
+  action: AdjudicationAction,
+  sourceSummaryId?: number | null,
+): Promise<number | null> {
+  const metadata = buildCandidateMetadata(candidate);
+  const userTimeZone = await resolveMemoryTimezone(candidate.handle);
+  const expiryAt = calculateExpiry(
+    candidate.memoryType,
+    candidate.valueText,
+    userTimeZone,
+    candidate.confidence,
+  );
+
+  switch (action.type) {
+    case 'REJECT':
+      return null;
+
+    case 'CONFIRM_EXISTING':
+      await confirmMemoryItem(action.existingId);
+      return action.existingId;
+
+    case 'MARK_UNCERTAIN': {
+      return insertMemoryItem({
+        handle: candidate.handle,
+        memoryType: candidate.memoryType,
+        category: candidate.category,
+        valueText: candidate.valueText,
+        normalizedValue: candidate.normalizedValue,
+        confidence: Math.min(candidate.confidence, 0.4),
+        status: 'uncertain',
+        sourceKind: candidate.sourceKind,
+        sourceMessageIds: candidate.sourceMessageIds,
+        sourceSummaryId: sourceSummaryId ?? null,
+        extractorVersion: EXTRACTOR_VERSION,
+        expiryAt,
+        metadata,
+      });
+    }
+
+    case 'SUPERSEDE_EXISTING': {
+      const newId = await insertMemoryItem({
+        handle: candidate.handle,
+        memoryType: candidate.memoryType,
+        category: candidate.category,
+        valueText: candidate.valueText,
+        normalizedValue: candidate.normalizedValue,
+        confidence: candidate.confidence,
+        status: 'active',
+        sourceKind: candidate.sourceKind,
+        sourceMessageIds: candidate.sourceMessageIds,
+        sourceSummaryId: sourceSummaryId ?? null,
+        extractorVersion: EXTRACTOR_VERSION,
+        expiryAt,
+        supersedesMemoryId: action.existingId,
+        metadata,
+      });
+
+      if (newId) {
+        await supersedeMemoryItem(action.existingId, newId);
+      }
+
+      return newId;
+    }
+
+    case 'ADD_NEW':
+    default: {
+      return insertMemoryItem({
+        handle: candidate.handle,
+        memoryType: candidate.memoryType,
+        category: candidate.category,
+        valueText: candidate.valueText,
+        normalizedValue: candidate.normalizedValue,
+        confidence: candidate.confidence,
+        status: candidate.confidence >= 0.6 ? 'active' : 'uncertain',
+        sourceKind: candidate.sourceKind,
+        sourceMessageIds: candidate.sourceMessageIds,
+        sourceSummaryId: sourceSummaryId ?? null,
+        extractorVersion: EXTRACTOR_VERSION,
+        expiryAt,
+        metadata,
+      });
+    }
+  }
+}
+
+// ============================================================================
+// RAG Embedding — index memory items into search_documents/search_embeddings
+// ============================================================================
+
+async function embedMemoryItem(
+  handle: string,
+  memoryId: number,
+  memoryType: string,
+  category: string,
+  valueText: string,
+): Promise<void> {
+  const supabase = getAdminClient();
+  const sourceId = `memory:${memoryId}`;
+
+  try {
+    await softDeleteSource(supabase, handle, 'memory_summary', sourceId);
+
+    const header = memoryContextHeader(category, memoryType, handle, new Date().toISOString());
+    const chunk: ChunkToEmbed = {
+      text: `${header}\n---\n${valueText}`,
+      sourceType: 'memory_summary',
+      sourceId,
+      title: `${category}: ${valueText.slice(0, 80)}`,
+      chunkIndex: 0,
+      contentHash: contentHash('memory_summary', sourceId, 'summary'),
+      metadata: { memory_id: memoryId, category, memory_type: memoryType, handle },
+    };
+
+    const embedded = await embedChunks([chunk]);
+    const { inserted, errors } = await insertEmbeddedChunks(supabase, handle, embedded);
+    if (errors > 0) {
+      console.warn(`[memory] embedMemoryItem ${memoryId}: ${inserted} inserted, ${errors} errors`);
+    }
+  } catch (err) {
+    console.warn(`[memory] Failed to embed memory ${memoryId}:`, (err as Error).message);
+  }
+}
+
+function fireAndForgetEmbed(
+  handle: string,
+  memoryId: number | null,
+  memoryType: string,
+  category: string,
+  valueText: string,
+): void {
+  if (!memoryId) return;
+  embedMemoryItem(handle, memoryId, memoryType, category, valueText)
+    .catch((err) => console.warn('[memory] Background embed failed:', (err as Error).message));
+}
+
+// ============================================================================
+// Full Pipeline: extract -> normalise -> filter -> adjudicate -> write
+// ============================================================================
+
+export interface ExtractionResult {
+  candidatesExtracted: number;
+  memoriesWritten: number;
+  memoriesRejected: number;
+  memoriesConfirmed: number;
+}
+
+export async function processMemoryExtraction(
+  messages: UnsummarisedMessage[],
+  sourceSummaryId?: number | null,
+): Promise<ExtractionResult> {
+  const result: ExtractionResult = {
+    candidatesExtracted: 0,
+    memoriesWritten: 0,
+    memoriesRejected: 0,
+    memoriesConfirmed: 0,
+  };
+
+  const candidates = await extractCandidateMemories(messages);
+  result.candidatesExtracted = candidates.length;
+  increment(METRICS.CANDIDATES_EXTRACTED, candidates.length);
+
+  if (candidates.length === 0) return result;
+
+  const handleSet = new Set(candidates.map((c) => c.handle));
+  const existingByHandle = new Map<string, MemoryItem[]>();
+  for (const handle of handleSet) {
+    existingByHandle.set(handle, await getActiveMemoryItems(handle, 30));
+  }
+
+  for (const raw of candidates) {
+    const candidate = normaliseCandidate(raw);
+    if (!candidate) {
+      result.memoriesRejected += 1;
+      increment(METRICS.CANDIDATES_REJECTED_FILTER);
+      continue;
+    }
+    increment(METRICS.CANDIDATES_NORMALISED);
+
+    const existing = existingByHandle.get(candidate.handle) ?? [];
+    const filterResult = filterCandidate(candidate, existing);
+
+    if (filterResult === 'reject') {
+      result.memoriesRejected += 1;
+      increment(METRICS.CANDIDATES_REJECTED_FILTER);
+      continue;
+    }
+
+    let action: AdjudicationAction;
+    if (filterResult === 'needs_adjudication') {
+      increment(METRICS.CANDIDATES_ADJUDICATED);
+      action = await adjudicateCandidate(candidate, existing);
+    } else {
+      action = { type: 'ADD_NEW' };
+    }
+
+    const memoryId = await writeMemoryItem(candidate, action, sourceSummaryId);
+
+    if (action.type === 'REJECT' || memoryId === null) {
+      result.memoriesRejected += 1;
+      increment(METRICS.MEMORIES_REJECTED);
+    } else if (action.type === 'CONFIRM_EXISTING') {
+      result.memoriesConfirmed += 1;
+      increment(METRICS.MEMORIES_CONFIRMED);
+    } else if (action.type === 'SUPERSEDE_EXISTING') {
+      result.memoriesWritten += 1;
+      increment(METRICS.MEMORIES_SUPERSEDED);
+      fireAndForgetEmbed(candidate.handle, memoryId, candidate.memoryType, candidate.category, candidate.valueText);
+      const updatedMemories = await getActiveMemoryItems(candidate.handle, 30);
+      existingByHandle.set(candidate.handle, updatedMemories);
+    } else {
+      result.memoriesWritten += 1;
+      increment(METRICS.MEMORIES_WRITTEN);
+      fireAndForgetEmbed(candidate.handle, memoryId, candidate.memoryType, candidate.category, candidate.valueText);
+      const updatedMemories = await getActiveMemoryItems(candidate.handle, 30);
+      existingByHandle.set(candidate.handle, updatedMemories);
+    }
+  }
+
+  return result;
+}
+
+// ============================================================================
+// Real-time tool call pipeline (for remember_user in chat)
+// ============================================================================
+
+async function writeRealtimeCandidate(
+  candidate: CandidateMemory,
+  existing: MemoryItem[],
+): Promise<number | null> {
+  const normalised = normaliseCandidate(candidate);
+  if (!normalised) return null;
+
+  if (existing.length < 2) {
+    return writeMemoryItem(normalised, { type: 'ADD_NEW' });
+  }
+
+  const filterResult = filterCandidate(normalised, existing);
+  if (filterResult === 'reject') return null;
+
+  let action: AdjudicationAction;
+  if (filterResult === 'needs_adjudication') {
+    action = await adjudicateCandidate(normalised, existing);
+  } else {
+    action = { type: 'ADD_NEW' };
+  }
+
+  const memoryId = await writeMemoryItem(normalised, action);
+  return action.type === 'REJECT' ? null : memoryId;
+}
+
+export async function processRealtimeMemory(
+  handle: string,
+  fact: string,
+  name?: string,
+  _chatId?: string,
+  category?: string,
+): Promise<{ written: boolean; memoryId: number | null }> {
+  const existing = await getActiveMemoryItems(handle, 30);
+  let anyWritten = false;
+  let lastMemoryId: number | null = null;
+
+  if (name) {
+    const nameCandidate: CandidateMemory = {
+      handle,
+      memoryType: 'identity',
+      category: 'name',
+      valueText: name,
+      normalizedValue: null,
+      confidence: 0.95,
+      durability: 'durable',
+      sourceMessageIds: [],
+      sourceKind: 'realtime_tool',
+    };
+    const id = await writeRealtimeCandidate(nameCandidate, existing);
+    if (id !== null) {
+      anyWritten = true;
+      lastMemoryId = id;
+      fireAndForgetEmbed(handle, id, 'identity', 'name', name);
+    }
+  }
+
+  if (fact && fact.trim().length > 0) {
+    const factCategory = await resolveCategory(fact, category);
+    const factCandidate: CandidateMemory = {
+      handle,
+      memoryType: 'bio_fact',
+      category: factCategory,
+      valueText: fact,
+      normalizedValue: null,
+      confidence: 0.9,
+      durability: 'durable',
+      sourceMessageIds: [],
+      sourceKind: 'realtime_tool',
+    };
+    const refreshedExisting = anyWritten ? await getActiveMemoryItems(handle, 30) : existing;
+    const id = await writeRealtimeCandidate(factCandidate, refreshedExisting);
+    if (id !== null) {
+      anyWritten = true;
+      lastMemoryId = id;
+      fireAndForgetEmbed(handle, id, 'bio_fact', factCategory, fact);
+    }
+  }
+
+  return { written: anyWritten, memoryId: lastMemoryId };
+}
+
+// ============================================================================
+// Relevance-Scored Retrieval
+// ============================================================================
+
+const CATEGORY_KEYWORDS: Record<string, string[]> = {
+  location: ['live', 'lives', 'city', 'country', 'where', 'move', 'moved', 'home', 'based', 'address', 'from'],
+  employment: ['work', 'works', 'job', 'career', 'company', 'employer', 'employed', 'role', 'position', 'occupation'],
+  education: ['study', 'school', 'university', 'uni', 'college', 'degree', 'graduated', 'major', 'student'],
+  age: ['old', 'age', 'years', 'born', 'young'],
+  birthday: ['birthday', 'born', 'birth', 'bday'],
+  relationship_status: ['married', 'single', 'dating', 'partner', 'wife', 'husband', 'girlfriend', 'boyfriend', 'engaged', 'relationship'],
+  nationality: ['nationality', 'citizen', 'passport', 'country'],
+  native_language: ['native', 'mother tongue', 'first language'],
+  sport_team: ['team', 'sport', 'sports', 'football', 'soccer', 'basketball', 'cricket', 'afl', 'nba', 'nfl', 'support', 'fan'],
+  music: ['music', 'song', 'artist', 'band', 'album', 'listen', 'genre', 'concert'],
+  food: ['food', 'eat', 'diet', 'vegetarian', 'vegan', 'cuisine', 'restaurant', 'cook', 'meal', 'favourite food', 'allergic'],
+  pet: ['pet', 'dog', 'cat', 'animal', 'puppy', 'kitten'],
+  hobby: ['hobby', 'hobbies', 'play', 'guitar', 'surf', 'climb', 'paint', 'game', 'gaming'],
+  interest: ['interest', 'interested', 'into', 'passionate', 'curious'],
+  skill: ['skill', 'good at', 'fluent', 'proficient', 'expert', 'know how'],
+  travel: ['travel', 'trip', 'vacation', 'holiday', 'flight', 'visit', 'going to'],
+  health: ['health', 'allergy', 'allergic', 'medical', 'fitness', 'gym', 'run', 'exercise', 'condition'],
+  preference: ['prefer', 'favourite', 'favorite', 'like', 'hate', 'love'],
+  language: ['speak', 'speaks', 'language', 'fluent', 'bilingual'],
+};
+
+const FAST_DECAY_TYPES = new Set<string>(['plan', 'task_commitment', 'emotional_context', 'contextual_note']);
+type MemoryQueryIntent =
+  | 'default'
+  | 'weather'
+  | 'local_discovery'
+  | 'service_availability'
+  | 'local_rules'
+  | 'exact_travel';
+
+const WEATHER_QUERY_PATTERN =
+  /\b(weather|forecast|rain(ing)?|temperature|degrees|humid|cold .{0,10}outside|hot .{0,10}outside|warm .{0,10}outside|freezing|sunny|cloudy|storm|snow(ing)?|uv|umbrella|jacket|sunset|sunrise|air quality)\b/i;
+const LOCAL_DISCOVERY_QUERY_PATTERN =
+  /\b(near me|nearby|nearest|open now|around here|restaurants?|cafe|cafes|coffee|brunch|lunch|dinner|bar|pub|pharmacy|chemist|park|gym|supermarket|grocer|dog[-\s]?friendly|what'?s on|events?|markets?|gig|show|festival)\b/i;
+const SERVICE_AVAILABILITY_QUERY_PATTERN =
+  /\b(deliver(?:y)?|available here|same[-\s]?day|coverage|provider|providers|internet|ubereats|doordash|instacart|service area|ship here)\b/i;
+const LOCAL_RULES_QUERY_PATTERN =
+  /\b(legal|law|rebate|eligible|eligibility|permit|allowed|tax|jurisdiction|public holiday|rules?)\b/i;
+const EXACT_TRAVEL_QUERY_PATTERN =
+  /\b(directions?\b|how long to get|how far to|from .{1,40} to .{1,40}|walk to|drive to|cycle to|train from .{1,40} to|bus from .{1,40} to|tram from .{1,40} to|flight from .{1,40} to)\b/i;
+
+function inferMemoryQueryIntent(currentMessage: string): MemoryQueryIntent {
+  if (EXACT_TRAVEL_QUERY_PATTERN.test(currentMessage)) return 'exact_travel';
+  if (WEATHER_QUERY_PATTERN.test(currentMessage)) return 'weather';
+  if (LOCAL_RULES_QUERY_PATTERN.test(currentMessage)) return 'local_rules';
+  if (SERVICE_AVAILABILITY_QUERY_PATTERN.test(currentMessage)) return 'service_availability';
+  if (LOCAL_DISCOVERY_QUERY_PATTERN.test(currentMessage)) return 'local_discovery';
+  return 'default';
+}
+
+const SEMANTIC_LOOKUP_STRONG_SIGNAL =
+  /\?|^(what|who|where|when|why|how|which|tell me|explain|describe|compare|summari[sz]e|rewrite|remind me|search|look up|find|check|show|give me|can you|could you|would you|should i|do i|did i|have i|am i|are we|is it)\b|\b(weather|forecast|news|price|calendar|email|meeting|flight|booking|itinerary|ticket|address|phone number|reminder|today|tomorrow|tonight|yesterday|this week|next week|weekend)\b/i;
+
+const SHORT_CONVERSATIONAL_FOLLOWUP_PATTERN =
+  /^(?:yeah|yep|yup|nah|na|nope|lol|haha|hahaha|lmao|rofl|wow|damn|nice|cool|awesome|perfect|amazing|interesting|right|true|same|fair(?: enough)?|all good|sounds good|so good|too good|love it|love that|hate that|makes sense|that makes sense|that tracks|exactly|so true|too true|for sure|definitely|defo|absolutely|100%|i know(?: right)?|whole thing|the whole thing|all of it(?: was)?(?: so)?(?: good)?|every bit of it|both honestly|pretty much|kind of|sort of|not really|maybe|probably|reckon so)[.!?]*$/i;
+
+export function shouldSkipSemanticMemoryLookup(currentMessage: string): boolean {
+  const message = currentMessage.trim().replace(/\s+/g, ' ');
+  if (!message || message.length > 80) return false;
+  if (SEMANTIC_LOOKUP_STRONG_SIGNAL.test(message)) return false;
+  return SHORT_CONVERSATIONAL_FOLLOWUP_PATTERN.test(message);
+}
+
+function isLocationMemory(memory: MemoryItem): boolean {
+  return memory.category === 'location' || memory.category.includes('location') ||
+    memory.category.includes('home') || memory.category.includes('city') ||
+    memory.category.includes('address') || memory.category.includes('based');
+}
+
+function isPreferenceLikeMemory(memory: MemoryItem): boolean {
+  return memory.memoryType === 'preference' ||
+    ['food', 'preference', 'health', 'hobby', 'interest'].includes(memory.category);
+}
+
+// Stable memory types get no freshness decay — they remain relevant indefinitely
+// until superseded. Only transient types (plans, emotions, notes) and
+// ephemeral location roles decay.
+const STABLE_MEMORY_TYPES = new Set<string>(['identity', 'preference', 'bio_fact', 'relationship']);
+
+function getMemoryHalfLifeDays(memory: MemoryItem): number {
+  if (FAST_DECAY_TYPES.has(memory.memoryType)) return 3;
+  if (STABLE_MEMORY_TYPES.has(memory.memoryType)) return Infinity;
+  if (isLocationMemory(memory)) {
+    const role = getMemoryLocationRole(memory);
+    if (role === 'current') return 1;
+    if (role === 'frequent') return 21;
+    return Infinity; // home locations are stable
+  }
+  return 90;
+}
+
+function getLocationIntentBoost(
+  memory: MemoryItem,
+  intent: MemoryQueryIntent,
+): number {
+  if (!isLocationMemory(memory)) return 0;
+
+  const role = getMemoryLocationRole(memory);
+  switch (intent) {
+    case 'weather':
+      return role === 'current' ? 0.35 : role === 'home' ? 0.28 : 0.18;
+    case 'local_discovery':
+      return role === 'current' ? 0.32 : role === 'home' ? 0.24 : 0.16;
+    case 'service_availability':
+    case 'local_rules':
+      return role === 'home' ? 0.3 : role === 'current' ? 0.22 : 0.14;
+    case 'exact_travel':
+      return 0.08;
+    default:
+      return 0;
+  }
+}
+
+export function scoreMemory(
+  memory: MemoryItem,
+  currentMessage: string,
+  intent: MemoryQueryIntent = inferMemoryQueryIntent(currentMessage),
+): number {
+  const msgWords = new Set(currentMessage.toLowerCase().split(/\s+/).filter((w) => w.length > 2));
+  const memWords = new Set((memory.normalizedValue || memory.valueText).toLowerCase().split(/\s+/).filter((w) => w.length > 2));
+
+  const intersection = [...msgWords].filter((w) => memWords.has(w)).length;
+  const union = new Set([...msgWords, ...memWords]).size;
+  const lexicalOverlap = union === 0 ? 0 : (intersection / union) * 0.3;
+
+  let categoryBoost = 0;
+  const keywords = CATEGORY_KEYWORDS[memory.category];
+  if (keywords) {
+    const msgLower = currentMessage.toLowerCase();
+    const hits = keywords.filter((kw) => msgLower.includes(kw)).length;
+    categoryBoost = Math.min(hits * 0.07, 0.2);
+  }
+  categoryBoost += getLocationIntentBoost(memory, intent);
+  if (intent === 'local_discovery' && isPreferenceLikeMemory(memory)) {
+    categoryBoost += 0.1;
+  }
+
+  const confidenceWeight = memory.confidence * 0.2;
+
+  let freshnessWeight = 0.2;
+  const freshnessAnchor = memory.lastConfirmedAt ?? memory.lastSeenAt ?? memory.createdAt;
+  if (freshnessAnchor) {
+    const halfLife = getMemoryHalfLifeDays(memory);
+    if (halfLife === Infinity) {
+      freshnessWeight = 0.2; // no decay for stable types
+    } else {
+      const ageMs = Date.now() - new Date(freshnessAnchor).getTime();
+      const ageDays = ageMs / (1000 * 60 * 60 * 24);
+      freshnessWeight = 0.2 * Math.exp(-0.693 * ageDays / halfLife);
+    }
+  }
+
+  let typeWeight = 0.05;
+  if (memory.memoryType === 'identity' || memory.memoryType === 'preference') typeWeight = 0.1;
+  if (memory.status === 'uncertain') typeWeight = 0;
+
+  return lexicalOverlap + categoryBoost + confidenceWeight + freshnessWeight + typeWeight;
+}
+
+// Core identity categories that are ALWAYS injected into context regardless of
+// relevance scoring. These represent fundamental facts about who the user is.
+const CORE_IDENTITY_CATEGORIES = new Set([
+  'name', 'location', 'employment', 'age', 'birthday', 'nationality',
+]);
+
+function isCoreIdentityMemory(memory: MemoryItem): boolean {
+  return memory.memoryType === 'identity' && CORE_IDENTITY_CATEGORIES.has(memory.category);
+}
+
+export interface MemoryRetrievalTimings {
+  totalMs: number;
+  activeItemsMs: number;
+  semanticLookupMs: number;
+  embeddingMs: number;
+  vectorSearchMs: number;
+  scoringMs: number;
+  semanticSkipped: boolean;
+}
+
+interface SemanticMemoryLookupResult {
+  ids: Set<number>;
+  timings: Pick<
+    MemoryRetrievalTimings,
+    'semanticLookupMs' | 'embeddingMs' | 'vectorSearchMs'
+  >;
+}
+
+/**
+ * Search the embedding index for memory items semantically similar to the
+ * current message. Returns memory IDs found via vector search so they can
+ * be merged with the keyword-scored pool.
+ */
+async function getSemanticMemoryIdsWithTimings(
+  handle: string,
+  currentMessage: string,
+  matchCount = 15,
+): Promise<SemanticMemoryLookupResult> {
+  const ids = new Set<number>();
+  const semanticStart = Date.now();
+  let embeddingMs = 0;
+  let vectorSearchMs = 0;
+  try {
+    const { getEmbedding, vectorString } = await import('./rag-tools.ts');
+    const supabase = getAdminClient();
+
+    const embeddingStart = Date.now();
+    const embedding = await getEmbedding(currentMessage);
+    embeddingMs = Date.now() - embeddingStart;
+    const embStr = vectorString(embedding);
+
+    const vectorSearchStart = Date.now();
+    const { data, error } = await supabase.rpc('match_search_documents', {
+      p_handle: handle,
+      query_embedding: embStr,
+      match_count: matchCount,
+      source_filters: ['memory_summary'],
+      min_score: 0.25,
+    });
+    vectorSearchMs = Date.now() - vectorSearchStart;
+
+    if (!error && data) {
+      for (const row of data as Array<{ metadata?: { memory_id?: number } }>) {
+        const memId = row.metadata?.memory_id;
+        if (typeof memId === 'number') ids.add(memId);
+      }
+    }
+  } catch (err) {
+    console.warn('[memory] Semantic memory search failed, falling back to keyword-only:', (err as Error).message);
+  }
+  return {
+    ids,
+    timings: {
+      semanticLookupMs: Date.now() - semanticStart,
+      embeddingMs,
+      vectorSearchMs,
+    },
+  };
+}
+
+export async function getRelevantMemoryItemsWithTimings(
+  handle: string,
+  currentMessage: string,
+  limit = 20,
+): Promise<{ items: MemoryItem[]; timings: MemoryRetrievalTimings }> {
+  const retrievalStart = Date.now();
+  const skipSemanticLookup = shouldSkipSemanticMemoryLookup(currentMessage);
+  const timings: MemoryRetrievalTimings = {
+    totalMs: 0,
+    activeItemsMs: 0,
+    semanticLookupMs: 0,
+    embeddingMs: 0,
+    vectorSearchMs: 0,
+    scoringMs: 0,
+    semanticSkipped: skipSemanticLookup,
+  };
+
+  if (skipSemanticLookup) {
+    console.log(
+      `[memory] skipping semantic lookup for short conversational follow-up: "${currentMessage.substring(0, 80)}"`,
+    );
+  }
+
+  const activeItemsPromise = (async () => {
+    const start = Date.now();
+    const items = await getActiveMemoryItems(handle, 200);
+    timings.activeItemsMs = Date.now() - start;
+    return items;
+  })();
+
+  const semanticLookupPromise = skipSemanticLookup
+    ? Promise.resolve({
+      ids: new Set<number>(),
+      timings: {
+        semanticLookupMs: 0,
+        embeddingMs: 0,
+        vectorSearchMs: 0,
+      },
+    } satisfies SemanticMemoryLookupResult)
+    : getSemanticMemoryIdsWithTimings(handle, currentMessage);
+
+  // Fetch a larger pool (200 instead of 50) so we don't miss important older memories
+  const [all, semanticLookup] = await Promise.all([
+    activeItemsPromise,
+    semanticLookupPromise,
+  ]);
+  const semanticIds = semanticLookup.ids;
+  timings.semanticLookupMs = semanticLookup.timings.semanticLookupMs;
+  timings.embeddingMs = semanticLookup.timings.embeddingMs;
+  timings.vectorSearchMs = semanticLookup.timings.vectorSearchMs;
+
+  if (all.length === 0) {
+    timings.totalMs = Date.now() - retrievalStart;
+    return { items: [], timings };
+  }
+
+  const scoringStart = Date.now();
+  // Phase 1: Always-include core identity memories (name, location, job, etc.)
+  const coreIdentity: MemoryItem[] = [];
+  const nonCore: MemoryItem[] = [];
+  for (const m of all) {
+    if (isCoreIdentityMemory(m)) {
+      coreIdentity.push(m);
+    } else {
+      nonCore.push(m);
+    }
+  }
+
+  const seenIds = new Set<number>(coreIdentity.map((m) => m.id));
+
+  // Phase 2: Score remaining memories, boosting those found via semantic search
+  const intent = inferMemoryQueryIntent(currentMessage);
+  const SEMANTIC_BOOST = 0.25;
+  const scored = nonCore.map((m) => {
+    let score = scoreMemory(m, currentMessage, intent);
+    if (semanticIds.has(m.id)) score += SEMANTIC_BOOST;
+    return { memory: m, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+
+  // Phase 3: Fill remaining slots with intent-prioritised then score-ranked memories
+  const remaining = limit - coreIdentity.length;
+  const selected: Array<{ memory: MemoryItem; score: number }> = [];
+
+  const pushMatches = (
+    predicate: (entry: { memory: MemoryItem; score: number }) => boolean,
+    maxCount: number,
+  ) => {
+    for (const entry of scored) {
+      if (selected.length >= remaining) return;
+      if (seenIds.has(entry.memory.id) || !predicate(entry)) continue;
+      selected.push(entry);
+      seenIds.add(entry.memory.id);
+      if (maxCount > 0 && selected.filter(predicate).length >= maxCount) return;
+    }
+  };
+
+  if (['weather', 'local_discovery', 'service_availability', 'local_rules'].includes(intent)) {
+    pushMatches((entry) => isLocationMemory(entry.memory), 2);
+  }
+  if (intent === 'local_discovery') {
+    pushMatches((entry) => isPreferenceLikeMemory(entry.memory), 1);
+  }
+  pushMatches(() => true, remaining);
+
+  timings.scoringMs = Date.now() - scoringStart;
+  timings.totalMs = Date.now() - retrievalStart;
+
+  return { items: [...coreIdentity, ...selected.map((s) => s.memory)], timings };
+}
+
+export async function getRelevantMemoryItems(
+  handle: string,
+  currentMessage: string,
+  limit = 20,
+): Promise<MemoryItem[]> {
+  const { items } = await getRelevantMemoryItemsWithTimings(
+    handle,
+    currentMessage,
+    limit,
+  );
+  return items;
+}
+
+export function scoreSummary(summary: ConversationSummary, currentMessage: string): number {
+  const msgWords = new Set(currentMessage.toLowerCase().split(/\s+/).filter((w) => w.length > 2));
+  const topicWords = new Set(summary.topics.flatMap((t) => t.toLowerCase().split(/\s+/)));
+  const summaryWords = new Set(summary.summary.toLowerCase().split(/\s+/).filter((w) => w.length > 2));
+  const allSummaryWords = new Set([...topicWords, ...summaryWords]);
+
+  const intersection = [...msgWords].filter((w) => allSummaryWords.has(w)).length;
+  const union = new Set([...msgWords, ...allSummaryWords]).size;
+  const overlap = union === 0 ? 0 : (intersection / union) * 0.5;
+
+  let freshness = 0.3;
+  if (summary.lastMessageAt) {
+    const ageMs = Date.now() - new Date(summary.lastMessageAt).getTime();
+    const ageDays = ageMs / (1000 * 60 * 60 * 24);
+    freshness = 0.3 * Math.exp(-0.693 * ageDays / 7);
+  }
+
+  const confidenceBoost = summary.confidence * 0.2;
+
+  return overlap + freshness + confidenceBoost;
+}
+
+export function getRelevantSummaries(
+  summaries: ConversationSummary[],
+  currentMessage: string,
+  limit = 5,
+): ConversationSummary[] {
+  if (summaries.length === 0) return [];
+
+  const scored = summaries.map((s) => ({ summary: s, score: scoreSummary(s, currentMessage) }));
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit).map((s) => s.summary);
+}
+
+export function scoreToolTrace(trace: ToolTrace, currentMessage: string): number {
+  const msgLower = currentMessage.toLowerCase();
+  let relevance = 0;
+
+  if (trace.safeSummary && trace.safeSummary.length > 0) {
+    const traceWords = new Set(trace.safeSummary.toLowerCase().split(/\s+/).filter((w) => w.length > 2));
+    const msgWords = new Set(msgLower.split(/\s+/).filter((w) => w.length > 2));
+    const intersection = [...msgWords].filter((w) => traceWords.has(w)).length;
+    relevance = Math.min(intersection * 0.15, 0.4);
+  }
+
+  let freshness = 0.4;
+  if (trace.createdAt) {
+    const ageMs = Date.now() - new Date(trace.createdAt).getTime();
+    const ageHours = ageMs / (1000 * 60 * 60);
+    freshness = 0.4 * Math.exp(-0.693 * ageHours / 6);
+  }
+
+  return relevance + freshness + 0.1;
+}
+
+export function getRelevantToolTraces(
+  traces: ToolTrace[],
+  currentMessage: string,
+  limit = 5,
+): ToolTrace[] {
+  if (traces.length === 0) return [];
+
+  const scored = traces.map((t) => ({ trace: t, score: scoreToolTrace(t, currentMessage) }));
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit).map((s) => s.trace);
+}

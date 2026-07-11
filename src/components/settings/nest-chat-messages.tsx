@@ -338,9 +338,17 @@ function NestImageBubble({
   variant: BubbleVariant;
   showTail: boolean;
 }) {
-  const src = attachmentId?.trim()
+  const proxySrc = attachmentId?.trim()
     ? `/api/store/linq-attachment?id=${encodeURIComponent(attachmentId.trim())}`
-    : url;
+    : null;
+  const directSrc = url.trim() || null;
+  const [src, setSrc] = React.useState<string | null>(proxySrc || directSrc);
+
+  React.useEffect(() => {
+    setSrc(proxySrc || directSrc);
+  }, [proxySrc, directSrc]);
+
+  if (!src) return null;
 
   return (
     <NestChatBubble variant={variant} showTail={showTail} dense>
@@ -356,6 +364,12 @@ function NestImageBubble({
           alt={filename?.trim() || "Customer photo"}
           className="block max-h-72 max-w-full object-cover"
           loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => {
+            if (directSrc && src !== directSrc) {
+              setSrc(directSrc);
+            }
+          }}
         />
       </a>
     </NestChatBubble>

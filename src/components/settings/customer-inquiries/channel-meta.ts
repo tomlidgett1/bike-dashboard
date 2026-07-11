@@ -5,11 +5,12 @@ import {
   Mail,
   PhoneMissed,
   Send,
+  Star,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import type { NestChannel } from "@/lib/nest/types";
 
-/** Every way an enquiry can reach the store, across Gmail, Instagram and Nest. */
-export type InboxChannel = "email" | "instagram" | NestChannel;
+/** Every way an enquiry can reach the store, across Gmail, Instagram, Nest and Google. */
+export type InboxChannel = "email" | "instagram" | "google_review" | NestChannel;
 
 export type ChannelMeta = {
   label: string;
@@ -32,6 +33,12 @@ export const CHANNEL_META: Record<InboxChannel, ChannelMeta> = {
     icon: Instagram,
     chipClass: "border-gray-200 bg-gray-50 text-gray-600",
     origin: "This customer sent your store a direct message on Instagram.",
+  },
+  google_review: {
+    label: "Google review",
+    icon: Star,
+    chipClass: "border-gray-200 bg-gray-50 text-gray-600",
+    origin: "This customer left a review on your Google Business Profile.",
   },
   website_chat: {
     label: "Website chat",

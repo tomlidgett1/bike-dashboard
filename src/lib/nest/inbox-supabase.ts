@@ -1,10 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   deriveNestChannel,
+  deriveNestChannelFromMessages,
   type NestConversationDetail,
   type NestConversationListItem,
   type NestConversationMessage,
-  type NestFirstMessageHint,
+  type NestChannel,
 } from "@/lib/nest/types";
 
 type ConversationRow = {
@@ -20,6 +21,7 @@ type ConversationRow = {
   latest_manual_message_at: string | null;
   source: "customer" | "portal_test";
   triggered_by_twilio: boolean;
+  channel: NestChannel;
 };
 
 type MessageRow = {
@@ -50,6 +52,7 @@ function rowToListItem(row: ConversationRow): NestConversationListItem {
     latestManualMessageAt: row.latest_manual_message_at,
     source: row.source,
     triggeredByTwilio: row.triggered_by_twilio,
+    channel: row.channel,
   };
 }
 
@@ -64,6 +67,12 @@ function rowToMessage(row: MessageRow): NestConversationMessage {
   };
 }
 
+function chatTimeMs(value: string | null | undefined): number {
+  if (!value) return 0;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
 export async function loadNestChatsFromSupabase(
   supabase: SupabaseClient,
   userId: string,
@@ -71,7 +80,7 @@ export async function loadNestChatsFromSupabase(
   const { data, error } = await supabase
     .from("store_nest_conversations")
     .select(
-      "chat_id, title, display_name, participant_handle, preview, preview_role, last_message_at, last_customer_message_at, has_manual_messages, latest_manual_message_at, source, triggered_by_twilio",
+      "chat_id, title, display_name, participant_handle, preview, preview_role, last_message_at, last_customer_message_at, has_manual_messages, latest_manual_message_at, source, triggered_by_twilio, channel",
     )
     .eq("user_id", userId)
     .order("last_message_at", { ascending: false })
@@ -82,70 +91,7 @@ export async function loadNestChatsFromSupabase(
     return [];
   }
 
-  const chats = (data ?? []).map((row) => rowToListItem(row as ConversationRow));
-  return annotateNestChatChannels(supabase, userId, chats);
-}
-
-type FirstMessageRow = {
-  chat_id: string;
-  role: string;
-  handle: string | null;
-  created_at: string;
-  source: string | null;
-};
-
-/**
- * Earliest cached message per chat, from YJ's own store_nest_messages mirror.
- * Only the columns needed to classify the channel are fetched.
- */
-async function loadNestFirstMessageHints(
-  supabase: SupabaseClient,
-  userId: string,
-  chatIds: string[],
-): Promise<Map<string, NestFirstMessageHint>> {
-  if (chatIds.length === 0) return new Map();
-
-  const { data, error } = await supabase
-    .from("store_nest_messages")
-    .select("chat_id, role, handle, created_at, source:metadata->>source")
-    .eq("user_id", userId)
-    .in("chat_id", chatIds)
-    .order("created_at", { ascending: true })
-    .limit(10000);
-
-  if (error) {
-    console.error("[nest-inbox-supabase] first message hints failed:", error.message);
-    return new Map();
-  }
-
-  const hints = new Map<string, NestFirstMessageHint>();
-  for (const row of (data ?? []) as FirstMessageRow[]) {
-    if (hints.has(row.chat_id)) continue;
-    hints.set(row.chat_id, {
-      role: row.role,
-      handle: row.handle,
-      source: row.source,
-    });
-  }
-  return hints;
-}
-
-/** Attach the derived channel (website chat / missed call / store outreach) to each chat. */
-export async function annotateNestChatChannels(
-  supabase: SupabaseClient,
-  userId: string,
-  chats: NestConversationListItem[],
-): Promise<NestConversationListItem[]> {
-  if (chats.length === 0) return chats;
-  const hints = await loadNestFirstMessageHints(
-    supabase,
-    userId,
-    chats.map((chat) => chat.chatId),
-  );
-  return chats.map((chat) => ({
-    ...chat,
-    channel: deriveNestChannel(chat, hints.get(chat.chatId) ?? null),
-  }));
+  return (data ?? []).map((row) => rowToListItem(row as ConversationRow));
 }
 
 export async function loadNestThreadSyncState(
@@ -203,6 +149,26 @@ export async function loadNestThreadSyncState(
   return state;
 }
 
+export async function loadNestThreadLastMessageAtFromSupabase(
+  supabase: SupabaseClient,
+  userId: string,
+  chatId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("store_nest_conversations")
+    .select("last_message_at")
+    .eq("user_id", userId)
+    .eq("chat_id", chatId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[nest-inbox-supabase] thread freshness load failed:", error.message);
+    return null;
+  }
+
+  return data?.last_message_at ? String(data.last_message_at) : null;
+}
+
 export async function loadNestThreadFromSupabase(
   supabase: SupabaseClient,
   userId: string,
@@ -254,6 +220,21 @@ export async function upsertNestChatsToSupabase(
 ): Promise<void> {
   if (chats.length === 0) return;
 
+  const { data: existingRows } = await supabase
+    .from("store_nest_conversations")
+    .select("chat_id, channel")
+    .eq("user_id", userId)
+    .in(
+      "chat_id",
+      chats.map((chat) => chat.chatId),
+    );
+  const existingChannels = new Map<string, NestChannel>();
+  for (const row of existingRows ?? []) {
+    const chatId = String(row.chat_id ?? "").trim();
+    const channel = row.channel as NestChannel | null;
+    if (chatId && channel) existingChannels.set(chatId, channel);
+  }
+
   const now = new Date().toISOString();
   const rows = chats.map((chat) => ({
     user_id: userId,
@@ -270,6 +251,7 @@ export async function upsertNestChatsToSupabase(
     latest_manual_message_at: chat.latestManualMessageAt ?? null,
     source: chat.source ?? "customer",
     triggered_by_twilio: chat.triggeredByTwilio ?? false,
+    channel: chat.channel ?? existingChannels.get(chat.chatId) ?? deriveNestChannel(chat),
     synced_at: now,
     updated_at: now,
   }));
@@ -291,33 +273,71 @@ export async function upsertNestThreadToSupabase(
   listChat?: NestConversationListItem,
 ): Promise<void> {
   const now = new Date().toISOString();
+  if (conversation.messages.length === 0) {
+    if (listChat) {
+      await upsertNestChatsToSupabase(supabase, userId, brandKey, [listChat]);
+    }
+    return;
+  }
+
+  const lastMessage = conversation.messages[conversation.messages.length - 1];
+  const lastImages = Array.isArray(lastMessage?.metadata?.images)
+    ? lastMessage.metadata.images
+    : [];
+  const lastPreviewText = (lastMessage?.content ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 180);
+  const imagePreview =
+    lastImages.length > 0
+      ? lastImages.length === 1
+        ? "Sent a photo"
+        : `Sent ${lastImages.length} photos`
+      : "";
+
   const chat = listChat ?? {
     chatId: conversation.chatId,
     title: conversation.title,
     displayName: conversation.displayName,
     participantHandle: conversation.participantHandle,
-    preview:
-      conversation.messages[conversation.messages.length - 1]?.content
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 180) ?? "",
-    previewRole:
-      conversation.messages[conversation.messages.length - 1]?.role ?? "user",
-    lastMessageAt:
-      conversation.messages[conversation.messages.length - 1]?.createdAt ?? now,
+    preview: lastPreviewText || imagePreview,
+    previewRole: lastMessage?.role ?? "user",
+    lastMessageAt: lastMessage?.createdAt ?? now,
+    lastCustomerMessageAt:
+      [...conversation.messages].reverse().find((message) => message.role === "user")
+        ?.createdAt ?? null,
     source: conversation.source,
+  };
+
+  const threadIsNewer =
+    !!lastMessage &&
+    new Date(lastMessage.createdAt).getTime() > chatTimeMs(chat.lastMessageAt);
+
+  // When the portal list item is stale (common for image-only human-mode
+  // replies), prefer the thread's latest customer message timestamps.
+  const enrichedListChat: NestConversationListItem = {
+    ...chat,
+    preview: threadIsNewer
+      ? lastPreviewText || imagePreview || chat.preview
+      : chat.preview?.trim() || lastPreviewText || imagePreview || chat.preview,
+    previewRole: threadIsNewer && lastMessage ? lastMessage.role : chat.previewRole,
+    lastMessageAt: threadIsNewer && lastMessage ? lastMessage.createdAt : chat.lastMessageAt,
+    lastCustomerMessageAt:
+      [...conversation.messages].reverse().find((message) => message.role === "user")
+        ?.createdAt ??
+      chat.lastCustomerMessageAt ??
+      null,
+    channel: deriveNestChannelFromMessages(chat, conversation.messages),
   };
 
   await upsertNestChatsToSupabase(supabase, userId, brandKey, [
     {
-      ...chat,
-      previewRole: chat.previewRole ?? "user",
-      lastMessageAt: chat.lastMessageAt ?? now,
-      source: chat.source ?? conversation.source,
+      ...enrichedListChat,
+      previewRole: enrichedListChat.previewRole ?? "user",
+      lastMessageAt: enrichedListChat.lastMessageAt ?? now,
+      source: enrichedListChat.source ?? conversation.source,
     },
   ]);
-
-  if (conversation.messages.length === 0) return;
 
   const messageRows = conversation.messages.map((message) => ({
     user_id: userId,

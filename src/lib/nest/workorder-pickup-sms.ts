@@ -1,4 +1,5 @@
 import OpenAI from 'openai'
+import { moderateNestOutboundMessage } from '@/lib/nest/outbound-content-moderation'
 
 const MODEL = 'gpt-4.1-mini'
 
@@ -106,6 +107,18 @@ function parseDraft(content: string): WorkorderPickupSmsDraft | null {
   }
 }
 
+async function ensureDraftSafe(
+  draft: WorkorderPickupSmsDraft | null,
+): Promise<WorkorderPickupSmsDraft | null> {
+  if (!draft) return null
+  const moderation = await moderateNestOutboundMessage(draft.body)
+  if (!moderation.allowed) {
+    console.warn('[workorder-pickup-sms] draft blocked by content moderation')
+    return null
+  }
+  return draft
+}
+
 const BATCH_SYSTEM_PROMPT = `${SYSTEM_PROMPT}
 
 When given multiple work orders, return JSON only:
@@ -178,9 +191,11 @@ export async function generateWorkorderPickupSmsDraftsBatch(
     if (!content) return results
 
     const batchDrafts = parseBatchDrafts(content, activeIndices.length)
-    activeIndices.forEach((contextIndex, order) => {
-      results[contextIndex] = batchDrafts[order] ?? null
-    })
+    await Promise.all(
+      activeIndices.map(async (contextIndex, order) => {
+        results[contextIndex] = await ensureDraftSafe(batchDrafts[order] ?? null)
+      }),
+    )
     return results
   } catch (error) {
     console.error('[workorder-pickup-sms] batch LLM failed:', error)
@@ -207,7 +222,7 @@ export async function generateWorkorderPickupSmsDraft(
 
     const content = response.choices[0]?.message?.content
     if (!content) return null
-    return parseDraft(content)
+    return ensureDraftSafe(parseDraft(content))
   } catch (error) {
     console.error('[workorder-pickup-sms] LLM failed:', error)
     return null

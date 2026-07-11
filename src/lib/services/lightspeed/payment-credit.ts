@@ -23,7 +23,12 @@ export interface CreditDepositSaleContext {
   registerID: string;
   employeeID: string;
   customerID: string;
-  creditAccountID: string;
+  /**
+   * Primary (non-gift-card) credit account ID when the customer already has one.
+   * Omit when creating — Lightspeed auto-creates and links a primary account if
+   * the Credit Account SalePayment has no creditAccountID.
+   */
+  creditAccountID?: string | null;
   /** Inbound payment type (eCom preferred, else Credit Card / Cash). */
   inboundPaymentTypeID: string;
   /** Credit Account payment type (type === "credit account"). */
@@ -44,6 +49,20 @@ export function buildCreditDepositSalePayload(
   const amount = formatAudFromCents(details.amountCents);
   const reference = buildNestPaymentReferenceNumber(details.paymentRequestId);
 
+  const creditPayment: Record<string, string> = {
+    amount: `-${amount}`,
+    paymentTypeID: ctx.creditAccountPaymentTypeID,
+    registerID: ctx.registerID,
+    employeeID: ctx.employeeID,
+  };
+  // Only attach an existing primary account. Sending a gift-card account ID
+  // fails with "SalePayment.creditAccountID != Customer.creditAccountID".
+  // Omitting the field makes Lightspeed create + link a primary account.
+  const existingId = ctx.creditAccountID?.trim();
+  if (existingId && existingId !== "0") {
+    creditPayment.creditAccountID = existingId;
+  }
+
   return {
     employeeID: ctx.employeeID,
     registerID: ctx.registerID,
@@ -60,13 +79,7 @@ export function buildCreditDepositSalePayload(
           registerID: ctx.registerID,
           employeeID: ctx.employeeID,
         },
-        {
-          amount: `-${amount}`,
-          paymentTypeID: ctx.creditAccountPaymentTypeID,
-          creditAccountID: ctx.creditAccountID,
-          registerID: ctx.registerID,
-          employeeID: ctx.employeeID,
-        },
+        creditPayment,
       ],
     },
   };

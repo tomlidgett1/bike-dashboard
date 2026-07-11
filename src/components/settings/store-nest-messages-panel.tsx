@@ -35,6 +35,10 @@ import {
 import { NestAutoServicePanel } from "@/components/settings/nest-auto-service-panel";
 import { NestHiddenPickupSuggestionsPanel } from "@/components/settings/nest-hidden-pickup-suggestions";
 import { NestMessageTemplatesBento } from "@/components/settings/nest-message-templates-bento";
+import {
+  GoogleBusinessConnectCard,
+  SHOW_GOOGLE_BUSINESS_CONNECT,
+} from "@/components/settings/customer-inquiries/google-business-connect-card";
 import { NestPickupSuggestionsDropdown } from "@/components/settings/nest-pickup-suggestions-dropdown";
 import {
   NEST_OVERLAY_INNER_RADIUS_CLASS,
@@ -784,7 +788,7 @@ export function StoreNestMessagesPanel() {
 
                     <div
                       ref={threadRef}
-                      className="h-0 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-white px-5 py-5 md:px-10"
+                      className="h-0 min-h-0 min-w-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden overscroll-contain bg-white px-5 py-5 md:px-10"
                       style={{ WebkitOverflowScrolling: "touch" }}
                     >
                       {threadLoading && conversation.messages.length === 0 ? (
@@ -837,6 +841,11 @@ export function StoreNestMessagesPanel() {
             storeSettingsPageChromeClass,
           )}
         >
+          {SHOW_GOOGLE_BUSINESS_CONNECT ? (
+            <div className="mb-6">
+              <GoogleBusinessConnectCard />
+            </div>
+          ) : null}
           <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2 lg:gap-8">
             <NestMessageTemplatesBento variant="light-beige-floating" />
             <NestHiddenPickupSuggestionsPanel variant="light-beige-floating" />

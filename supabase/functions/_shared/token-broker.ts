@@ -1,0 +1,295 @@
+import { getAdminClient } from './supabase.ts';
+import { getOptionalEnv } from './env.ts';
+
+const GOOGLE_CLIENT_ID = getOptionalEnv('GOOGLE_CLIENT_ID') ?? '';
+const GOOGLE_CLIENT_SECRET = getOptionalEnv('GOOGLE_CLIENT_SECRET') ?? '';
+const MS_CLIENT_ID = getOptionalEnv('AZURE_CLIENT_ID') ?? getOptionalEnv('MS_CLIENT_ID') ?? '';
+const MS_CLIENT_SECRET = getOptionalEnv('AZURE_CLIENT_SECRET') ?? getOptionalEnv('MS_CLIENT_SECRET') ?? '';
+const GRANOLA_TOKEN_ENDPOINT = 'https://mcp-auth.granola.ai/oauth2/token';
+
+export interface TokenResult {
+  accessToken: string;
+  expiresIn: number;
+  email: string;
+  accountId: string;
+  isPrimary?: boolean;
+}
+
+export interface TokenOptions {
+  accountId?: string;
+  email?: string;
+}
+
+// ── Google ──
+
+export async function getGoogleAccessToken(
+  userId: string,
+  options?: TokenOptions,
+): Promise<TokenResult> {
+  const supabase = getAdminClient();
+
+  let query = supabase
+    .from('user_google_accounts')
+    .select('id, google_email, refresh_token, is_primary');
+
+  if (options?.accountId) {
+    query = query.eq('id', options.accountId).eq('user_id', userId);
+  } else if (options?.email) {
+    query = query.eq('google_email', options.email).eq('user_id', userId);
+  } else {
+    query = query.eq('user_id', userId).eq('is_primary', true);
+  }
+
+  const { data: account, error } = await query.maybeSingle();
+
+  if (error) throw new Error(`Token broker: ${error.message}`);
+  if (!account) throw new Error('No Google account found');
+
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+    throw new Error('GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be configured');
+  }
+
+  const resp = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: GOOGLE_CLIENT_ID,
+      client_secret: GOOGLE_CLIENT_SECRET,
+      refresh_token: account.refresh_token,
+    }),
+  });
+
+  const data = await resp.json();
+
+  if (!resp.ok) {
+    throw new Error(`Google token refresh failed: ${data.error_description ?? data.error ?? resp.status}`);
+  }
+
+  // Rotate refresh token if Google returns a new one
+  if (data.refresh_token && data.refresh_token !== account.refresh_token) {
+    await supabase
+      .from('user_google_accounts')
+      .update({ refresh_token: data.refresh_token, updated_at: new Date().toISOString() })
+      .eq('id', account.id);
+  }
+
+  return {
+    accessToken: data.access_token,
+    expiresIn: data.expires_in ?? 3600,
+    email: account.google_email,
+    accountId: account.id,
+  };
+}
+
+export async function getAllGoogleTokens(userId: string): Promise<TokenResult[]> {
+  const supabase = getAdminClient();
+
+  const { data: accounts, error } = await supabase
+    .from('user_google_accounts')
+    .select('id, google_email, refresh_token, is_primary')
+    .eq('user_id', userId);
+
+  if (error) throw new Error(`Token broker: ${error.message}`);
+  if (!accounts || accounts.length === 0) return [];
+
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+    throw new Error('GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be configured');
+  }
+
+  const results = await Promise.allSettled(
+    accounts.map(async (account) => {
+      const resp = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          client_id: GOOGLE_CLIENT_ID,
+          client_secret: GOOGLE_CLIENT_SECRET,
+          refresh_token: account.refresh_token,
+        }),
+      });
+
+      const data = await resp.json();
+      if (!resp.ok) {
+        throw new Error(`Refresh failed for ${account.google_email}: ${data.error_description ?? data.error}`);
+      }
+
+      if (data.refresh_token && data.refresh_token !== account.refresh_token) {
+        await supabase
+          .from('user_google_accounts')
+          .update({ refresh_token: data.refresh_token, updated_at: new Date().toISOString() })
+          .eq('id', account.id);
+      }
+
+      return {
+        accessToken: data.access_token,
+        expiresIn: data.expires_in ?? 3600,
+        email: account.google_email,
+        accountId: account.id,
+        isPrimary: Boolean(account.is_primary),
+      } as TokenResult;
+    }),
+  );
+
+  const fulfilled: TokenResult[] = [];
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r.status === 'fulfilled') {
+      fulfilled.push(r.value);
+    } else {
+      console.error('[token-broker] refresh failed for one linked Google account');
+    }
+  }
+  return fulfilled;
+}
+
+// ── Granola ──
+
+export interface GranolaTokenResult {
+  accessToken: string;
+  email: string;
+  accountId: string;
+}
+
+export async function getGranolaAccessToken(
+  userId: string,
+  options?: TokenOptions,
+): Promise<GranolaTokenResult> {
+  const supabase = getAdminClient();
+
+  let query = supabase
+    .from('user_granola_accounts')
+    .select('id, granola_email, access_token, refresh_token, token_expires_at, client_id, client_secret');
+
+  if (options?.accountId) {
+    query = query.eq('id', options.accountId).eq('user_id', userId);
+  } else if (options?.email) {
+    query = query.eq('granola_email', options.email).eq('user_id', userId);
+  } else {
+    query = query.eq('user_id', userId).eq('is_primary', true);
+  }
+
+  const { data: account, error } = await query.maybeSingle();
+
+  if (error) throw new Error(`Token broker: ${error.message}`);
+  if (!account) throw new Error('No Granola account found');
+
+  const expiryMs = account.token_expires_at
+    ? new Date(account.token_expires_at).getTime()
+    : 0;
+  const shouldRefresh =
+    Boolean(account.refresh_token && account.client_id && account.client_secret) &&
+    (!expiryMs || expiryMs <= Date.now() + 5 * 60 * 1000);
+
+  if (shouldRefresh) {
+    const credentials = btoa(`${account.client_id}:${account.client_secret}`);
+    const response = await fetch(GRANOLA_TOKEN_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: `Basic ${credentials}`,
+      },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: account.refresh_token,
+      }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(`Granola token refresh failed: ${data.error_description ?? data.error ?? response.status}`);
+    }
+
+    const nextAccessToken = data.access_token ?? account.access_token;
+    const nextRefreshToken = data.refresh_token ?? account.refresh_token;
+    const nextExpiry =
+      typeof data.expires_in === 'number' && data.expires_in > 0
+        ? new Date(Date.now() + data.expires_in * 1000).toISOString()
+        : account.token_expires_at ?? null;
+
+    await supabase
+      .from('user_granola_accounts')
+      .update({
+        access_token: nextAccessToken,
+        refresh_token: nextRefreshToken,
+        token_expires_at: nextExpiry,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', account.id);
+
+    return {
+      accessToken: nextAccessToken,
+      email: account.granola_email,
+      accountId: account.id,
+    };
+  }
+
+  return {
+    accessToken: account.access_token,
+    email: account.granola_email,
+    accountId: account.id,
+  };
+}
+
+// ── Microsoft ──
+
+export async function getMicrosoftAccessToken(
+  userId: string,
+  options?: TokenOptions,
+): Promise<TokenResult> {
+  const supabase = getAdminClient();
+
+  let query = supabase
+    .from('user_microsoft_accounts')
+    .select('id, microsoft_email, refresh_token, is_primary');
+
+  if (options?.accountId) {
+    query = query.eq('id', options.accountId).eq('user_id', userId);
+  } else if (options?.email) {
+    query = query.eq('microsoft_email', options.email).eq('user_id', userId);
+  } else {
+    query = query.eq('user_id', userId).eq('is_primary', true);
+  }
+
+  const { data: account, error } = await query.maybeSingle();
+
+  if (error) throw new Error(`Token broker: ${error.message}`);
+  if (!account) throw new Error('No Microsoft account found');
+
+  if (!MS_CLIENT_ID || !MS_CLIENT_SECRET) {
+    throw new Error('AZURE_CLIENT_ID and AZURE_CLIENT_SECRET must be configured');
+  }
+
+  const resp = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: MS_CLIENT_ID,
+      client_secret: MS_CLIENT_SECRET,
+      refresh_token: account.refresh_token,
+      scope: 'openid email offline_access User.Read Calendars.ReadWrite Mail.ReadWrite Mail.Send Contacts.Read Files.Read.All',
+    }),
+  });
+
+  const data = await resp.json();
+
+  if (!resp.ok) {
+    throw new Error(`Microsoft token refresh failed: ${data.error_description ?? data.error ?? resp.status}`);
+  }
+
+  if (data.refresh_token && data.refresh_token !== account.refresh_token) {
+    await supabase
+      .from('user_microsoft_accounts')
+      .update({ refresh_token: data.refresh_token, updated_at: new Date().toISOString() })
+      .eq('id', account.id);
+  }
+
+  return {
+    accessToken: data.access_token,
+    expiresIn: data.expires_in ?? 3600,
+    email: account.microsoft_email,
+    accountId: account.id,
+  };
+}

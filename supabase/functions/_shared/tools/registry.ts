@@ -1,0 +1,120 @@
+import type { ToolContract } from './types.ts';
+import { sendReactionTool } from './send-reaction.ts';
+import { sendEffectTool } from './send-effect.ts';
+import { rememberUserTool } from './remember-user.ts';
+import { generateImageTool } from './generate-image.ts';
+import { editImageTool } from './edit-image.ts';
+import { webSearchTool } from './web-search.ts';
+import { semanticSearchTool } from './semantic-search.ts';
+import { deepRecallSearchTool } from './deep-recall-search.ts';
+import { emailReadTool } from './email-read.ts';
+import { emailDraftTool, emailSendTool, emailUpdateDraftTool, emailCancelDraftTool } from './email-write.ts';
+import { planStepsTool } from './plan-steps.ts';
+import { calendarReadTool } from './calendar-read.ts';
+import { calendarWriteTool } from './calendar-write.ts';
+import { contactsReadTool } from './contacts-read.ts';
+import { granolaReadTool } from './granola-read.ts';
+import { travelTimeTool } from './travel-time.ts';
+import { placesSearchTool } from './places-search.ts';
+import { weatherTool } from './weather.ts';
+import { manageReminderTool } from './manage-reminder.ts';
+import { customMomentTool } from './custom-moment.ts';
+import { manageNotificationWatchTool } from './notification-watch.ts';
+import { newsSearchTool } from './news-search.ts';
+import { youtubeSearchTool } from './youtube-search.ts';
+import {
+  composioCreateTriggerTool,
+  composioExecuteActionTool,
+  composioExecuteTool,
+  composioGetConnectionLinkTool,
+  composioGetToolSchemaTool,
+  composioGetTriggerTypeTool,
+  composioListActiveTriggersTool,
+  composioListConnectedAccountsTool,
+  composioListTriggerTypesTool,
+  composioSearchToolsTool,
+} from './composio.ts';
+import {
+  brandCustomerLookupTool,
+  brandInventoryLookupTool,
+  brandLightspeedSqlQueryTool,
+  brandSalesLookupTool,
+  brandWorkorderLookupTool,
+} from './brand-lightspeed.ts';
+import {
+  brandBookingCreateTool,
+  brandBookingReadTool,
+  brandBookingUpdateTool,
+} from './brand-booking.ts';
+import {
+  brandDeputyMutationTool,
+  brandDeputyReadTool,
+} from './brand-deputy.ts';
+
+const REGISTRY = new Map<string, ToolContract>();
+
+function register(tool: ToolContract): void {
+  if (REGISTRY.has(tool.name)) {
+    throw new Error(`Duplicate tool registration: ${tool.name}`);
+  }
+  REGISTRY.set(tool.name, tool);
+}
+
+register(sendReactionTool);
+register(sendEffectTool);
+register(rememberUserTool);
+register(generateImageTool);
+register(editImageTool);
+register(webSearchTool);
+register(semanticSearchTool);
+register(deepRecallSearchTool);
+register(emailReadTool);
+register(emailDraftTool);
+register(emailUpdateDraftTool);
+register(emailSendTool);
+register(emailCancelDraftTool);
+register(planStepsTool);
+register(calendarReadTool);
+register(calendarWriteTool);
+register(contactsReadTool);
+register(granolaReadTool);
+register(travelTimeTool);
+register(placesSearchTool);
+register(weatherTool);
+register(manageReminderTool);
+register(customMomentTool);
+register(manageNotificationWatchTool);
+register(newsSearchTool);
+register(youtubeSearchTool);
+register(composioListConnectedAccountsTool);
+register(composioGetConnectionLinkTool);
+register(composioSearchToolsTool);
+register(composioGetToolSchemaTool);
+register(composioExecuteTool);
+register(composioExecuteActionTool);
+register(composioListTriggerTypesTool);
+register(composioGetTriggerTypeTool);
+register(composioCreateTriggerTool);
+register(composioListActiveTriggersTool);
+register(brandCustomerLookupTool);
+register(brandInventoryLookupTool);
+register(brandWorkorderLookupTool);
+register(brandSalesLookupTool);
+register(brandLightspeedSqlQueryTool);
+register(brandBookingReadTool);
+register(brandBookingUpdateTool);
+register(brandBookingCreateTool);
+register(brandDeputyReadTool);
+register(brandDeputyMutationTool);
+
+export function getTool(name: string): ToolContract | undefined {
+  return REGISTRY.get(name);
+}
+
+export function getAllTools(): ToolContract[] {
+  return [...REGISTRY.values()];
+}
+
+export function getToolNames(): string[] {
+  return [...REGISTRY.keys()];
+}

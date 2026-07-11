@@ -118,24 +118,9 @@ export async function GET() {
     const nestConfigured = isNestMessagingConfigured();
     const brandKey = resolveStoreNestBrandKey(auth.profile);
 
-    let nestChats = nestConfigured
+    const nestChats = nestConfigured
       ? filterNestCustomerChats(await loadCachedNestList(auth.supabase, auth.user.id))
       : [];
-
-    const shouldSyncNestInline = nestConfigured && brandKey && nestChats.length === 0;
-
-    if (shouldSyncNestInline) {
-      try {
-        nestChats = filterNestCustomerChats(
-          await syncNestInboxFromPortal(auth.supabase, auth.user.id, brandKey, {
-            enrichLightspeed: true,
-            syncThreads: false,
-          }),
-        );
-      } catch (error) {
-        console.error("[unified-inbox] inline nest sync failed:", error);
-      }
-    }
 
     const hydrated = await hydrateUnifiedInboxNames(auth.supabase, auth.user.id, {
       inquiries,
@@ -145,22 +130,26 @@ export async function GET() {
     const lastSyncedAt = nestConfigured
       ? await getNestLastSyncedAt(auth.supabase, auth.user.id)
       : null;
+    const needsNestBootstrap = nestConfigured && Boolean(brandKey) && nestChats.length === 0;
     const shouldBackgroundSync =
       nestConfigured &&
       brandKey &&
-      isInboxSyncStale(lastSyncedAt, UNIFIED_INBOX_BACKGROUND_SYNC_MS) &&
+      (needsNestBootstrap || isInboxSyncStale(lastSyncedAt, UNIFIED_INBOX_BACKGROUND_SYNC_MS)) &&
       shouldScheduleUnifiedInboxBackgroundSync(auth.user.id);
 
     if (shouldBackgroundSync) {
       after(async () => {
         try {
-          await backgroundReconcileGmailThreads(auth.supabase, auth.user.id);
-          if (nestConfigured && brandKey) {
-            await syncNestInboxFromPortal(auth.supabase, auth.user.id, brandKey, {
-              enrichLightspeed: !isLightspeedInBackoff(auth.user.id),
-              syncThreads: true,
-            });
-          }
+          await Promise.all([
+            backgroundReconcileGmailThreads(auth.supabase, auth.user.id),
+            nestConfigured && brandKey
+              ? syncNestInboxFromPortal(auth.supabase, auth.user.id, brandKey, {
+                  enrichLightspeed:
+                    !needsNestBootstrap && !isLightspeedInBackoff(auth.user.id),
+                  syncThreads: true,
+                })
+              : Promise.resolve(),
+          ]);
           await backgroundResolveInboxPhoneContacts(auth.supabase, auth.user.id, hydrated);
         } catch (error) {
           console.error("[unified-inbox] background sync failed:", error);
@@ -176,6 +165,7 @@ export async function GET() {
       nestCloseMap,
       gmail,
       nestConfigured,
+      nestSyncPending: needsNestBootstrap,
       cached: true,
     });
   } catch (error) {

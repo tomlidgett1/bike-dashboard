@@ -18,6 +18,7 @@ export async function sendInstagramReplyOnServer(payload: {
   conversationId: string;
   connectedAccountId: string;
   recipientId: string;
+  businessMessagingId?: string | null;
   text: string;
 }): Promise<{ message_id: string | null; sent_at: string }> {
   const res = await fetch("/api/store/instagram-inbox", {
@@ -28,6 +29,7 @@ export async function sendInstagramReplyOnServer(payload: {
       conversation_id: payload.conversationId,
       connected_account_id: payload.connectedAccountId,
       recipient_id: payload.recipientId,
+      business_messaging_id: payload.businessMessagingId ?? undefined,
       text: payload.text,
     }),
     cache: "no-store",

@@ -12,6 +12,7 @@ export type UnifiedInboxResponse = {
   closedGmailIds?: string[];
   gmail?: CustomerInquiriesResponse["gmail"];
   nestConfigured?: boolean;
+  nestSyncPending?: boolean;
   cached?: boolean;
   refreshed?: boolean;
   error?: string;

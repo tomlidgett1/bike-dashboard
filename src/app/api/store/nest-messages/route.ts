@@ -5,6 +5,7 @@ import { isNestMessagingConfigured } from "@/lib/nest/config";
 import {
   getNestLastSyncedAt,
   loadNestChatsFromSupabase,
+  loadNestThreadLastMessageAtFromSupabase,
   loadNestThreadFromSupabase,
 } from "@/lib/nest/inbox-supabase";
 import { resolveStoreNestBrandKey } from "@/lib/nest/resolve-store-brand-key";
@@ -28,6 +29,10 @@ import {
   syncNestInboxFromPortal,
   syncNestThreadFromPortal,
 } from "@/lib/store/unified-inbox-sync";
+import {
+  moderateNestOutboundMessage,
+  NEST_CONTENT_BLOCKED_CODE,
+} from "@/lib/nest/outbound-content-moderation";
 import { createClient } from "@/lib/supabase/server";
 
 function json(body: Record<string, unknown>, status = 200) {
@@ -52,6 +57,15 @@ function isNestSyncStale(
   const syncedMs = new Date(lastSyncedAt).getTime();
   if (!Number.isFinite(syncedMs)) return true;
   return Date.now() - syncedMs >= maxAgeMs;
+}
+
+function nestThreadLatestMs(conversation: NestConversationDetail): number {
+  let latest = 0;
+  for (const message of conversation.messages) {
+    const ms = new Date(message.createdAt).getTime();
+    if (Number.isFinite(ms) && ms > latest) latest = ms;
+  }
+  return latest;
 }
 
 function shouldScheduleNestListBackgroundSync(
@@ -167,6 +181,7 @@ export async function GET(request: NextRequest) {
   query.set("conversations", "1");
 
   const chatId = searchParams.get("chatId")?.trim();
+  const since = searchParams.get("since")?.trim() || null;
   if (chatId) query.set("chatId", chatId);
   const listOnly = searchParams.get("listOnly") === "1";
   const threadOnly = searchParams.get("threadOnly") === "1";
@@ -239,20 +254,53 @@ export async function GET(request: NextRequest) {
 
   if (threadOnly && chatId) {
     const cachedThread = getServerNestThreadCache(auth.brandKey, chatId);
-    if (cachedThread) {
-      return json({
-        chats: [],
-        selectedChatId: chatId,
-        conversation: cachedThread,
-        configured: true,
-        brandKey: auth.brandKey,
-        cached: true,
-        lightspeedConnected: await isLightspeedConnected(auth.userId),
-      });
+
+    if (since) {
+      const sinceMs = new Date(since).getTime();
+      if (Number.isFinite(sinceMs)) {
+        if (cachedThread && nestThreadLatestMs(cachedThread) > sinceMs) {
+          return json({
+            chats: [],
+            selectedChatId: chatId,
+            conversation: cachedThread,
+            configured: true,
+            brandKey: auth.brandKey,
+            cached: true,
+          });
+        }
+
+        const latestStoredAt = await loadNestThreadLastMessageAtFromSupabase(
+          auth.supabase,
+          auth.userId,
+          chatId,
+        );
+        const latestStoredMs = latestStoredAt ? new Date(latestStoredAt).getTime() : 0;
+        if (latestStoredMs > 0 && latestStoredMs <= sinceMs) {
+          return json({
+            chats: [],
+            selectedChatId: chatId,
+            conversation: null,
+            configured: true,
+            brandKey: auth.brandKey,
+            cached: true,
+            unchanged: true,
+          });
+        }
+      }
     }
 
     const supabaseThread = await loadNestThreadFromSupabase(auth.supabase, auth.userId, chatId);
-    if (supabaseThread) {
+
+    // Prefer Supabase when it has a newer or richer thread than the short-lived
+    // memory cache — image-only human-mode messages often land in Supabase via
+    // Linq backfill a few seconds after the cache was primed.
+    const preferSupabase =
+      !!supabaseThread &&
+      (!cachedThread ||
+        supabaseThread.messages.length > cachedThread.messages.length ||
+        nestThreadLatestMs(supabaseThread) > nestThreadLatestMs(cachedThread) + 999);
+
+    if (preferSupabase && supabaseThread) {
       setServerNestThreadCache(auth.brandKey, chatId, supabaseThread);
 
       after(() =>
@@ -274,6 +322,20 @@ export async function GET(request: NextRequest) {
         lightspeedConnected: await isLightspeedConnected(auth.userId),
       });
     }
+
+    if (cachedThread) {
+      return json({
+        chats: [],
+        selectedChatId: chatId,
+        conversation: cachedThread,
+        configured: true,
+        brandKey: auth.brandKey,
+        cached: true,
+        lightspeedConnected: await isLightspeedConnected(auth.userId),
+      });
+    }
+
+    // Fall through to live portal fetch when neither cache nor Supabase has the thread.
 
     try {
       const conversation = await syncNestThreadFromPortal(
@@ -397,6 +459,24 @@ export async function POST(request: NextRequest) {
     return json({ error: "Unsupported action." }, 400);
   }
 
+  const content = typeof body.content === "string" ? body.content : "";
+  if (content.trim()) {
+    // Defence in depth: gate here so staff UI is blocked even if the portal runs externally.
+    const moderation = await moderateNestOutboundMessage(content);
+    if (!moderation.allowed) {
+      return json(
+        {
+          error: moderation.userMessage,
+          code: moderation.code,
+          categories: moderation.categories,
+          configured: true,
+          brandKey: auth.brandKey,
+        },
+        422,
+      );
+    }
+  }
+
   try {
     const data = await proxyNestBrandPortalRequest(auth.brandKey, {
       method: "POST",
@@ -423,13 +503,19 @@ export async function POST(request: NextRequest) {
 
     return json({ ...data, configured: true, brandKey: auth.brandKey });
   } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Could not send Nest message.";
+    const isContentBlocked =
+      message.includes(NEST_CONTENT_BLOCKED_CODE) ||
+      /inappropriate for a customer|can't be sent/i.test(message);
     console.error("[store-nest-messages] POST failed:", error);
     return json(
       {
-        error: error instanceof Error ? error.message : "Could not send Nest message.",
+        error: message,
+        ...(isContentBlocked ? { code: NEST_CONTENT_BLOCKED_CODE } : {}),
         configured: true,
       },
-      502,
+      isContentBlocked ? 422 : 502,
     );
   }
 }

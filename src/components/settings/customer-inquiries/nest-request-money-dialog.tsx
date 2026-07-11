@@ -6,17 +6,13 @@ import Image from "next/image";
 import { Loader2 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { buildPaymentLinkMessage } from "@/lib/nest/sms-link-format";
 
 function formatAud(amount: number) {
   return new Intl.NumberFormat("en-AU", {
     style: "currency",
     currency: "AUD",
   }).format(amount);
-}
-
-function buildRequestMessage(amount: number, description: string, url: string) {
-  const forPart = description ? ` for ${description}` : "";
-  return `Here's a secure payment link${forPart} — ${formatAud(amount)}: ${url}\n\nOnce paid, it's added to your store credit in Lightspeed.`;
 }
 
 export function NestRequestMoneyDialog({
@@ -85,7 +81,14 @@ export function NestRequestMoneyDialog({
         throw new Error(data.error || "Could not create the payment link.");
       }
       // Draft into the compose box so staff can edit before sending — never auto-send.
-      onDraftMessage(buildRequestMessage(amount, description.trim(), data.url));
+      onDraftMessage(
+        buildPaymentLinkMessage({
+          amount,
+          description: description.trim(),
+          url: data.url,
+          formatAmount: formatAud,
+        }),
+      );
       onOpenChange(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create the payment link.");

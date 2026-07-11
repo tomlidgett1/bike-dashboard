@@ -197,13 +197,13 @@ export async function syncPaymentRequestToLightspeed(
       storeUserId: paymentRequest.store_user_id,
       eventType: "lightspeed_credit_account_ready",
       actor: "lightspeed",
-      message: creditAccount.created
-        ? `Created Lightspeed credit account #${creditAccount.creditAccountID}.`
-        : `Using Lightspeed credit account #${creditAccount.creditAccountID}.`,
+      message: creditAccount.creditAccountID
+        ? `Using Lightspeed credit account #${creditAccount.creditAccountID}.`
+        : "Customer has no primary Lightspeed credit account yet — the deposit sale will create one.",
       metadata: {
         lightspeedCreditAccountId: creditAccount.creditAccountID,
         balanceBefore: creditAccount.balance,
-        created: creditAccount.created,
+        willAutoCreate: !creditAccount.creditAccountID,
       },
     });
 
@@ -239,13 +239,14 @@ export async function syncPaymentRequestToLightspeed(
       storeUserId: paymentRequest.store_user_id,
       eventType: "lightspeed_credit_deposited",
       actor: "lightspeed",
-      message: `Deposited ${formatAud(paymentRequest.amount_cents)} onto Lightspeed credit account #${deposit.creditAccountID} via sale #${deposit.saleID}.${balanceNote}`,
+      message: `${deposit.creditAccountCreated ? "Created credit account and deposited" : "Deposited"} ${formatAud(paymentRequest.amount_cents)} onto Lightspeed credit account #${deposit.creditAccountID} via sale #${deposit.saleID}.${balanceNote}`,
       metadata: {
         lightspeedSaleId: deposit.saleID,
         lightspeedCreditAccountId: deposit.creditAccountID,
         lightspeedCustomerId: matched.customerID,
         amountCents: paymentRequest.amount_cents,
         balanceAfter: deposit.balanceAfter,
+        creditAccountCreated: deposit.creditAccountCreated,
       },
     });
 

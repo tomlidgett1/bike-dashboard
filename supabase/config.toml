@@ -384,6 +384,9 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/upload-to-cloudinary/index.ts"
 
+[functions.linq-webhook]
+verify_jwt = false
+
 # --- Search Dominance Agent --------------------------------------------------
 # Both are internal: cron (pg_net) and the admin API call them with the
 # service-role JWT, so verify_jwt stays on to block anonymous callers.

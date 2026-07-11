@@ -16,7 +16,9 @@ import {
   buildStubNestConversation,
   getCachedNestThread,
   mergeNestThreadFromList,
+  prefetchNestThread,
   setCachedNestThread,
+  setNestThreadCacheScope,
 } from "@/lib/nest/thread-cache";
 import {
   isGmailInquiryUnread,
@@ -73,6 +75,21 @@ import {
   markAllInstagramConversationsRead,
   markInstagramConversationRead,
 } from "@/lib/customer-inquiries/instagram-read-state";
+import type {
+  GoogleReviewItem,
+  GoogleReviewsState,
+} from "@/lib/customer-inquiries/google-review-types";
+import {
+  fetchGoogleReviewsInbox,
+  replyToGoogleReviewOnServer,
+} from "@/lib/customer-inquiries/google-reviews-client";
+import {
+  GOOGLE_REVIEW_READ_STATE_EVENT,
+  googleReviewReadAnchor,
+  isGoogleReviewUnread,
+  markAllGoogleReviewsRead,
+  markGoogleReviewRead,
+} from "@/lib/customer-inquiries/google-review-read-state";
 import { mergeGmailAndNestReadMaps } from "@/lib/customer-inquiries/unified-inbox-unread";
 import { inquiryListItemNeedsAction } from "@/lib/customer-inquiries/unified-inbox-needs-action";
 import { notifyInboxNeedsActionChanged } from "@/lib/customer-inquiries/inbox-needs-action-events";
@@ -89,9 +106,11 @@ import {
   Inbox,
   Instagram,
   Letter,
+  Star,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { GmailLogo } from "@/components/genie/gmail-logo";
 import { NestLogo } from "@/components/genie/nest-logo";
+import { useUserProfile } from "@/components/providers/profile-provider";
 
 type InboxTabIcon = React.ComponentType<{ className?: string }>;
 
@@ -110,9 +129,9 @@ function NestInboxTabIcon() {
 
 export type InboxStatusTab = "all" | "unread";
 
-export type InboxSourceTab = "all" | "gmail" | "instagram" | "nest";
+export type InboxSourceTab = "all" | "gmail" | "instagram" | "nest" | "google";
 
-export type InboxSource = "gmail" | "instagram" | "nest";
+export type InboxSource = "gmail" | "instagram" | "nest" | "google";
 
 export type UnifiedInboxRow = {
   key: string;
@@ -120,6 +139,7 @@ export type UnifiedInboxRow = {
   gmailId?: string;
   nestChatId?: string;
   instagramConversationId?: string;
+  googleReviewId?: string;
   customerName: string;
   customerContact: string;
   subject: string;
@@ -137,6 +157,7 @@ export type UnifiedInboxRow = {
   gmailItem?: CustomerInquiryListItem;
   nestItem?: NestConversationListItem;
   instagramItem?: InstagramConversationItem;
+  googleReviewItem?: GoogleReviewItem;
 };
 
 export const INBOX_STATUS_TABS: Array<{ id: InboxStatusTab; label: string; icon: InboxTabIcon }> = [
@@ -149,6 +170,7 @@ export const INBOX_SOURCE_OPTIONS: Array<{ id: InboxSourceTab; label: string; ic
   { id: "gmail", label: "Gmail", icon: GmailInboxTabIcon },
   { id: "instagram", label: "Instagram", icon: Instagram },
   { id: "nest", label: "Nest", icon: NestInboxTabIcon },
+  { id: "google", label: "Google reviews", icon: Star },
 ];
 
 function gmailStatusMeta(status: CustomerInquiryStatus): {
@@ -248,22 +270,52 @@ async function fetchNestList(): Promise<NestConversationListItem[]> {
 
 const nestThreadFetchInFlight = new Map<string, Promise<NestConversationDetail | null>>();
 
+function latestNestThreadAt(conversation: NestConversationDetail | null): string | null {
+  if (!conversation || conversation.messages.length === 0) return null;
+  let latestAt: string | null = null;
+  let latestMs = 0;
+  for (const message of conversation.messages) {
+    const messageMs = new Date(message.createdAt).getTime();
+    if (!Number.isFinite(messageMs) || messageMs <= latestMs) continue;
+    latestMs = messageMs;
+    latestAt = message.createdAt;
+  }
+  return latestAt;
+}
+
+function nestThreadMatchesList(
+  conversation: NestConversationDetail,
+  chat: NestConversationListItem,
+): boolean {
+  const threadAt = latestNestThreadAt(conversation);
+  if (!threadAt) return false;
+  const threadMs = new Date(threadAt).getTime();
+  const listMs = new Date(chat.lastMessageAt).getTime();
+  if (!Number.isFinite(listMs)) return true;
+  return threadMs >= listMs - 999;
+}
+
 export async function fetchNestThreadDetail(
   chatId: string,
-  options?: { force?: boolean },
+  options?: { force?: boolean; since?: string | null },
 ): Promise<NestConversationDetail | null> {
-  if (!options?.force) {
+  if (!options?.force && !options?.since) {
     const cached = getCachedNestThread(chatId);
     if (cached) return cached;
   }
 
-  const pending = nestThreadFetchInFlight.get(chatId);
+  const requestKey = `${chatId}:${options?.since ?? (options?.force ? "force" : "default")}`;
+  const pending = nestThreadFetchInFlight.get(requestKey);
   if (pending) return pending;
 
   const request = (async () => {
     const search = new URLSearchParams({ chatId, threadOnly: "1" });
+    if (options?.since) search.set("since", options.since);
     const res = await fetch(`/api/store/nest-messages?${search.toString()}`, { cache: "no-store" });
-    const data = (await res.json()) as NestConversationsResponse & { error?: string };
+    const data = (await res.json()) as NestConversationsResponse & {
+      error?: string;
+      unchanged?: boolean;
+    };
     if (!res.ok) {
       throw new Error(data.error || "Could not load conversation.");
     }
@@ -271,10 +323,10 @@ export async function fetchNestThreadDetail(
     if (conversation) setCachedNestThread(conversation);
     return conversation;
   })().finally(() => {
-    nestThreadFetchInFlight.delete(chatId);
+    nestThreadFetchInFlight.delete(requestKey);
   });
 
-  nestThreadFetchInFlight.set(chatId, request);
+  nestThreadFetchInFlight.set(requestKey, request);
   return request;
 }
 
@@ -303,11 +355,47 @@ function gmailRow(item: CustomerInquiryListItem): UnifiedInboxRow {
   };
 }
 
-const NEST_CHANNEL_SUBJECTS: Record<Exclude<InboxChannel, "email" | "instagram">, string> = {
+const NEST_CHANNEL_SUBJECTS: Record<
+  Exclude<InboxChannel, "email" | "instagram" | "google_review">,
+  string
+> = {
   website_chat: "Website chat",
   missed_call: "Missed call",
   store_outreach: "Store message",
 };
+
+function googleReviewPreview(review: GoogleReviewItem): string {
+  const comment = review.comment.replace(/\s+/g, " ").trim();
+  if (comment) return comment.slice(0, 180);
+  if (review.star_rating) return `${review.star_rating}-star rating`;
+  return "Google review";
+}
+
+function googleReviewRow(review: GoogleReviewItem): UnifiedInboxRow {
+  const unread = isGoogleReviewUnread(review);
+  const needsReply = !review.reply;
+  const stars = review.star_rating ? `${review.star_rating}★` : "Review";
+  return {
+    key: `google:${review.review_id}`,
+    source: "google",
+    googleReviewId: review.review_id,
+    customerName: review.reviewer_name,
+    customerContact: "Google review",
+    subject: `${stars} Google review`,
+    preview: googleReviewPreview(review),
+    receivedAt: review.update_time || review.create_time,
+    statusLabel: needsReply ? "Needs reply" : "Replied",
+    statusTone: needsReply ? "unread" : "responded",
+    needsReply,
+    needsAction: needsReply && unread,
+    isUnread: unread,
+    intentLabel: null,
+    threadCount: review.reply ? 2 : 1,
+    nestMissedCall: false,
+    channel: "google_review",
+    googleReviewItem: review,
+  };
+}
 
 function nestRow(chat: NestConversationListItem): UnifiedInboxRow {
   const closedAt = readNestCloseMap()[chat.chatId] ?? null;
@@ -332,9 +420,18 @@ function nestRow(chat: NestConversationListItem): UnifiedInboxRow {
   };
 }
 
-function instagramDisplayName(conversation: InstagramConversationItem): string {
+function instagramHandle(conversation: InstagramConversationItem): string | null {
   const username = conversation.participant_username?.trim();
-  if (username) return `@${username}`;
+  if (!username) return null;
+  return username.startsWith("@") ? username : `@${username}`;
+}
+
+function instagramDisplayName(conversation: InstagramConversationItem): string {
+  const name = conversation.participant_name?.trim() || null;
+  const handle = instagramHandle(conversation);
+  if (name && handle) return name;
+  if (name) return name;
+  if (handle) return handle;
   return "Instagram customer";
 }
 
@@ -342,12 +439,18 @@ function instagramRow(conversation: InstagramConversationItem): UnifiedInboxRow 
   const unread = isInstagramConversationUnread(conversation);
   const awaitingReply = conversation.preview_role === "customer";
   const name = instagramDisplayName(conversation);
+  const handle = instagramHandle(conversation);
+  const hasDistinctName =
+    Boolean(conversation.participant_name?.trim()) &&
+    Boolean(handle) &&
+    name !== handle;
   return {
     key: `instagram:${conversation.conversation_id}`,
     source: "instagram",
     instagramConversationId: conversation.conversation_id,
     customerName: name,
-    customerContact: name,
+    // Show @handle under the real name in the list/pane contact line.
+    customerContact: hasDistinctName ? handle! : handle || "Instagram DM",
     subject: "Instagram DM",
     preview: conversation.preview || "No preview",
     receivedAt: conversation.updated_at,
@@ -384,7 +487,11 @@ function inboxRowSearchHaystack(row: UnifiedInboxRow): string {
     row.nestItem?.preview,
     row.nestItem?.chatId,
     row.instagramItem?.participant_username,
+    row.instagramItem?.participant_name,
     row.instagramItem?.preview,
+    row.googleReviewItem?.reviewer_name,
+    row.googleReviewItem?.comment,
+    row.googleReviewItem?.reply?.comment,
   ];
   return parts.filter(Boolean).join(" ").toLowerCase();
 }
@@ -406,6 +513,7 @@ function matchesSourceTab(row: UnifiedInboxRow, tab: InboxSourceTab): boolean {
 
 export function useUnifiedInboxController() {
   const c = useInquiriesController({ deferListLoad: true });
+  const { profile } = useUserProfile();
   const [statusTab, setStatusTab] = React.useState<InboxStatusTab>("all");
   const [sourceTab, setSourceTab] = React.useState<InboxSourceTab>("all");
   const [searchQuery, setSearchQuery] = React.useState("");
@@ -423,6 +531,8 @@ export function useUnifiedInboxController() {
   const [nestDetailLoading, setNestDetailLoading] = React.useState(false);
   const [readTick, setReadTick] = React.useState(0);
   const [inboxBootstrapped, setInboxBootstrapped] = React.useState(false);
+  const [nestSyncPending, setNestSyncPending] = React.useState(false);
+  const [nestBootstrapAttempt, setNestBootstrapAttempt] = React.useState(0);
   const [refreshing, setRefreshing] = React.useState(false);
   const [closingCases, setClosingCases] = React.useState(false);
   const [closingSelectedCase, setClosingSelectedCase] = React.useState(false);
@@ -439,6 +549,15 @@ export function useUnifiedInboxController() {
   );
   const [instagramConnecting, setInstagramConnecting] = React.useState(false);
   const [instagramSending, setInstagramSending] = React.useState(false);
+  const [googleReviews, setGoogleReviews] = React.useState<GoogleReviewItem[]>([]);
+  const [googleReviewsState, setGoogleReviewsState] = React.useState<
+    GoogleReviewsState | undefined
+  >(undefined);
+  const [googleReviewSending, setGoogleReviewSending] = React.useState(false);
+
+  React.useEffect(() => {
+    setNestThreadCacheScope(profile?.user_id);
+  }, [profile?.user_id]);
 
   React.useEffect(() => {
     if (c.filter !== "all") c.setFilter("all");
@@ -464,9 +583,18 @@ export function useUnifiedInboxController() {
 
   const applyUnifiedPayload = React.useCallback(
     (data: Awaited<ReturnType<typeof fetchUnifiedInbox>>) => {
+      const cached = loadUnifiedInboxFromStorage();
+      const nextNestChats =
+        data.nestSyncPending &&
+        (data.nestChats?.length ?? 0) === 0 &&
+        (cached?.nestChats.length ?? 0) > 0
+          ? cached!.nestChats
+          : (data.nestChats ?? []);
+
       hydrateInboxList({ inquiries: data.inquiries ?? [], gmail: data.gmail });
-      setNestChats(data.nestChats ?? []);
+      setNestChats(nextNestChats);
       setNestConfigured(data.nestConfigured ?? true);
+      setNestSyncPending(data.nestSyncPending === true);
       if (data.nestReadMap) setNestReadMapFromServer(data.nestReadMap);
       if (data.gmailReadMap) setGmailInquiryReadMapFromServer(data.gmailReadMap);
       if (data.nestCloseMap) setNestCloseMapFromServer(data.nestCloseMap);
@@ -482,7 +610,7 @@ export function useUnifiedInboxController() {
 
       saveUnifiedInboxToStorage({
         inquiries: data.inquiries ?? [],
-        nestChats: data.nestChats ?? [],
+        nestChats: nextNestChats,
         nestReadMap,
         gmailReadMap,
         nestCloseMap: data.nestCloseMap ?? {},
@@ -523,6 +651,18 @@ export function useUnifiedInboxController() {
     void loadUnifiedInbox();
   }, [loadUnifiedInbox]);
 
+  React.useEffect(() => {
+    if (!nestSyncPending || nestBootstrapAttempt >= 3) return;
+    const delays = [1_500, 3_000, 6_000];
+    const timer = window.setTimeout(() => {
+      void fetchUnifiedInbox()
+        .then(applyUnifiedPayload)
+        .catch(() => {})
+        .finally(() => setNestBootstrapAttempt((attempt) => attempt + 1));
+    }, delays[nestBootstrapAttempt]);
+    return () => window.clearTimeout(timer);
+  }, [applyUnifiedPayload, nestBootstrapAttempt, nestSyncPending]);
+
   const loadInstagramInbox = React.useCallback(async (options?: { forceRefresh?: boolean }) => {
     try {
       const data = await fetchInstagramInbox(options);
@@ -537,6 +677,24 @@ export function useUnifiedInboxController() {
     }
   }, []);
 
+  const loadGoogleReviewsInbox = React.useCallback(async (options?: { forceRefresh?: boolean }) => {
+    try {
+      const data = await fetchGoogleReviewsInbox(options);
+      setGoogleReviewsState({
+        configured: data.configured,
+        connected: data.connected,
+        missing_env: data.missing_env ?? [],
+        setup_hint: data.setup_hint ?? null,
+        average_rating: data.average_rating,
+        total_review_count: data.total_review_count,
+        connection: data.connection ?? null,
+      });
+      setGoogleReviews(data.reviews ?? []);
+    } catch {
+      // Google reviews are optional — never block the rest of the inbox.
+    }
+  }, []);
+
   const instagramFetchedRef = React.useRef(false);
   React.useEffect(() => {
     if (instagramFetchedRef.current) return;
@@ -544,14 +702,22 @@ export function useUnifiedInboxController() {
     void loadInstagramInbox();
   }, [loadInstagramInbox]);
 
+  const googleReviewsFetchedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (googleReviewsFetchedRef.current) return;
+    googleReviewsFetchedRef.current = true;
+    void loadGoogleReviewsInbox();
+  }, [loadGoogleReviewsInbox]);
+
   // Same background cadence as the unified inbox poll below.
   React.useEffect(() => {
     const interval = window.setInterval(() => {
       if (document.hidden) return;
       void loadInstagramInbox();
+      void loadGoogleReviewsInbox();
     }, 30_000);
     return () => window.clearInterval(interval);
-  }, [loadInstagramInbox]);
+  }, [loadInstagramInbox, loadGoogleReviewsInbox]);
 
   React.useEffect(() => {
     const onStateChange = () => setReadTick((n) => n + 1);
@@ -559,11 +725,13 @@ export function useUnifiedInboxController() {
     window.addEventListener(GMAIL_INQUIRY_READ_STATE_EVENT, onStateChange);
     window.addEventListener(NEST_CLOSE_STATE_EVENT, onStateChange);
     window.addEventListener(INSTAGRAM_READ_STATE_EVENT, onStateChange);
+    window.addEventListener(GOOGLE_REVIEW_READ_STATE_EVENT, onStateChange);
     return () => {
       window.removeEventListener(NEST_READ_STATE_EVENT, onStateChange);
       window.removeEventListener(GMAIL_INQUIRY_READ_STATE_EVENT, onStateChange);
       window.removeEventListener(NEST_CLOSE_STATE_EVENT, onStateChange);
       window.removeEventListener(INSTAGRAM_READ_STATE_EVENT, onStateChange);
+      window.removeEventListener(GOOGLE_REVIEW_READ_STATE_EVENT, onStateChange);
     };
   }, []);
 
@@ -573,13 +741,14 @@ export function useUnifiedInboxController() {
       ...c.inquiries.map(gmailRow),
       ...(nestConfigured ? nestChats.map(nestRow) : []),
       ...instagramChats.map(instagramRow),
+      ...googleReviews.map(googleReviewRow),
     ];
     return rows.sort((a, b) => {
       const aTime = a.receivedAt ? new Date(a.receivedAt).getTime() : 0;
       const bTime = b.receivedAt ? new Date(b.receivedAt).getTime() : 0;
       return bTime - aTime;
     });
-  }, [c.inquiries, nestChats, nestConfigured, instagramChats, readTick]);
+  }, [c.inquiries, nestChats, nestConfigured, instagramChats, googleReviews, readTick]);
 
   const filteredRows = React.useMemo(
     () =>
@@ -610,6 +779,7 @@ export function useUnifiedInboxController() {
       gmail: statusRows.filter((row) => row.source === "gmail").length,
       instagram: statusRows.filter((row) => row.source === "instagram").length,
       nest: statusRows.filter((row) => row.source === "nest").length,
+      google: statusRows.filter((row) => row.source === "google").length,
     };
     return counts;
   }, [allRows, statusTab]);
@@ -678,6 +848,8 @@ export function useUnifiedInboxController() {
       anchor = gmailInquiryReadAnchor(row.gmailItem);
     } else if (row.source === "instagram" && row.instagramItem) {
       anchor = instagramConversationReadAnchor(row.instagramItem);
+    } else if (row.source === "google" && row.googleReviewItem) {
+      anchor = googleReviewReadAnchor(row.googleReviewItem);
     } else if (row.source === "nest" && row.nestItem) {
       anchor = nestConversationReadAnchor(row.nestItem);
 
@@ -716,6 +888,10 @@ export function useUnifiedInboxController() {
       markInstagramConversationRead(row.instagramItem, anchor);
       return;
     }
+    if (row.source === "google" && row.googleReviewItem) {
+      markGoogleReviewRead(row.googleReviewItem, anchor);
+      return;
+    }
     if (row.source === "nest" && row.nestItem) {
       markNestConversationRead(row.nestItem, anchor);
     }
@@ -739,6 +915,14 @@ export function useUnifiedInboxController() {
     }
 
     if (selectedRow.source === "instagram") {
+      nestThreadLoadKeyRef.current = null;
+      setSelectedIdRef.current(null);
+      setNestDetail(null);
+      setNestDetailLoading(false);
+      return;
+    }
+
+    if (selectedRow.source === "google") {
       nestThreadLoadKeyRef.current = null;
       setSelectedIdRef.current(null);
       setNestDetail(null);
@@ -779,9 +963,10 @@ export function useUnifiedInboxController() {
 
     let cancelled = false;
 
-    // Always revalidate against the server so incoming customer replies show
-    // up even when a stale thread is cached.
-    void fetchNestThreadDetail(chatId, { force: true })
+    const shouldFetch = !cached || !nestThreadMatchesList(cached, listChat);
+    if (!shouldFetch) return;
+
+    void fetchNestThreadDetail(chatId, cached ? { force: true } : undefined)
       .then((conversation) => {
         if (cancelled || !conversation) return;
         applyFreshNestThread(conversation, listChat);
@@ -806,14 +991,15 @@ export function useUnifiedInboxController() {
   const selectedNestChatId =
     selectedRow?.source === "nest" ? (selectedRow.nestChatId ?? null) : null;
 
-  // Poll the open Nest conversation so customer replies appear without a
-  // manual refresh — mirrors the dedicated Nest messages page.
+  // Poll only the lightweight conversation timestamp. The API returns the
+  // full thread only when Supabase has a message newer than the open copy.
   React.useEffect(() => {
     if (!selectedNestChatId) return;
     const chatId = selectedNestChatId;
     const interval = window.setInterval(() => {
       if (document.hidden) return;
-      void fetchNestThreadDetail(chatId, { force: true })
+      const since = latestNestThreadAt(nestDetailRef.current);
+      void fetchNestThreadDetail(chatId, since ? { since } : { force: true })
         .then((conversation) => {
           if (conversation) applyFreshNestThread(conversation);
         })
@@ -838,6 +1024,7 @@ export function useUnifiedInboxController() {
     setRefreshing(true);
     setNestError(null);
     void loadInstagramInbox({ forceRefresh: true });
+    void loadGoogleReviewsInbox({ forceRefresh: true });
     try {
       const data = await refreshUnifiedInbox();
       applyUnifiedPayload(data);
@@ -853,10 +1040,15 @@ export function useUnifiedInboxController() {
     } finally {
       setRefreshing(false);
     }
-  }, [applyUnifiedPayload, loadInstagramInbox]);
+  }, [applyUnifiedPayload, loadInstagramInbox, loadGoogleReviewsInbox]);
 
   const openRow = React.useCallback((row: UnifiedInboxRow) => {
     setSelectedKey(row.key);
+  }, []);
+
+  const prefetchRow = React.useCallback((row: UnifiedInboxRow) => {
+    if (row.source !== "nest" || !row.nestChatId) return;
+    prefetchNestThread(row.nestChatId, fetchNestThreadDetail);
   }, []);
 
   const closePanel = React.useCallback(() => {
@@ -1026,6 +1218,8 @@ export function useUnifiedInboxController() {
         text: trimmed,
         from_id: null,
         from_username: null,
+        from_name: null,
+        to_ids: [],
         created_at: sentAt,
         has_attachments: false,
       };
@@ -1043,6 +1237,7 @@ export function useUnifiedInboxController() {
           conversationId: conversation.conversation_id,
           connectedAccountId: conversation.connected_account_id,
           recipientId: conversation.participant_id,
+          businessMessagingId: conversation.business_messaging_id,
           text: trimmed,
         });
         if (result.message_id) {
@@ -1066,6 +1261,61 @@ export function useUnifiedInboxController() {
     [patchInstagramConversation],
   );
 
+  const patchGoogleReview = React.useCallback(
+    (reviewId: string, updater: (review: GoogleReviewItem) => GoogleReviewItem) => {
+      setGoogleReviews((prev) =>
+        prev.map((item) => (item.review_id === reviewId ? updater(item) : item)),
+      );
+    },
+    [],
+  );
+
+  const handleGoogleReviewReply = React.useCallback(
+    async (review: GoogleReviewItem, text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+
+      const previousReply = review.reply;
+      const repliedAt = new Date().toISOString();
+      patchGoogleReview(review.review_id, (item) => ({
+        ...item,
+        reply: { comment: trimmed, update_time: repliedAt },
+        update_time: repliedAt,
+      }));
+
+      setGoogleReviewSending(true);
+      try {
+        const result = await replyToGoogleReviewOnServer({
+          reviewName: review.name,
+          reviewId: review.review_id,
+          comment: trimmed,
+        });
+        patchGoogleReview(review.review_id, (item) => ({
+          ...item,
+          reply: result.reply,
+          update_time: result.replied_at,
+        }));
+        markGoogleReviewRead(
+          {
+            review_id: review.review_id,
+            update_time: result.replied_at,
+            create_time: review.create_time,
+          },
+          result.replied_at,
+        );
+      } catch (error) {
+        patchGoogleReview(review.review_id, (item) => ({
+          ...item,
+          reply: previousReply,
+        }));
+        throw error;
+      } finally {
+        setGoogleReviewSending(false);
+      }
+    },
+    [patchGoogleReview],
+  );
+
   const needsActionCount = React.useMemo(
     () => allRows.filter((row) => row.needsAction).length,
     [allRows],
@@ -1085,6 +1335,11 @@ export function useUnifiedInboxController() {
         // Instagram threads have no server-side case state — clearing the
         // unread mark is what removes them from "needs action".
         markInstagramConversationRead(selectedRow.instagramItem);
+        closePanel();
+        return;
+      }
+      if (selectedRow.source === "google" && selectedRow.googleReviewItem) {
+        markGoogleReviewRead(selectedRow.googleReviewItem);
         closePanel();
         return;
       }
@@ -1140,6 +1395,11 @@ export function useUnifiedInboxController() {
         .map((row) => row.instagramItem as InstagramConversationItem);
       markAllInstagramConversationsRead(instagramTargets);
 
+      const googleTargets = targets
+        .filter((row) => row.source === "google" && row.googleReviewItem)
+        .map((row) => row.googleReviewItem as GoogleReviewItem);
+      markAllGoogleReviewsRead(googleTargets);
+
       const data = await closeInboxCases({ gmailIds, nestCloses });
       applyUnifiedPayload(data);
       if (selectedKey && targets.some((row) => row.key === selectedKey)) {
@@ -1167,6 +1427,8 @@ export function useUnifiedInboxController() {
   const selectedChannel: InboxChannel | null = React.useMemo(() => {
     if (!selectedRow) return null;
     if (selectedRow.source === "gmail") return "email";
+    if (selectedRow.source === "instagram") return "instagram";
+    if (selectedRow.source === "google") return "google_review";
     if (!selectedRow.nestItem) return selectedRow.channel;
     if (
       nestDetail &&
@@ -1239,6 +1501,16 @@ export function useUnifiedInboxController() {
     }
   }, [nestDetail?.messages, nestDetailLoading, selectedRow]);
 
+  // Warm Lightspeed context while staff read the thread so the tab feels instant.
+  React.useEffect(() => {
+    if (!selectedRow || selectedRow.source !== "nest" || !selectedRow.nestChatId) return;
+    if (nestDetailLoading) return;
+    const timer = window.setTimeout(() => {
+      void ensureNestLightspeedContext();
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [selectedRow, nestDetailLoading, nestDetail?.messages, ensureNestLightspeedContext]);
+
   const listLoading = c.loading || nestLoading;
   const listError = c.error || nestError;
 
@@ -1258,6 +1530,7 @@ export function useUnifiedInboxController() {
     selectedKey,
     selectedRow,
     openRow,
+    prefetchRow,
     closePanel,
     nestConfigured,
     nestDetail,
@@ -1292,6 +1565,19 @@ export function useUnifiedInboxController() {
     instagramSending,
     handleConnectInstagram,
     handleInstagramSend,
+    googleReviews,
+    googleReviewsConfigured: googleReviewsState?.configured === true,
+    googleReviewsConnected: googleReviewsState?.connected === true,
+    googleReviewsStatusReady: googleReviewsState !== undefined,
+    googleReviewsSetupHint: googleReviewsState?.setup_hint ?? null,
+    googleReviewsMissingEnv: googleReviewsState?.missing_env ?? [],
+    googleReviewsNeedsLocation: googleReviewsState?.connection?.needsLocation === true,
+    googleReviewsLocationName: googleReviewsState?.connection?.locationName ?? null,
+    googleReviewSending,
+    handleGoogleReviewReply,
+    handleConnectGoogleBusiness: () => {
+      window.location.href = "/api/store/google-business/auth/initiate";
+    },
   };
 }
 

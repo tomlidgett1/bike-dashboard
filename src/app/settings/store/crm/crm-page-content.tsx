@@ -17,6 +17,7 @@ import {
   Mailbox,
   MoreHorizontal,
   RefreshCw,
+  Route,
   Search,
   Send,
   Sparkles,
@@ -64,10 +65,11 @@ import { ContactGroupFilterDropdown, ContactSortDropdown } from "./contact-sort-
 import { crmFilterPillClass, crmFilterPillsClass } from "./crm-page-button-styles";
 import { ContactGroupsPanel } from "./contact-groups-panel";
 import { CrmAgentPanel, type CampaignTemplateSeed } from "./crm-agent-panel";
+import { LifecyclePanel } from "./lifecycle/lifecycle-panel";
 
 type ContactStats = { total: number; optedOut: number; eligible: number };
 type ContactFilter = "all" | "opted_in" | "opted_out";
-type CrmSection = "create" | "people" | "activity";
+type CrmSection = "lifecycle" | "create" | "people" | "activity";
 type PeopleTab = "contacts" | "groups";
 
 const PAGE_SIZE = 50;
@@ -210,6 +212,7 @@ const CAMPAIGN_STATUS_STYLES: Record<string, string> = {
 };
 
 const CRM_SECTIONS = [
+  { id: "lifecycle", label: "Lifecycle", icon: Route },
   { id: "create", label: "Create", icon: Sparkles },
   { id: "people", label: "People", icon: Users },
   { id: "activity", label: "Activity", icon: Letter },
@@ -221,7 +224,7 @@ const PEOPLE_TABS = [
 ] as const satisfies readonly { id: PeopleTab; label: string; icon: React.ComponentType<{ className?: string }> }[];
 
 export function CrmPageContent() {
-  const [section, setSection] = React.useState<CrmSection>("create");
+  const [section, setSection] = React.useState<CrmSection>("lifecycle");
   const [peopleTab, setPeopleTab] = React.useState<PeopleTab>("contacts");
   const [createTemplateSeed, setCreateTemplateSeed] = React.useState<CampaignTemplateSeed | null>(null);
   const { open, setOpen, isMobile, openMobile, setOpenMobile } = useSidebar();
@@ -591,6 +594,8 @@ export function CrmPageContent() {
               }}
               onEmailGroup={(contactIds) => openComposer(undefined, contactIds)}
             />
+          ) : section === "lifecycle" ? (
+            <LifecyclePanel store={storeBranding} />
           ) : section === "create" ? (
             <CrmAgentPanel
               store={storeBranding}

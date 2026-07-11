@@ -376,6 +376,16 @@ async function scanCustomersForPhone(
   return matches.get(phone.trim()) ?? null;
 }
 
+const nestCustomerSearchCache = new Map<
+  string,
+  { expiresAt: number; results: NestCustomerSearchResult[] }
+>();
+const NEST_CUSTOMER_SEARCH_TTL_MS = 60_000;
+
+function nestCustomerSearchCacheKey(userId: string, query: string): string {
+  return `${userId}:${normalizeText(query)}`;
+}
+
 export async function searchLightspeedCustomersForNest(
   userId: string,
   query: string,
@@ -384,72 +394,88 @@ export async function searchLightspeedCustomersForNest(
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
 
-  const client = createLightspeedClient(userId);
-  const customerById = new Map<string, LightspeedCustomer>();
-  const baseParams = {
-    load_relations: '["Contact"]',
-    archived: "false" as const,
-  };
-
-  const fetchCustomers = async (
-    params: Record<string, string | number | undefined>,
-    maxPages = 2,
-  ) => {
-    const result = await client.getAllCustomersCursor({ ...baseParams, ...params }, {
-      maxPages,
-      limit: 100,
-    });
-    return result.customers;
-  };
-
-  if (isPhoneQuery(trimmed)) {
-    const matched = await findCustomerByPhone(userId, trimmed, {
-      allowScan: true,
-      maxScanPages: 100,
-    });
-    if (matched) customerById.set(String(matched.customerID), matched);
+  const cacheKey = nestCustomerSearchCacheKey(userId, trimmed);
+  const cached = nestCustomerSearchCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.results.slice(0, limit);
   }
 
+  const client = createLightspeedClient(userId);
+  const customerById = new Map<string, LightspeedCustomer>();
+
+  const finish = (results: NestCustomerSearchResult[]) => {
+    nestCustomerSearchCache.set(cacheKey, {
+      expiresAt: Date.now() + NEST_CUSTOMER_SEARCH_TTL_MS,
+      results,
+    });
+    return results.slice(0, limit);
+  };
+
+  // Phone: Contact.mobile filter only (1–2 requests). Compose search must stay snappy.
+  if (isPhoneQuery(trimmed)) {
+    const matched = await findCustomerByPhone(userId, trimmed, {
+      allowScan: false,
+      maxScanPages: 0,
+    });
+    if (matched) {
+      const phone = pickResultPhone(matched, trimmed);
+      if (phone) {
+        return finish([
+          {
+            customerId: String(matched.customerID),
+            name: customerName(matched),
+            phone,
+          },
+        ]);
+      }
+    }
+    return finish([]);
+  }
+
+  // Exact customer ID lookup — one request.
   if (/^\d+$/.test(trimmed)) {
     try {
       const profile = await client.getCustomer(trimmed, { load_relations: '["Contact"]' });
-      customerById.set(String(profile.customerID), profile);
+      const phone = pickResultPhone(profile, trimmed);
+      if (phone) {
+        return finish([
+          {
+            customerId: String(profile.customerID),
+            name: customerName(profile),
+            phone,
+          },
+        ]);
+      }
     } catch {
-      // Fall through to broader search.
+      // Fall through to name search.
     }
   }
 
-  const terms = Array.from(
-    new Set([normalizeText(trimmed), ...queryTokens(trimmed)].filter((term) => term.length >= 2)),
-  ).slice(0, 4);
+  // Fast path (matches brand-portal compose search): two single-page filtered
+  // Customer.json calls in parallel. Do not multipage-scan the whole account.
+  const tokens = queryTokens(trimmed);
+  const first = tokens[0] ?? normalizeText(trimmed);
+  const last = tokens.length >= 2 ? tokens[tokens.length - 1]! : first;
+  if (first.length < 2) return finish([]);
 
-  // Run name/company searches sequentially — parallel bursts blow through Lightspeed's
-  // api-burst-limiter and stall the dev server behind long backoffs.
-  const focusedResults: LightspeedCustomer[][] = [];
-  for (const term of terms) {
-    for (const params of [
-      { firstName: lightspeedContainsFilter(term) },
-      { lastName: lightspeedContainsFilter(term) },
-      { company: lightspeedContainsFilter(term) },
-    ]) {
-      focusedResults.push(await fetchCustomers(params));
-    }
-  }
+  const settled = await Promise.allSettled([
+    client.getCustomers({
+      load_relations: '["Contact"]',
+      archived: "false",
+      limit: 20,
+      firstName: lightspeedContainsFilter(first),
+    }),
+    client.getCustomers({
+      load_relations: '["Contact"]',
+      archived: "false",
+      limit: 20,
+      lastName: lightspeedContainsFilter(last),
+    }),
+  ]);
 
-  for (const customers of focusedResults) {
-    for (const customer of customers) {
-      customerById.set(String(customer.customerID), customer);
-    }
-  }
-
-  const needsContactFallback =
-    customerById.size === 0 ||
-    trimmed.includes("@") ||
-    phoneDigits(trimmed).length >= 3;
-
-  if (needsContactFallback) {
-    const fallbackCustomers = await fetchCustomers({}, 8);
-    for (const customer of fallbackCustomers) {
+  for (const result of settled) {
+    if (result.status !== "fulfilled") continue;
+    for (const customer of result.value) {
       customerById.set(String(customer.customerID), customer);
     }
   }
@@ -482,7 +508,7 @@ export async function searchLightspeedCustomersForNest(
     });
   }
 
-  return results;
+  return finish(results);
 }
 
 const phoneIndexCache = new Map<string, { expiresAt: number; index: Map<string, string> }>();

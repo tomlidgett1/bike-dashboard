@@ -1,11 +1,17 @@
 "use client";
 
-import { AlertCircle, Inbox, Instagram } from "@/components/layout/app-sidebar/dashboard-icons";
+import { AlertCircle, Inbox } from "@/components/layout/app-sidebar/dashboard-icons";
 import { GmailLogo } from "@/components/genie/gmail-logo";
+import { GoogleReviewsLogo } from "@/components/genie/google-reviews-logo";
+import { InstagramLogo } from "@/components/genie/instagram-logo";
 import { NestLogo } from "@/components/genie/nest-logo";
 import { cn } from "@/lib/utils";
 import { CHANNEL_META, type InboxChannel } from "./channel-meta";
 import type { UnifiedInboxController, UnifiedInboxRow } from "./use-unified-inbox-controller";
+import {
+  GoogleBusinessConnectCard,
+  SHOW_GOOGLE_BUSINESS_CONNECT,
+} from "./google-business-connect-card";
 
 function SourceMark({ row }: { row: UnifiedInboxRow }) {
   return (
@@ -13,7 +19,9 @@ function SourceMark({ row }: { row: UnifiedInboxRow }) {
       {row.source === "gmail" ? (
         <GmailLogo className="m-auto h-4 w-auto max-w-[22px] object-contain" />
       ) : row.source === "instagram" ? (
-        <Instagram className="m-auto h-4 w-4 text-gray-500" />
+        <InstagramLogo />
+      ) : row.source === "google" ? (
+        <GoogleReviewsLogo />
       ) : (
         <NestLogo className="h-full w-full rounded-none object-cover" />
       )}
@@ -66,11 +74,13 @@ function ConversationRow({
   row,
   selected,
   onSelect,
+  onPrefetch,
   relativeTime,
 }: {
   row: UnifiedInboxRow;
   selected: boolean;
   onSelect: () => void;
+  onPrefetch: () => void;
   relativeTime: (value: string | null) => string;
 }) {
   const unread = row.isUnread;
@@ -79,6 +89,8 @@ function ConversationRow({
     <button
       type="button"
       onClick={onSelect}
+      onPointerEnter={onPrefetch}
+      onFocus={onPrefetch}
       className={cn(
         "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors",
         selected
@@ -91,14 +103,26 @@ function ConversationRow({
       <SourceMark row={row} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <p
-            className={cn(
-              "min-w-0 flex-1 truncate text-sm text-gray-900",
-              unread ? "font-semibold" : "font-medium",
-            )}
-          >
-            {row.customerName}
-          </p>
+          <div className="min-w-0 flex-1">
+            <p
+              className={cn(
+                "truncate text-sm text-gray-900",
+                unread ? "font-semibold" : "font-medium",
+              )}
+            >
+              {row.customerName}
+            </p>
+            {row.source === "instagram" &&
+            row.customerContact.startsWith("@") &&
+            row.customerContact !== row.customerName ? (
+              <p className="truncate text-[11px] text-gray-400">{row.customerContact}</p>
+            ) : null}
+            {row.source === "google" && row.googleReviewItem?.star_rating ? (
+              <p className="truncate text-[11px] text-gray-400">
+                {row.googleReviewItem.star_rating}★ Google review
+              </p>
+            ) : null}
+          </div>
           <div className="flex shrink-0 items-center gap-1.5">
             {row.source === "nest" ? <MessageKindBadge row={row} /> : null}
             <span
@@ -158,23 +182,44 @@ export function EnquiryConversationList({ c }: { c: UnifiedInboxController }) {
   }
 
   if (c.filteredRows.length === 0) {
+    const googleNeedsConnect =
+      SHOW_GOOGLE_BUSINESS_CONNECT &&
+      c.sourceTab === "google" &&
+      c.googleReviewsStatusReady &&
+      !c.googleReviewsConnected;
+
     return (
-      <div className="flex flex-1 flex-col items-center justify-center px-6 py-20 text-center">
-        <span className="flex h-11 w-11 items-center justify-center rounded-md border border-gray-200 bg-white">
-          <Inbox className="h-5 w-5 text-gray-400" />
-        </span>
-        <p className="mt-4 text-sm font-medium text-gray-900">
-          {c.searchActive
-            ? "No enquiries match your search"
-            : c.statusTab === "unread"
-              ? "No unread enquiries"
-              : "No enquiries here yet"}
-        </p>
-        <p className="mt-1 max-w-[240px] text-xs text-gray-500">
-          {c.searchActive
-            ? "Try a different name, email, or subject line."
-            : "New Gmail, Instagram and Nest messages will show up here automatically."}
-        </p>
+      <div className="flex flex-1 flex-col items-center justify-center px-6 py-16 text-center">
+        {googleNeedsConnect ? (
+          <div className="w-full max-w-md text-left">
+            <GoogleBusinessConnectCard
+              compact
+              onConnected={() => void c.handleRefreshAll()}
+            />
+          </div>
+        ) : (
+          <>
+            <span className="flex h-11 w-11 items-center justify-center rounded-md border border-gray-200 bg-white">
+              <Inbox className="h-5 w-5 text-gray-400" />
+            </span>
+            <p className="mt-4 text-sm font-medium text-gray-900">
+              {c.searchActive
+                ? "No enquiries match your search"
+                : c.statusTab === "unread"
+                  ? "No unread enquiries"
+                  : c.sourceTab === "google"
+                    ? "No Google reviews yet"
+                    : "No enquiries here yet"}
+            </p>
+            <p className="mt-1 max-w-[240px] text-xs text-gray-500">
+              {c.searchActive
+                ? "Try a different name, email, or subject line."
+                : c.sourceTab === "google"
+                  ? "Google reviews will show up here when they're available."
+                  : "New Gmail, Instagram, Nest and Google review messages will show up here automatically."}
+            </p>
+          </>
+        )}
       </div>
     );
   }
@@ -187,6 +232,7 @@ export function EnquiryConversationList({ c }: { c: UnifiedInboxController }) {
           row={row}
           selected={c.selectedKey === row.key}
           onSelect={() => c.openRow(row)}
+          onPrefetch={() => c.prefetchRow(row)}
           relativeTime={c.relativeTime}
         />
       ))}

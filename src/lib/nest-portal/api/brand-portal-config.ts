@@ -22,6 +22,8 @@ import {
   type LinqChatMessage,
 } from '@/lib/nest/linq-attachments'
 import { getLinqFromNumber } from '@/lib/nest/linq-sender'
+import { ensureSmsUrlsAreClickable } from '@/lib/nest/sms-link-format'
+import { moderateNestOutboundMessage } from '@/lib/nest/outbound-content-moderation'
 import { getLightspeedAccess, lightspeedGetJson } from '../lib/lightspeed-portal-access'
 
 /** Inlined so the Vercel Node bundle always includes it (nested `api/lib/*` can be omitted). */
@@ -1453,54 +1455,177 @@ function rowTimeMs(row: ConversationRow): number {
   return Number.isFinite(ms) ? ms : 0
 }
 
-/** LINQ docs: lazy-load attachments via GET /v3/attachments/{id}; backfill ids from chat messages. */
+function linqMessageText(message: LinqChatMessage): string {
+  if (!Array.isArray(message.parts)) return ''
+  return message.parts
+    .filter(
+      (part): part is Record<string, unknown> =>
+        !!part && typeof part === 'object' && (part as { type?: unknown }).type === 'text',
+    )
+    .map((part) => (typeof part.value === 'string' ? part.value : ''))
+    .filter(Boolean)
+    .join('\n')
+    .trim()
+}
+
+function mapLinqImages(message: LinqChatMessage): unknown[] {
+  return extractImageAttachmentsFromLinqParts(message.parts).map((item) => ({
+    attachmentId: item.attachmentId,
+    attachment_id: item.attachmentId,
+    mimeType: item.mimeType,
+    mime_type: item.mimeType,
+    filename: item.filename,
+    url: item.url,
+  }))
+}
+
+function knownProviderMessageIds(rows: ConversationRow[]): Set<string> {
+  const ids = new Set<string>()
+  for (const row of rows) {
+    const fromColumn = row.provider_message_id?.trim()
+    if (fromColumn) ids.add(fromColumn)
+    const fromMeta = row.metadata?.linq_provider_message_id
+    if (typeof fromMeta === 'string' && fromMeta.trim()) ids.add(fromMeta.trim())
+  }
+  return ids
+}
+
+function syntheticLinqRowId(providerMessageId: string): number {
+  let hash = 0
+  for (let i = 0; i < providerMessageId.length; i += 1) {
+    hash = (hash * 31 + providerMessageId.charCodeAt(i)) | 0
+  }
+  // Negative so it never collides with real conversation_messages ids.
+  return hash === 0 ? -1 : -Math.abs(hash)
+}
+
+/**
+ * Human-mode inbound (especially image-only) can land in Linq without ever being
+ * written to conversation_messages. Merge those missing messages into the thread
+ * and persist them so the Nest inbox / chat list stay complete.
+ */
 async function enrichRowsWithLinqAttachments(
+  supabase: SupabaseClient,
   chatId: string,
+  brandKey: string,
   rows: ConversationRow[],
 ): Promise<ConversationRow[]> {
-  if (!rows.some(rowNeedsLinqMediaLookup)) return rows
   if (!pickServerEnv(['LINQ_API_TOKEN'])) return rows
 
   const linqMessages = await fetchLinqChatMessages(chatId)
   if (linqMessages.length === 0) return rows
 
+  const knownIds = knownProviderMessageIds(rows)
   const inboundMediaByProviderId = new Map<string, unknown[]>()
   const inboundMediaByHandleTime: Array<{
     handle: string
     createdAtMs: number
     images: unknown[]
   }> = []
+  const missingInbound: LinqChatMessage[] = []
 
   for (const message of linqMessages) {
     if (message.is_from_me) continue
-    const images = extractImageAttachmentsFromLinqParts(message.parts).map((item) => ({
-      attachmentId: item.attachmentId,
-      attachment_id: item.attachmentId,
-      mimeType: item.mimeType,
-      mime_type: item.mimeType,
-      filename: item.filename,
-      url: item.url,
-    }))
-    if (images.length === 0) continue
 
-    inboundMediaByProviderId.set(message.id, images)
-    const handle = linqMessageHandle(message)
-    if (handle) {
-      inboundMediaByHandleTime.push({
-        handle,
-        createdAtMs: linqMessageTimeMs(message),
-        images,
-      })
+    const images = mapLinqImages(message)
+    if (images.length > 0) {
+      inboundMediaByProviderId.set(message.id, images)
+      const handle = linqMessageHandle(message)
+      if (handle) {
+        inboundMediaByHandleTime.push({
+          handle,
+          createdAtMs: linqMessageTimeMs(message),
+          images,
+        })
+      }
+    }
+
+    if (!knownIds.has(message.id)) {
+      missingInbound.push(message)
     }
   }
 
-  if (inboundMediaByProviderId.size === 0) return rows
+  const merged: ConversationRow[] = [...rows]
 
-  return rows.map((row) => {
+  if (missingInbound.length > 0) {
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    const inserts = missingInbound.map((message) => {
+      const images = mapLinqImages(message)
+      const text = linqMessageText(message)
+      const handle = linqMessageHandle(message) || null
+      return {
+        chat_id: chatId,
+        role: 'user' as const,
+        content: text,
+        handle,
+        engagement_scope: 'brand' as const,
+        engagement_brand_key: brandKey,
+        provider_message_id: message.id,
+        created_at: message.created_at,
+        expires_at: expiresAt,
+        metadata: {
+          source: 'linq_human_mode_backfill',
+          service: 'linq_human_mode_backfill',
+          linq_provider_message_id: message.id,
+          linq_human_mode: true,
+          ...(images.length > 0 ? { images } : {}),
+        },
+      }
+    })
+
+    const { data: inserted, error: insertError } = await supabase
+      .from('conversation_messages')
+      .insert(inserts)
+      .select(
+        'id, chat_id, role, content, handle, created_at, provider_message_id, metadata, engagement_scope, engagement_brand_key',
+      )
+
+    if (insertError) {
+      console.error('[brand-portal] linq inbound backfill insert failed:', insertError.message)
+      // Still surface in the API response even if persistence failed.
+      for (const message of missingInbound) {
+        const images = mapLinqImages(message)
+        merged.push({
+          id: syntheticLinqRowId(message.id),
+          chat_id: chatId,
+          role: 'user',
+          content: linqMessageText(message),
+          handle: linqMessageHandle(message) || null,
+          created_at: message.created_at,
+          provider_message_id: message.id,
+          engagement_scope: 'brand',
+          engagement_brand_key: brandKey,
+          metadata: {
+            source: 'linq_human_mode_backfill',
+            service: 'linq_human_mode_backfill',
+            linq_provider_message_id: message.id,
+            linq_human_mode: true,
+            ...(images.length > 0 ? { images } : {}),
+          },
+        })
+      }
+    } else if (inserted && inserted.length > 0) {
+      merged.push(...(inserted as ConversationRow[]))
+    }
+  }
+
+  if (inboundMediaByProviderId.size === 0) {
+    return merged.sort((a, b) => rowTimeMs(a) - rowTimeMs(b))
+  }
+
+  const enriched = merged.map((row) => {
     if (!rowNeedsLinqMediaLookup(row)) return row
 
     const providerId = row.provider_message_id?.trim() ?? ''
     let images = providerId ? inboundMediaByProviderId.get(providerId) : undefined
+
+    if (!images || images.length === 0) {
+      const metaId =
+        typeof row.metadata?.linq_provider_message_id === 'string'
+          ? row.metadata.linq_provider_message_id.trim()
+          : ''
+      if (metaId) images = inboundMediaByProviderId.get(metaId)
+    }
 
     if (!images || images.length === 0) {
       const handle = row.handle?.trim() ?? ''
@@ -1525,19 +1650,28 @@ async function enrichRowsWithLinqAttachments(
       },
     }
   })
+
+  return enriched.sort((a, b) => rowTimeMs(a) - rowTimeMs(b))
 }
 
 async function buildConversationRecord(
+  supabase: SupabaseClient,
+  brandKey: string,
   chatId: string,
   selectedRows: ConversationRow[],
   profilesByHandle: Map<string, UserProfileRow>,
   selectedChat: PortalChatListItem | null,
   pendingImagesBySender: Map<string, unknown[]> = new Map(),
 ): Promise<Record<string, unknown>> {
-  const enrichedRows = await enrichRowsWithLinqAttachments(chatId, selectedRows)
-  const participantHandle = extractParticipantHandle(chatId, selectedRows)
+  const enrichedRows = await enrichRowsWithLinqAttachments(
+    supabase,
+    chatId,
+    brandKey,
+    selectedRows,
+  )
+  const participantHandle = extractParticipantHandle(chatId, enrichedRows)
   const profile = participantHandle ? profilesByHandle.get(participantHandle) ?? null : null
-  const metadataName = extractParticipantName(selectedRows)
+  const metadataName = extractParticipantName(enrichedRows)
 
   return {
     chatId,
@@ -1803,6 +1937,8 @@ async function buildBrandPortalConversationsPayload(
       nowIso,
     )
     const conversation = await buildConversationRecord(
+      supabase,
+      session.brandKey,
       requestedChatId,
       selectedRows,
       profilesByHandle,
@@ -1858,6 +1994,8 @@ async function buildBrandPortalConversationsPayload(
       nowIso,
     )
     conversation = await buildConversationRecord(
+      supabase,
+      session.brandKey,
       selectedChatId,
       selectedRows,
       profilesByHandle,
@@ -2837,7 +2975,8 @@ async function handleBrandPortalConfig(req: VercelRequest, res: VercelResponse):
 
     if (body.action === 'send_message') {
       const chatId = typeof body.chatId === 'string' ? body.chatId.trim() : ''
-      const content = typeof body.content === 'string' ? body.content.trim() : ''
+      const rawContent = typeof body.content === 'string' ? body.content.trim() : ''
+      const content = rawContent ? ensureSmsUrlsAreClickable(rawContent) : ''
       const attachmentIds = Array.isArray(body.mediaAttachmentIds)
         ? body.mediaAttachmentIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
         : []
@@ -2845,6 +2984,18 @@ async function handleBrandPortalConfig(req: VercelRequest, res: VercelResponse):
       if (!content && attachmentIds.length === 0) {
         res.status(400).json({ error: 'content or mediaAttachmentIds is required' })
         return
+      }
+
+      if (content) {
+        const moderation = await moderateNestOutboundMessage(content)
+        if (!moderation.allowed) {
+          res.status(422).json({
+            error: moderation.userMessage,
+            code: moderation.code,
+            categories: moderation.categories,
+          })
+          return
+        }
       }
 
       // Verify chatId belongs to this brand
@@ -2963,10 +3114,21 @@ async function handleBrandPortalConfig(req: VercelRequest, res: VercelResponse):
 
     if (body.action === 'start_message') {
       const rawMobile = typeof body.mobile === 'string' ? body.mobile.trim() : ''
-      const content = typeof body.content === 'string' ? body.content.trim() : ''
+      const rawContent = typeof body.content === 'string' ? body.content.trim() : ''
+      const content = rawContent ? ensureSmsUrlsAreClickable(rawContent) : ''
       const customerName = typeof body.customerName === 'string' ? body.customerName.trim().slice(0, 160) : ''
       if (!rawMobile) { res.status(400).json({ error: 'Mobile number is required' }); return }
       if (!content) { res.status(400).json({ error: 'Message is required' }); return }
+
+      const moderation = await moderateNestOutboundMessage(content)
+      if (!moderation.allowed) {
+        res.status(422).json({
+          error: moderation.userMessage,
+          code: moderation.code,
+          categories: moderation.categories,
+        })
+        return
+      }
 
       const recipientHandle = normaliseToE164(rawMobile)
       if (!recipientHandle) {

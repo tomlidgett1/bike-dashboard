@@ -620,18 +620,63 @@ export async function listUnpaidWorkorders(
   const active = rawWorkorders.filter(workorder => String(workorder.archived ?? '') !== 'true')
   const pool = active.slice(0, limit)
   // includeDetails=false: name/status/note all come from the base fetch, and
-  // skipping per-workorder customer/item lookups keeps this to ~1 API call per
-  // status instead of ~2 per workorder (which drains the rate-limit bucket).
+  // skipping per-workorder item lookups keeps this light. Phones are hydrated
+  // once per unique customer below so “Send message” deep-links work.
   const workorders = await mapWithConcurrency(
     pool,
     ENRICH_CONCURRENCY,
     workorder => enrichWorkorder(userId, workorder, statusById, false),
   )
 
-  // Most recently edited (Lightspeed timeStamp) first — staff interact with these first.
-  workorders.sort((a, b) => parseTimestamp(b.updated_at) - parseTimestamp(a.updated_at))
+  const hydrated = await hydrateMissingCustomerPhones(userId, workorders)
 
-  return { workorders, truncated: active.length > pool.length }
+  // Most recently edited (Lightspeed timeStamp) first — staff interact with these first.
+  hydrated.sort((a, b) => parseTimestamp(b.updated_at) - parseTimestamp(a.updated_at))
+
+  return { workorders: hydrated, truncated: active.length > pool.length }
+}
+
+/** Fill customer_phone for rows where the nested Customer relation had no Contact. */
+async function hydrateMissingCustomerPhones(
+  userId: string,
+  workorders: GenieWorkorderDetail[],
+): Promise<GenieWorkorderDetail[]> {
+  const missingIds = Array.from(
+    new Set(
+      workorders
+        .filter(
+          (workorder) =>
+            !workorder.customer_phone?.trim() &&
+            workorder.customer_id &&
+            workorder.customer_id !== '0',
+        )
+        .map((workorder) => workorder.customer_id),
+    ),
+  )
+  if (missingIds.length === 0) return workorders
+
+  const client = createLightspeedClient(userId)
+  const phoneByCustomerId = new Map<string, string>()
+
+  await mapWithConcurrency(missingIds, ENRICH_CONCURRENCY, async (customerId) => {
+    try {
+      const customer = await client.getCustomer(customerId, {
+        load_relations: '["Contact"]',
+      })
+      const phone = pickCustomerPhone(customer)
+      if (phone) phoneByCustomerId.set(customerId, phone)
+    } catch {
+      // Leave phone null — compose can still surface a clear error.
+    }
+  })
+
+  if (phoneByCustomerId.size === 0) return workorders
+
+  return workorders.map((workorder) => {
+    if (workorder.customer_phone?.trim()) return workorder
+    const phone = phoneByCustomerId.get(workorder.customer_id)
+    return phone ? { ...workorder, customer_phone: phone } : workorder
+  })
 }
 
 export async function getGenieWorkorder(

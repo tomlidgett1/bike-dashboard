@@ -65,7 +65,7 @@ export function InstagramThread({
   return (
     <div
       ref={scrollRef}
-      className="min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain bg-white px-5 py-5"
+      className="min-h-0 min-w-0 flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden overscroll-contain bg-white px-5 py-5"
       style={{ WebkitOverflowScrolling: "touch" }}
     >
       {messages.map((message, index) => {
@@ -104,6 +104,12 @@ export function InstagramReplyComposer({
   }, [conversation.conversation_id]);
 
   const canReply = Boolean(conversation.participant_id);
+  const windowOpen = (() => {
+    if (!conversation.last_customer_at) return false;
+    const lastMs = new Date(conversation.last_customer_at).getTime();
+    if (!Number.isFinite(lastMs)) return false;
+    return Date.now() - lastMs < 24 * 60 * 60 * 1000;
+  })();
 
   const submit = async () => {
     const trimmed = text.trim();
@@ -120,7 +126,7 @@ export function InstagramReplyComposer({
 
   if (!canReply) {
     return (
-      <p className="rounded-full border border-gray-200 bg-gray-50 px-4 py-2 text-center text-xs text-gray-500">
+      <p className="rounded-md border border-gray-200 bg-white px-4 py-2 text-center text-xs text-gray-500">
         Replies aren&rsquo;t available for this conversation yet — open it in Instagram to
         respond.
       </p>
@@ -129,8 +135,14 @@ export function InstagramReplyComposer({
 
   return (
     <div>
+      {!windowOpen ? (
+        <p className="mb-1.5 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-500">
+          Instagram&rsquo;s 24-hour reply window may be closed for this chat. Ask them to message
+          again, or reply in the Instagram app.
+        </p>
+      ) : null}
       {error ? (
-        <p className="mb-1.5 px-1 text-xs text-gray-500" role="alert">
+        <p className="mb-1.5 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600" role="alert">
           {error}
         </p>
       ) : null}
