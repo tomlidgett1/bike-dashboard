@@ -19,6 +19,7 @@ import {
   ChevronDown,
   ClipboardList,
   DocumentText,
+  History,
   Microphone,
   Notes,
   Notebook,
@@ -74,6 +75,18 @@ type NoteTemplate = {
   created_at: string;
 };
 
+type DictationLogEntry = {
+  id: string;
+  workorder_id: string;
+  customer_name: string;
+  template_name: string | null;
+  raw_transcript: string;
+  formatted_note: string;
+  saved_note: string;
+  started_at: string;
+  created_at: string;
+};
+
 type DictationStep = "recording" | "transcribing" | "review" | "saving" | "saved";
 
 const SELECTED_TEMPLATE_KEY = "workorders.selectedTemplateId";
@@ -113,6 +126,19 @@ function pickRecorderMimeType(): string | undefined {
   if (typeof MediaRecorder === "undefined") return undefined;
   const candidates = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"];
   return candidates.find((type) => MediaRecorder.isTypeSupported(type));
+}
+
+function formatLogTimestamp(iso: string): string {
+  const parsed = Date.parse(iso);
+  if (Number.isNaN(parsed)) return iso;
+  return new Intl.DateTimeFormat("en-AU", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "Australia/Melbourne",
+  }).format(new Date(parsed));
 }
 
 function formatElapsed(ms: number): string {
@@ -298,6 +324,7 @@ export function WorkordersPageContent() {
   const [templates, setTemplates] = React.useState<NoteTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = React.useState<string>(STANDARD_TEMPLATE_ID);
   const [manageOpen, setManageOpen] = React.useState(false);
+  const [logOpen, setLogOpen] = React.useState(false);
   const [searchQuery, setSearchQuery] = React.useState("");
   const [activeSession, setActiveSession] = React.useState<{
     workorder: Workorder;
@@ -377,6 +404,17 @@ export function WorkordersPageContent() {
           icon={Wrench}
           hideCompose
           className={cn(floatingCardPageHeaderNudgeClass, "!static !pb-0")}
+          trailingActions={
+            <button
+              type="button"
+              onClick={() => setLogOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
+              aria-label="View recent dictated notes"
+            >
+              <History className="h-4 w-4" size={16} />
+              <span className="hidden sm:inline">Recent dictations</span>
+            </button>
+          }
         />
       </FloatingCardPageHeader>
 
@@ -426,6 +464,8 @@ export function WorkordersPageContent() {
         onClose={() => setManageOpen(false)}
         onChanged={loadTemplates}
       />
+
+      <DictationLogDialog open={logOpen} onClose={() => setLogOpen(false)} />
     </>
   );
 }
@@ -892,6 +932,8 @@ function DictationSession({
   const [step, setStep] = React.useState<DictationStep>("recording");
   const [note, setNote] = React.useState("");
   const [transcript, setTranscript] = React.useState("");
+  const [initialFormattedNote, setInitialFormattedNote] = React.useState("");
+  const [startedAt, setStartedAt] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [elapsedMs, setElapsedMs] = React.useState(0);
   const [reformatting, setReformatting] = React.useState(false);
@@ -943,6 +985,8 @@ function DictationSession({
     setStep("recording");
     setNote("");
     setTranscript("");
+    setInitialFormattedNote("");
+    setStartedAt(new Date().toISOString());
     setElapsedMs(0);
 
     try {
@@ -976,6 +1020,7 @@ function DictationSession({
         void formatNote({ audio: blob, mimeType: type, templateText })
           .then((result) => {
             setTranscript(result.transcript);
+            setInitialFormattedNote(result.note);
             setNote(result.note);
             setStep("review");
           })
@@ -1043,6 +1088,7 @@ function DictationSession({
         transcriptText: transcript,
         templateText,
       });
+      setInitialFormattedNote(result.note);
       setNote(result.note);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not reformat note");
@@ -1058,10 +1104,28 @@ function DictationSession({
     setStep("saving");
     setError(null);
     try {
+      const templateName =
+        session.templateId === STANDARD_TEMPLATE_ID
+          ? "Standard"
+          : (templates.find((item) => item.id === session.templateId)?.name ?? "Standard");
+
       const res = await fetch("/api/workorders/append-note", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workorderId: session.workorder.workorder_id, text }),
+        body: JSON.stringify({
+          workorderId: session.workorder.workorder_id,
+          text,
+          dictationLog:
+            transcript.trim() && initialFormattedNote.trim() && startedAt
+              ? {
+                  startedAt,
+                  rawTranscript: transcript.trim(),
+                  formattedNote: initialFormattedNote.trim(),
+                  customerName: session.workorder.customer_name,
+                  templateName,
+                }
+              : undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to update workorder");
@@ -1442,6 +1506,142 @@ function TemplatesDialog({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Dictation log dialog ─────────────────────────────────────────────────────
+
+function DictationLogDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [logs, setLogs] = React.useState<DictationLogEntry[] | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const loadLogs = React.useCallback(async () => {
+    setError(null);
+    try {
+      const res = await fetch("/api/workorders/dictation-logs");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to load dictation logs");
+      setLogs((data.logs ?? []) as DictationLogEntry[]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load dictation logs");
+      setLogs([]);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!open) return;
+    setLogs(null);
+    void loadLogs();
+  }, [loadLogs, open]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
+      <button
+        type="button"
+        aria-label="Close dialog"
+        className="absolute inset-0 bg-black/40 animate-in fade-in duration-200"
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="relative z-10 flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-gray-200 bg-white animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out sm:mx-4"
+      >
+        <div className="shrink-0 border-b border-gray-100 px-6 py-5">
+          <h3 className="text-lg font-semibold text-gray-900">Recent dictations</h3>
+          <p className="mt-1 text-[13px] text-gray-500">
+            Notes dictated from this page — what was said, how it was transcribed, and what was
+            saved.
+          </p>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+          {logs === null ? (
+            <div className="flex justify-center py-12">
+              <WorkordersPageSpinner label="Loading dictation logs" />
+            </div>
+          ) : null}
+
+          {error ? (
+            <div className="rounded-md border border-gray-200 bg-white px-4 py-3 text-sm text-destructive">
+              {error}
+            </div>
+          ) : null}
+
+          {logs !== null && logs.length === 0 && !error ? (
+            <p className="py-8 text-center text-sm text-gray-500">
+              No dictations logged yet — entries appear here after you dictate and save a note.
+            </p>
+          ) : null}
+
+          {logs !== null && logs.length > 0 ? (
+            <div className="space-y-3">
+              {logs.map((log) => (
+                <DictationLogCard key={log.id} log={log} />
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="shrink-0 border-t border-gray-100 px-6 py-4">
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              variant="ghost"
+              className="rounded-md text-gray-500"
+              onClick={() => void loadLogs()}
+              disabled={logs === null}
+            >
+              Refresh
+            </Button>
+            <Button className="rounded-md px-6" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DictationLogCard({ log }: { log: DictationLogEntry }) {
+  const savedDiffers =
+    log.saved_note.trim() !== log.formatted_note.trim() &&
+    log.saved_note.trim().length > 0;
+
+  return (
+    <article className="rounded-md border border-gray-200 bg-white p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-gray-900">
+            {log.customer_name || "Unknown customer"}
+            <span className="ml-1.5 font-normal text-gray-400">#{log.workorder_id}</span>
+          </p>
+          <p className="mt-0.5 text-[12px] text-gray-500">
+            {formatLogTimestamp(log.started_at)}
+            {log.template_name ? ` · ${log.template_name}` : " · Standard"}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-3 space-y-3">
+        <DictationLogSection label="What they said" text={log.raw_transcript} />
+        <DictationLogSection label="Transcribed to" text={log.formatted_note} />
+        {savedDiffers ? (
+          <DictationLogSection label="Saved to workorder" text={log.saved_note} />
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function DictationLogSection({ label, text }: { label: string; text: string }) {
+  return (
+    <div className="rounded-md border border-gray-100 bg-gray-50/80 px-3 py-2.5">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">{label}</p>
+      <p className="mt-1 whitespace-pre-wrap text-[13px] leading-relaxed text-gray-700">{text}</p>
     </div>
   );
 }

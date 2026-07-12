@@ -23,6 +23,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => null)
     const workorderId = String(body?.workorderId ?? '').trim()
     const text = String(body?.text ?? '').trim()
+    const dictationLog = body?.dictationLog ?? null
 
     if (!workorderId || !text) {
       return NextResponse.json({ error: 'workorderId and text are required' }, { status: 400 })
@@ -41,6 +42,29 @@ export async function POST(request: NextRequest) {
     const newNote = existingNote ? `${existingNote}\n\n${text}` : text
 
     const updated = await client.updateWorkorder(workorderId, { note: newNote })
+
+    if (dictationLog && typeof dictationLog === 'object') {
+      const rawTranscript = String(dictationLog.rawTranscript ?? '').trim()
+      const formattedNote = String(dictationLog.formattedNote ?? '').trim()
+      const startedAt = String(dictationLog.startedAt ?? '').trim()
+
+      if (rawTranscript && formattedNote && startedAt) {
+        const { error: logError } = await supabase.from('workorder_dictation_logs').insert({
+          user_id: user.id,
+          workorder_id: workorderId,
+          customer_name: String(dictationLog.customerName ?? '').trim().slice(0, 200),
+          template_name: String(dictationLog.templateName ?? '').trim().slice(0, 80) || null,
+          raw_transcript: rawTranscript.slice(0, 20_000),
+          formatted_note: formattedNote.slice(0, 20_000),
+          saved_note: text.slice(0, 20_000),
+          started_at: startedAt,
+        })
+
+        if (logError) {
+          console.error('[workorders/append-note] dictation log insert failed:', logError)
+        }
+      }
+    }
 
     return NextResponse.json({ ok: true, note: String(updated.note ?? newNote) })
   } catch (error) {
