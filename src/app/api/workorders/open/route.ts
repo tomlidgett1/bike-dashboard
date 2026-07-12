@@ -1,9 +1,16 @@
 import { NextResponse } from 'next/server'
+import { unstable_cache } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { listUnpaidWorkorders } from '@/lib/services/lightspeed/workorder-queries'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
+
+const getCachedOpenWorkorders = unstable_cache(
+  async (userId: string) => listUnpaidWorkorders(userId),
+  ['open-workorders-v2'],
+  { revalidate: 30 },
+)
 
 /**
  * GET /api/workorders/open
@@ -20,7 +27,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorised. Please log in first.' }, { status: 401 })
     }
 
-    const { workorders, truncated } = await listUnpaidWorkorders(user.id)
+    const { workorders, truncated } = await getCachedOpenWorkorders(user.id)
     return NextResponse.json({ workorders, truncated })
   } catch (error) {
     console.error('[workorders/open] Failed to list workorders:', error)

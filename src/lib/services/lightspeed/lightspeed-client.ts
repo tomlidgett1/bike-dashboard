@@ -393,6 +393,15 @@ export class LightspeedClient {
             requestCost: response.headers.get('X-LS-Api-Request-Cost'),
             cfRay: response.headers.get('Cf-Ray'),
           })
+          if (waitTime > LIGHTSPEED_CONFIG.MAX_INLINE_RETRY_DELAY_MS) {
+            throw new LightspeedApiError('Lightspeed is busy. Please retry shortly.', {
+              status: 429,
+              body: `Retry requested after ${waitTime}ms`,
+              retryable: true,
+              rateLimitType: response.headers.get('X-LS-API-RateLimit-Type'),
+              cfRay: response.headers.get('Cf-Ray'),
+            })
+          }
           await sleep(waitTime)
           continue
         }
@@ -504,6 +513,15 @@ export class LightspeedClient {
             response,
             LIGHTSPEED_CONFIG.INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt),
           )
+          if (waitTime > LIGHTSPEED_CONFIG.MAX_INLINE_RETRY_DELAY_MS) {
+            throw new LightspeedApiError('Lightspeed is busy. Please retry shortly.', {
+              status: 429,
+              body: `Retry requested after ${waitTime}ms`,
+              retryable: true,
+              rateLimitType: response.headers.get('X-LS-API-RateLimit-Type'),
+              cfRay: response.headers.get('Cf-Ray'),
+            })
+          }
           await sleep(waitTime)
           continue
         }

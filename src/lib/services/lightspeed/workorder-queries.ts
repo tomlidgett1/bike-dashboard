@@ -592,6 +592,42 @@ export function isPaidWorkorderStatus(status: LightspeedWorkorderStatus | undefi
   return /paid/.test(String(status.name ?? '').trim().toLowerCase())
 }
 
+type UnpaidWorkorderSource = Pick<
+  ReturnType<typeof createLightspeedClient>,
+  'getWorkorderStatuses' | 'getRecentWorkorders'
+>
+
+/**
+ * Fetch a bounded recent-workorder window without issuing one request per status.
+ * Lightspeed R-Series cannot filter by multiple status IDs in one request, so
+ * filtering locally is the only bounded alternative to status fan-out.
+ */
+export async function fetchUnpaidWorkorderSource(
+  source: UnpaidWorkorderSource,
+  limit: number,
+): Promise<{
+  statuses: LightspeedWorkorderStatus[]
+  rawWorkorders: LightspeedWorkorderWithRelations[]
+  scanTarget: number
+}> {
+  const statuses = await source.getWorkorderStatuses()
+  const scanTarget = Math.min(Math.max(limit * 4, 100), 400)
+  const rawWorkorders = await source.getRecentWorkorders(
+    {
+      archived: 'false',
+      sort: '-timeStamp',
+      load_relations: '["Customer","WorkorderLines","WorkorderStatus"]',
+    },
+    {
+      targetCount: scanTarget,
+      limit: 100,
+      maxPages: 4,
+    },
+  )
+
+  return { statuses, rawWorkorders, scanTarget }
+}
+
 /**
  * Every workorder still waiting for payment: not archived and not in a
  * "paid" status. Includes finished-but-unpaid jobs awaiting collection.
@@ -604,79 +640,32 @@ export async function listUnpaidWorkorders(
   const limit = Math.min(Math.max(options.limit ?? 60, 1), 100)
 
   const client = createLightspeedClient(userId)
-  const statuses = await client.getWorkorderStatuses()
+  const { statuses, rawWorkorders, scanTarget } = await fetchUnpaidWorkorderSource(
+    client,
+    limit,
+  )
   const statusById = new Map(statuses.map(status => [String(status.workorderStatusID), status]))
-
-  const unpaidStatusIds = statuses
-    .filter(status => !isPaidWorkorderStatus(status))
-    .map(status => String(status.workorderStatusID))
-
-  const perStatusLimit = Math.max(Math.ceil(limit / Math.max(unpaidStatusIds.length, 1)) + 6, 12)
-  const rawWorkorders = await fetchWorkordersByStatusIds(userId, unpaidStatusIds, {
-    limitPerStatus: perStatusLimit,
-    maxPagesPerStatus: 2,
+  const activeUnpaid = rawWorkorders.filter(workorder => {
+    if (String(workorder.archived ?? '') === 'true') return false
+    return !isPaidWorkorderStatus(statusForWorkorder(workorder, statusById))
   })
-
-  const active = rawWorkorders.filter(workorder => String(workorder.archived ?? '') !== 'true')
-  const pool = active.slice(0, limit)
-  // includeDetails=false: name/status/note all come from the base fetch, and
-  // skipping per-workorder item lookups keeps this light. Phones are hydrated
-  // once per unique customer below so “Send message” deep-links work.
+  const pool = activeUnpaid.slice(0, limit)
+  // Name/status/note come from the base fetch. Missing phone numbers are
+  // resolved lazily by the Nest composer from customer_id, avoiding N extra
+  // Lightspeed customer requests on the list's critical path.
   const workorders = await mapWithConcurrency(
     pool,
     ENRICH_CONCURRENCY,
     workorder => enrichWorkorder(userId, workorder, statusById, false),
   )
 
-  const hydrated = await hydrateMissingCustomerPhones(userId, workorders)
-
   // Most recently edited (Lightspeed timeStamp) first — staff interact with these first.
-  hydrated.sort((a, b) => parseTimestamp(b.updated_at) - parseTimestamp(a.updated_at))
+  workorders.sort((a, b) => parseTimestamp(b.updated_at) - parseTimestamp(a.updated_at))
 
-  return { workorders: hydrated, truncated: active.length > pool.length }
-}
-
-/** Fill customer_phone for rows where the nested Customer relation had no Contact. */
-async function hydrateMissingCustomerPhones(
-  userId: string,
-  workorders: GenieWorkorderDetail[],
-): Promise<GenieWorkorderDetail[]> {
-  const missingIds = Array.from(
-    new Set(
-      workorders
-        .filter(
-          (workorder) =>
-            !workorder.customer_phone?.trim() &&
-            workorder.customer_id &&
-            workorder.customer_id !== '0',
-        )
-        .map((workorder) => workorder.customer_id),
-    ),
-  )
-  if (missingIds.length === 0) return workorders
-
-  const client = createLightspeedClient(userId)
-  const phoneByCustomerId = new Map<string, string>()
-
-  await mapWithConcurrency(missingIds, ENRICH_CONCURRENCY, async (customerId) => {
-    try {
-      const customer = await client.getCustomer(customerId, {
-        load_relations: '["Contact"]',
-      })
-      const phone = pickCustomerPhone(customer)
-      if (phone) phoneByCustomerId.set(customerId, phone)
-    } catch {
-      // Leave phone null — compose can still surface a clear error.
-    }
-  })
-
-  if (phoneByCustomerId.size === 0) return workorders
-
-  return workorders.map((workorder) => {
-    if (workorder.customer_phone?.trim()) return workorder
-    const phone = phoneByCustomerId.get(workorder.customer_id)
-    return phone ? { ...workorder, customer_phone: phone } : workorder
-  })
+  return {
+    workorders,
+    truncated: activeUnpaid.length > pool.length || rawWorkorders.length >= scanTarget,
+  }
 }
 
 export async function getGenieWorkorder(
