@@ -632,8 +632,15 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
             row.kind === "missing-brand"
               ? row.brandSuggestion?.brand?.trim() || null
               : row.categorySuggestion?.categoryLabel?.trim() || null,
+          suggestionId:
+            row.kind === "assign-category"
+              ? row.categorySuggestion?.categoryId?.trim() || null
+              : null,
         }
       : SAMPLE_LIGHTSPEED_ACTION;
+    if (next.kind === "assign-category") {
+      void ensureCategoryOptions();
+    }
     setPreviewAction(next);
     setPreviewOpen(true);
   }
@@ -839,10 +846,12 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
       <LightspeedActionRequiredPopup
         open={previewOpen}
         action={previewAction}
+        categories={categoryOptions}
+        categoriesLoading={categoryOptionsLoading}
+        onRequestCategories={() => void ensureCategoryOptions()}
         onClose={() => setPreviewOpen(false)}
         onApprove={() => setPreviewOpen(false)}
         onReject={() => setPreviewOpen(false)}
-        onChange={() => setPreviewOpen(false)}
       />
     </div>
   );
