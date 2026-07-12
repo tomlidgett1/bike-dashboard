@@ -40,6 +40,7 @@ import {
   CreditCard,
   MapPin,
   XCircle,
+  Banknote,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -96,6 +97,10 @@ import { BulkUploadSheet } from "@/components/marketplace/sell/bulk-upload-sheet
 import {
   DashboardFloatingPage,
 } from "@/components/layout/dashboard-floating-page";
+import {
+  OrderPaymentRequestsPanel,
+  type PaymentRequestRow,
+} from "@/components/settings/order-payment-requests-panel";
 
 // ============================================================
 // Types
@@ -221,7 +226,7 @@ interface SupportTicket {
 }
 
 type MainTab = 'orders' | 'listings' | 'drafts' | 'claims' | 'offers';
-type OrderMode = 'all' | 'buying' | 'selling';
+type OrderMode = 'all' | 'buying' | 'selling' | 'payments';
 type OrderActionMode = Exclude<OrderMode, 'all'>;
 
 // Extended purchase with order type for 'all' view
@@ -653,11 +658,17 @@ function OrderFilterTabs<T extends string>({
   );
 }
 
-const ORDER_MODE_TABS: FilterTab<"all" | "buying" | "selling">[] = [
-  { id: "all", label: "All", icon: Package },
-  { id: "buying", label: "Buying", icon: ShoppingBag },
-  { id: "selling", label: "Selling", icon: Store },
-];
+function getOrderModeTabs(isVerifiedStore: boolean): FilterTab<OrderMode>[] {
+  const tabs: FilterTab<OrderMode>[] = [
+    { id: "all", label: "All", icon: Package },
+    { id: "buying", label: "Buying", icon: ShoppingBag },
+    { id: "selling", label: "Selling", icon: Store },
+  ];
+  if (isVerifiedStore) {
+    tabs.push({ id: "payments", label: "Payments requested", icon: Banknote });
+  }
+  return tabs;
+}
 
 const OFFERS_MODE_TABS: FilterTab<"buying" | "selling">[] = [
   { id: "buying", label: "Sent", icon: ShoppingBag },
@@ -2740,6 +2751,14 @@ function OrderManagementPageContent() {
   const [pendingPaymentOffers, setPendingPaymentOffers] = React.useState<PendingPaymentOffer[]>([]);
   // Seller's accepted offers awaiting buyer payment
   const [sellerPendingOffers, setSellerPendingOffers] = React.useState<PendingPaymentOffer[]>([]);
+  const [paymentRequests, setPaymentRequests] = React.useState<PaymentRequestRow[]>([]);
+  const [paymentRequestsLoading, setPaymentRequestsLoading] = React.useState(false);
+  const [paymentStatusFilter, setPaymentStatusFilter] = React.useState<'all' | 'pending' | 'paid' | 'canceled'>('all');
+
+  const orderModeTabs = React.useMemo(
+    () => getOrderModeTabs(isVerifiedStore),
+    [isVerifiedStore],
+  );
 
   // Draft selection state
   const [selectedDraftIds, setSelectedDraftIds] = React.useState<Set<string>>(new Set());
@@ -2859,6 +2878,22 @@ function OrderManagementPageContent() {
     }
   }, [orderMode, statusFilter, fetchPendingPaymentOffers, fetchSellerPendingOffers]);
 
+  const fetchPaymentRequests = React.useCallback(async () => {
+    if (!isVerifiedStore) return;
+    setPaymentRequestsLoading(true);
+    try {
+      const res = await fetch('/api/store/payment-requests?includeEvents=1&limit=100');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not load payment requests.');
+      setPaymentRequests(data.requests ?? []);
+    } catch (e) {
+      console.error('Error fetching payment requests:', e);
+      setPaymentRequests([]);
+    } finally {
+      setPaymentRequestsLoading(false);
+    }
+  }, [isVerifiedStore]);
+
   // Fetch listings
   const fetchListings = React.useCallback(async () => {
     setListingsLoading(true);
@@ -2930,10 +2965,20 @@ function OrderManagementPageContent() {
     }
   }, [isVerifiedStore, fetchDrafts]);
 
+  React.useEffect(() => {
+    if (!isVerifiedStore && orderMode === 'payments') {
+      setOrderMode('buying');
+    }
+  }, [isVerifiedStore, orderMode]);
+
   // Refetch orders when mode/filter changes
   React.useEffect(() => {
+    if (orderMode === 'payments') {
+      void fetchPaymentRequests();
+      return;
+    }
     fetchOrders();
-  }, [orderMode, statusFilter]);
+  }, [orderMode, statusFilter, fetchOrders, fetchPaymentRequests]);
 
   // Refetch listings when filter changes
   React.useEffect(() => {
@@ -2976,7 +3021,7 @@ function OrderManagementPageContent() {
   };
 
   // Get the effective order mode for the detail view
-  const effectiveOrderMode = detailOrderType || (orderMode === 'all' ? 'buying' : orderMode);
+  const effectiveOrderMode = detailOrderType || (orderMode === 'all' || orderMode === 'payments' ? 'buying' : orderMode);
 
   // Handle messaging - find existing conversation or create new one
   const handleMessage = async (order: Purchase | CombinedOrder) => {
@@ -3349,6 +3394,21 @@ function OrderManagementPageContent() {
     });
   }, [orders, search, orderMode]);
 
+  const filteredPaymentRequests = React.useMemo(() => {
+    let rows = paymentRequests;
+    if (paymentStatusFilter !== 'all') {
+      rows = rows.filter((request) => request.status === paymentStatusFilter);
+    }
+    if (!search.trim()) return rows;
+
+    const searchLower = search.toLowerCase();
+    return rows.filter((request) => {
+      const customer = (request.customerName || request.customerHandle || '').toLowerCase();
+      const description = (request.description || '').toLowerCase();
+      return customer.includes(searchLower) || description.includes(searchLower);
+    });
+  }, [paymentRequests, paymentStatusFilter, search]);
+
   // Filter combined orders based on search for 'all' view
   const filteredGroupedOrders = React.useMemo(() => {
     if (!search.trim()) return groupedOrders;
@@ -3432,12 +3492,14 @@ function OrderManagementPageContent() {
 
   const pageChrome = (
     <>
-            <OrderManagementMainTabs
-              activeTab={activeTab}
-              onTabChange={setActiveTab}
-              tabs={mainTabs}
-              className={cn(!isVerifiedStore && "hidden sm:flex")}
-            />
+            {!isVerifiedStore ? (
+              <OrderManagementMainTabs
+                activeTab={activeTab}
+                onTabChange={setActiveTab}
+                tabs={mainTabs}
+                className="hidden sm:flex"
+              />
+            ) : null}
 
             {/* Desktop */}
             <div className="hidden sm:block space-y-4">
@@ -3449,30 +3511,57 @@ function OrderManagementPageContent() {
                       <OrderFilterTabs
                         activeTab={orderMode}
                         onTabChange={setOrderMode}
-                        tabs={ORDER_MODE_TABS}
+                        tabs={orderModeTabs}
                       />
 
                       <OrdersSearchField
                         value={search}
                         onChange={setSearch}
-                        placeholder="Search orders…"
+                        placeholder={orderMode === 'payments' ? 'Search payments…' : 'Search orders…'}
                         className="flex-1"
                       />
 
-                      <Select value={statusFilter} onValueChange={setStatusFilter}>
-                        <SelectTrigger className="w-[140px] rounded-full">
-                          <SelectValue placeholder="Status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Status</SelectItem>
-                          <SelectItem value="active">Active</SelectItem>
-                          <SelectItem value="completed">Completed</SelectItem>
-                          <SelectItem value="disputed">Disputed</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      {orderMode === 'payments' ? (
+                        <Select
+                          value={paymentStatusFilter}
+                          onValueChange={(value) => setPaymentStatusFilter(value as typeof paymentStatusFilter)}
+                        >
+                          <SelectTrigger className="w-[160px] rounded-full">
+                            <SelectValue placeholder="Status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All status</SelectItem>
+                            <SelectItem value="pending">Awaiting payment</SelectItem>
+                            <SelectItem value="paid">Paid</SelectItem>
+                            <SelectItem value="canceled">Cancelled</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Select value={statusFilter} onValueChange={setStatusFilter}>
+                          <SelectTrigger className="w-[140px] rounded-full">
+                            <SelectValue placeholder="Status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Status</SelectItem>
+                            <SelectItem value="active">Active</SelectItem>
+                            <SelectItem value="completed">Completed</SelectItem>
+                            <SelectItem value="disputed">Disputed</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
 
-                      <Button variant="outline" size="icon-sm" className="rounded-full" onClick={fetchOrders}>
-                        <RefreshCw className={cn("size-4", ordersLoading && "animate-spin")} />
+                      <Button
+                        variant="outline"
+                        size="icon-sm"
+                        className="rounded-full"
+                        onClick={orderMode === 'payments' ? fetchPaymentRequests : fetchOrders}
+                      >
+                        <RefreshCw
+                          className={cn(
+                            "size-4",
+                            (orderMode === 'payments' ? paymentRequestsLoading : ordersLoading) && "animate-spin",
+                          )}
+                        />
                       </Button>
                     </div>
 
@@ -3501,8 +3590,13 @@ function OrderManagementPageContent() {
                       </div>
                     )}
 
-                    {/* Show grouped view for 'all' mode, table for specific modes */}
-                    {orderMode === 'all' ? (
+                    {/* Show grouped view for 'all' mode, payments list, or table for specific modes */}
+                    {orderMode === 'payments' ? (
+                      <OrderPaymentRequestsPanel
+                        requests={filteredPaymentRequests}
+                        loading={paymentRequestsLoading}
+                      />
+                    ) : orderMode === 'all' ? (
                       <GroupedOrdersView
                         groups={filteredGroupedOrders}
                         loading={ordersLoading}
@@ -3521,7 +3615,7 @@ function OrderManagementPageContent() {
                     ) : (
                       <DesktopOrdersTable 
                         orders={filteredOrders} 
-                        orderMode={orderMode} 
+                        orderMode={orderMode as Exclude<OrderMode, 'payments'>} 
                         onRowClick={handleOrderClick} 
                         onViewProduct={(productId) => router.push(`/marketplace/product/${productId}?fromPurchase=true`)}
                         onMessage={handleMessage}
@@ -3774,7 +3868,7 @@ function OrderManagementPageContent() {
                   <OrderFilterTabs
                     activeTab={orderMode}
                     onTabChange={setOrderMode}
-                    tabs={ORDER_MODE_TABS}
+                    tabs={orderModeTabs}
                     fullWidth
                   />
 
@@ -3782,12 +3876,29 @@ function OrderManagementPageContent() {
                     <OrdersSearchField
                       value={search}
                       onChange={setSearch}
-                      placeholder="Search orders…"
+                      placeholder={orderMode === 'payments' ? 'Search payments…' : 'Search orders…'}
                       className="flex-1"
                     />
-                    <Button variant="outline" size="icon-sm">
-                      <Filter className="size-4" />
-                    </Button>
+                    {orderMode === 'payments' ? (
+                      <Select
+                        value={paymentStatusFilter}
+                        onValueChange={(value) => setPaymentStatusFilter(value as typeof paymentStatusFilter)}
+                      >
+                        <SelectTrigger className="w-[140px] rounded-full">
+                          <SelectValue placeholder="Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All</SelectItem>
+                          <SelectItem value="pending">Awaiting</SelectItem>
+                          <SelectItem value="paid">Paid</SelectItem>
+                          <SelectItem value="canceled">Cancelled</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Button variant="outline" size="icon-sm">
+                        <Filter className="size-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               )}
@@ -3795,7 +3906,12 @@ function OrderManagementPageContent() {
               {/* Mobile Orders */}
               {activeTab === 'orders' && (
                 <div className="space-y-2">
-                  {ordersLoading ? (
+                  {orderMode === 'payments' ? (
+                    <OrderPaymentRequestsPanel
+                      requests={filteredPaymentRequests}
+                      loading={paymentRequestsLoading}
+                    />
+                  ) : ordersLoading ? (
                     <div className="flex justify-center py-12">
                       <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                     </div>
@@ -4160,7 +4276,14 @@ function OrderManagementPageContent() {
           <DashboardFloatingPage
             title="Orders"
             icon={Bag}
-            description="Manage orders, listings, offers, and support claims."
+            toolbar={
+              <OrderManagementMainTabs
+                activeTab={activeTab}
+                onTabChange={setActiveTab}
+                tabs={mainTabs}
+                className="mb-0"
+              />
+            }
             actions={newListingActions}
             flush
           >

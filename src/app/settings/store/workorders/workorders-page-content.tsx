@@ -1548,37 +1548,31 @@ function DictationLogDialog({ open, onClose }: { open: boolean; onClose: () => v
       <div
         role="dialog"
         aria-modal="true"
-        className="relative z-10 flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-gray-200 bg-white animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out sm:mx-4"
+        className="relative z-10 flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-xl border border-gray-200 bg-white animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out sm:mx-4"
       >
-        <div className="shrink-0 border-b border-gray-100 px-6 py-5">
+        <div className="shrink-0 px-5 pt-5 pb-3">
           <h3 className="text-lg font-semibold text-gray-900">Recent dictations</h3>
-          <p className="mt-1 text-[13px] text-gray-500">
-            Notes dictated from this page — what was said, how it was transcribed, and what was
-            saved.
-          </p>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-2">
           {logs === null ? (
-            <div className="flex justify-center py-12">
+            <div className="flex justify-center py-10">
               <WorkordersPageSpinner label="Loading dictation logs" />
             </div>
           ) : null}
 
           {error ? (
-            <div className="rounded-md border border-gray-200 bg-white px-4 py-3 text-sm text-destructive">
+            <div className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-destructive">
               {error}
             </div>
           ) : null}
 
           {logs !== null && logs.length === 0 && !error ? (
-            <p className="py-8 text-center text-sm text-gray-500">
-              No dictations logged yet — entries appear here after you dictate and save a note.
-            </p>
+            <p className="py-8 text-center text-sm text-gray-500">Nothing yet.</p>
           ) : null}
 
           {logs !== null && logs.length > 0 ? (
-            <div className="space-y-3">
+            <div className="divide-y divide-gray-100">
               {logs.map((log) => (
                 <DictationLogCard key={log.id} log={log} />
               ))}
@@ -1586,20 +1580,10 @@ function DictationLogDialog({ open, onClose }: { open: boolean; onClose: () => v
           ) : null}
         </div>
 
-        <div className="shrink-0 border-t border-gray-100 px-6 py-4">
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              variant="ghost"
-              className="rounded-md text-gray-500"
-              onClick={() => void loadLogs()}
-              disabled={logs === null}
-            >
-              Refresh
-            </Button>
-            <Button className="rounded-md px-6" onClick={onClose}>
-              Close
-            </Button>
-          </div>
+        <div className="shrink-0 px-5 py-4">
+          <Button className="w-full rounded-md" onClick={onClose}>
+            Close
+          </Button>
         </div>
       </div>
     </div>
@@ -1607,41 +1591,44 @@ function DictationLogDialog({ open, onClose }: { open: boolean; onClose: () => v
 }
 
 function DictationLogCard({ log }: { log: DictationLogEntry }) {
-  const savedDiffers =
-    log.saved_note.trim() !== log.formatted_note.trim() &&
-    log.saved_note.trim().length > 0;
+  const [open, setOpen] = React.useState(false);
+  const note = (log.saved_note || log.formatted_note).trim();
+  const preview = note.split("\n").filter(Boolean)[0] ?? "";
 
   return (
-    <article className="rounded-md border border-gray-200 bg-white p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-gray-900">
-            {log.customer_name || "Unknown customer"}
-            <span className="ml-1.5 font-normal text-gray-400">#{log.workorder_id}</span>
-          </p>
-          <p className="mt-0.5 text-[12px] text-gray-500">
-            {formatLogTimestamp(log.started_at)}
-            {log.template_name ? ` · ${log.template_name}` : " · Standard"}
-          </p>
-        </div>
+    <button
+      type="button"
+      onClick={() => setOpen((value) => !value)}
+      className="flex w-full flex-col gap-0.5 py-3 text-left"
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="truncate text-sm font-medium text-gray-900">
+          {log.customer_name || "Customer"}
+        </p>
+        <p className="shrink-0 text-[11px] text-gray-400">{formatLogTimestamp(log.started_at)}</p>
       </div>
-
-      <div className="mt-3 space-y-3">
-        <DictationLogSection label="What they said" text={log.raw_transcript} />
-        <DictationLogSection label="Transcribed to" text={log.formatted_note} />
-        {savedDiffers ? (
-          <DictationLogSection label="Saved to workorder" text={log.saved_note} />
-        ) : null}
-      </div>
-    </article>
-  );
-}
-
-function DictationLogSection({ label, text }: { label: string; text: string }) {
-  return (
-    <div className="rounded-md border border-gray-100 bg-gray-50/80 px-3 py-2.5">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">{label}</p>
-      <p className="mt-1 whitespace-pre-wrap text-[13px] leading-relaxed text-gray-700">{text}</p>
-    </div>
+      {!open ? (
+        <p className="truncate text-[13px] text-gray-500">{preview}</p>
+      ) : (
+        <AnimatePresence>
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+            className="overflow-hidden"
+          >
+            <p className="mt-1 whitespace-pre-wrap text-[13px] leading-relaxed text-gray-700">
+              {note}
+            </p>
+            {log.raw_transcript.trim() ? (
+              <p className="mt-2 text-[12px] leading-relaxed text-gray-400">
+                Said: {log.raw_transcript.trim()}
+              </p>
+            ) : null}
+          </motion.div>
+        </AnimatePresence>
+      )}
+    </button>
   );
 }

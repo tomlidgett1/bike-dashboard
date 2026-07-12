@@ -19,7 +19,8 @@ const CRUMBS: Record<string, { section: string; page: string }> = {
   "/optimize/variants": { section: "Store", page: "Variant finder" },
   "/settings/store": { section: "Store", page: "Storefront" },
   "/settings/store/home": { section: "Store", page: "Home" },
-  "/settings/store/actions": { section: "Store", page: "Actions" },
+  "/settings/store/actions": { section: "Store", page: "To Do" },
+  "/settings/store/agents": { section: "Store", page: "Agents" },
   "/settings/store/nest": { section: "Customer service", page: "Nest" },
   "/settings/store/customer-inquiries": {
     section: "Customer service",

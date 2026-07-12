@@ -36,6 +36,7 @@ import {
   SlidersHorizontal,
   ChevronDown,
   Delivery,
+  Widget,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import Image from "next/image";
 import NextDynamic from "next/dynamic";
@@ -100,6 +101,7 @@ import {
   FloatingCardPageHeader,
   FloatingCardPageTitleRow,
 } from "@/components/layout/floating-card-page";
+import { useStoreOpenActionsCount } from "@/lib/hooks/use-store-open-actions-count";
 
 // Dialog (lazy — avoids SSR issues)
 const Dialog = NextDynamic(() => import("@/components/ui/dialog").then((m) => m.Dialog), { ssr: false });
@@ -378,6 +380,7 @@ function MiniLabel({
 export default function ProductsPage() {
   const router = useRouter();
   const { openSellModal } = useSellModal();
+  const { badge: openActionsBadge } = useStoreOpenActionsCount();
   const [products, setProducts] = React.useState<Product[]>([]);
   const [stats, setStats] = React.useState<ProductStats | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -1296,6 +1299,22 @@ export default function ProductsPage() {
           icon={Package}
           actions={
             <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full"
+                asChild
+              >
+                <Link href="/settings/store/actions" className="inline-flex items-center gap-1.5">
+                  <Widget className="size-4" />
+                  To Do
+                  {openActionsBadge ? (
+                    <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-800">
+                      {openActionsBadge}
+                    </span>
+                  ) : null}
+                </Link>
+              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="group rounded-full">

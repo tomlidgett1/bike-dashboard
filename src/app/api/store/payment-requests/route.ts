@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { logStorePaymentRequestEvent } from "@/lib/store-payments/audit";
+import { enrichPaymentRequestCustomerNames } from "@/lib/store-payments/enrich-payment-requests";
 
 const MIN_AMOUNT = 1;
 const MAX_AMOUNT = 10000;
@@ -177,9 +178,15 @@ export async function GET(request: NextRequest) {
       return json({ error: "Could not load payment requests." }, 500);
     }
 
+    const enrichedRequests = await enrichPaymentRequestCustomerNames(
+      auth.supabase,
+      auth.userId,
+      requests ?? [],
+    );
+
     let eventsByRequest: Record<string, Array<Record<string, unknown>>> = {};
-    if (includeEvents && (requests?.length ?? 0) > 0) {
-      const ids = (requests ?? []).map((row) => row.id);
+    if (includeEvents && enrichedRequests.length > 0) {
+      const ids = enrichedRequests.map((row) => row.id);
       const { data: events } = await auth.supabase
         .from("store_payment_request_events")
         .select("id, payment_request_id, event_type, message, actor, metadata, created_at")
@@ -203,7 +210,7 @@ export async function GET(request: NextRequest) {
     }
 
     return json({
-      requests: (requests ?? []).map((row) => ({
+      requests: enrichedRequests.map((row) => ({
         id: row.id,
         amount: row.amount_cents / 100,
         description: row.description,

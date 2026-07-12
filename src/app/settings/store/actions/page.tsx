@@ -9,7 +9,7 @@ import { ActionsSimpleBentoTable } from "@/components/settings/actions-simple-be
 export default function StoreActionsPage() {
   return (
     <DashboardFloatingPage
-      title="Actions"
+      title="To Do"
       icon={Widget}
       flush
     >

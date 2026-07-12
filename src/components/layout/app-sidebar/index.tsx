@@ -10,6 +10,7 @@ import {
   Banknote,
   Box,
   Database,
+  Ghost,
   Help,
   HomeSmile,
   Letter,
@@ -17,7 +18,6 @@ import {
   Settings,
   Shop,
   Tag,
-  Widget,
   Wrench,
   type SidebarIcon,
 } from "./sidebar-icons";
@@ -46,10 +46,10 @@ import { NavUser } from "./nav-user";
 import { SidebarLightspeedStatus } from "./sidebar-lightspeed-status";
 import { SidebarViewStoreLink } from "./sidebar-view-store-link";
 import { SidebarCollapseTrigger } from "./sidebar-collapse-trigger";
+import { SidebarNavIcon } from "./sidebar-nav-icon";
 import { LightspeedSidebarIcon } from "@/components/genie/lightspeed-logo";
 import { cn } from "@/lib/utils";
 import { useCustomerInquiriesUnreadCount } from "@/lib/hooks/use-customer-inquiries-unread-count";
-import { useStoreOpenActionsCount } from "@/lib/hooks/use-store-open-actions-count";
 
 const COMPRESSED_NAV_BUTTON =
   "data-active:bg-white data-active:shadow-sm";
@@ -71,7 +71,7 @@ const NAV: NavGroup[] = [
     label: "Store",
     items: [
       { title: "Home", href: "/settings/store/home", icon: HomeSmile, exact: true },
-      { title: "To Do", href: "/settings/store/actions", icon: Widget, exact: true },
+      { title: "Agents", href: "/settings/store/agents", icon: Ghost, exact: true },
       { title: "Workorders", href: "/settings/store/workorders", icon: Wrench, exact: true },
       { title: "Product Catalogue", href: "/products", icon: Box },
       {
@@ -162,7 +162,7 @@ function CollapsibleNavItem({
             size="sm"
             className={COMPRESSED_NAV_BUTTON}
           >
-            <item.icon />
+            <SidebarNavIcon icon={item.icon} />
             <span>{item.title}</span>
             <AltArrowRight
               className={cn(
@@ -230,7 +230,7 @@ function FlatNavItem({
           size="sm"
           className="cursor-not-allowed opacity-50"
         >
-          <item.icon />
+          <SidebarNavIcon icon={item.icon} />
           <span>{item.title}</span>
         </SidebarMenuButton>
         <SidebarMenuBadge className="text-[10px] tracking-wide">SOON</SidebarMenuBadge>
@@ -251,7 +251,7 @@ function FlatNavItem({
           onFocus={() => onPrefetch(item.href!)}
           onPointerEnter={() => onPrefetch(item.href!)}
         >
-          <item.icon />
+          <SidebarNavIcon icon={item.icon} />
           <span>{item.title}</span>
         </Link>
       </SidebarMenuButton>
@@ -264,7 +264,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname() ?? "/products";
   const router = useRouter();
   const { badge: customerInquiriesBadge } = useCustomerInquiriesUnreadCount();
-  const { badge: openActionsBadge } = useStoreOpenActionsCount();
 
   const prefetch = React.useCallback(
     (href: string) => {
@@ -278,12 +277,9 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       if (item.href === "/settings/store/customer-inquiries") {
         return { ...item, badge: customerInquiriesBadge ?? item.badge };
       }
-      if (item.href === "/settings/store/actions") {
-        return { ...item, badge: openActionsBadge ?? item.badge };
-      }
       return item;
     },
-    [customerInquiriesBadge, openActionsBadge],
+    [customerInquiriesBadge],
   );
 
   return (

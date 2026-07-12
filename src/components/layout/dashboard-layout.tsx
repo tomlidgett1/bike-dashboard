@@ -22,6 +22,7 @@ interface DashboardLayoutProps {
 const HIDE_TOPBAR_PATHS = [
   "/settings/store/home",
   "/settings/store/actions",
+  "/settings/store/agents",
   "/settings/store/nest",
 ];
 
