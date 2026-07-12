@@ -1,5 +1,9 @@
+"use client";
+
+import type { ReactNode } from "react";
 import { Monitor } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 /**
  * Store settings are desktop-only — block the management UI on small screens.
@@ -7,8 +11,15 @@ import Link from "next/link";
 export function StoreSettingsMobileGate({
   children,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
+  const pathname = usePathname();
+  const crmIsMobileReady = pathname?.startsWith("/settings/store/crm");
+
+  if (crmIsMobileReady) {
+    return <div className="flex min-h-0 flex-1">{children}</div>;
+  }
+
   return (
     <>
       <div className="flex min-h-[60dvh] flex-col items-center justify-center px-6 py-12 md:hidden">

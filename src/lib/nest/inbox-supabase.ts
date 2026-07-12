@@ -327,7 +327,9 @@ export async function upsertNestThreadToSupabase(
         ?.createdAt ??
       chat.lastCustomerMessageAt ??
       null,
-    channel: deriveNestChannelFromMessages(chat, conversation.messages),
+    // Prefer an explicit channel (e.g. storefront website_chat) so partial
+    // thread upserts (staff-only reply) do not reclassify the conversation.
+    channel: chat.channel ?? deriveNestChannelFromMessages(chat, conversation.messages),
   };
 
   await upsertNestChatsToSupabase(supabase, userId, brandKey, [

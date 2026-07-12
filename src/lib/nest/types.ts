@@ -100,6 +100,11 @@ export function isNestPortalTestChat(
   return false;
 }
 
+/** Public storefront chatbot threads (web widget on store pages). */
+export function isNestStorefrontChat(chatId: string): boolean {
+  return chatId.startsWith("storefront#");
+}
+
 export function filterNestCustomerChats(chats: NestConversationListItem[]): NestConversationListItem[] {
   return chats.filter((chat) => !isNestPortalTestChat(chat));
 }

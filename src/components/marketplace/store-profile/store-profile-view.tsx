@@ -43,6 +43,7 @@ import { ListItemBannerSlot } from "@/components/marketplace/list-item-banner";
 import { BikeIcon, getCategoryIconName } from "@/components/ui/bike-icon";
 import { StoreCarouselRowControls } from "@/components/marketplace/store-profile/store-carousel-row-controls";
 import { StoreHomeTab } from "@/components/marketplace/store-profile/store-home-tab";
+import { useNestStorefrontChat } from "@/components/providers/nest-storefront-chat-provider";
 import {
   StoreProfileChrome,
   STORE_PAGE_CONTENT_SHELL,
@@ -1120,6 +1121,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
   const router = useRouter();
   const searchParams = useSearchParams();
   const [store, setStore] = React.useState(initialStore);
+  const { ensureBubble, releaseBubble } = useNestStorefrontChat();
   // Home is the storefront landing page; it's the default tab unless the owner
   // has explicitly switched it off (homepage_config.enabled === false).
   const homeEnabled = store.homepage_config?.enabled !== false;
@@ -1159,6 +1161,18 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
   React.useEffect(() => {
     setStore(initialStore);
   }, [initialStore]);
+
+  // Always show the corner chatbot bubble on store pages.
+  React.useEffect(() => {
+    ensureBubble({
+      storeId: store.id,
+      storeName: store.store_name || "Store",
+      storeLogoUrl: store.logo_url,
+    });
+    return () => {
+      releaseBubble(store.id);
+    };
+  }, [store.id, store.store_name, store.logo_url, ensureBubble, releaseBubble]);
 
   // When previewMode is on, strip all owner-only UI so the store sees exactly
   // what a customer sees (no logo-upload overlays, no owner-only empty states, etc.)

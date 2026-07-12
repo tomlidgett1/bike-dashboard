@@ -53,6 +53,8 @@ const MOCK_APPROVALS: MockApproval[] = [
   },
 ];
 
+export const PENDING_APPROVALS_COUNT = MOCK_APPROVALS.length;
+
 export function AgentApprovalsList() {
   return (
     <section className="w-full min-w-0">

@@ -1,20 +1,10 @@
-"use client";
-
-export const dynamic = "force-dynamic";
-
-import { Suspense } from "react";
-import nextDynamic from "next/dynamic";
-import { SettingsManagerLoading } from "@/components/settings/settings-manager-loading";
-
-const CrmPageContent = nextDynamic(
-  () => import("./crm-page-content").then((mod) => mod.CrmPageContent),
-  { ssr: false, loading: () => <SettingsManagerLoading fullPage /> },
-);
+import { redirect } from "next/navigation";
+import { isStoreCrmV2Enabled } from "@/lib/crm/feature-flags";
 
 export default function StoreCrmPage() {
-  return (
-    <Suspense fallback={<SettingsManagerLoading fullPage />}>
-      <CrmPageContent />
-    </Suspense>
+  redirect(
+    isStoreCrmV2Enabled()
+      ? "/settings/store/crm/inbox"
+      : "/settings/store/crm/outreach",
   );
 }

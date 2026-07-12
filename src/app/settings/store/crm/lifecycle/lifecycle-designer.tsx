@@ -26,7 +26,6 @@ import { renderCampaignEmail, type StoreBranding } from "@/lib/crm/templates";
 import type { CampaignContent, CampaignItem } from "@/lib/crm/types";
 import type { CrmEmailTemplateRecord } from "@/lib/crm/agent/chat-types";
 import { mergeDraftOntoTemplateContent } from "@/lib/crm/lifecycle/template-config";
-import { PROGRAM_DEFINITIONS } from "@/lib/crm/lifecycle/programs";
 import type { LifecycleEmailDraft, LifecycleProgram } from "@/lib/crm/lifecycle/types";
 import { LightspeedProductPicker } from "../lightspeed-product-picker";
 import { STAGE_LABELS } from "./lifecycle-shared";
@@ -311,7 +310,7 @@ export function LifecycleDesigner({
           </h2>
           <p className="truncate text-xs text-muted-foreground">
             Goes to {STAGE_LABELS[program.stage].toLowerCase()} customers ·{" "}
-            {"{{FIRST_NAME}}"} becomes each customer's real name
+            {"{{FIRST_NAME}}"} becomes each customer&apos;s real name
           </p>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-2">
@@ -398,7 +397,7 @@ export function LifecycleDesigner({
               </div>
               <p className="mt-1.5 text-[11px] text-muted-foreground">
                 The AI redesigns the whole email — layout, colours, sections and words. Keep
-                asking until it's right.
+                asking until it&apos;s right.
               </p>
             </RailSection>
 

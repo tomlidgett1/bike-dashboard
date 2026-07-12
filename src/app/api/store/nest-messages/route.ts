@@ -19,6 +19,8 @@ import {
   fetchNestTwilioMissedCallChatIds,
 } from "@/lib/nest/twilio-missed-calls";
 import type { NestConversationDetail, NestConversationListItem } from "@/lib/nest/types";
+import { isNestStorefrontChat } from "@/lib/nest/types";
+import { persistStorefrontStaffReply } from "@/lib/nest/persist-storefront-chat";
 import { searchLightspeedCustomersForNest } from "@/lib/services/lightspeed/customer-search";
 import { isLightspeedInBackoff } from "@/lib/services/lightspeed/lightspeed-client";
 import {
@@ -311,14 +313,16 @@ export async function GET(request: NextRequest) {
     if (preferSupabase && supabaseThread) {
       setServerNestThreadCache(auth.brandKey, chatId, supabaseThread);
 
-      after(() =>
-        syncNestThreadFromPortal(auth.supabase, auth.userId, auth.brandKey, chatId, {
-          enrichLightspeed: !isLightspeedInBackoff(auth.userId),
-          syncThreads: false,
-        }).catch((error) => {
-          console.error("[store-nest-messages] background thread sync failed:", error);
-        }),
-      );
+      if (!isNestStorefrontChat(chatId)) {
+        after(() =>
+          syncNestThreadFromPortal(auth.supabase, auth.userId, auth.brandKey, chatId, {
+            enrichLightspeed: !isLightspeedInBackoff(auth.userId),
+            syncThreads: false,
+          }).catch((error) => {
+            console.error("[store-nest-messages] background thread sync failed:", error);
+          }),
+        );
+      }
 
       return json({
         chats: [],
@@ -339,6 +343,19 @@ export async function GET(request: NextRequest) {
         configured: true,
         brandKey: auth.brandKey,
         cached: true,
+        lightspeedConnected: await isLightspeedConnected(auth.userId),
+      });
+    }
+
+    // Storefront chatbot threads never exist on the Nest portal.
+    if (isNestStorefrontChat(chatId)) {
+      return json({
+        chats: [],
+        selectedChatId: chatId,
+        conversation: null,
+        configured: true,
+        brandKey: auth.brandKey,
+        cached: false,
         lightspeedConnected: await isLightspeedConnected(auth.userId),
       });
     }
@@ -486,18 +503,54 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const requestChatId = typeof body.chatId === "string" ? body.chatId.trim() : "";
+
+    // Website chatbot threads live only in Supabase — do not proxy to Linq/portal.
+    if (requestChatId && isNestStorefrontChat(requestChatId) && action === "send_message") {
+      const trimmed = content.trim();
+      if (!trimmed) {
+        return json({ error: "Message content is required." }, 400);
+      }
+
+      const { createServiceRoleClient } = await import("@/lib/supabase/server");
+      const service = createServiceRoleClient();
+      const { messageId, createdAt } = await persistStorefrontStaffReply({
+        supabase: service,
+        storeUserId: auth.userId,
+        brandKey: auth.brandKey,
+        chatId: requestChatId,
+        content: trimmed,
+      });
+      invalidateServerNestThreadCache(auth.brandKey, requestChatId);
+
+      return json({
+        ok: true,
+        chatId: requestChatId,
+        message: {
+          id: messageId,
+          role: "assistant",
+          content: trimmed,
+          handle: `staff@${auth.brandKey}`,
+          createdAt,
+          metadata: {
+            source: "brand_portal_staff_reply",
+            service: "storefront_chat",
+          },
+        },
+        configured: true,
+        brandKey: auth.brandKey,
+      });
+    }
+
     const data = await proxyNestBrandPortalRequest(auth.brandKey, {
       method: "POST",
       body,
     });
 
     const chatId =
-      typeof body.chatId === "string"
-        ? body.chatId.trim()
-        : typeof data.chatId === "string"
-          ? data.chatId.trim()
-          : "";
-    if (chatId) {
+      requestChatId ||
+      (typeof data.chatId === "string" ? data.chatId.trim() : "");
+    if (chatId && !isNestStorefrontChat(chatId)) {
       invalidateServerNestThreadCache(auth.brandKey, chatId);
       after(() =>
         syncNestThreadFromPortal(auth.supabase, auth.userId, auth.brandKey, chatId, {

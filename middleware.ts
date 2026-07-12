@@ -84,6 +84,8 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname === '/api/crm/unsubscribe' ||    // RFC 8058 one-click unsubscribe
     request.nextUrl.pathname === '/api/crm/resend-webhook' || // Resend delivery/open/click webhooks
     request.nextUrl.pathname === '/api/crm/open' ||           // CRM open tracking pixel
+    request.nextUrl.pathname === '/my-garage' ||              // Token-authorised customer bike/service portal
+    request.nextUrl.pathname.startsWith('/api/my-garage') ||  // My Garage consent and community actions
 
     request.nextUrl.pathname.startsWith('/api/marketplace') ||
     request.nextUrl.pathname === '/api/store/analytics' || // Public storefront tracking; GET still enforces auth in the route handler.

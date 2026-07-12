@@ -76,9 +76,9 @@ function EnquiriesPageLoadingState() {
   );
 }
 
-function InquiriesGmailStatusLoading() {
+function InquiriesGmailStatusLoading({ embedded = false }: { embedded?: boolean }) {
   return (
-    <InquiriesFloatingCardShell>
+    <InquiriesFloatingCardShell embedded={embedded}>
       <EnquiriesPageLoadingState />
     </InquiriesFloatingCardShell>
   );
@@ -86,11 +86,17 @@ function InquiriesGmailStatusLoading() {
 
 function InquiriesFloatingCardShell({
   headerActions,
+  embedded = false,
   children,
 }: {
   headerActions?: ReactNode;
+  embedded?: boolean;
   children: ReactNode;
 }) {
+  if (embedded) {
+    return <div className="flex h-full min-h-0 flex-col overflow-hidden">{children}</div>;
+  }
+
   return (
     <>
       <FloatingCardPageHeader>
@@ -119,9 +125,13 @@ function CustomerEnquiriesHeader({ trailingActions }: { trailingActions?: ReactN
 function CustomerEnquiriesFilterBar({
   c,
   onNewMessage,
+  trailingActions,
+  embedded = false,
 }: {
   c: UnifiedInboxController;
   onNewMessage: () => void;
+  trailingActions?: ReactNode;
+  embedded?: boolean;
 }) {
   const statusItems = INBOX_STATUS_TABS.map((tab) => ({
     ...tab,
@@ -129,10 +139,18 @@ function CustomerEnquiriesFilterBar({
   }));
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2.5 rounded-t-xl border-b border-border/60 bg-gray-50 px-4 py-3 md:px-5">
+    <div
+      className={cn(
+        "flex shrink-0 flex-wrap items-center gap-2.5 border-b border-border/60 bg-gray-50 px-4 py-3 md:px-5",
+        !embedded && "rounded-t-xl",
+      )}
+    >
       <NestNewMessageButton disabled={!c.nestConfigured} onOpen={onNewMessage} />
       <EnquiriesNavTabs items={statusItems} value={c.statusTab} onChange={c.setStatusTab} />
       <InboxSourceSelect value={c.sourceTab} onChange={c.setSourceTab} />
+      {trailingActions ? (
+        <div className="ml-auto flex flex-wrap items-center gap-2">{trailingActions}</div>
+      ) : null}
     </div>
   );
 }
@@ -290,11 +308,18 @@ function CustomerEnquiriesHeaderActions({
   );
 }
 
-export function StoreCustomerInquiriesPanel() {
+export function StoreCustomerInquiriesPanel({
+  embedded: embeddedProp = false,
+}: {
+  /** When true (CRM Inbox), hide the standalone "Customer enquiries" page chrome. */
+  embedded?: boolean;
+}) {
   const c = useUnifiedInboxController();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const embedded =
+    embeddedProp || (pathname?.includes("/settings/store/crm/inbox") ?? false);
   const [trainNestOpen, setTrainNestOpen] = useState(false);
   const [composing, setComposing] = useState(false);
   const [composePrefill, setComposePrefill] = useState<NestComposeInitialRecipient | null>(
@@ -378,11 +403,11 @@ export function StoreCustomerInquiriesPanel() {
 
   if (!c.gmailStatusReady) {
     if (c.loading) {
-      return <InquiriesGmailStatusLoading />;
+      return <InquiriesGmailStatusLoading embedded={embedded} />;
     }
     if (c.error) {
       return (
-        <InquiriesFloatingCardShell>
+        <InquiriesFloatingCardShell embedded={embedded}>
           <div className="flex flex-1 items-center justify-center p-6">
             <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white p-6 text-center text-sm text-gray-600">
               {c.error}
@@ -391,14 +416,15 @@ export function StoreCustomerInquiriesPanel() {
         </InquiriesFloatingCardShell>
       );
     }
-    return <InquiriesGmailStatusLoading />;
+    return <InquiriesGmailStatusLoading embedded={embedded} />;
   }
 
   if (c.gmailConfigured && !c.gmailConnected && !c.nestConfigured) {
     return (
       <InquiriesFloatingCardShell
+        embedded={embedded}
         headerActions={
-          <CustomerEnquiriesHeader trailingActions={headerActions} />
+          embedded ? undefined : <CustomerEnquiriesHeader trailingActions={headerActions} />
         }
       >
         <div className="flex flex-1 items-center justify-center p-6">
@@ -432,7 +458,7 @@ export function StoreCustomerInquiriesPanel() {
 
   if (!c.gmailConfigured && !c.nestConfigured) {
     return (
-      <InquiriesFloatingCardShell>
+      <InquiriesFloatingCardShell embedded={embedded}>
         <div className="flex min-h-0 flex-1 items-center justify-center p-6">
           <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white p-6 text-center text-sm text-gray-600">
             Gmail integration is not configured for this environment.
@@ -445,15 +471,23 @@ export function StoreCustomerInquiriesPanel() {
   if (c.listLoading && c.allRows.length === 0) {
     return (
       <>
-        <FloatingCardPageHeader>
-          <CustomerEnquiriesHeader trailingActions={headerActions} />
-        </FloatingCardPageHeader>
+        {embedded ? null : (
+          <FloatingCardPageHeader>
+            <CustomerEnquiriesHeader trailingActions={headerActions} />
+          </FloatingCardPageHeader>
+        )}
 
-        <FloatingCardPageBody>
-          <FloatingCard>
+        {embedded ? (
+          <div className="flex h-full min-h-0 flex-col overflow-hidden">
             <EnquiriesPageLoadingState />
-          </FloatingCard>
-        </FloatingCardPageBody>
+          </div>
+        ) : (
+          <FloatingCardPageBody>
+            <FloatingCard>
+              <EnquiriesPageLoadingState />
+            </FloatingCard>
+          </FloatingCardPageBody>
+        )}
 
         <NestPromptCoachSheet open={trainNestOpen} onOpenChange={setTrainNestOpen} />
       </>
@@ -462,21 +496,40 @@ export function StoreCustomerInquiriesPanel() {
 
   return (
     <>
-      <FloatingCardPageHeader>
-        <CustomerEnquiriesHeader trailingActions={headerActions} />
-      </FloatingCardPageHeader>
+      {embedded ? null : (
+        <FloatingCardPageHeader>
+          <CustomerEnquiriesHeader trailingActions={headerActions} />
+        </FloatingCardPageHeader>
+      )}
 
-      <FloatingCardPageBody>
-        <FloatingCard>
-          <CustomerEnquiriesFilterBar c={c} onNewMessage={openCompose} />
+      {embedded ? (
+        <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
+          <CustomerEnquiriesFilterBar
+            c={c}
+            onNewMessage={openCompose}
+            trailingActions={headerActions}
+            embedded
+          />
           <EnquiriesSplitView
             c={c}
             composing={composing}
             onCloseCompose={closeCompose}
             composePrefill={composePrefill}
           />
-        </FloatingCard>
-      </FloatingCardPageBody>
+        </div>
+      ) : (
+        <FloatingCardPageBody>
+          <FloatingCard>
+            <CustomerEnquiriesFilterBar c={c} onNewMessage={openCompose} />
+            <EnquiriesSplitView
+              c={c}
+              composing={composing}
+              onCloseCompose={closeCompose}
+              composePrefill={composePrefill}
+            />
+          </FloatingCard>
+        </FloatingCardPageBody>
+      )}
 
       <NestPromptCoachSheet open={trainNestOpen} onOpenChange={setTrainNestOpen} />
 

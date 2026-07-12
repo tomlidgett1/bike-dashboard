@@ -2,13 +2,30 @@
 
 export const dynamic = "force-dynamic";
 
-import { Ghost } from "@/components/layout/app-sidebar/dashboard-icons";
+import * as React from "react";
+import { Ghost, ListChecks } from "@/components/layout/app-sidebar/dashboard-icons";
 import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-page";
+import { SlidingNavTabs } from "@/components/layout/sliding-nav-tabs";
 import {
   AgentBentoCard,
   type AgentBentoCardProps,
 } from "@/components/settings/agent-bento-card";
-import { AgentApprovalsList } from "@/components/settings/agent-approvals-list";
+import {
+  AgentApprovalsList,
+  PENDING_APPROVALS_COUNT,
+} from "@/components/settings/agent-approvals-list";
+
+type AgentsTab = "agents" | "approvals";
+
+const AGENT_TABS = [
+  { id: "agents" as const, label: "Agents", icon: Ghost },
+  {
+    id: "approvals" as const,
+    label: "Approvals",
+    icon: ListChecks,
+    badge: PENDING_APPROVALS_COUNT,
+  },
+];
 
 const AGENTS: AgentBentoCardProps[] = [
   {
@@ -92,6 +109,8 @@ const AGENTS: AgentBentoCardProps[] = [
 ];
 
 export default function StoreAgentsPage() {
+  const [activeTab, setActiveTab] = React.useState<AgentsTab>("agents");
+
   return (
     <DashboardFloatingPage
       title="Agents"
@@ -100,13 +119,24 @@ export default function StoreAgentsPage() {
       scrollClassName="overflow-x-hidden"
     >
       <div className="flex w-full min-w-0 flex-col pt-4 md:pt-5">
-        <AgentApprovalsList />
-        <div className="h-px w-full bg-gray-300" aria-hidden />
-        <div className="grid min-w-0 grid-cols-1 items-start gap-4 px-4 pb-4 pt-6 md:grid-cols-3 md:px-5 md:pb-5">
-          {AGENTS.map((agent) => (
-            <AgentBentoCard key={agent.name} {...agent} />
-          ))}
+        <div className="mb-5 px-4 md:px-5">
+          <SlidingNavTabs
+            items={AGENT_TABS}
+            value={activeTab}
+            onChange={setActiveTab}
+            layoutId="store-agents-tabs"
+          />
         </div>
+
+        {activeTab === "agents" ? (
+          <div className="grid min-w-0 grid-cols-1 items-start gap-4 px-4 pb-4 md:grid-cols-3 md:px-5 md:pb-5">
+            {AGENTS.map((agent) => (
+              <AgentBentoCard key={agent.name} {...agent} />
+            ))}
+          </div>
+        ) : (
+          <AgentApprovalsList />
+        )}
       </div>
     </DashboardFloatingPage>
   );

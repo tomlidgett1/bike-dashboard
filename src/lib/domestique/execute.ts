@@ -112,6 +112,45 @@ async function executeSms(
     .slice(0, config.max_sms_per_play);
   if (smsTargets.length === 0) return;
 
+  const contactIds = smsTargets.map((contact) => contact.contact_id).filter(Boolean);
+  const { data: linkedContacts, error: linkedContactsError } = await supabase
+    .from("crm_contacts")
+    .select("id, customer_id")
+    .eq("user_id", userId)
+    .in("id", contactIds);
+  if (linkedContactsError) throw new Error(`Could not verify SMS recipients: ${linkedContactsError.message}`);
+  const customerByContact = new Map(
+    (linkedContacts ?? [])
+      .filter((contact) => contact.customer_id)
+      .map((contact) => [String(contact.id), String(contact.customer_id)]),
+  );
+  const customerIds = [...new Set(customerByContact.values())];
+  const { data: smsConsents, error: smsConsentError } = customerIds.length > 0
+    ? await supabase
+        .from("store_customer_consents")
+        .select("customer_id, status")
+        .eq("channel", "sms")
+        .eq("purpose", "marketing")
+        .in("customer_id", customerIds)
+    : { data: [], error: null };
+  if (smsConsentError) throw new Error(`Could not verify SMS consent: ${smsConsentError.message}`);
+  const grantedCustomerIds = new Set(
+    (smsConsents ?? [])
+      .filter((consent) => consent.status === "granted")
+      .map((consent) => String(consent.customer_id)),
+  );
+  const consentedSmsTargets = smsTargets.filter((contact) => {
+    const customerId = customerByContact.get(contact.contact_id);
+    return customerId ? grantedCustomerIds.has(customerId) : false;
+  });
+  const suppressed = smsTargets.length - consentedSmsTargets.length;
+  if (suppressed > 0) {
+    (result.errors ??= []).push(
+      `SMS: ${suppressed} recipient${suppressed === 1 ? "" : "s"} suppressed because marketing consent was not recorded`,
+    );
+  }
+  if (consentedSmsTargets.length === 0) return;
+
   const { data: profile } = await supabase
     .from("users")
     .select("nest_brand_key, business_name, nest_message_intro, nest_message_signoff")
@@ -125,7 +164,7 @@ async function executeSms(
 
   let sent = 0;
   let failed = 0;
-  for (const contact of smsTargets) {
+  for (const contact of consentedSmsTargets) {
     try {
       const content = formatNestOutboundMessage(sms.body, {
         firstName: contact.first_name,
@@ -159,7 +198,9 @@ async function executeSms(
   }
   result.sms_sent = sent;
   result.sms_failed = failed;
-  if (failed > 0) (result.errors ??= []).push(`SMS: ${failed} of ${smsTargets.length} failed`);
+  if (failed > 0) {
+    (result.errors ??= []).push(`SMS: ${failed} of ${consentedSmsTargets.length} failed`);
+  }
 }
 
 async function executeDiscounts(

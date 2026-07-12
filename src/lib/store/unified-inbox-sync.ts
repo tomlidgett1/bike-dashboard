@@ -17,7 +17,7 @@ import {
   fetchNestTwilioMissedCallChatIds,
 } from "@/lib/nest/twilio-missed-calls";
 import type { NestConversationDetail, NestConversationListItem } from "@/lib/nest/types";
-import { isNestPortalTestChat } from "@/lib/nest/types";
+import { isNestPortalTestChat, isNestStorefrontChat } from "@/lib/nest/types";
 import { isLightspeedInBackoff } from "@/lib/services/lightspeed/lightspeed-client";
 import { reconcileAnsweredThreads } from "@/lib/customer-inquiries/sync";
 import { isComposioConfigured, listGmailConnections } from "@/lib/composio/gmail";
@@ -47,6 +47,7 @@ function shouldSyncNestThread(
   force: boolean,
 ): boolean {
   if (isNestPortalTestChat(chat)) return false;
+  if (isNestStorefrontChat(chat.chatId)) return false;
   if (force) return true;
   if (!cached || !cached.hasMessages) return true;
   return chatTimeMs(chat.lastMessageAt) > chatTimeMs(cached.lastMessageAt) + 999;

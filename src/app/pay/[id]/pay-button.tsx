@@ -28,7 +28,7 @@ export function PayButton({ requestId, label }: { requestId: string; label: stri
         type="button"
         onClick={() => void startCheckout()}
         disabled={loading}
-        className="flex w-full items-center justify-center gap-2 rounded-md bg-gray-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-60"
+        className="flex h-12 w-full touch-manipulation items-center justify-center gap-2 rounded-md bg-gray-900 px-4 text-base font-medium text-white transition-colors hover:bg-gray-800 active:bg-gray-950 disabled:opacity-60 sm:h-11 sm:text-sm"
       >
         {loading ? (
           <span

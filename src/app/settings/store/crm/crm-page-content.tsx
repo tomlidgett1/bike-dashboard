@@ -223,7 +223,11 @@ const PEOPLE_TABS = [
   { id: "groups", label: "Groups", icon: Tag },
 ] as const satisfies readonly { id: PeopleTab; label: string; icon: React.ComponentType<{ className?: string }> }[];
 
-export function CrmPageContent() {
+export function CrmPageContent({
+  embedded = false,
+}: {
+  embedded?: boolean;
+} = {}) {
   const [section, setSection] = React.useState<CrmSection>("lifecycle");
   const [peopleTab, setPeopleTab] = React.useState<PeopleTab>("contacts");
   const [createTemplateSeed, setCreateTemplateSeed] = React.useState<CampaignTemplateSeed | null>(null);
@@ -470,9 +474,8 @@ export function CrmPageContent() {
 
   const hasAnyContacts = (stats?.total ?? 0) > 0;
 
-  return (
-    <>
-      <DashboardFloatingPage
+  const page = (
+    <DashboardFloatingPage
         title="Outreach"
         icon={Mailbox}
         actions={
@@ -627,8 +630,18 @@ export function CrmPageContent() {
             />
           ) : null}
         </div>
-      </DashboardFloatingPage>
+    </DashboardFloatingPage>
+  );
 
+  return (
+    <>
+      {embedded ? (
+        <div className="h-full min-h-0 [&>div]:!h-full [&>div]:!pt-0">
+          {page}
+        </div>
+      ) : (
+        page
+      )}
       {composerSeed ? (
         <CampaignComposer
           seed={composerSeed}

@@ -10,10 +10,8 @@ import {
   Banknote,
   Box,
   Database,
-  Ghost,
   Help,
   HomeSmile,
-  Letter,
   Mailbox,
   Settings,
   Shop,
@@ -71,7 +69,6 @@ const NAV: NavGroup[] = [
     label: "Store",
     items: [
       { title: "Home", href: "/settings/store/home", icon: HomeSmile, exact: true },
-      { title: "Agents", href: "/settings/store/agents", icon: Ghost, exact: true },
       { title: "Workorders", href: "/settings/store/workorders", icon: Wrench, exact: true },
       { title: "Product Catalogue", href: "/products", icon: Box },
       {
@@ -95,8 +92,18 @@ const NAV: NavGroup[] = [
   {
     label: "Customer service",
     items: [
-      { title: "Customer inquiries", href: "/settings/store/customer-inquiries", icon: Letter, exact: true },
-      { title: "Outreach", href: "/settings/store/crm", icon: Mailbox, exact: true },
+      {
+        title: "CRM",
+        icon: Mailbox,
+        items: [
+          { title: "Inbox", href: "/settings/store/crm/inbox", exact: true },
+          { title: "Today", href: "/settings/store/crm/today", exact: true },
+          { title: "Customers", href: "/settings/store/crm/customers" },
+          { title: "Outreach", href: "/settings/store/crm/outreach", exact: true },
+          { title: "Automations", href: "/settings/store/crm/automations", exact: true },
+          { title: "Insights", href: "/settings/store/crm/insights", exact: true },
+        ],
+      },
     ],
   },
   {
@@ -140,10 +147,12 @@ function CollapsibleNavItem({
   item,
   pathname,
   onPrefetch,
+  inboxBadge,
 }: {
   item: NavItem;
   pathname: string;
   onPrefetch: (href: string) => void;
+  inboxBadge?: string;
 }) {
   const isActive = groupActive(pathname, item);
   const [open, setOpen] = React.useState(isActive);
@@ -198,7 +207,12 @@ function CollapsibleNavItem({
                         onFocus={() => onPrefetch(sub.href)}
                         onPointerEnter={() => onPrefetch(sub.href)}
                       >
-                        {sub.title}
+                        <span>{sub.title}</span>
+                        {sub.href === "/settings/store/crm/inbox" && inboxBadge ? (
+                          <span className="ml-auto rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-gray-600">
+                            {inboxBadge}
+                          </span>
+                        ) : null}
                       </Link>
                     </SidebarMenuSubButton>
                   </SidebarMenuSubItem>
@@ -272,16 +286,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     [router]
   );
 
-  const enrichNavItem = React.useCallback(
-    (item: NavItem): NavItem => {
-      if (item.href === "/settings/store/customer-inquiries") {
-        return { ...item, badge: customerInquiriesBadge ?? item.badge };
-      }
-      return item;
-    },
-    [customerInquiriesBadge],
-  );
-
   return (
     <Sidebar collapsible="icon" className="dashboard-app-sidebar" {...props}>
       <SidebarHeader className="gap-1 p-1.5">
@@ -307,11 +311,12 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
                     item={item}
                     pathname={pathname}
                     onPrefetch={prefetch}
+                    inboxBadge={item.title === "CRM" ? customerInquiriesBadge : undefined}
                   />
                 ) : (
                   <FlatNavItem
                     key={item.title}
-                    item={enrichNavItem(item)}
+                    item={item}
                     pathname={pathname}
                     onPrefetch={prefetch}
                   />

@@ -15,6 +15,8 @@ import {
   Info,
   CircleDot,
   Gift,
+  MapPin,
+  Phone,
   type LucideIcon,
 } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
@@ -131,6 +133,18 @@ export function parseStoreTabParam(
 
 /** Matches product page horizontal inset (px-4 / xl:px-5). */
 export const STORE_PAGE_CONTENT_SHELL = "px-4 sm:px-4 lg:px-4 xl:px-5";
+
+/** Banner artwork for each store tab (Unsplash, cropped small). */
+const STORE_TAB_BANNERS: Record<StoreTab, string> = {
+  home: "https://images.unsplash.com/photo-1485965120184-e220f721d03e?auto=format&fit=crop&w=500&q=60",
+  products: "https://images.unsplash.com/photo-1532298229144-0ec0c57515c7?auto=format&fit=crop&w=500&q=60",
+  bikes: "https://images.unsplash.com/photo-1571068316344-75bc76f77890?auto=format&fit=crop&w=500&q=60",
+  rentals: "https://images.unsplash.com/photo-1517649763962-0c623066013b?auto=format&fit=crop&w=500&q=60",
+  service: "https://images.unsplash.com/photo-1507035895480-2b3156c31fc8?auto=format&fit=crop&w=500&q=60",
+  offers: "https://images.unsplash.com/photo-1549465220-1a8b9238cd48?auto=format&fit=crop&w=500&q=60",
+  about: "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=500&q=60",
+  reviews: "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=500&q=60",
+};
 
 export interface StoreProfileChromeProps {
   store: StoreProfile;
@@ -337,10 +351,10 @@ export function StoreProfileChrome({
               mobileSearchMode ? "hidden md:flex" : "flex",
             )}
           >
-            <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+            <div className="flex min-w-0 items-center gap-2.5 sm:gap-3.5">
               <Link
                 href={homeHref}
-                className="h-9 w-9 flex-shrink-0 overflow-hidden rounded-full bg-white ring-1 ring-gray-200 sm:h-11 sm:w-11"
+                className="h-9 w-9 flex-shrink-0 overflow-hidden rounded-md bg-white ring-1 ring-gray-200 sm:h-11 sm:w-11"
                 aria-label={`${store.store_name} store home`}
               >
                 {store.logo_url ? (
@@ -359,12 +373,25 @@ export function StoreProfileChrome({
                   </div>
                 )}
               </Link>
-              <div className="flex min-w-0 flex-col items-start text-left">
-                <h1 className="truncate text-[15px] font-bold leading-tight tracking-tight text-gray-900 sm:text-lg">
-                  <Link href={homeHref} className="block truncate hover:text-gray-700">
-                    {store.store_name}
-                  </Link>
-                </h1>
+              <div className="flex min-w-0 flex-col items-start gap-0.5 text-left sm:gap-1">
+                <div className="flex min-w-0 items-baseline gap-2">
+                  <h1 className="truncate text-[15px] font-bold leading-tight tracking-tight text-gray-900 sm:text-lg">
+                    <Link href={homeHref} className="block truncate hover:text-gray-700">
+                      {store.store_name}
+                    </Link>
+                  </h1>
+                  {headerRating != null && (
+                    <span className="hidden flex-shrink-0 items-center gap-1 text-xs sm:inline-flex">
+                      <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                      <span className="font-semibold text-gray-800">
+                        {headerRating.toFixed(1)}
+                      </span>
+                      {store.review_count != null && (
+                        <span className="text-gray-400">({store.review_count})</span>
+                      )}
+                    </span>
+                  )}
+                </div>
                 {showHeaderHoursBadge && openStatus && (
                   <button
                     type="button"
@@ -374,7 +401,7 @@ export function StoreProfileChrome({
                       onHoursOpenChange(true);
                     }}
                     className={cn(
-                      "mt-0.5 inline-flex items-center justify-start gap-1 rounded-full text-left text-[10px] font-semibold leading-none transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-900/10 sm:hidden",
+                      "inline-flex items-center justify-start gap-1 rounded-full text-left text-[10px] font-semibold leading-none transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-900/10 sm:hidden",
                       openStatus.open ? "text-green-700" : "text-gray-600",
                     )}
                     aria-label={`Show opening hours. ${openStatus.label}`}
@@ -389,21 +416,31 @@ export function StoreProfileChrome({
                     {openStatus.label}
                   </button>
                 )}
-                {(headerRating != null || store.address || store.phone || showHeaderHoursBadge) && (
-                  <div className="mt-0.5 hidden min-w-0 items-center justify-start gap-1.5 text-left text-[11px] text-gray-500 sm:flex sm:text-xs">
-                    {headerRating != null && (
-                      <span className="inline-flex flex-shrink-0 items-center gap-0.5">
-                        <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
-                        <span className="font-semibold text-gray-700">
-                          {headerRating.toFixed(1)}
-                        </span>
-                        {store.review_count != null && (
-                          <span className="text-gray-400">({store.review_count})</span>
+                {(store.address || store.phone || showHeaderHoursBadge) && (
+                  <div className="hidden min-w-0 items-center gap-1.5 sm:flex">
+                    {showHeaderHoursBadge && openStatus && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onHoursOpenChange(true);
+                        }}
+                        className={cn(
+                          "inline-flex h-6 flex-shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-semibold transition-colors hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-900/10",
+                          openStatus.open ? "text-green-700" : "text-gray-600",
                         )}
-                      </span>
-                    )}
-                    {headerRating != null && store.address && (
-                      <span className="flex-shrink-0 text-gray-300">·</span>
+                        aria-label={`Show opening hours. ${openStatus.label}`}
+                      >
+                        <span
+                          className={cn(
+                            "h-1.5 w-1.5 rounded-full",
+                            openStatus.open ? "bg-green-500" : "bg-gray-400",
+                          )}
+                          aria-hidden="true"
+                        />
+                        {openStatus.label}
+                      </button>
                     )}
                     {store.address &&
                       (directionsUrl ? (
@@ -419,16 +456,18 @@ export function StoreProfileChrome({
                               source: "store_header",
                             });
                           }}
-                          className="hidden truncate hover:text-gray-900 transition-colors sm:inline"
+                          title="Get directions"
+                          className="inline-flex h-6 min-w-0 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900"
                         >
-                          {store.address}
+                          <MapPin className="h-3 w-3 flex-shrink-0 text-gray-400" />
+                          <span className="truncate">{store.address}</span>
                         </a>
                       ) : (
-                        <span className="hidden truncate sm:inline">{store.address}</span>
+                        <span className="inline-flex h-6 min-w-0 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-600">
+                          <MapPin className="h-3 w-3 flex-shrink-0 text-gray-400" />
+                          <span className="truncate">{store.address}</span>
+                        </span>
                       ))}
-                    {store.address && store.phone && (
-                      <span className="hidden flex-shrink-0 text-gray-300 sm:inline">·</span>
-                    )}
                     {store.phone && (
                       <a
                         href={`tel:${store.phone}`}
@@ -440,46 +479,12 @@ export function StoreProfileChrome({
                             source: "store_header",
                           });
                         }}
-                        className="hidden flex-shrink-0 hover:text-gray-900 transition-colors sm:inline"
+                        title={`Call ${store.store_name}`}
+                        className="hidden h-6 flex-shrink-0 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 lg:inline-flex"
                       >
+                        <Phone className="h-3 w-3 flex-shrink-0 text-gray-400" />
                         {store.phone}
                       </a>
-                    )}
-                    {showHeaderHoursBadge && openStatus && (
-                      <>
-                        {(store.address || store.phone || headerRating != null) && (
-                          <span
-                            className={cn(
-                              "flex-shrink-0 text-gray-300",
-                              headerRating == null && "hidden sm:inline",
-                            )}
-                          >
-                            ·
-                          </span>
-                        )}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            onHoursOpenChange(true);
-                          }}
-                          className={cn(
-                            "inline-flex flex-shrink-0 cursor-pointer items-center justify-start gap-1 rounded-full px-2 py-0.5 text-left text-[11px] font-semibold transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-900/10",
-                            openStatus.open ? "text-green-700" : "text-gray-600",
-                          )}
-                          aria-label={`Show opening hours. ${openStatus.label}`}
-                        >
-                          <span
-                            className={cn(
-                              "h-1.5 w-1.5 rounded-full",
-                              openStatus.open ? "bg-green-500" : "bg-gray-400",
-                            )}
-                            aria-hidden="true"
-                          />
-                          {openStatus.label}
-                        </button>
-                      </>
                     )}
                   </div>
                 )}
@@ -492,7 +497,7 @@ export function StoreProfileChrome({
                   storeSearch={storeSearch}
                   onStoreSearchChange={onStoreSearchChange}
                   placeholder="Search products…"
-                  className="hidden md:block w-44 lg:w-56"
+                  className="hidden md:block w-48 lg:w-64 xl:w-72"
                   compact
                 />
               )}
@@ -542,89 +547,105 @@ export function StoreProfileChrome({
       <div
         className={cn(
           mobileSearchMode && "hidden md:block",
-          "max-md:bg-gray-50/95 max-md:backdrop-blur-sm max-md:px-3 max-md:pb-2 max-md:pt-1.5",
-          "md:border-b md:border-gray-200 md:bg-gray-50",
+          "border-b border-gray-200 bg-gray-50/95 backdrop-blur-sm",
           contentShell,
-          "max-md:!px-3",
+          "pb-2 pt-2 md:pb-2.5 md:pt-2.5",
         )}
       >
-        <div
-          className={cn(
-            "flex items-center",
-            "max-md:overflow-hidden max-md:rounded-xl max-md:border max-md:border-gray-200 max-md:bg-white max-md:shadow-[0_4px_20px_rgba(17,17,17,0.08)]",
-          )}
-        >
-          <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overflow-y-hidden overscroll-x-contain scrollbar-hide sm:gap-1 max-md:px-0.5">
-            {tabs.map(({ key, label, icon: Icon }) => {
-              const active = activeTab === key;
-              const tabClassName = cn(
-                "relative flex cursor-pointer items-center gap-1.5 whitespace-nowrap px-3 py-3.5 text-sm font-medium transition-colors focus:outline-none sm:px-3.5",
-                "max-md:px-2.5 max-md:py-2.5",
-                active ? "text-gray-900" : "text-gray-500 hover:text-gray-900",
-              );
-              const tabChildren = (
-                <>
-                  <Icon
-                    className={cn(
-                      "h-3.5 w-3.5 flex-shrink-0",
-                      active ? "text-gray-900" : "text-gray-400",
-                    )}
-                  />
-                  {label}
-                  {active && (
-                    <span className="absolute inset-x-1.5 -bottom-px h-[2px] rounded-full bg-gray-900 max-md:bottom-1" />
+        {/* Full-width banner tabs — evenly spread, image-backed tiles */}
+        <div className="flex items-stretch gap-1.5 overflow-x-auto overflow-y-hidden overscroll-x-contain scrollbar-hide md:grid md:grid-flow-col md:auto-cols-fr md:gap-2 md:overflow-visible">
+          {tabs.map(({ key, label, icon: Icon }) => {
+            const active = activeTab === key;
+            const tabClassName = cn(
+              "group relative isolate flex h-14 min-w-[104px] flex-shrink-0 cursor-pointer items-end overflow-hidden rounded-md transition-all duration-300 focus:outline-none md:h-16 md:min-w-0 md:flex-shrink",
+              active
+                ? "shadow-[0_4px_16px_rgba(17,17,17,0.18)] ring-2 ring-[#ffde59]"
+                : "ring-1 ring-black/10 hover:shadow-[0_4px_14px_rgba(17,17,17,0.14)] hover:ring-black/20",
+            );
+            const tabChildren = (
+              <>
+                <img
+                  src={STORE_TAB_BANNERS[key]}
+                  alt=""
+                  loading="lazy"
+                  aria-hidden="true"
+                  className={cn(
+                    "absolute inset-0 -z-10 h-full w-full object-cover transition-all duration-500",
+                    active
+                      ? "scale-105"
+                      : "grayscale-[45%] group-hover:scale-105 group-hover:grayscale-0",
                   )}
-                </>
-              );
+                />
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "absolute inset-0 -z-10 transition-opacity duration-300",
+                    active
+                      ? "bg-gradient-to-t from-gray-950/85 via-gray-950/30 to-transparent"
+                      : "bg-gradient-to-t from-gray-950/90 via-gray-950/45 to-gray-950/15 group-hover:from-gray-950/85 group-hover:via-gray-950/35",
+                  )}
+                />
+                <span className="relative flex w-full items-center gap-1.5 px-2.5 pb-2 text-[12px] font-semibold tracking-wide text-white drop-shadow-sm md:px-3 md:text-[13px]">
+                  <Icon className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span className="truncate">{label}</span>
+                </span>
+                {active && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-x-0 bottom-0 h-[3px] bg-[#ffde59]"
+                  />
+                )}
+              </>
+            );
 
-              if (getTabHref) {
-                return (
-                  <Link
-                    key={key}
-                    href={getTabHref(key)}
-                    className={tabClassName}
-                    onClick={() => handleTabClick(key)}
-                  >
-                    {tabChildren}
-                  </Link>
-                );
-              }
-
+            if (getTabHref) {
               return (
-                <button
+                <Link
                   key={key}
-                  type="button"
-                  onClick={() => handleTabClick(key)}
+                  href={getTabHref(key)}
                   className={tabClassName}
+                  onClick={() => handleTabClick(key)}
                 >
                   {tabChildren}
-                </button>
+                </Link>
               );
-            })}
-          </div>
+            }
 
-          {store.brands.filter((b) => b.is_active && b.logo_url).length > 0 && (
-            <div className="ml-2 hidden flex-shrink-0 items-center gap-3 border-l border-gray-200 py-2 pl-4 sm:flex">
-              {store.brands
-                .filter((b) => b.is_active && b.logo_url)
-                .sort((a, b) => a.display_order - b.display_order)
-                .slice(0, 6)
-                .map((brand) => (
-                  <div
-                    key={brand.id}
-                    className="flex h-7 w-16 flex-shrink-0 items-center justify-center"
-                    title={brand.name}
-                  >
-                    <img
-                      src={brand.logo_url!}
-                      alt={brand.name}
-                      className="max-h-full max-w-full object-contain opacity-60 transition-opacity hover:opacity-100"
-                    />
-                  </div>
-                ))}
-            </div>
-          )}
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => handleTabClick(key)}
+                className={tabClassName}
+              >
+                {tabChildren}
+              </button>
+            );
+          })}
         </div>
+
+        {/* Brand logos — relocated to their own strip below the banner tabs */}
+        {store.brands.filter((b) => b.is_active && b.logo_url).length > 0 && (
+          <div className="mt-2 hidden items-center justify-center gap-8 md:flex">
+            {store.brands
+              .filter((b) => b.is_active && b.logo_url)
+              .sort((a, b) => a.display_order - b.display_order)
+              .slice(0, 6)
+              .map((brand) => (
+                <div
+                  key={brand.id}
+                  className="flex h-6 w-16 flex-shrink-0 items-center justify-center"
+                  title={brand.name}
+                >
+                  <img
+                    src={brand.logo_url!}
+                    alt={brand.name}
+                    className="max-h-full max-w-full object-contain opacity-50 transition-opacity hover:opacity-100"
+                  />
+                </div>
+              ))}
+          </div>
+        )}
       </div>
       </div>
 

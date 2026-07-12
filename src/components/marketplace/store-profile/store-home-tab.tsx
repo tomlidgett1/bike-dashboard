@@ -18,8 +18,10 @@ import {
   X,
   Instagram,
   Facebook,
+  Bot,
 } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
+import { useNestStorefrontChat } from "@/components/providers/nest-storefront-chat-provider";
 import { resolveCarouselLogoMaxWidth } from "@/components/marketplace/store-profile/carousel-category-logo";
 import type {
   StoreProfile,
@@ -144,8 +146,11 @@ export function StoreHomeTab({
   onStoreSearchChange,
   homeSearchResultsSlot,
 }: StoreHomeTabProps) {
+  const [messageChoiceOpen, setMessageChoiceOpen] = React.useState(false);
   const [messageOpen, setMessageOpen] = React.useState(false);
   const handleCloseMessage = React.useCallback(() => setMessageOpen(false), []);
+  const handleCloseMessageChoice = React.useCallback(() => setMessageChoiceOpen(false), []);
+  const { openChatbot } = useNestStorefrontChat();
   const config = React.useMemo<StoreHomepageConfig>(
     () => resolveHomepageConfig(store.homepage_config, store),
     [store],
@@ -297,11 +302,41 @@ export function StoreHomeTab({
               tab: "home",
               source: "home_hero",
             });
-            setMessageOpen(true);
+            setMessageChoiceOpen(true);
           }}
           onOpenHours={onOpenHours}
           onUberDelivery={storeHasUberDelivery(store) ? handleUberDelivery : undefined}
           isOwnProfile={isOwnProfile}
+        />
+
+        <StoreMessageChoiceDialog
+          open={messageChoiceOpen}
+          storeName={store.store_name}
+          onClose={handleCloseMessageChoice}
+          onChooseText={() => {
+            handleCloseMessageChoice();
+            onTrackBehaviour?.("message_open", {
+              action: "message_via_text",
+              label: "Chat via text",
+              tab: "home",
+              source: "message_choice",
+            });
+            setMessageOpen(true);
+          }}
+          onChooseChatbot={() => {
+            handleCloseMessageChoice();
+            onTrackBehaviour?.("message_open", {
+              action: "message_via_chatbot",
+              label: "Chat via chatbot",
+              tab: "home",
+              source: "message_choice",
+            });
+            openChatbot({
+              storeId: store.id,
+              storeName: store.store_name,
+              storeLogoUrl: store.logo_url,
+            });
+          }}
         />
 
         <StoreMessageDialog
@@ -731,6 +766,107 @@ function Hero({
         )}
       </div>
     </section>
+  );
+}
+
+function StoreMessageChoiceDialog({
+  open,
+  storeName,
+  onClose,
+  onChooseText,
+  onChooseChatbot,
+}: {
+  open: boolean;
+  storeName: string;
+  onClose: () => void;
+  onChooseText: () => void;
+  onChooseChatbot: () => void;
+}) {
+  const [shouldRender, setShouldRender] = React.useState(open);
+  const [isLeaving, setIsLeaving] = React.useState(false);
+
+  React.useEffect(() => {
+    if (open) {
+      setShouldRender(true);
+      setIsLeaving(false);
+      return;
+    }
+    if (!shouldRender) return;
+    setIsLeaving(true);
+    const timer = window.setTimeout(() => {
+      setShouldRender(false);
+      setIsLeaving(false);
+    }, MESSAGE_DIALOG_CLOSE_MS);
+    return () => window.clearTimeout(timer);
+  }, [open, shouldRender]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
+
+  if (!shouldRender) return null;
+
+  return (
+    <div
+      data-state={isLeaving ? "closed" : "open"}
+      className="store-message-overlay fixed inset-0 z-[120] flex items-end justify-center bg-black/40 px-0 backdrop-blur-md sm:items-center sm:px-4"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        data-state={isLeaving ? "closed" : "open"}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="store-message-choice-title"
+        className="store-message-sheet w-full overflow-hidden rounded-t-[1.25rem] bg-white p-5 shadow-[0_-8px_40px_rgba(0,0,0,0.12)] animate-in slide-in-from-bottom-4 zoom-in-95 duration-300 ease-out sm:max-w-[360px] sm:rounded-md sm:p-6 sm:shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2
+              id="store-message-choice-title"
+              className="text-[17px] font-semibold tracking-tight text-gray-900"
+            >
+              Message {storeName}
+            </h2>
+            <p className="mt-1 text-sm text-gray-500">How would you like to chat?</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-black/[0.05] text-gray-500 transition-colors hover:bg-black/[0.08] hover:text-gray-700"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="mt-5 flex flex-col gap-2.5">
+          <button
+            type="button"
+            onClick={onChooseText}
+            className="inline-flex items-center justify-center gap-2 rounded-full border border-gray-200 bg-white px-5 py-3 text-sm font-semibold text-gray-900 shadow-sm transition-colors hover:bg-gray-50"
+          >
+            <MessageCircle className="h-4 w-4 text-gray-700" />
+            Chat via text
+          </button>
+          <button
+            type="button"
+            onClick={onChooseChatbot}
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-gray-900 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-gray-800"
+          >
+            <Bot className="h-4 w-4" />
+            Chat via chatbot
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

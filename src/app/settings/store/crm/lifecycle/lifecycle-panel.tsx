@@ -431,7 +431,7 @@ export function LifecyclePanel({ store }: { store: StoreBranding }) {
             <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">
               Once your first emails go out, this becomes your scoreboard: the sales they caused,
               customers won back, and unsubscribes — all measured honestly against a control group
-              of customers who weren't emailed.
+              of customers who weren&apos;t emailed.
             </p>
           </div>
         )}

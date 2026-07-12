@@ -16,6 +16,7 @@ import { NestNotificationsProvider } from "@/components/providers/nest-notificat
 import { CartProvider } from "@/components/providers/cart-provider";
 import { ConditionalLayout } from "@/components/layout";
 import { GenieProvider } from "@/components/providers/genie-provider";
+import { NestStorefrontChatProvider } from "@/components/providers/nest-storefront-chat-provider";
 import { DeferredGlobalPanels } from "@/components/layout/deferred-global-panels";
 import { getUserProfile } from "@/lib/server/get-user-profile";
 import { WebVitalsReporter } from "@/lib/performance/web-vitals";
@@ -155,11 +156,13 @@ export default async function RootLayout({
                         <MessagesProvider>
                           <NestNotificationsProvider>
                           <GenieProvider>
+                            <NestStorefrontChatProvider>
                               <CartProvider>
                                 <ConditionalLayout>{children}</ConditionalLayout>
                               <WebVitalsReporter />
                               <DeferredGlobalPanels />
                             </CartProvider>
+                            </NestStorefrontChatProvider>
                           </GenieProvider>
                           </NestNotificationsProvider>
                         </MessagesProvider>

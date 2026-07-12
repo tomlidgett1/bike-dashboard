@@ -31,7 +31,6 @@ import type { LifecycleOverview } from "@/lib/crm/lifecycle/overview";
 import type {
   LifecycleAction,
   LifecycleEmailDraft,
-  LifecycleOfferPolicy,
   LifecycleProgram,
 } from "@/lib/crm/lifecycle/types";
 import { formatMoney, formatRate, STAGE_LABELS, STAGE_PLAIN } from "./lifecycle-shared";
@@ -409,7 +408,7 @@ function CampaignPage({
             <div>
               <p className="text-sm text-foreground">Never repeat within</p>
               <p className="text-xs text-muted-foreground">
-                The same customer can't get this email twice inside this window.
+                The same customer can&apos;t get this email twice inside this window.
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
