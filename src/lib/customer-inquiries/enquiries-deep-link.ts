@@ -1,7 +1,7 @@
 import {
   resolveNestConversationPhone,
   sanitizePhoneForLookup,
-} from "@/lib/customer-inquiries/lightspeed-phone-directory";
+} from "@/lib/customer-inquiries/phone-utils";
 import type { NestConversationListItem } from "@/lib/nest/types";
 
 export type CustomerEnquiriesNestPrefill = {

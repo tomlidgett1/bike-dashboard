@@ -44,7 +44,7 @@ import {
   reopenNestCaseOnServer,
   fetchLightspeedContextByPhone,
 } from "@/lib/customer-inquiries/unified-inbox-client";
-import { resolveNestConversationPhone } from "@/lib/customer-inquiries/lightspeed-phone-directory";
+import { resolveNestConversationPhone } from "@/lib/customer-inquiries/phone-utils";
 import {
   buildNestClosePayload,
   isNestConversationClosed,
