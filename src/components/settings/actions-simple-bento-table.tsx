@@ -36,6 +36,11 @@ import {
   updateOpenActionsSnapshot,
   type OpenActionsSnapshot,
 } from "@/lib/store/open-actions-client";
+import {
+  LightspeedActionRequiredPopup,
+  SAMPLE_LIGHTSPEED_ACTION,
+  type LightspeedActionPreview,
+} from "@/components/settings/lightspeed-action-required-popup";
 import { notifyOpenActionsChanged } from "@/lib/store/open-actions-events";
 import { cn } from "@/lib/utils";
 
@@ -310,6 +315,8 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
   const [editSaving, setEditSaving] = React.useState(false);
   const [editSuggesting, setEditSuggesting] = React.useState(false);
   const [editError, setEditError] = React.useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = React.useState(false);
+  const [previewAction, setPreviewAction] = React.useState<LightspeedActionPreview | null>(null);
 
   const loadBrandSuggestions = React.useCallback(async (productIds: string[]) => {
     if (productIds.length === 0) return;
@@ -612,6 +619,25 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
     categorySuggestions,
   }).filter((row) => !isDismissed(row.key));
 
+  function openRandomActionPreview() {
+    const pool = rows.length > 0 ? rows : null;
+    const row = pool ? pool[Math.floor(Math.random() * pool.length)] : null;
+    const next: LightspeedActionPreview = row
+      ? {
+          key: row.key,
+          kind: row.kind,
+          title: row.title,
+          subtitle: row.subtitle,
+          suggestionLabel:
+            row.kind === "missing-brand"
+              ? row.brandSuggestion?.brand?.trim() || null
+              : row.categorySuggestion?.categoryLabel?.trim() || null,
+        }
+      : SAMPLE_LIGHTSPEED_ACTION;
+    setPreviewAction(next);
+    setPreviewOpen(true);
+  }
+
   React.useEffect(() => {
     if (loading) return;
     notifyOpenActionsChanged(rows.length);
@@ -626,15 +652,24 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
             Fix missing brands and categories in your Lightspeed catalogue.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void load({ refresh: true })}
-          disabled={loading || refreshing}
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-input bg-white text-muted-foreground transition-colors hover:bg-muted/40 disabled:opacity-50"
-          aria-label="Refresh actions"
-        >
-          <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={openRandomActionPreview}
+            className="inline-flex h-9 items-center rounded-md border border-input bg-white px-3 text-xs font-medium text-gray-700 transition-colors hover:bg-muted/40"
+          >
+            Preview popup
+          </button>
+          <button
+            type="button"
+            onClick={() => void load({ refresh: true })}
+            disabled={loading || refreshing}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-input bg-white text-muted-foreground transition-colors hover:bg-muted/40 disabled:opacity-50"
+            aria-label="Refresh actions"
+          >
+            <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
+          </button>
+        </div>
       </div>
 
       {loadError ? (
@@ -800,6 +835,15 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
           </Table>
             )}
       </div>
+
+      <LightspeedActionRequiredPopup
+        open={previewOpen}
+        action={previewAction}
+        onClose={() => setPreviewOpen(false)}
+        onApprove={() => setPreviewOpen(false)}
+        onReject={() => setPreviewOpen(false)}
+        onChange={() => setPreviewOpen(false)}
+      />
     </div>
   );
 }
