@@ -15,8 +15,8 @@ import { cn } from "@/lib/utils";
 
 const CRM_TABS = [
   { label: "Inbox", href: "/settings/store/crm/inbox", icon: Inbox },
-  { label: "Today", href: "/settings/store/crm/today", icon: Zap },
   { label: "Customers", href: "/settings/store/crm/customers", icon: Users },
+  { label: "Today", href: "/settings/store/crm/today", icon: Zap },
   { label: "Outreach", href: "/settings/store/crm/outreach", icon: MailPlus },
   { label: "Automations", href: "/settings/store/crm/automations", icon: Bot },
   { label: "Insights", href: "/settings/store/crm/insights", icon: BarChart3 },

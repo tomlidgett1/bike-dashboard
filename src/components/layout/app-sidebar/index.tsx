@@ -10,8 +10,10 @@ import {
   Banknote,
   Box,
   Database,
+  Ghost,
   Help,
   HomeSmile,
+  Inbox,
   Mailbox,
   Settings,
   Shop,
@@ -61,6 +63,7 @@ type NavItem = {
   exact?: boolean;
   disabled?: boolean;
   items?: SubItem[];
+  matchActive?: (pathname: string) => boolean;
 };
 type NavGroup = { label: string; items: NavItem[] };
 
@@ -69,6 +72,7 @@ const NAV: NavGroup[] = [
     label: "Store",
     items: [
       { title: "Home", href: "/settings/store/home", icon: HomeSmile, exact: true },
+      { title: "Agents", href: "/settings/store/agents", icon: Ghost, exact: true },
       { title: "Workorders", href: "/settings/store/workorders", icon: Wrench, exact: true },
       { title: "Product Catalogue", href: "/products", icon: Box },
       {
@@ -93,16 +97,18 @@ const NAV: NavGroup[] = [
     label: "Customer service",
     items: [
       {
+        title: "Inbox",
+        href: "/settings/store/crm/inbox",
+        icon: Inbox,
+        exact: true,
+      },
+      {
         title: "CRM",
+        href: "/settings/store/crm/today",
         icon: Mailbox,
-        items: [
-          { title: "Inbox", href: "/settings/store/crm/inbox", exact: true },
-          { title: "Today", href: "/settings/store/crm/today", exact: true },
-          { title: "Customers", href: "/settings/store/crm/customers" },
-          { title: "Outreach", href: "/settings/store/crm/outreach", exact: true },
-          { title: "Automations", href: "/settings/store/crm/automations", exact: true },
-          { title: "Insights", href: "/settings/store/crm/insights", exact: true },
-        ],
+        matchActive: (pathname) =>
+          pathname.startsWith("/settings/store/crm") &&
+          !pathname.startsWith("/settings/store/crm/inbox"),
       },
     ],
   },
@@ -135,6 +141,7 @@ const FOOTER_ITEMS: NavItem[] = [
 ];
 
 function flatActive(pathname: string, item: NavItem) {
+  if (item.matchActive) return item.matchActive(pathname);
   if (!item.href) return false;
   return item.exact ? pathname === item.href : pathname.startsWith(item.href);
 }
@@ -230,10 +237,12 @@ function FlatNavItem({
   item,
   pathname,
   onPrefetch,
+  inboxBadge,
 }: {
   item: NavItem;
   pathname: string;
   onPrefetch: (href: string) => void;
+  inboxBadge?: string;
 }) {
   if (item.disabled) {
     return (
@@ -267,6 +276,11 @@ function FlatNavItem({
         >
           <SidebarNavIcon icon={item.icon} />
           <span>{item.title}</span>
+          {item.href === "/settings/store/crm/inbox" && inboxBadge ? (
+            <span className="ml-auto rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-gray-600">
+              {inboxBadge}
+            </span>
+          ) : null}
         </Link>
       </SidebarMenuButton>
       {item.badge ? <SidebarMenuBadge>{item.badge}</SidebarMenuBadge> : null}
@@ -319,6 +333,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
                     item={item}
                     pathname={pathname}
                     onPrefetch={prefetch}
+                    inboxBadge={item.title === "Inbox" ? customerInquiriesBadge : undefined}
                   />
                 )
               )}
