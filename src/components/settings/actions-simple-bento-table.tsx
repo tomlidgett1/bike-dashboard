@@ -1,17 +1,9 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import { useUserProfile } from "@/components/providers/profile-provider";
-import { AlertCircle, ArrowRight, CheckCircle2, ChevronDown, Loader2, Pencil, RefreshCw, Sparkles, X } from "@/components/layout/app-sidebar/dashboard-icons";
-import { GmailLogo } from "@/components/genie/gmail-logo";
+import { AlertCircle, CheckCircle2, ChevronDown, Loader2, Pencil, RefreshCw, Sparkles, X } from "@/components/layout/app-sidebar/dashboard-icons";
 import { LightspeedLogo } from "@/components/genie/lightspeed-logo";
-import { NestLogo } from "@/components/genie/nest-logo";
-import {
-  enquirySummary,
-  relativeTime,
-  senderName,
-} from "@/components/settings/customer-inquiries/parts";
 import { useDismissibleIds } from "@/components/settings/bento-inbox-item-actions";
 import {
   Table,
@@ -21,7 +13,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { CustomerInquiryListItem } from "@/lib/customer-inquiries/types";
 import {
   saveProductBrand,
   suggestProductBrand,
@@ -39,11 +30,6 @@ import type {
   LightspeedCategoryOption,
   MissingCategoryProduct,
 } from "@/lib/missing-categories/types";
-import { readNestCloseMap } from "@/lib/nest/conversation-close-state";
-import {
-  type NestConversationListItem,
-} from "@/lib/nest/types";
-import { nestChatNeedsStoreResponse } from "@/lib/store/open-store-actions";
 import {
   fetchOpenActionsSnapshot,
   readOpenActionsSnapshot,
@@ -53,7 +39,7 @@ import {
 import { notifyOpenActionsChanged } from "@/lib/store/open-actions-events";
 import { cn } from "@/lib/utils";
 
-type ActionRowKind = "enquiry" | "nest" | "missing-brand" | "assign-category";
+type ActionRowKind = "missing-brand" | "assign-category";
 
 type SimpleActionRow = {
   key: string;
@@ -62,11 +48,7 @@ type SimpleActionRow = {
   title: string;
   subtitle: string;
   detail: string;
-  when: string | null;
   primaryLabel: string;
-  primaryHref?: string;
-  enquiry?: CustomerInquiryListItem;
-  nest?: NestConversationListItem;
   brandProduct?: MissingBrandProduct;
   categoryProduct?: MissingCategoryProduct;
   brandSuggestion?: BrandSuggestion | null;
@@ -74,8 +56,6 @@ type SimpleActionRow = {
 };
 
 const TYPE_LABELS: Record<ActionRowKind, string> = {
-  enquiry: "Customer enquiry",
-  nest: "Nest message",
   "missing-brand": "Missing brand",
   "assign-category": "Assign category",
 };
@@ -92,86 +72,26 @@ const rowIconButtonClass =
 const rowDismissButtonClass =
   "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40";
 
-function nestDisplayTitle(chat: NestConversationListItem): string {
+function SourceIcon() {
   return (
-    chat.displayName?.trim() ||
-    chat.title?.trim() ||
-    chat.participantHandle?.trim() ||
-    chat.chatId
-  );
-}
-
-function SourceIcon({ kind }: { kind: ActionRowKind }) {
-  const isLightspeed = kind === "missing-brand" || kind === "assign-category";
-
-  if (isLightspeed) {
-    return (
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center">
-        <LightspeedLogo className="h-7 w-7" />
-      </span>
-    );
-  }
-
-  return (
-    <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-white">
-      {kind === "enquiry" ? (
-        <GmailLogo className="h-4 w-auto max-w-[22px] object-contain" />
-      ) : (
-        <NestLogo className="h-full w-full rounded-none object-cover" />
-      )}
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center">
+      <LightspeedLogo className="h-7 w-7" />
     </span>
   );
 }
 
 function buildRows({
-  enquiries,
-  nestChats,
   brandProducts,
   categoryProducts,
   brandSuggestions,
   categorySuggestions,
-  nestCloseMap,
 }: {
-  enquiries: CustomerInquiryListItem[];
-  nestChats: NestConversationListItem[];
   brandProducts: MissingBrandProduct[];
   categoryProducts: MissingCategoryProduct[];
   brandSuggestions: Record<string, BrandSuggestion | null>;
   categorySuggestions: Record<string, CategorySuggestion | null>;
-  nestCloseMap: Record<string, string>;
 }): SimpleActionRow[] {
   const rows: SimpleActionRow[] = [];
-
-  for (const enquiry of enquiries) {
-    rows.push({
-      key: `enquiry:${enquiry.id}`,
-      kind: "enquiry",
-      sortAt: enquiry.received_at ? new Date(enquiry.received_at).getTime() : 0,
-      title: senderName(enquiry),
-      subtitle: enquiry.subject?.trim() || "No subject",
-      detail: enquiry.draft_body?.trim() || enquirySummary(enquiry),
-      when: enquiry.received_at,
-      primaryLabel: "Respond",
-      primaryHref: "/settings/store/customer-inquiries",
-      enquiry,
-    });
-  }
-
-  for (const chat of nestChats) {
-    if (!nestChatNeedsStoreResponse(chat, nestCloseMap)) continue;
-    rows.push({
-      key: `nest:${chat.chatId}`,
-      kind: "nest",
-      sortAt: new Date(chat.lastMessageAt).getTime(),
-      title: nestDisplayTitle(chat),
-      subtitle: chat.participantHandle?.trim() || "—",
-      detail: chat.preview?.trim() || "No preview",
-      when: chat.lastMessageAt,
-      primaryLabel: "Reply",
-      primaryHref: "/settings/store/nest",
-      nest: chat,
-    });
-  }
 
   for (const product of brandProducts) {
     const suggestion = brandSuggestions[product.id] ?? product.suggestion ?? null;
@@ -182,7 +102,6 @@ function buildRows({
       title: product.name,
       subtitle: product.sku,
       detail: product.preview,
-      when: null,
       primaryLabel: "Add brand",
       brandProduct: product,
       brandSuggestion: suggestion,
@@ -198,7 +117,6 @@ function buildRows({
       title: product.name,
       subtitle: [product.sku, product.brand].filter(Boolean).join(" · "),
       detail: product.preview,
-      when: null,
       primaryLabel: "Assign category",
       categoryProduct: product,
       categorySuggestion: suggestion,
@@ -285,7 +203,7 @@ function CatalogEditRow({
 
   return (
     <TableRow className="border-border/50 bg-gray-50/60 hover:bg-gray-50/60">
-      <TableCell colSpan={4} className="px-4 py-3 md:px-5">
+      <TableCell colSpan={3} className="px-4 py-3 md:px-5">
         <div className="rounded-md border border-gray-200 bg-white p-3 shadow-sm">
           <div className="flex flex-col gap-2.5 sm:flex-row sm:items-end">
             <div className="min-w-0 flex-1">
@@ -377,8 +295,6 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
   const [loadError, setLoadError] = React.useState<string | null>(null);
-  const [enquiries, setEnquiries] = React.useState<CustomerInquiryListItem[]>([]);
-  const [nestChats, setNestChats] = React.useState<NestConversationListItem[]>([]);
   const [brandProducts, setBrandProducts] = React.useState<MissingBrandProduct[]>([]);
   const [categoryProducts, setCategoryProducts] = React.useState<MissingCategoryProduct[]>([]);
   const [brandSuggestions, setBrandSuggestions] = React.useState<Record<string, BrandSuggestion | null>>({});
@@ -439,8 +355,6 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
 
   const applySnapshot = React.useCallback(
     (snapshot: OpenActionsSnapshot) => {
-      setEnquiries(snapshot.enquiries);
-      setNestChats(snapshot.nestChats);
       setBrandProducts(snapshot.brandProducts);
       setCategoryProducts(snapshot.categoryProducts);
       setCategoryOptions(snapshot.categoryOptions);
@@ -502,8 +416,6 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
       applySnapshot(cached);
       setLoading(false);
     } else {
-      setEnquiries([]);
-      setNestChats([]);
       setBrandProducts([]);
       setCategoryProducts([]);
       setCategoryOptions([]);
@@ -693,15 +605,11 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
     }
   }
 
-  const nestCloseMap = readNestCloseMap();
   const rows = buildRows({
-    enquiries,
-    nestChats,
     brandProducts,
     categoryProducts,
     brandSuggestions,
     categorySuggestions,
-    nestCloseMap,
   }).filter((row) => !isDismissed(row.key));
 
   React.useEffect(() => {
@@ -713,9 +621,9 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
     <div className={cn("flex min-h-0 flex-1 flex-col", className)}>
       <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border/60 bg-gray-50 px-4 py-3 md:px-5">
         <div className="min-w-0">
-          <h2 className="text-sm font-medium text-foreground">All actions</h2>
+          <h2 className="text-sm font-medium text-foreground">Lightspeed actions</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Open enquiries, Nest messages, and Lightspeed catalog fixes in one place.
+            Fix missing brands and categories in your Lightspeed catalogue.
           </p>
         </div>
         <button
@@ -748,7 +656,7 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
           <div className="flex flex-col items-center justify-center px-6 py-24 text-center">
             <p className="text-sm font-medium text-foreground">You&apos;re all caught up</p>
             <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-              No open enquiries, unread Nest messages, or catalog fixes need attention.
+              No Lightspeed catalogue fixes need attention.
             </p>
           </div>
         ) : (
@@ -761,9 +669,6 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
                 <TableHead className="bg-gray-50 text-[11px] font-medium text-muted-foreground">
                   Detail
                 </TableHead>
-                <TableHead className="hidden w-[110px] bg-gray-50 text-[11px] font-medium text-muted-foreground md:table-cell">
-                  When
-                </TableHead>
                 <TableHead className="w-[220px] bg-gray-50 pr-4 text-right text-[11px] font-medium text-muted-foreground">
                   Action
                 </TableHead>
@@ -772,8 +677,6 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
             <TableBody>
               {rows.map((row) => {
                 const busy = ignoringId === row.key || approvingKey === row.key;
-                const isCatalogRow =
-                  row.kind === "missing-brand" || row.kind === "assign-category";
                 const isEditing = editingKey === row.key;
                 const rowBusy = busy || (isEditing && editSaving);
                 const hasSuggestion =
@@ -794,7 +697,7 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
                     >
                       <TableCell className="py-3 pl-4 align-top">
                         <div className="flex items-start gap-3">
-                          <SourceIcon kind={row.kind} />
+                          <SourceIcon />
                           <div className="min-w-0">
                             <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">
                               {TYPE_LABELS[row.kind]}
@@ -809,68 +712,56 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
                       <TableCell className="py-3 align-top">
                         <SuggestionCell row={row} onEdit={() => openCatalogEdit(row)} />
                       </TableCell>
-                      <TableCell className="hidden py-3 align-top text-xs text-gray-500 md:table-cell">
-                        {row.when ? relativeTime(row.when) : "—"}
-                      </TableCell>
                       <TableCell className="py-3 pr-4 align-top text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {row.primaryHref ? (
-                            <Link href={row.primaryHref} className={rowPrimaryButtonClass}>
+                          {hasSuggestion || isEditing ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                isEditing ? closeCatalogEdit() : openCatalogEdit(row)
+                              }
+                              disabled={rowBusy}
+                              aria-label={isEditing ? "Close editor" : "Edit suggestion"}
+                              title={isEditing ? "Close" : "Edit"}
+                              className={cn(
+                                rowIconButtonClass,
+                                isEditing &&
+                                  "border-[#f0cf45] bg-[#ffde59] text-gray-900 hover:bg-[#f0cf45] hover:text-gray-900",
+                              )}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                          ) : null}
+                          {!isEditing && hasSuggestion ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void (row.kind === "missing-brand"
+                                  ? handleApproveBrand(row)
+                                  : handleApproveCategory(row))
+                              }
+                              disabled={rowBusy}
+                              className={rowPrimaryButtonClass}
+                            >
+                              {approvingKey === row.key ? (
+                                "Saving…"
+                              ) : (
+                                <>
+                                  <CheckCircle2 className="h-3.5 w-3.5" />
+                                  Approve
+                                </>
+                              )}
+                            </button>
+                          ) : null}
+                          {!isEditing && !hasSuggestion ? (
+                            <button
+                              type="button"
+                              onClick={() => openCatalogEdit(row)}
+                              disabled={rowBusy}
+                              className={rowPrimaryButtonClass}
+                            >
                               {row.primaryLabel}
-                              <ArrowRight className="h-3.5 w-3.5" />
-                            </Link>
-                          ) : isCatalogRow ? (
-                            <>
-                              {hasSuggestion || isEditing ? (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    isEditing ? closeCatalogEdit() : openCatalogEdit(row)
-                                  }
-                                  disabled={rowBusy}
-                                  aria-label={isEditing ? "Close editor" : "Edit suggestion"}
-                                  title={isEditing ? "Close" : "Edit"}
-                                  className={cn(
-                                    rowIconButtonClass,
-                                    isEditing &&
-                                      "border-[#f0cf45] bg-[#ffde59] text-gray-900 hover:bg-[#f0cf45] hover:text-gray-900",
-                                  )}
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </button>
-                              ) : null}
-                              {!isEditing && hasSuggestion ? (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    void (row.kind === "missing-brand"
-                                      ? handleApproveBrand(row)
-                                      : handleApproveCategory(row))
-                                  }
-                                  disabled={rowBusy}
-                                  className={rowPrimaryButtonClass}
-                                >
-                                  {approvingKey === row.key ? (
-                                    "Saving…"
-                                  ) : (
-                                    <>
-                                      <CheckCircle2 className="h-3.5 w-3.5" />
-                                      Approve
-                                    </>
-                                  )}
-                                </button>
-                              ) : null}
-                              {!isEditing && !hasSuggestion ? (
-                                <button
-                                  type="button"
-                                  onClick={() => openCatalogEdit(row)}
-                                  disabled={rowBusy}
-                                  className={rowPrimaryButtonClass}
-                                >
-                                  {row.primaryLabel}
-                                </button>
-                              ) : null}
-                            </>
+                            </button>
                           ) : null}
                           <button
                             type="button"

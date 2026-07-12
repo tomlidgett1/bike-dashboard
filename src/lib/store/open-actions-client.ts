@@ -1,5 +1,3 @@
-import { fetchCustomerInquiries } from "@/lib/customer-inquiries/client";
-import type { CustomerInquiryListItem } from "@/lib/customer-inquiries/types";
 import { fetchMissingBrandProducts } from "@/lib/missing-brands/client";
 import type { MissingBrandProduct } from "@/lib/missing-brands/types";
 import { fetchMissingCategoryProducts } from "@/lib/missing-categories/client";
@@ -7,20 +5,16 @@ import type {
   LightspeedCategoryOption,
   MissingCategoryProduct,
 } from "@/lib/missing-categories/types";
-import { fetchNestListForActions } from "@/lib/nest/fetch-nest-list";
-import type { NestConversationListItem } from "@/lib/nest/types";
 import { OPEN_ACTIONS_CATALOG_LIMIT } from "@/lib/store/open-store-actions";
 
 export type OpenActionsSnapshot = {
-  enquiries: CustomerInquiryListItem[];
-  nestChats: NestConversationListItem[];
   brandProducts: MissingBrandProduct[];
   categoryProducts: MissingCategoryProduct[];
   categoryOptions: LightspeedCategoryOption[];
   fetchedAt: number;
 };
 
-const STORAGE_PREFIX = "store-open-actions:v2:";
+const STORAGE_PREFIX = "store-open-actions:v3:";
 const MAX_STALE_CACHE_MS = 30 * 60 * 1000;
 const memoryCache = new Map<string, OpenActionsSnapshot>();
 const inFlightLoads = new Map<string, Promise<OpenActionsSnapshot>>();
@@ -29,8 +23,6 @@ function isSnapshot(value: unknown): value is OpenActionsSnapshot {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<OpenActionsSnapshot>;
   return (
-    Array.isArray(candidate.enquiries) &&
-    Array.isArray(candidate.nestChats) &&
     Array.isArray(candidate.brandProducts) &&
     Array.isArray(candidate.categoryProducts) &&
     Array.isArray(candidate.categoryOptions) &&
@@ -89,26 +81,20 @@ export function fetchOpenActionsSnapshot(scope: string): Promise<OpenActionsSnap
 
   const previous = readOpenActionsSnapshot(scope);
   const request = Promise.allSettled([
-    fetchCustomerInquiries("draft_ready", { summary: true }),
-    fetchNestListForActions(),
     fetchMissingBrandProducts(OPEN_ACTIONS_CATALOG_LIMIT),
     fetchMissingCategoryProducts(OPEN_ACTIONS_CATALOG_LIMIT, {
       includeCategories: false,
     }),
   ])
-    .then(([enquiryResult, nestResult, brandResult, categoryResult]) => {
-      const failed = [enquiryResult, nestResult, brandResult, categoryResult].filter(
+    .then(([brandResult, categoryResult]) => {
+      const failed = [brandResult, categoryResult].filter(
         (result) => result.status === "rejected",
       );
-      if (failed.length === 4 && !previous) {
+      if (failed.length === 2 && !previous) {
         const reason = failed[0]?.status === "rejected" ? failed[0].reason : null;
         throw reason instanceof Error ? reason : new Error("Could not load actions.");
       }
 
-      const enquiryData = fulfilledValue(enquiryResult, {
-        inquiries: previous?.enquiries ?? [],
-      });
-      const nestChats = fulfilledValue(nestResult, previous?.nestChats ?? []);
       const brandData = fulfilledValue(brandResult, {
         products: previous?.brandProducts ?? [],
       });
@@ -118,8 +104,6 @@ export function fetchOpenActionsSnapshot(scope: string): Promise<OpenActionsSnap
       });
 
       const snapshot: OpenActionsSnapshot = {
-        enquiries: enquiryData.inquiries ?? [],
-        nestChats,
         brandProducts: brandData.products ?? [],
         categoryProducts: categoryData.products ?? [],
         categoryOptions: categoryData.categories ?? previous?.categoryOptions ?? [],

@@ -2,9 +2,6 @@
 
 import * as React from "react";
 import { useUserProfile } from "@/components/providers/profile-provider";
-import { GMAIL_INQUIRY_READ_STATE_EVENT } from "@/lib/customer-inquiries/inquiry-read-state";
-import { INBOX_NEEDS_ACTION_CHANGED_EVENT } from "@/lib/customer-inquiries/inbox-needs-action-events";
-import { readNestCloseMap, NEST_CLOSE_STATE_EVENT } from "@/lib/nest/conversation-close-state";
 import {
   fetchOpenActionsSnapshot,
   readOpenActionsSnapshot,
@@ -18,11 +15,8 @@ import {
 
 function countSnapshot(snapshot: OpenActionsSnapshot): number {
   return countOpenStoreActions({
-    enquiries: snapshot.enquiries,
-    nestChats: snapshot.nestChats,
     brandProducts: snapshot.brandProducts,
     categoryProducts: snapshot.categoryProducts,
-    nestCloseMap: readNestCloseMap(),
   });
 }
 
@@ -65,18 +59,12 @@ export function useStoreOpenActionsCount(refreshInterval = 60_000) {
     };
 
     window.addEventListener(OPEN_ACTIONS_CHANGED_EVENT, onRefresh);
-    window.addEventListener(INBOX_NEEDS_ACTION_CHANGED_EVENT, onRefresh);
-    window.addEventListener(NEST_CLOSE_STATE_EVENT, onRefresh);
-    window.addEventListener(GMAIL_INQUIRY_READ_STATE_EVENT, onRefresh);
 
     const interval =
       refreshInterval > 0 ? window.setInterval(onRefresh, refreshInterval) : null;
 
     return () => {
       window.removeEventListener(OPEN_ACTIONS_CHANGED_EVENT, onRefresh);
-      window.removeEventListener(INBOX_NEEDS_ACTION_CHANGED_EVENT, onRefresh);
-      window.removeEventListener(NEST_CLOSE_STATE_EVENT, onRefresh);
-      window.removeEventListener(GMAIL_INQUIRY_READ_STATE_EVENT, onRefresh);
       if (interval) window.clearInterval(interval);
     };
   }, [applyCount, refreshCount, refreshInterval, scope]);
