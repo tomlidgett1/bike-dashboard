@@ -56,11 +56,17 @@ export async function suggestProductCategoriesBatch(
 export async function saveProductCategory(
   productId: string,
   categoryId: string,
+  categoryLabel?: string | null,
 ): Promise<SetMissingCategoryResponse> {
   const res = await fetch('/api/products/set-category', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ productId, categoryId }),
+    body: JSON.stringify({
+      productId,
+      categoryId,
+      ...(categoryLabel?.trim() ? { categoryLabel: categoryLabel.trim() } : {}),
+    }),
+    signal: AbortSignal.timeout(45_000),
   })
   const data = await parseJson<SetMissingCategoryResponse>(res)
   if (!res.ok) {

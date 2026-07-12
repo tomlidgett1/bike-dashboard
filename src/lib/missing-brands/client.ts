@@ -54,6 +54,7 @@ export async function saveProductBrand(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ productId, brandName }),
+    signal: AbortSignal.timeout(45_000),
   })
   const data = await parseJson<SetMissingBrandResponse>(res)
   if (!res.ok) {

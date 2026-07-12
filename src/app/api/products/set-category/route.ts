@@ -2,7 +2,7 @@
  * Assign a Lightspeed category to a product and write back to Lightspeed.
  *
  * POST /api/products/set-category
- * Body: { productId: string, categoryId: string }
+ * Body: { productId: string, categoryId: string, categoryLabel?: string }
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -27,16 +27,17 @@ export async function POST(request: NextRequest) {
     const supabase = await createClient()
     const {
       data: { user },
-      error: authError,
     } = await supabase.auth.getUser()
 
-    if (authError || !user) {
+    if (!user) {
       return NextResponse.json({ error: 'Unauthorised. Please log in first.' }, { status: 401 })
     }
 
     const body = await request.json()
     const productId = typeof body?.productId === 'string' ? body.productId : ''
     const categoryId = typeof body?.categoryId === 'string' ? body.categoryId.trim() : ''
+    const categoryLabelHint =
+      typeof body?.categoryLabel === 'string' ? body.categoryLabel.trim() : ''
 
     if (!productId) {
       return NextResponse.json({ error: 'productId is required.' }, { status: 400 })
@@ -61,37 +62,49 @@ export async function POST(request: NextRequest) {
     }
 
     const client = createLightspeedClient(user.id)
-    let lightspeedAvailable = true
-    let categories: LightspeedCategory[] = []
+    let matched: LightspeedCategory | null = null
 
+    // Metadata only — never gate the Lightspeed write on this call.
     try {
-      categories = await client.getAllCategories({ archived: 'false' })
+      matched = await client.getCategory(categoryId)
     } catch (error) {
-      console.warn('[set-category] Could not load Lightspeed categories:', error)
-      lightspeedAvailable = false
+      console.warn('[set-category] Could not load category metadata:', error)
     }
 
-    const matched = categories.find((row) => String(row.categoryID) === categoryId) ?? null
-    if (!matched) {
-      return NextResponse.json({ error: 'Category not found in Lightspeed.' }, { status: 400 })
-    }
-
-    const categoryLabel = formatCategoryDisplayLabel(matched)
-    const categoryName = matched.name
-    const fullCategoryPath = matched.fullPathName || matched.name
+    const categoryLabel = matched
+      ? formatCategoryDisplayLabel(matched)
+      : categoryLabelHint || categoryId
+    const categoryName = matched?.name || categoryLabelHint || categoryId
+    const fullCategoryPath = matched?.fullPathName || matched?.name || categoryLabelHint || categoryId
 
     let updatedLightspeed = false
-    if (product.lightspeed_item_id && lightspeedAvailable) {
-      await client.updateItem(String(product.lightspeed_item_id), {
-        categoryID: categoryId,
-      })
-      updatedLightspeed = true
+    let lightspeedAvailable = true
+
+    if (product.lightspeed_item_id) {
+      try {
+        await client.updateItem(String(product.lightspeed_item_id), {
+          categoryID: String(categoryId),
+        })
+        updatedLightspeed = true
+      } catch (error) {
+        console.error('[set-category] Lightspeed updateItem failed:', error)
+        lightspeedAvailable = false
+        return NextResponse.json(
+          {
+            error:
+              error instanceof Error
+                ? error.message
+                : 'Failed to update category in Lightspeed.',
+          },
+          { status: 502 },
+        )
+      }
     }
 
     const { error: updateError } = await supabase
       .from('products')
       .update({
-        lightspeed_category_id: categoryId,
+        lightspeed_category_id: String(categoryId),
         category_name: categoryName,
         full_category_path: fullCategoryPath,
         updated_at: new Date().toISOString(),
@@ -103,21 +116,25 @@ export async function POST(request: NextRequest) {
     if (updateError) throw updateError
 
     if (product.lightspeed_item_id) {
-      await supabase
+      const { error: inventoryError } = await supabase
         .from('lightspeed_inventory')
         .update({
-          category_id: categoryId,
+          category_id: String(categoryId),
           category_name: categoryName,
           category_path: fullCategoryPath,
           updated_at: new Date().toISOString(),
         })
         .eq('user_id', user.id)
         .eq('lightspeed_item_id', product.lightspeed_item_id)
+
+      if (inventoryError) {
+        console.warn('[set-category] lightspeed_inventory update failed:', inventoryError)
+      }
     }
 
     const result: SetCategoryResult = {
       productId: product.id,
-      categoryId,
+      categoryId: String(categoryId),
       categoryLabel,
       updatedLightspeed,
     }

@@ -36,6 +36,14 @@ const LazyFloatingBottomDock = dynamic(
   { ssr: false },
 );
 
+const LazyLightspeedActionRequiredHost = dynamic(
+  () =>
+    import("@/components/settings/lightspeed-action-required-host").then(
+      (mod) => mod.LightspeedActionRequiredHost,
+    ),
+  { ssr: false },
+);
+
 export function DeferredGlobalPanels() {
   const cart = useCart();
   const messages = useMessages();
@@ -75,6 +83,7 @@ export function DeferredGlobalPanels() {
       {(upload.isUploading || upload.stage !== "idle") && <LazyFloatingUploadBar />}
       <LazyFloatingBottomDock />
       {loadIdlePanels && <LazyGeniePortal />}
+      {loadIdlePanels && <LazyLightspeedActionRequiredHost />}
     </>
   );
 }

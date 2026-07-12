@@ -16,6 +16,8 @@ export type LightspeedActionPreview = {
   subtitle: string;
   suggestionLabel: string | null;
   suggestionId?: string | null;
+  /** Lightspeed product id — required to commit; null for UI-only samples. */
+  productId?: string | null;
 };
 
 export const SAMPLE_LIGHTSPEED_ACTION: LightspeedActionPreview = {
@@ -25,6 +27,7 @@ export const SAMPLE_LIGHTSPEED_ACTION: LightspeedActionPreview = {
   subtitle: "TDAL2-56",
   suggestionLabel: "Trek",
   suggestionId: null,
+  productId: null,
 };
 
 const TYPE_COPY: Record<
@@ -70,8 +73,8 @@ type LightspeedActionRequiredPopupProps = {
   categoriesLoading?: boolean;
   onRequestCategories?: () => void;
   onClose: () => void;
-  onApprove?: (action: LightspeedActionPreview) => void;
-  onReject?: (action: LightspeedActionPreview) => void;
+  onApprove?: (action: LightspeedActionPreview) => void | Promise<void>;
+  onReject?: (action: LightspeedActionPreview) => void | Promise<void>;
 };
 
 export function LightspeedActionRequiredPopup({
@@ -90,6 +93,8 @@ export function LightspeedActionRequiredPopup({
   const [draftId, setDraftId] = React.useState<string | null>(null);
   const [proposal, setProposal] = React.useState<string | null>(null);
   const [proposalId, setProposalId] = React.useState<string | null>(null);
+  const [submitting, setSubmitting] = React.useState(false);
+  const [submitError, setSubmitError] = React.useState<string | null>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const selectRef = React.useRef<HTMLSelectElement>(null);
 
@@ -104,9 +109,13 @@ export function LightspeedActionRequiredPopup({
       setDraftId(null);
       setProposal(null);
       setProposalId(null);
+      setSubmitting(false);
+      setSubmitError(null);
       return;
     }
     setEditing(false);
+    setSubmitting(false);
+    setSubmitError(null);
     setProposal(action.suggestionLabel);
     setProposalId(action.suggestionId ?? null);
     setDraftValue(action.suggestionLabel ?? "");
@@ -127,40 +136,56 @@ export function LightspeedActionRequiredPopup({
   React.useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        if (editing) {
-          setEditing(false);
-          setDraftValue(proposal ?? "");
-          setDraftId(proposalId);
-          return;
-        }
-        onClose();
+      if (event.key !== "Escape") return;
+      if (submitting) return;
+      if (editing) {
+        setEditing(false);
+        setDraftValue(proposal ?? "");
+        setDraftId(proposalId);
+        return;
       }
+      onClose();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose, editing, proposal, proposalId]);
+  }, [open, onClose, editing, proposal, proposalId, submitting]);
+
+  const resolvedCategoryId = React.useMemo(() => {
+    if (!action || action.kind !== "assign-category") return proposalId;
+    if (proposalId?.trim()) return proposalId.trim();
+    const needle = proposal?.trim().toLowerCase();
+    if (!needle) return null;
+    const match = categories.find(
+      (category) =>
+        category.label.trim().toLowerCase() === needle ||
+        category.fullPathName.trim().toLowerCase() === needle,
+    );
+    return match?.categoryId ?? null;
+  }, [action, proposalId, proposal, categories]);
 
   if (!mounted) return null;
 
   const copy = action ? TYPE_COPY[action.kind] : null;
-  const hasProposal = Boolean(proposal?.trim());
+  const hasProposalLabel = Boolean(proposal?.trim());
+  const canApprove =
+    action?.kind === "assign-category"
+      ? Boolean(resolvedCategoryId && proposal?.trim())
+      : Boolean(proposal?.trim());
   const canSave =
     action?.kind === "assign-category"
       ? Boolean(draftId?.trim())
       : Boolean(draftValue.trim());
 
   function startEditing() {
+    if (submitting) return;
+    setSubmitError(null);
     setDraftValue(proposal ?? "");
-    setDraftId(proposalId);
+    setDraftId(proposalId ?? resolvedCategoryId);
     setEditing(true);
-    if (action?.kind === "missing-brand") {
-      void playSuccessSound();
-    }
   }
 
   function saveDraft() {
-    if (!action) return;
+    if (!action || submitting) return;
 
     if (action.kind === "assign-category") {
       const selected = categories.find((category) => category.categoryId === draftId);
@@ -168,6 +193,7 @@ export function LightspeedActionRequiredPopup({
       setProposal(selected.label);
       setProposalId(selected.categoryId);
       setEditing(false);
+      setSubmitError(null);
       return;
     }
 
@@ -176,6 +202,61 @@ export function LightspeedActionRequiredPopup({
     setProposal(next);
     setProposalId(null);
     setEditing(false);
+    setSubmitError(null);
+  }
+
+  async function handleApprove() {
+    if (!action || !canApprove || submitting) return;
+    if (!action.productId?.trim()) {
+      setSubmitError("This is a sample preview — open a real action to save to Lightspeed.");
+      return;
+    }
+
+    if (action.kind === "assign-category" && !resolvedCategoryId) {
+      setSubmitError("Select a Lightspeed category first.");
+      setEditing(true);
+      return;
+    }
+
+    const payload: LightspeedActionPreview = {
+      ...action,
+      suggestionLabel: proposal,
+      suggestionId:
+        action.kind === "assign-category" ? resolvedCategoryId : proposalId,
+    };
+
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await onApprove?.(payload);
+      void playSuccessSound();
+    } catch (error) {
+      const message =
+        error instanceof DOMException && error.name === "TimeoutError"
+          ? "Lightspeed took too long to respond. Try again."
+          : error instanceof Error && /aborted|timeout/i.test(error.message)
+            ? "Lightspeed took too long to respond. Try again."
+            : error instanceof Error
+              ? error.message
+              : "Failed to save to Lightspeed.";
+      setSubmitError(message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleReject() {
+    if (!action || submitting) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await onReject?.(action);
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error ? error.message : "Failed to dismiss this action.",
+      );
+      setSubmitting(false);
+    }
   }
 
   return createPortal(
@@ -188,7 +269,9 @@ export function LightspeedActionRequiredPopup({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
             className="pointer-events-auto absolute inset-0 bg-black/10"
-            onClick={onClose}
+            onClick={() => {
+              if (!submitting) onClose();
+            }}
             aria-hidden
           />
           <motion.div
@@ -216,7 +299,8 @@ export function LightspeedActionRequiredPopup({
               <button
                 type="button"
                 onClick={onClose}
-                className="mt-0.5 shrink-0 rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+                disabled={submitting}
+                className="mt-0.5 shrink-0 rounded-md p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40"
                 aria-label="Close"
               >
                 <X className="h-4 w-4" />
@@ -234,17 +318,28 @@ export function LightspeedActionRequiredPopup({
               <p className="mt-0.5 text-sm text-muted-foreground">{action.subtitle}</p>
             ) : null}
 
-            {editing ? null : hasProposal ? (
+            {editing ? null : hasProposalLabel ? (
               <div className="mt-4">
                 <p className="font-display text-xl font-semibold leading-snug tracking-[-0.02em] text-foreground">
                   {action.kind === "missing-brand"
                     ? `Set the brand to ${proposal}?`
                     : `Set the category to ${proposal}?`}
                 </p>
+                {action.kind === "assign-category" && !resolvedCategoryId ? (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Choose the matching Lightspeed category to save.
+                  </p>
+                ) : null}
               </div>
             ) : (
               <p className="mt-4 text-sm text-muted-foreground">{copy.emptyCopy}</p>
             )}
+
+            {submitError ? (
+              <div className="mt-3 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-red-600">
+                {submitError}
+              </div>
+            ) : null}
 
             <AnimatePresence initial={false} mode="wait">
               {editing ? (
@@ -353,33 +448,29 @@ export function LightspeedActionRequiredPopup({
                   <div className="mt-6 flex gap-2">
                     <button
                       type="button"
-                      onClick={() =>
-                        onApprove?.({
-                          ...action,
-                          suggestionLabel: proposal,
-                          suggestionId: proposalId,
-                        })
-                      }
-                      disabled={!hasProposal}
+                      onClick={() => void handleApprove()}
+                      disabled={!canApprove || submitting}
                       className="inline-flex h-10 flex-1 items-center justify-center rounded-full bg-[#ffde59] text-sm font-medium text-gray-900 transition-colors hover:bg-[#f0cf45] disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      {hasProposal ? "Yes" : "Approve"}
+                      {submitting ? "Saving…" : canApprove ? "Yes" : "Approve"}
                     </button>
                     <button
                       type="button"
-                      onClick={() => onReject?.(action)}
-                      className="inline-flex h-10 flex-1 items-center justify-center rounded-full bg-gray-100 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-200/80"
+                      onClick={() => void handleReject()}
+                      disabled={submitting}
+                      className="inline-flex h-10 flex-1 items-center justify-center rounded-full bg-gray-100 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-200/80 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      {hasProposal ? "No" : "Reject"}
+                      {hasProposalLabel ? "No" : "Reject"}
                     </button>
                   </div>
 
                   <button
                     type="button"
                     onClick={startEditing}
-                    className="mt-3 w-full text-center text-sm font-medium text-gray-500 transition-colors hover:text-gray-900"
+                    disabled={submitting}
+                    className="mt-3 w-full text-center text-sm font-medium text-gray-500 transition-colors hover:text-gray-900 disabled:opacity-40"
                   >
-                    {hasProposal ? copy.changeLabel : copy.assignLabel}
+                    {hasProposalLabel ? copy.changeLabel : copy.assignLabel}
                   </button>
                 </motion.div>
               )}

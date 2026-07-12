@@ -37,6 +37,10 @@ import {
   type OpenActionsSnapshot,
 } from "@/lib/store/open-actions-client";
 import {
+  claimActionRequiredSurface,
+  releaseActionRequiredSurface,
+} from "@/lib/store/lightspeed-action-required-gate";
+import {
   LightspeedActionRequiredPopup,
   SAMPLE_LIGHTSPEED_ACTION,
   type LightspeedActionPreview,
@@ -480,11 +484,15 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
       editingKey === row.key
         ? editCategoryId.trim()
         : row.categorySuggestion?.categoryId?.trim();
+    const categoryLabel =
+      editingKey === row.key
+        ? categoryOptions.find((option) => option.categoryId === categoryId)?.label
+        : row.categorySuggestion?.categoryLabel;
     if (!product || !categoryId || approvingKey) return;
 
     setApprovingKey(row.key);
     try {
-      await saveProductCategory(product.id, categoryId);
+      await saveProductCategory(product.id, categoryId, categoryLabel);
       setCategoryProducts((current) => current.filter((item) => item.id !== product.id));
       dismiss(row.key);
       if (editingKey === row.key) {
@@ -590,7 +598,10 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
       } else if (row.kind === "assign-category" && row.categoryProduct) {
         const categoryId = editCategoryId.trim();
         if (!categoryId) return;
-        await saveProductCategory(row.categoryProduct.id, categoryId);
+        const categoryLabel = categoryOptions.find(
+          (option) => option.categoryId === categoryId,
+        )?.label;
+        await saveProductCategory(row.categoryProduct.id, categoryId, categoryLabel);
         setCategoryProducts((current) => current.filter((item) => item.id !== row.categoryProduct!.id));
         dismiss(row.key);
         closeCatalogEdit();
@@ -619,7 +630,15 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
     categorySuggestions,
   }).filter((row) => !isDismissed(row.key));
 
+  function closePreviewPopup() {
+    setPreviewOpen(false);
+    setPreviewAction(null);
+    releaseActionRequiredSurface();
+  }
+
   function openRandomActionPreview() {
+    if (!claimActionRequiredSurface()) return;
+
     const pool = rows.length > 0 ? rows : null;
     const row = pool ? pool[Math.floor(Math.random() * pool.length)] : null;
     const next: LightspeedActionPreview = row
@@ -636,6 +655,10 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
             row.kind === "assign-category"
               ? row.categorySuggestion?.categoryId?.trim() || null
               : null,
+          productId:
+            row.kind === "missing-brand"
+              ? row.brandProduct?.id ?? null
+              : row.categoryProduct?.id ?? null,
         }
       : SAMPLE_LIGHTSPEED_ACTION;
     if (next.kind === "assign-category") {
@@ -643,6 +666,47 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
     }
     setPreviewAction(next);
     setPreviewOpen(true);
+  }
+
+  async function handlePreviewApprove(action: LightspeedActionPreview) {
+    const productId = action.productId?.trim();
+    if (!productId) {
+      throw new Error("This is a sample preview — open a real action to save to Lightspeed.");
+    }
+
+    if (action.kind === "missing-brand") {
+      const brand = action.suggestionLabel?.trim();
+      if (!brand) throw new Error("Enter a brand first.");
+      await saveProductBrand(productId, brand);
+      setBrandProducts((current) => current.filter((item) => item.id !== productId));
+      if (cacheScope) {
+        updateOpenActionsSnapshot(cacheScope, (current) => ({
+          ...current,
+          brandProducts: current.brandProducts.filter((item) => item.id !== productId),
+        }));
+      }
+    } else {
+      const categoryId = action.suggestionId?.trim();
+      if (!categoryId) throw new Error("Select a Lightspeed category first.");
+      await saveProductCategory(productId, categoryId, action.suggestionLabel);
+      setCategoryProducts((current) => current.filter((item) => item.id !== productId));
+      if (cacheScope) {
+        updateOpenActionsSnapshot(cacheScope, (current) => ({
+          ...current,
+          categoryProducts: current.categoryProducts.filter((item) => item.id !== productId),
+        }));
+      }
+    }
+
+    dismiss(action.key);
+    closePreviewPopup();
+  }
+
+  function handlePreviewReject(action: LightspeedActionPreview) {
+    if (action.productId) {
+      dismiss(action.key);
+    }
+    closePreviewPopup();
   }
 
   React.useEffect(() => {
@@ -849,9 +913,9 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
         categories={categoryOptions}
         categoriesLoading={categoryOptionsLoading}
         onRequestCategories={() => void ensureCategoryOptions()}
-        onClose={() => setPreviewOpen(false)}
-        onApprove={() => setPreviewOpen(false)}
-        onReject={() => setPreviewOpen(false)}
+        onClose={closePreviewPopup}
+        onApprove={handlePreviewApprove}
+        onReject={handlePreviewReject}
       />
     </div>
   );

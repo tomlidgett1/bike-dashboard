@@ -64,24 +64,40 @@ export async function POST(request: NextRequest) {
     let lightspeedAvailable = true
     let manufacturers: LightspeedManufacturer[] = []
 
+    // Prefer a filtered lookup — loading every manufacturer can hang for a long time.
+    const manufacturerFilter = `~,%${brandName.replace(/%/g, '').trim()}%`
     try {
-      manufacturers = await client.getAllManufacturers()
+      manufacturers = await client.getAllManufacturers({ name: manufacturerFilter })
     } catch (error) {
-      console.warn('[set-brand] Could not load Lightspeed manufacturers:', error)
+      console.warn('[set-brand] Could not search Lightspeed manufacturers:', error)
       lightspeedAvailable = false
     }
 
-    const manufacturersByName = new Map(
-      manufacturers.map((m) => [(m.name || '').trim().toLowerCase(), m]),
-    )
-
-    let matched = manufacturersByName.get(brandName.toLowerCase()) ?? null
+    const brandKey = brandName.toLowerCase()
+    let matched =
+      manufacturers.find((m) => (m.name || '').trim().toLowerCase() === brandKey) ??
+      null
     let createdManufacturer = false
 
     if (!matched && lightspeedAvailable) {
-      const created = await client.createManufacturer(brandName)
-      matched = created
-      createdManufacturer = true
+      try {
+        const created = await client.createManufacturer(brandName)
+        matched = created
+        createdManufacturer = true
+      } catch (createError) {
+        // Race: brand may already exist — retry a tighter search once.
+        console.warn('[set-brand] createManufacturer failed, re-searching:', createError)
+        try {
+          manufacturers = await client.getAllManufacturers({ name: manufacturerFilter })
+          matched =
+            manufacturers.find((m) => (m.name || '').trim().toLowerCase() === brandKey) ??
+            manufacturers[0] ??
+            null
+        } catch (searchError) {
+          console.warn('[set-brand] manufacturer re-search failed:', searchError)
+          lightspeedAvailable = false
+        }
+      }
     }
 
     const manufacturerId = matched ? String(matched.manufacturerID) : null
