@@ -11,6 +11,7 @@ import Stripe from 'stripe';
 import { LightspeedClient } from '@/lib/services/lightspeed/lightspeed-client';
 import { logStorePaymentRequestEvent } from '@/lib/store-payments/audit';
 import { syncPaymentRequestToLightspeed } from '@/lib/store-payments/lightspeed-sync';
+import { sendPaymentConfirmations } from '@/lib/store-payments/confirmations';
 
 // Use service role client for webhook operations (bypasses RLS)
 function getServiceClient() {
@@ -906,6 +907,8 @@ async function handleStoreCreditRequestComplete(
     throw new Error(`Failed to record credit for payment request ${requestId}`);
   }
 
+  const checkoutEmail = session.customer_details?.email?.trim().toLowerCase() || null;
+
   const { data: updatedRows, error: updateError } = await supabase
     .from('store_payment_requests')
     .update({
@@ -913,6 +916,7 @@ async function handleStoreCreditRequestComplete(
       paid_at: new Date().toISOString(),
       stripe_session_id: session.id,
       stripe_payment_intent_id: paymentIntentId,
+      ...(checkoutEmail ? { customer_email: checkoutEmail } : {}),
       updated_at: new Date().toISOString(),
     })
     .eq('id', requestId)
@@ -959,6 +963,17 @@ async function handleStoreCreditRequestComplete(
       syncResult.error,
     );
   }
+
+  // Non-fatal — confirmation text + email receipt. Internally idempotent, so
+  // a webhook retry after a partial failure resends only what never went out.
+  const confirmations = await sendPaymentConfirmations(requestId, {
+    fallbackEmail: checkoutEmail,
+  });
+  console.log(
+    '[Stripe Webhook] Payment confirmations:',
+    `sms=${confirmations.smsSent}`,
+    `email=${confirmations.emailSent}`,
+  );
 
   console.log(
     '[Stripe Webhook] ✓ Store credit recorded:',

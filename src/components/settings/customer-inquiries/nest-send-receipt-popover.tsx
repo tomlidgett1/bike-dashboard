@@ -366,7 +366,7 @@ export function NestSendReceiptPopover({
         }}
         className={cn(
           storeSettingsHeaderActionClass(),
-          "inline-flex h-7 items-center gap-1.5 px-2.5 text-xs",
+          "inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap px-2.5 text-xs",
           isPreparing && "cursor-wait opacity-80",
         )}
         aria-expanded={open}

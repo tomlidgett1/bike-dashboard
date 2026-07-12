@@ -566,7 +566,7 @@ export function NestComposePill({
                       onClick={() => setRequestMoneyOpen(true)}
                       className={cn(
                         storeSettingsHeaderActionClass(),
-                        "inline-flex h-7 shrink-0 items-center gap-1.5 px-2.5 text-xs",
+                        "inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap px-2.5 text-xs",
                       )}
                     >
                       <Banknote className={cn("size-[14px]", builtinActionIconClass("request_money"))} />
@@ -591,7 +591,7 @@ export function NestComposePill({
                     disabled={Boolean(draftingActionId) || sending}
                     className={cn(
                       storeSettingsHeaderActionClass(),
-                      "inline-flex h-7 shrink-0 items-center gap-1.5 px-2.5 text-xs",
+                      "inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap px-2.5 text-xs",
                       (loading || sending) && "cursor-wait opacity-80",
                     )}
                   >

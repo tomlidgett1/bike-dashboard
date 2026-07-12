@@ -23,6 +23,10 @@ export type StorePaymentRequestEventType =
   | "lightspeed_sync_failed"
   | "lightspeed_sync_skipped"
   | "lightspeed_sync_retried"
+  | "confirmation_sms_sent"
+  | "confirmation_sms_failed"
+  | "confirmation_email_sent"
+  | "confirmation_email_failed"
   | "note";
 
 export type StorePaymentRequestEventActor =
