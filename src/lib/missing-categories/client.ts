@@ -9,8 +9,15 @@ async function parseJson<T>(res: Response): Promise<T> {
   return (await res.json()) as T
 }
 
-export async function fetchMissingCategoryProducts(limit = 20): Promise<MissingCategoriesResponse> {
-  const res = await fetch(`/api/products/missing-categories?limit=${limit}`, { cache: 'no-store' })
+export async function fetchMissingCategoryProducts(
+  limit = 20,
+  options?: { includeCategories?: boolean },
+): Promise<MissingCategoriesResponse> {
+  const query = new URLSearchParams({ limit: String(limit) })
+  if (options?.includeCategories === false) query.set('includeCategories', '0')
+  const res = await fetch(`/api/products/missing-categories?${query.toString()}`, {
+    cache: 'no-store',
+  })
   const data = await parseJson<MissingCategoriesResponse>(res)
   if (!res.ok) {
     throw new Error(data.error || 'Could not load products missing categories.')

@@ -34,6 +34,29 @@ const VALID_STATUSES: CustomerInquiryStatus[] = [
 
 const OPEN_STATUSES: CustomerInquiryStatus[] = ['new', 'processing', 'draft_ready', 'error']
 
+const INQUIRY_SUMMARY_SELECT = [
+  'id',
+  'user_id',
+  'gmail_message_id',
+  'gmail_thread_id',
+  'thread_message_count',
+  'last_customer_at',
+  'last_shop_reply_at',
+  'sender_name',
+  'sender_email',
+  'lightspeed_customer_name',
+  'subject',
+  'snippet',
+  'body_preview',
+  'received_at',
+  'intent',
+  'priority',
+  'status',
+  'draft_body',
+  'created_at',
+  'updated_at',
+].join(',')
+
 function filterInquiriesForDisplay(
   rows: ReturnType<typeof mapCustomerInquiryRow>[],
   statusParam: string | null | undefined,
@@ -53,10 +76,11 @@ export async function GET(request: NextRequest) {
     if ('error' in auth) return auth.error
 
     const statusParam = request.nextUrl.searchParams.get('status')?.trim()
+    const summaryOnly = request.nextUrl.searchParams.get('summary') === '1'
 
     let query = auth.supabase
       .from('store_customer_inquiries')
-      .select('*')
+      .select(summaryOnly ? INQUIRY_SUMMARY_SELECT : '*')
       .eq('user_id', auth.user.id)
       .order('received_at', { ascending: false, nullsFirst: false })
       .limit(100)
@@ -71,8 +95,15 @@ export async function GET(request: NextRequest) {
     }
 
     const mapped = (data ?? []).map((row) =>
-      mapCustomerInquiryRow(row as Record<string, unknown>),
+      mapCustomerInquiryRow(row as unknown as Record<string, unknown>),
     )
+
+    if (summaryOnly) {
+      return NextResponse.json({
+        inquiries: filterInquiriesForDisplay(mapped, statusParam).map(serializeInquiryListItem),
+        cached: true,
+      })
+    }
 
     const gmail = await resolveGmailState(auth.supabase, auth.user.id)
 

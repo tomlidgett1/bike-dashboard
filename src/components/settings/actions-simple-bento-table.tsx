@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useUserProfile } from "@/components/providers/profile-provider";
 import { AlertCircle, ArrowRight, CheckCircle2, ChevronDown, Loader2, Pencil, RefreshCw, Sparkles, X } from "@/components/layout/app-sidebar/dashboard-icons";
 import { GmailLogo } from "@/components/genie/gmail-logo";
 import { LightspeedLogo } from "@/components/genie/lightspeed-logo";
@@ -20,10 +21,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { fetchCustomerInquiries } from "@/lib/customer-inquiries/client";
 import type { CustomerInquiryListItem } from "@/lib/customer-inquiries/types";
 import {
-  fetchMissingBrandProducts,
   saveProductBrand,
   suggestProductBrand,
   suggestProductBrandsBatch,
@@ -40,12 +39,17 @@ import type {
   LightspeedCategoryOption,
   MissingCategoryProduct,
 } from "@/lib/missing-categories/types";
-import { fetchNestListForActions } from "@/lib/nest/fetch-nest-list";
 import { readNestCloseMap } from "@/lib/nest/conversation-close-state";
 import {
   type NestConversationListItem,
 } from "@/lib/nest/types";
 import { nestChatNeedsStoreResponse } from "@/lib/store/open-store-actions";
+import {
+  fetchOpenActionsSnapshot,
+  readOpenActionsSnapshot,
+  updateOpenActionsSnapshot,
+  type OpenActionsSnapshot,
+} from "@/lib/store/open-actions-client";
 import { notifyOpenActionsChanged } from "@/lib/store/open-actions-events";
 import { cn } from "@/lib/utils";
 
@@ -87,10 +91,6 @@ const rowIconButtonClass =
 
 const rowDismissButtonClass =
   "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40";
-
-async function fetchNestList(): Promise<NestConversationListItem[]> {
-  return fetchNestListForActions();
-}
 
 function nestDisplayTitle(chat: NestConversationListItem): string {
   return (
@@ -260,6 +260,7 @@ function CatalogEditRow({
   onCancel,
   saving,
   suggesting,
+  categoriesLoading,
   error,
 }: {
   row: SimpleActionRow;
@@ -273,6 +274,7 @@ function CatalogEditRow({
   onCancel: () => void;
   saving: boolean;
   suggesting: boolean;
+  categoriesLoading: boolean;
   error: string | null;
 }) {
   const isBrand = row.kind === "missing-brand";
@@ -306,11 +308,11 @@ function CatalogEditRow({
                     id={inputId}
                     value={categoryId}
                     onChange={(event) => onCategoryChange(event.target.value)}
-                    disabled={saving}
+                    disabled={saving || categoriesLoading}
                     className="h-8 w-full appearance-none rounded-full border border-input bg-white py-1 pl-2.5 pr-8 text-sm outline-none transition-colors focus:border-ring focus:ring-[3px] focus:ring-ring/30 disabled:opacity-60"
                   >
                     <option value="" disabled>
-                      Select a category…
+                      {categoriesLoading ? "Loading categories…" : "Select a category…"}
                     </option>
                     {categories.map((category) => (
                       <option key={category.categoryId} value={category.categoryId}>
@@ -369,6 +371,8 @@ function CatalogEditRow({
 
 export function ActionsSimpleBentoTable({ className }: { className?: string }) {
   const { isDismissed, dismiss, ignoringId } = useDismissibleIds();
+  const { profile } = useUserProfile();
+  const cacheScope = profile?.user_id || null;
 
   const [loading, setLoading] = React.useState(true);
   const [refreshing, setRefreshing] = React.useState(false);
@@ -383,6 +387,7 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
   >({});
   const [approvingKey, setApprovingKey] = React.useState<string | null>(null);
   const [categoryOptions, setCategoryOptions] = React.useState<LightspeedCategoryOption[]>([]);
+  const [categoryOptionsLoading, setCategoryOptionsLoading] = React.useState(false);
   const [editingKey, setEditingKey] = React.useState<string | null>(null);
   const [editBrandValue, setEditBrandValue] = React.useState("");
   const [editCategoryId, setEditCategoryId] = React.useState("");
@@ -432,8 +437,44 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
     }
   }, []);
 
+  const applySnapshot = React.useCallback(
+    (snapshot: OpenActionsSnapshot) => {
+      setEnquiries(snapshot.enquiries);
+      setNestChats(snapshot.nestChats);
+      setBrandProducts(snapshot.brandProducts);
+      setCategoryProducts(snapshot.categoryProducts);
+      setCategoryOptions(snapshot.categoryOptions);
+
+      const seededBrands: Record<string, BrandSuggestion | null> = {};
+      const uncachedBrandIds: string[] = [];
+      for (const item of snapshot.brandProducts) {
+        if (item.suggestion !== undefined) {
+          seededBrands[item.id] = item.suggestion;
+        } else {
+          uncachedBrandIds.push(item.id);
+        }
+      }
+      setBrandSuggestions(seededBrands);
+      void loadBrandSuggestions(uncachedBrandIds);
+
+      const seededCategories: Record<string, CategorySuggestion | null> = {};
+      const uncachedCategoryIds: string[] = [];
+      for (const item of snapshot.categoryProducts) {
+        if (item.suggestion !== undefined) {
+          seededCategories[item.id] = item.suggestion;
+        } else {
+          uncachedCategoryIds.push(item.id);
+        }
+      }
+      setCategorySuggestions(seededCategories);
+      void loadCategorySuggestions(uncachedCategoryIds);
+    },
+    [loadBrandSuggestions, loadCategorySuggestions],
+  );
+
   const load = React.useCallback(
     async (options?: { refresh?: boolean }) => {
+      if (!cacheScope) return;
       if (options?.refresh) {
         setRefreshing(true);
       } else {
@@ -442,45 +483,8 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
       setLoadError(null);
 
       try {
-        const [enquiryData, nestData, brandData, categoryData] = await Promise.all([
-          fetchCustomerInquiries("draft_ready"),
-          fetchNestList(),
-          fetchMissingBrandProducts(30),
-          fetchMissingCategoryProducts(30),
-        ]);
-
-        const loadedBrands = brandData.products ?? [];
-        const loadedCategories = categoryData.products ?? [];
-
-        setEnquiries(enquiryData.inquiries ?? []);
-        setNestChats(nestData);
-        setBrandProducts(loadedBrands);
-        setCategoryProducts(loadedCategories);
-        setCategoryOptions(categoryData.categories ?? []);
-
-        const seededBrands: Record<string, BrandSuggestion | null> = {};
-        const uncachedBrandIds: string[] = [];
-        for (const item of loadedBrands) {
-          if (item.suggestion !== undefined) {
-            seededBrands[item.id] = item.suggestion;
-          } else {
-            uncachedBrandIds.push(item.id);
-          }
-        }
-        setBrandSuggestions(seededBrands);
-        void loadBrandSuggestions(uncachedBrandIds);
-
-        const seededCategories: Record<string, CategorySuggestion | null> = {};
-        const uncachedCategoryIds: string[] = [];
-        for (const item of loadedCategories) {
-          if (item.suggestion !== undefined) {
-            seededCategories[item.id] = item.suggestion;
-          } else {
-            uncachedCategoryIds.push(item.id);
-          }
-        }
-        setCategorySuggestions(seededCategories);
-        void loadCategorySuggestions(uncachedCategoryIds);
+        const snapshot = await fetchOpenActionsSnapshot(cacheScope);
+        applySnapshot(snapshot);
       } catch (error) {
         setLoadError(error instanceof Error ? error.message : "Could not load actions.");
       } finally {
@@ -488,12 +492,45 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
         setRefreshing(false);
       }
     },
-    [loadBrandSuggestions, loadCategorySuggestions],
+    [applySnapshot, cacheScope],
   );
 
   React.useEffect(() => {
-    void load();
-  }, [load]);
+    if (!cacheScope) return;
+    const cached = readOpenActionsSnapshot(cacheScope);
+    if (cached) {
+      applySnapshot(cached);
+      setLoading(false);
+    } else {
+      setEnquiries([]);
+      setNestChats([]);
+      setBrandProducts([]);
+      setCategoryProducts([]);
+      setCategoryOptions([]);
+      setLoading(true);
+    }
+    void load({ refresh: Boolean(cached) });
+  }, [applySnapshot, cacheScope, load]);
+
+  const ensureCategoryOptions = React.useCallback(async () => {
+    if (categoryOptions.length > 0 || categoryOptionsLoading) return;
+    setCategoryOptionsLoading(true);
+    try {
+      const data = await fetchMissingCategoryProducts(1);
+      const options = data.categories ?? [];
+      setCategoryOptions(options);
+      if (cacheScope) {
+        updateOpenActionsSnapshot(cacheScope, (current) => ({
+          ...current,
+          categoryOptions: options,
+        }));
+      }
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : "Could not load categories.");
+    } finally {
+      setCategoryOptionsLoading(false);
+    }
+  }, [cacheScope, categoryOptions.length, categoryOptionsLoading]);
 
   async function handleApproveBrand(row: SimpleActionRow) {
     const product = row.brandProduct;
@@ -567,6 +604,7 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
     setEditCategoryId(suggestion?.categoryId ?? "");
     setEditBrandValue("");
     setEditError(null);
+    void ensureCategoryOptions();
   }
 
   async function runCatalogSuggest(row: SimpleActionRow) {
@@ -860,6 +898,7 @@ export function ActionsSimpleBentoTable({ className }: { className?: string }) {
                         onCancel={closeCatalogEdit}
                         saving={editSaving}
                         suggesting={editSuggesting}
+                        categoriesLoading={categoryOptionsLoading}
                         error={editError}
                       />
                     ) : null}

@@ -69,9 +69,13 @@ async function parseJson<T>(res: Response): Promise<T> {
 
 export async function fetchCustomerInquiries(
   status?: CustomerInquiryStatus | 'all',
+  options?: { summary?: boolean },
 ): Promise<CustomerInquiriesResponse> {
-  const query = status && status !== 'all' ? `?status=${encodeURIComponent(status)}` : ''
-  const res = await fetch(`/api/store/customer-inquiries${query}`, { cache: 'no-store' })
+  const query = new URLSearchParams()
+  if (status && status !== 'all') query.set('status', status)
+  if (options?.summary) query.set('summary', '1')
+  const suffix = query.size > 0 ? `?${query.toString()}` : ''
+  const res = await fetch(`/api/store/customer-inquiries${suffix}`, { cache: 'no-store' })
   const data = await parseJson<CustomerInquiriesResponse>(res)
   if (!res.ok) {
     throw new Error(data.error || 'Could not load customer inquiries.')

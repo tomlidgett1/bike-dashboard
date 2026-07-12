@@ -4,20 +4,38 @@ export const dynamic = "force-dynamic";
 
 import type { ReactNode } from "react";
 import * as React from "react";
+import dynamicImport from "next/dynamic";
 
 import { Widget } from "@/components/layout/app-sidebar/dashboard-icons";
 import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-page";
 import { ActionsSimpleBentoTable } from "@/components/settings/actions-simple-bento-table";
 import { ActionsViewToggle, type ActionsViewMode } from "@/components/settings/actions-view-toggle";
-import { DeputyRosterBento } from "@/components/settings/deputy-roster-bento";
-import { EcommerceAgentBento } from "@/components/settings/ecommerce-agent-bento";
 import { storeSettingsPageChromeClass } from "@/components/settings/actions-page-header";
-import { MissingBrandsBento } from "@/components/settings/missing-brands-bento";
-import { NestMessagesBento } from "@/components/settings/nest-messages-bento";
-import { OverivewoTestBento } from "@/components/settings/overivewo-test-bento";
-import { UncategorisedBento } from "@/components/settings/uncategorised-bento";
-import { OverivewoBentoCarouselRow } from "@/components/settings/overivewo-bento-carousel-row";
 import { cn } from "@/lib/utils";
+
+const DeputyRosterBento = dynamicImport(() =>
+  import("@/components/settings/deputy-roster-bento").then((module) => module.DeputyRosterBento),
+);
+const EcommerceAgentBento = dynamicImport(() =>
+  import("@/components/settings/ecommerce-agent-bento").then((module) => module.EcommerceAgentBento),
+);
+const MissingBrandsBento = dynamicImport(() =>
+  import("@/components/settings/missing-brands-bento").then((module) => module.MissingBrandsBento),
+);
+const NestMessagesBento = dynamicImport(() =>
+  import("@/components/settings/nest-messages-bento").then((module) => module.NestMessagesBento),
+);
+const OverivewoTestBento = dynamicImport(() =>
+  import("@/components/settings/overivewo-test-bento").then((module) => module.OverivewoTestBento),
+);
+const UncategorisedBento = dynamicImport(() =>
+  import("@/components/settings/uncategorised-bento").then((module) => module.UncategorisedBento),
+);
+const OverivewoBentoCarouselRow = dynamicImport(() =>
+  import("@/components/settings/overivewo-bento-carousel-row").then(
+    (module) => module.OverivewoBentoCarouselRow,
+  ),
+);
 
 function ActionsSection({
   title,

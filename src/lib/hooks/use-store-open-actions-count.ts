@@ -1,38 +1,34 @@
 "use client";
 
 import * as React from "react";
-import { fetchCustomerInquiries } from "@/lib/customer-inquiries/client";
+import { useUserProfile } from "@/components/providers/profile-provider";
 import { GMAIL_INQUIRY_READ_STATE_EVENT } from "@/lib/customer-inquiries/inquiry-read-state";
 import { INBOX_NEEDS_ACTION_CHANGED_EVENT } from "@/lib/customer-inquiries/inbox-needs-action-events";
-import { fetchMissingBrandProducts } from "@/lib/missing-brands/client";
-import { fetchMissingCategoryProducts } from "@/lib/missing-categories/client";
 import { readNestCloseMap, NEST_CLOSE_STATE_EVENT } from "@/lib/nest/conversation-close-state";
-import { fetchNestListForActions } from "@/lib/nest/fetch-nest-list";
+import {
+  fetchOpenActionsSnapshot,
+  readOpenActionsSnapshot,
+  type OpenActionsSnapshot,
+} from "@/lib/store/open-actions-client";
 import { OPEN_ACTIONS_CHANGED_EVENT } from "@/lib/store/open-actions-events";
 import {
   countOpenStoreActions,
   formatOpenActionsBadgeCount,
-  OPEN_ACTIONS_CATALOG_LIMIT,
 } from "@/lib/store/open-store-actions";
 
-async function fetchOpenActionsCount(): Promise<number> {
-  const [enquiryData, nestData, brandData, categoryData] = await Promise.all([
-    fetchCustomerInquiries("draft_ready"),
-    fetchNestListForActions(),
-    fetchMissingBrandProducts(OPEN_ACTIONS_CATALOG_LIMIT),
-    fetchMissingCategoryProducts(OPEN_ACTIONS_CATALOG_LIMIT),
-  ]);
-
+function countSnapshot(snapshot: OpenActionsSnapshot): number {
   return countOpenStoreActions({
-    enquiries: enquiryData.inquiries ?? [],
-    nestChats: nestData,
-    brandProducts: brandData.products ?? [],
-    categoryProducts: categoryData.products ?? [],
+    enquiries: snapshot.enquiries,
+    nestChats: snapshot.nestChats,
+    brandProducts: snapshot.brandProducts,
+    categoryProducts: snapshot.categoryProducts,
     nestCloseMap: readNestCloseMap(),
   });
 }
 
 export function useStoreOpenActionsCount(refreshInterval = 60_000) {
+  const { profile } = useUserProfile();
+  const scope = profile?.user_id || null;
   const [count, setCount] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
 
@@ -42,17 +38,21 @@ export function useStoreOpenActionsCount(refreshInterval = 60_000) {
   }, []);
 
   const refreshCount = React.useCallback(async () => {
+    if (!scope) return;
     try {
-      const next = await fetchOpenActionsCount();
-      applyCount(next);
+      const snapshot = await fetchOpenActionsSnapshot(scope);
+      applyCount(countSnapshot(snapshot));
     } catch {
       // Keep the last known count on transient failures.
     } finally {
       setLoading(false);
     }
-  }, [applyCount]);
+  }, [applyCount, scope]);
 
   React.useEffect(() => {
+    if (!scope) return;
+    const cached = readOpenActionsSnapshot(scope);
+    if (cached) applyCount(countSnapshot(cached));
     void refreshCount();
 
     const onRefresh = (event?: Event) => {
@@ -79,7 +79,7 @@ export function useStoreOpenActionsCount(refreshInterval = 60_000) {
       window.removeEventListener(GMAIL_INQUIRY_READ_STATE_EVENT, onRefresh);
       if (interval) window.clearInterval(interval);
     };
-  }, [refreshCount, refreshInterval]);
+  }, [applyCount, refreshCount, refreshInterval, scope]);
 
   return {
     count,

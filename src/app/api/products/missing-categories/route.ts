@@ -90,16 +90,23 @@ export async function GET(request: NextRequest) {
     const limit = Number.isFinite(limitParam)
       ? Math.min(Math.max(limitParam, 1), MAX_LIMIT)
       : DEFAULT_LIMIT
+    const includeCategories = request.nextUrl.searchParams.get('includeCategories') !== '0'
 
-    let lightspeedCategories: LightspeedCategory[] = []
-    try {
-      const client = createLightspeedClient(user.id)
-      lightspeedCategories = await client.getAllCategories({ archived: 'false' })
-    } catch (error) {
-      console.warn('[missing-categories] Could not load Lightspeed categories:', error)
-    }
+    const categoriesPromise: Promise<LightspeedCategory[]> = includeCategories
+      ? createLightspeedClient(user.id)
+          .getAllCategories({ archived: 'false' })
+          .catch((error) => {
+            console.warn('[missing-categories] Could not load Lightspeed categories:', error)
+            return []
+          })
+      : Promise.resolve([])
 
-    const [{ data: connection }, { data: rows, error: productsError }] = await Promise.all([
+    const [
+      lightspeedCategories,
+      { data: connection },
+      { data: rows, error: productsError },
+    ] = await Promise.all([
+      categoriesPromise,
       supabase
         .from('lightspeed_connections')
         .select('status')

@@ -190,18 +190,25 @@ export async function GET(request: NextRequest) {
   if (threadOnly) query.set("threadOnly", "1");
 
   if (listOnly && !threadOnly) {
-    let cachedChats = await loadNestChatsFromSupabase(auth.supabase, auth.userId);
-    const lightspeedConnected = await isLightspeedConnected(auth.userId);
-    const lastSyncedAt = await getNestLastSyncedAt(auth.supabase, auth.userId);
+    const [cachedChats, lightspeedConnected, lastSyncedAt] = await Promise.all([
+      loadNestChatsFromSupabase(auth.supabase, auth.userId),
+      isLightspeedConnected(auth.userId),
+      getNestLastSyncedAt(auth.supabase, auth.userId),
+    ]);
 
     if (cachedChats.length === 0) {
-      try {
-        cachedChats = await syncNestInboxFromPortal(auth.supabase, auth.userId, auth.brandKey, {
-          enrichLightspeed: !isPoll && !isLightspeedInBackoff(auth.userId),
-          syncThreads: false,
-        });
-      } catch (error) {
-        console.error("[store-nest-messages] inline list sync failed:", error);
+      const minGapMs = isPoll
+        ? NEST_POLL_BACKGROUND_SYNC_MS
+        : NEST_FULL_BACKGROUND_SYNC_MS;
+      if (shouldScheduleNestListBackgroundSync(auth.userId, minGapMs)) {
+        after(() =>
+          syncNestInboxFromPortal(auth.supabase, auth.userId, auth.brandKey, {
+            enrichLightspeed: false,
+            syncThreads: false,
+          }).catch((error) => {
+            console.error("[store-nest-messages] cold list background sync failed:", error);
+          }),
+        );
       }
     } else if (isPoll) {
       const stale = isNestSyncStale(lastSyncedAt, NEST_POLL_BACKGROUND_SYNC_MS);
@@ -248,6 +255,7 @@ export async function GET(request: NextRequest) {
       configured: true,
       brandKey: auth.brandKey,
       cached: cachedChats.length > 0,
+      syncPending: cachedChats.length === 0,
       lightspeedConnected,
     });
   }
