@@ -101,6 +101,12 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'www.fesports.com.au',
+        port: '',
+        pathname: '/stock/**',
+      },
     ],
     // AVIF first for better compression (30% smaller than WebP)
     formats: ['image/avif', 'image/webp'],

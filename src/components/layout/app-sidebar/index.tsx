@@ -15,6 +15,7 @@ import {
   HomeSmile,
   Inbox,
   Mailbox,
+  ScanSearch,
   Settings,
   Shop,
   Tag,
@@ -75,6 +76,7 @@ const NAV: NavGroup[] = [
       { title: "Agents", href: "/settings/store/agents", icon: Ghost, exact: true },
       { title: "Workorders", href: "/settings/store/workorders", icon: Wrench, exact: true },
       { title: "Product Catalogue", href: "/products", icon: Box },
+      { title: "Scrape", href: "/settings/store/scrape", icon: ScanSearch, exact: true },
       {
         title: "Storefront",
         icon: Shop,
