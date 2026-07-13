@@ -22,6 +22,7 @@ const CRUMBS: Record<string, { section: string; page: string }> = {
   "/settings/store/actions": { section: "Store", page: "To Do" },
   "/settings/store/agents": { section: "Store", page: "Agents" },
   "/settings/store/nest": { section: "Customer service", page: "Nest" },
+  "/settings/store/nest-knowledge": { section: "Store", page: "Nest knowledge" },
   "/settings/store/customer-inquiries": {
     section: "Customer service",
     page: "Customer inquiries",

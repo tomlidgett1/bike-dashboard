@@ -165,6 +165,8 @@ export interface StoreProfileChromeProps {
   immersive?: boolean;
   /** Extra content below the search field in the desktop floating bar (e.g. category pills) */
   floatingBarExtra?: React.ReactNode;
+  /** Mobile home hero — fixed transparent header overlays the hero image */
+  heroOverlay?: boolean;
   onBehaviourEvent?: (eventType: StoreAnalyticsEventType, metadata?: Record<string, unknown>) => void;
 }
 
@@ -230,6 +232,7 @@ export function StoreProfileChrome({
   storeHomeHref,
   immersive = false,
   floatingBarExtra,
+  heroOverlay = false,
   onBehaviourEvent,
 }: StoreProfileChromeProps) {
   const [scrolled, setScrolled] = React.useState(false);
@@ -240,6 +243,8 @@ export function StoreProfileChrome({
   const searchPlaceholder = `Search ${store.store_name}…`;
   const homeEnabled = isStoreHomeEnabled(store);
   const tabs = React.useMemo(() => buildStoreTabs(homeEnabled), [homeEnabled]);
+  const mobileHeroOverlay = heroOverlay && !mobileSearchMode;
+  const overlayHeaderActive = mobileHeroOverlay && !scrolled;
 
   const openStatus = getStoreOpenStatus(store.opening_hours);
   const headerRating =
@@ -305,14 +310,21 @@ export function StoreProfileChrome({
       <div
         ref={chromeRef}
         className={cn(
-          "sticky top-0 z-40 transition-transform duration-200 ease-out",
+          "z-40 transition-transform duration-200 ease-out md:sticky md:top-0",
+          mobileHeroOverlay && "max-md:fixed max-md:inset-x-0 max-md:top-0",
+          !mobileHeroOverlay && "sticky top-0",
           showFloatingSearch && "md:-translate-y-full md:pointer-events-none",
         )}
       >
       <header
         className={cn(
-          "bg-white/95 backdrop-blur-md transition-all duration-200",
-          scrolled ? "border-b-2 border-[#ffde59]" : "border-b border-gray-200",
+          "transition-all duration-200 md:bg-white/95 md:backdrop-blur-md",
+          overlayHeaderActive
+            ? "max-md:border-transparent max-md:bg-transparent"
+            : cn(
+                "bg-white/95 backdrop-blur-md",
+                scrolled ? "border-b-2 border-[#ffde59]" : "border-b border-gray-200",
+              ),
         )}
       >
         <div className={cn(contentShell, mobileSearchMode && "max-md:px-3")}>
@@ -354,7 +366,12 @@ export function StoreProfileChrome({
             <div className="flex min-w-0 items-center gap-2.5 sm:gap-3.5">
               <Link
                 href={homeHref}
-                className="h-9 w-9 flex-shrink-0 overflow-hidden rounded-md bg-white ring-1 ring-gray-200 sm:h-11 sm:w-11"
+                className={cn(
+                  "h-9 w-9 flex-shrink-0 overflow-hidden rounded-md sm:h-11 sm:w-11",
+                  overlayHeaderActive
+                    ? "max-md:bg-transparent max-md:ring-0"
+                    : "ring-1 ring-gray-200",
+                )}
                 aria-label={`${store.store_name} store home`}
               >
                 {store.logo_url ? (
@@ -368,15 +385,40 @@ export function StoreProfileChrome({
                     priority
                   />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-gray-50">
-                    <Store className="h-4 w-4 text-gray-400 sm:h-5 sm:w-5" />
+                  <div
+                    className={cn(
+                      "flex h-full w-full items-center justify-center",
+                      overlayHeaderActive ? "max-md:bg-white/10" : "bg-gray-50",
+                    )}
+                  >
+                    <Store
+                      className={cn(
+                        "h-4 w-4 sm:h-5 sm:w-5",
+                        overlayHeaderActive ? "max-md:text-white/80" : "text-gray-400",
+                      )}
+                    />
                   </div>
                 )}
               </Link>
               <div className="flex min-w-0 flex-col items-start gap-0.5 text-left sm:gap-1">
                 <div className="flex min-w-0 items-baseline gap-2">
-                  <h1 className="truncate text-[15px] font-bold leading-tight tracking-tight text-gray-900 sm:text-lg">
-                    <Link href={homeHref} className="block truncate hover:text-gray-700">
+                  <h1
+                    className={cn(
+                      "truncate text-xl font-bold leading-tight tracking-tight sm:text-2xl",
+                      overlayHeaderActive
+                        ? "max-md:text-white"
+                        : "text-gray-900",
+                    )}
+                  >
+                    <Link
+                      href={homeHref}
+                      className={cn(
+                        "block truncate",
+                        overlayHeaderActive
+                          ? "max-md:text-white max-md:hover:text-white/90"
+                          : "hover:text-gray-700",
+                      )}
+                    >
                       {store.store_name}
                     </Link>
                   </h1>
@@ -401,15 +443,24 @@ export function StoreProfileChrome({
                       onHoursOpenChange(true);
                     }}
                     className={cn(
-                      "inline-flex items-center justify-start gap-1 rounded-full text-left text-[10px] font-semibold leading-none transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-900/10 sm:hidden",
-                      openStatus.open ? "text-green-700" : "text-gray-600",
+                      "inline-flex items-center justify-start gap-1 rounded-full text-left text-[10px] font-semibold leading-none transition-colors focus:outline-none focus:ring-2 sm:hidden",
+                      overlayHeaderActive
+                        ? "max-md:text-white/90 max-md:hover:bg-white/10 max-md:focus:ring-white/20"
+                        : "hover:bg-gray-100 focus:ring-gray-900/10",
+                      !overlayHeaderActive && (openStatus.open ? "text-green-700" : "text-gray-600"),
                     )}
                     aria-label={`Show opening hours. ${openStatus.label}`}
                   >
                     <span
                       className={cn(
                         "h-1.5 w-1.5 rounded-full",
-                        openStatus.open ? "bg-green-500" : "bg-gray-400",
+                        openStatus.open
+                          ? overlayHeaderActive
+                            ? "bg-green-400"
+                            : "bg-green-500"
+                          : overlayHeaderActive
+                            ? "bg-white/50"
+                            : "bg-gray-400",
                       )}
                       aria-hidden="true"
                     />
@@ -512,14 +563,33 @@ export function StoreProfileChrome({
                     });
                     onMobileSearchOpenChange(true);
                   }}
-                  className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 md:hidden"
+                  className={cn(
+                    "flex h-9 w-9 cursor-pointer items-center justify-center rounded-md transition-colors md:hidden",
+                    overlayHeaderActive
+                      ? "max-md:border max-md:border-white/30 max-md:bg-white/10 max-md:text-white max-md:backdrop-blur-sm max-md:hover:bg-white/20"
+                      : "border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 hover:text-gray-900",
+                  )}
                   aria-label="Search products"
                 >
                   <Search className="h-4 w-4" />
                 </button>
               )}
-              {actionButtons}
-              <CartButton />
+              {actionButtons ? (
+                <div
+                  className={cn(
+                    overlayHeaderActive &&
+                      "max-md:[&_button]:border-white/20 max-md:[&_button]:text-white/90 max-md:[&_button]:hover:bg-white/10",
+                  )}
+                >
+                  {actionButtons}
+                </div>
+              ) : null}
+              <CartButton
+                className={cn(
+                  overlayHeaderActive &&
+                    "max-md:border max-md:border-white/30 max-md:bg-white/10 max-md:backdrop-blur-sm max-md:hover:bg-white/20 max-md:[&_svg]:text-white",
+                )}
+              />
               <span
                 className="hidden h-6 w-px flex-shrink-0 bg-gray-200 sm:block"
                 aria-hidden="true"
@@ -547,7 +617,8 @@ export function StoreProfileChrome({
       <div
         className={cn(
           mobileSearchMode && "hidden md:block",
-          "border-b border-gray-200 bg-gray-50/95 backdrop-blur-sm",
+          activeTab === "home" ? "max-md:hidden" : "max-md:block",
+          "border-b border-gray-200 bg-gray-50/95 backdrop-blur-sm md:block",
           contentShell,
           "pb-2 pt-2 md:pb-2.5 md:pt-2.5",
         )}

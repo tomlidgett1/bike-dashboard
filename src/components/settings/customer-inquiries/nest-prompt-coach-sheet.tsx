@@ -483,7 +483,7 @@ export function NestPromptCoachSheet({
         >
           {empty ? (
             <div className="flex flex-1 flex-col justify-center gap-4 px-1">
-              <div className="rounded-xl border border-gray-200/80 bg-white px-4 py-5 shadow-sm">
+              <div className="rounded-md border border-gray-200/80 bg-white px-4 py-5 shadow-sm">
                 <p className="text-sm font-medium text-gray-900">
                   {mode === "train" ? "What did Nest get wrong?" : "Try Nest as a customer"}
                 </p>
@@ -517,17 +517,17 @@ export function NestPromptCoachSheet({
               )}
             >
               {turn.role === "system" ? (
-                <div className="w-full rounded-xl border border-gray-200/80 bg-white px-3 py-2 text-xs text-gray-600 shadow-sm">
+                <div className="w-full rounded-md border border-gray-200/80 bg-white px-3 py-2 text-xs text-gray-600 shadow-sm">
                   {turn.text}
                 </div>
               ) : (
                 <div
                   className={cn(
-                    "max-w-[92%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
+                    "max-w-[92%] rounded-md px-3.5 py-2.5 text-sm leading-relaxed",
                     turn.role === "user"
                       ? "bg-gray-100 text-gray-900"
                       : mode === "test"
-                        ? "rounded-xl border border-gray-200/80 bg-white text-gray-800 shadow-sm"
+                        ? "rounded-md border border-gray-200/80 bg-white text-gray-800 shadow-sm"
                         : "bg-transparent px-0.5 text-gray-800",
                   )}
                 >
@@ -549,7 +549,7 @@ export function NestPromptCoachSheet({
                       return (
                         <div
                           key={proposal.id}
-                          className="mt-2 w-full max-w-[92%] rounded-xl border border-gray-200/80 bg-white px-3 py-2 text-xs text-gray-500 shadow-sm"
+                          className="mt-2 w-full max-w-[92%] rounded-md border border-gray-200/80 bg-white px-3 py-2 text-xs text-gray-500 shadow-sm"
                         >
                           Undone — {proposal.summary}
                         </div>
@@ -560,7 +560,7 @@ export function NestPromptCoachSheet({
                       return (
                         <div
                           key={proposal.id}
-                          className="mt-2 flex w-full max-w-[92%] items-center justify-between gap-2 rounded-xl border border-gray-200/80 bg-white px-3 py-2 shadow-sm"
+                          className="mt-2 flex w-full max-w-[92%] items-center justify-between gap-2 rounded-md border border-gray-200/80 bg-white px-3 py-2 shadow-sm"
                         >
                           <p className="min-w-0 text-xs text-gray-600">
                             Applied — {proposal.summary}
@@ -586,7 +586,7 @@ export function NestPromptCoachSheet({
                       return (
                         <div
                           key={proposal.id}
-                          className="mt-2 w-full max-w-[92%] rounded-xl border border-gray-200/80 bg-white px-3 py-2 text-xs text-gray-700 shadow-sm"
+                          className="mt-2 w-full max-w-[92%] rounded-md border border-gray-200/80 bg-white px-3 py-2 text-xs text-gray-700 shadow-sm"
                         >
                           {turn.proposalErrors?.[proposal.id] || "Could not apply."}
                         </div>

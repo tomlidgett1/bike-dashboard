@@ -1,6 +1,11 @@
 "use client";
 
-import { Loader2 } from "@/components/layout/app-sidebar/dashboard-icons";
+import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  ChevronDown,
+  Loader2,
+} from "@/components/layout/app-sidebar/dashboard-icons";
 import {
   coachFieldLabel,
   type CoachConfigField,
@@ -44,6 +49,7 @@ export function NestPromptCoachProposalCard({
   onConfirm: (force: boolean) => void;
   onCancel: () => void;
 }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const needsForce =
     proposal.status === "contradiction" || proposal.status === "duplicate";
   const primaryLabel =
@@ -75,7 +81,7 @@ export function NestPromptCoachProposalCard({
     Boolean(removeText) && !showConflict && proposal.operation !== "append" && proposal.operation !== "add";
 
   return (
-    <div className="mt-2 overflow-hidden rounded-xl border border-gray-200/80 bg-white shadow-sm">
+    <div className="mt-2 overflow-hidden rounded-md border border-gray-200/80 bg-white shadow-sm">
       <div className="flex items-start justify-between gap-2 border-b border-gray-100 px-3.5 py-2.5">
         <div className="min-w-0">
           <p className="text-sm font-medium text-gray-900">{proposal.summary}</p>
@@ -125,6 +131,43 @@ export function NestPromptCoachProposalCard({
 
         {!showConflict && !showRemoving && !addText ? (
           <p className="text-xs text-gray-500">{proposal.summary}</p>
+        ) : null}
+
+        {proposal.mergedValue?.trim() ? (
+          <div className="rounded-md border border-gray-200 bg-white">
+            <button
+              type="button"
+              onClick={() => setDetailsOpen((open) => !open)}
+              className="flex w-full items-center justify-between gap-2 px-2.5 py-2 text-left text-xs font-medium text-gray-700"
+              aria-expanded={detailsOpen}
+            >
+              Review the complete saved wording
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 text-gray-400 transition-transform duration-200",
+                  detailsOpen && "rotate-180",
+                )}
+              />
+            </button>
+            <AnimatePresence>
+              {detailsOpen ? (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{
+                    duration: 0.4,
+                    ease: [0.04, 0.62, 0.23, 0.98],
+                  }}
+                  className="overflow-hidden"
+                >
+                  <p className="border-t border-gray-100 px-2.5 py-2 text-xs leading-relaxed whitespace-pre-wrap text-gray-700">
+                    {proposal.mergedValue}
+                  </p>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+          </div>
         ) : null}
 
         <p className="text-xs text-gray-500">

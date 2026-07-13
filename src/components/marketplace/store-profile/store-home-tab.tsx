@@ -38,7 +38,11 @@ import { StoreProductCard } from "@/components/marketplace/store-profile/store-p
 import { ScrollReveal } from "@/components/marketplace/scroll-reveal";
 import { StoreProductCarouselScroll } from "@/components/marketplace/store-profile/store-product-carousel-scroll";
 import { type StoreAnalyticsEventType, useProductImpressions } from "@/lib/tracking/store-analytics";
-import { STORE_PAGE_CONTENT_SHELL } from "@/components/marketplace/store-profile/store-profile-chrome";
+import {
+  STORE_PAGE_CONTENT_SHELL,
+  type StoreTab,
+} from "@/components/marketplace/store-profile/store-profile-chrome";
+import { StoreMobileTabCards } from "@/components/marketplace/store-profile/store-mobile-tab-cards";
 import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
 import { StoreBanners } from "@/components/marketplace/store-profile/weekly-specials";
 // ============================================================
@@ -63,6 +67,7 @@ interface StoreHomeTabProps {
   onStoreSearchChange?: (value: string, source?: "store_header_search" | "home_floating_search") => void;
   /** Rendered below the mobile home search bar while a query is active. */
   homeSearchResultsSlot?: React.ReactNode;
+  activeTab?: StoreTab;
 }
 
 const DAY_KEYS: (keyof OpeningHours)[] = [
@@ -145,6 +150,7 @@ export function StoreHomeTab({
   storeSearch = "",
   onStoreSearchChange,
   homeSearchResultsSlot,
+  activeTab = "home",
 }: StoreHomeTabProps) {
   const [messageChoiceOpen, setMessageChoiceOpen] = React.useState(false);
   const [messageOpen, setMessageOpen] = React.useState(false);
@@ -307,6 +313,8 @@ export function StoreHomeTab({
           onOpenHours={onOpenHours}
           onUberDelivery={storeHasUberDelivery(store) ? handleUberDelivery : undefined}
           isOwnProfile={isOwnProfile}
+          activeTab={activeTab}
+          onTabSelect={onNavigate}
         />
 
         <StoreMessageChoiceDialog
@@ -349,21 +357,24 @@ export function StoreHomeTab({
           onTrackBehaviour={onTrackBehaviour}
         />
 
-        <StoreBanners
-          store={store}
-          bannersConfig={config.banners}
-          accent={accent}
-          contentShell={contentShell}
-          onNavigate={onNavigate}
-        />
+        {/* Mobile: grey content sheet below the hero with rounded top corners */}
+        <div className="max-md:relative max-md:z-10 max-md:-mt-5 max-md:overflow-hidden max-md:rounded-t-xl max-md:bg-gray-50">
+          <StoreBanners
+            store={store}
+            bannersConfig={config.banners}
+            accent={accent}
+            contentShell={contentShell}
+            onNavigate={onNavigate}
+          />
 
-        {/* Ordered sections */}
-        <div className="space-y-8 sm:space-y-10 pt-3 pb-8 sm:pt-4 sm:pb-10">
-          {config.section_order.map((key) => sectionRenderers[key]?.())}
+          {/* Ordered sections */}
+          <div className="space-y-8 sm:space-y-10 pt-3 pb-8 sm:pt-4 sm:pb-10">
+            {config.section_order.map((key) => sectionRenderers[key]?.())}
+          </div>
+
+          {/* Store footer */}
+          <HomeFooter store={store} accent={accent} onNavigate={onNavigate} />
         </div>
-
-        {/* Store footer */}
-        <HomeFooter store={store} accent={accent} onNavigate={onNavigate} />
       </div>
     </StoreHomeShellContext.Provider>
   );
@@ -423,23 +434,26 @@ function resolveHeroContactLines(
       ? contact.address.trim() || store.address.trim()
       : '';
   const email = contact.show_email && contact.email ? contact.email : '';
-  return { address, email };
+  const phone = store.phone?.trim() || '';
+  return { address, email, phone };
 }
 
 function HeroContactLines({
   address,
   email,
+  phone,
   tone,
   centered,
   hasSubheadline,
 }: {
   address: string;
   email: string;
+  phone: string;
   tone: 'on-dark' | 'on-light';
   centered?: boolean;
   hasSubheadline: boolean;
 }) {
-  if (!address && !email) return null;
+  if (!address && !email && !phone) return null;
 
   const lineClass =
     tone === 'on-dark'
@@ -463,6 +477,13 @@ function HeroContactLines({
       style={centered ? { marginLeft: 'auto', marginRight: 'auto' } : undefined}
     >
       {address ? <p className={lineClass}>{address}</p> : null}
+      {address && phone ? (
+        <p className={lineClass}>
+          <a href={`tel:${phone.replace(/\s/g, '')}`} className={linkClass}>
+            {phone}
+          </a>
+        </p>
+      ) : null}
       {email ? (
         <p className={lineClass}>
           <a href={`mailto:${email}`} className={linkClass}>
@@ -471,6 +492,37 @@ function HeroContactLines({
         </p>
       ) : null}
     </div>
+  );
+}
+
+function HeroPhoneLine({
+  phone,
+  tone,
+  centered,
+}: {
+  phone: string;
+  tone: 'on-dark' | 'on-light';
+  centered?: boolean;
+}) {
+  const lineClass =
+    tone === 'on-dark'
+      ? 'text-base leading-snug text-white/85 drop-shadow-sm sm:text-xl sm:leading-relaxed'
+      : 'text-lg leading-relaxed text-gray-600 sm:text-xl';
+
+  const linkClass =
+    tone === 'on-dark'
+      ? 'text-white/85 transition-colors hover:text-white underline-offset-2 hover:underline'
+      : 'text-gray-600 transition-colors hover:text-gray-900 underline-offset-2 hover:underline';
+
+  return (
+    <p
+      className={cn('mt-0.5', lineClass, centered && tone === 'on-dark' && 'sm:max-w-xl')}
+      style={centered ? { marginLeft: 'auto', marginRight: 'auto' } : undefined}
+    >
+      <a href={`tel:${phone.replace(/\s/g, '')}`} className={linkClass}>
+        {phone}
+      </a>
+    </p>
   );
 }
 
@@ -497,6 +549,8 @@ function Hero({
   onOpenHours,
   onUberDelivery,
   isOwnProfile,
+  activeTab,
+  onTabSelect,
 }: {
   store: StoreProfile;
   config: StoreHomepageConfig;
@@ -508,6 +562,8 @@ function Hero({
   onOpenHours?: () => void;
   onUberDelivery?: () => void;
   isOwnProfile?: boolean;
+  activeTab?: StoreTab;
+  onTabSelect?: (tab: StoreTab) => void;
 }) {
   const shell = useStoreHomeShell();
   const { hero } = config;
@@ -576,6 +632,14 @@ function Hero({
       </div>
     ) : null;
 
+  const MobileTabCards = onTabSelect ? (
+    <StoreMobileTabCards
+      activeTab={activeTab}
+      onTabSelect={onTabSelect}
+      className="-mx-4 mt-4 px-4"
+    />
+  ) : null;
+
   // ── Split variant ──────────────────────────────────────
   if (hero.variant === "split") {
     return (
@@ -595,9 +659,13 @@ function Hero({
                 {hero.subheadline}
               </p>
             ) : null}
+            {hasSubheadline && heroContact.phone && !heroContact.address ? (
+              <HeroPhoneLine phone={heroContact.phone} tone="on-light" />
+            ) : null}
             <HeroContactLines
               address={heroContact.address}
               email={heroContact.email}
+              phone={heroContact.phone}
               tone="on-light"
               hasSubheadline={hasSubheadline}
             />
@@ -608,6 +676,7 @@ function Hero({
                 <span className="rounded-full border border-gray-200 hover:bg-gray-50">{SecondaryBtn}</span>
               )}
             </div>
+            {MobileTabCards}
             {UberBanner()}
             {config.badges.show_hours_on_hero && (
               <div className="mt-5 hidden sm:block">
@@ -654,9 +723,13 @@ function Hero({
                 {hero.subheadline}
               </p>
             ) : null}
+            {hasSubheadline && heroContact.phone && !heroContact.address ? (
+              <HeroPhoneLine phone={heroContact.phone} tone="on-light" centered />
+            ) : null}
             <HeroContactLines
               address={heroContact.address}
               email={heroContact.email}
+              phone={heroContact.phone}
               tone="on-light"
               centered
               hasSubheadline={hasSubheadline}
@@ -668,6 +741,7 @@ function Hero({
                 <span className="rounded-full border border-gray-200 hover:bg-gray-50">{SecondaryBtn}</span>
               )}
             </div>
+            {MobileTabCards}
             {UberBanner(true, "light")}
             {config.badges.show_hours_on_hero && (
               <div className="mt-5 hidden justify-center sm:flex">
@@ -684,12 +758,12 @@ function Hero({
   const alignCenter = hero.align === "center";
   return (
     <section
-      className="relative"
+      className="relative max-md:-mt-0"
       data-store-analytics-section="home:hero"
       data-store-analytics-label="Home hero"
     >
       {isOwnProfile && <EditButton />}
-      <div className="relative isolate flex min-h-[280px] items-stretch overflow-hidden sm:min-h-[600px] sm:items-center">
+      <div className="relative isolate flex min-h-[460px] items-stretch max-md:overflow-visible sm:min-h-[600px] sm:items-center sm:overflow-hidden">
         {/* Background */}
         <div className="absolute inset-0 -z-10">
           {heroImages.length > 0 ? (
@@ -707,7 +781,7 @@ function Hero({
           />
         </div>
 
-        <div className={cn(shell, "flex w-full flex-col py-8 sm:block sm:py-16")}>
+        <div className={cn(shell, "flex w-full flex-col max-md:pt-[3.75rem] max-md:pb-8 py-8 sm:block sm:py-16")}>
           <div
             className={cn(
               "max-w-2xl",
@@ -727,9 +801,17 @@ function Hero({
                   {hero.subheadline}
                 </p>
               ) : null}
+              {hasSubheadline && heroContact.phone && !heroContact.address ? (
+                <HeroPhoneLine
+                  phone={heroContact.phone}
+                  tone="on-dark"
+                  centered={alignCenter}
+                />
+              ) : null}
               <HeroContactLines
                 address={heroContact.address}
                 email={heroContact.email}
+                phone={heroContact.phone}
                 tone="on-dark"
                 centered={alignCenter}
                 hasSubheadline={hasSubheadline}
@@ -750,6 +832,7 @@ function Hero({
                   </button>
                 )}
               </div>
+              {MobileTabCards}
               {UberBanner(alignCenter, "dark")}
             </div>
           </div>

@@ -24,6 +24,7 @@ const HIDE_TOPBAR_PATHS = [
   "/settings/store/actions",
   "/settings/store/agents",
   "/settings/store/nest",
+  "/settings/store/nest-knowledge",
 ];
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {

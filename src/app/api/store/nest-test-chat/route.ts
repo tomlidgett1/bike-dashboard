@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireStoreUser } from "@/lib/customer-inquiries/auth";
-import { isNestMessagingConfigured } from "@/lib/nest/config";
-import { runNestTestChatLocal } from "@/lib/nest/nest-test-chat";
-import { resolveStoreNestBrandKey } from "@/lib/nest/resolve-store-brand-key";
+import {
+  runNestProductionTestTurn,
+  runNestTestChatLocal,
+} from "@/lib/nest/nest-test-chat";
+import type { PromptCoachChatMessage } from "@/lib/nest/prompt-coach-types";
+import { requireStoreNestAccess } from "@/lib/nest/store-nest-access";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 90;
 
 function json(body: Record<string, unknown>, status = 200) {
   return NextResponse.json(body, {
@@ -14,19 +16,28 @@ function json(body: Record<string, unknown>, status = 200) {
   });
 }
 
+function parseHistory(
+  value: unknown,
+): PromptCoachChatMessage[] {
+  if (!Array.isArray(value)) return [];
+  const history: PromptCoachChatMessage[] = [];
+  for (const item of value.slice(-12)) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as { role?: unknown; text?: unknown };
+    const role =
+      row.role === "assistant" ? "assistant" : row.role === "user" ? "user" : null;
+    const text = typeof row.text === "string" ? row.text.trim() : "";
+    if (!role || !text) continue;
+    history.push({ role, text: text.slice(0, 1000) });
+  }
+  return history;
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireStoreUser();
-    if ("error" in auth) return auth.error;
-
-    if (!isNestMessagingConfigured()) {
-      return json({ error: "Nest messaging is not configured yet." }, 503);
-    }
-
-    const brandKey = resolveStoreNestBrandKey(auth.profile);
-    if (!brandKey) {
-      return json({ error: "This store is not linked to a Nest brand yet." }, 400);
-    }
+    const access = await requireStoreNestAccess();
+    if ("error" in access) return access.error;
+    const brandKey = access.brandKey;
 
     let body: { message?: unknown; chatId?: unknown; history?: unknown };
     try {
@@ -48,30 +59,42 @@ export async function POST(request: NextRequest) {
       return json({ error: "Invalid test chat." }, 400);
     }
 
-    const history: Array<{ role: "user" | "assistant"; text: string }> = [];
-    if (Array.isArray(body.history)) {
-      for (const item of body.history) {
-        if (!item || typeof item !== "object") continue;
-        const row = item as { role?: unknown; text?: unknown };
-        const role = row.role === "assistant" ? "assistant" : row.role === "user" ? "user" : null;
-        const text = typeof row.text === "string" ? row.text.trim() : "";
-        if (!role || !text) continue;
-        history.push({ role, text });
-      }
+    const history = parseHistory(body.history);
+
+    try {
+      const result = await runNestProductionTestTurn({
+        brandKey,
+        chatId,
+        message,
+      });
+
+      return json({
+        chatId,
+        reply: result.reply,
+        brand: result.brand,
+        trace: result.trace,
+        mode: "production",
+      });
+    } catch (productionError) {
+      console.warn(
+        "[store/nest-test-chat] production path unavailable, using local test:",
+        productionError instanceof Error ? productionError.message : productionError,
+      );
+
+      const local = await runNestTestChatLocal({
+        brandKey,
+        message,
+        chatHistory: history,
+      });
+
+      return json({
+        chatId,
+        reply: local.reply,
+        brand: local.brand,
+        trace: local.trace,
+        mode: "local",
+      });
     }
-
-    const result = await runNestTestChatLocal({
-      brandKey,
-      message,
-      chatHistory: history,
-    });
-
-    return json({
-      chatId,
-      reply: result.reply,
-      brand: result.brand,
-      mode: "fast",
-    });
   } catch (error) {
     console.error("[store/nest-test-chat] POST failed:", error);
     return json(

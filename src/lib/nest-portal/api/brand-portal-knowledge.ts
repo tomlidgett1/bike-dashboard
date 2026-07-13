@@ -480,6 +480,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         title?: string
         content_text?: string
         assigned_products?: BrandKnowledgeProduct[]
+        expected_updated_at?: string
       } = {}
 
       if (body.title !== undefined) patch.title = String(body.title)
@@ -488,6 +489,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       }
       if (body.assigned_products !== undefined || body.assignedProducts !== undefined) {
         patch.assigned_products = normaliseKnowledgeProducts(body.assigned_products ?? body.assignedProducts)
+      }
+      if (typeof body.expected_updated_at === 'string' || typeof body.expectedUpdatedAt === 'string') {
+        patch.expected_updated_at = String(body.expected_updated_at ?? body.expectedUpdatedAt)
       }
 
       const item = await updateKnowledgeItem(supabase, brandKey, itemId, patch)
@@ -508,7 +512,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         return
       }
 
-      await deleteKnowledgeItem(supabase, brandKey, itemId)
+      const body = parseJsonBody(req)
+      const expectedUpdatedAt =
+        typeof body.expected_updated_at === 'string'
+          ? body.expected_updated_at
+          : typeof body.expectedUpdatedAt === 'string'
+            ? body.expectedUpdatedAt
+            : undefined
+      await deleteKnowledgeItem(supabase, brandKey, itemId, expectedUpdatedAt)
       res.status(200).json({ ok: true })
       return
     }

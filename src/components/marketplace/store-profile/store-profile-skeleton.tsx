@@ -77,16 +77,16 @@ export function StoreProfileSkeleton() {
         <div
           className={cn(
             shell,
-            "max-md:!px-3 max-md:bg-gray-50/95 max-md:px-3 max-md:pb-2 max-md:pt-1.5",
-            "md:border-b md:border-gray-200 md:bg-gray-50",
+            "hidden border-b border-gray-200 bg-gray-50 md:block",
+            "md:pb-2.5 md:pt-2.5",
           )}
         >
-          <div className="flex items-center max-md:overflow-hidden max-md:rounded-xl max-md:border max-md:border-gray-200 max-md:bg-white max-md:shadow-[0_4px_20px_rgba(17,17,17,0.08)]">
-            <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-hidden max-md:px-0.5 sm:gap-1">
+          <div className="hidden items-center md:flex md:overflow-hidden md:rounded-xl md:border md:border-gray-200 md:bg-white md:shadow-[0_4px_20px_rgba(17,17,17,0.08)]">
+            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden px-0.5">
               {Array.from({ length: 7 }).map((_, i) => (
                 <div
                   key={i}
-                  className="flex h-11 flex-shrink-0 items-center gap-1.5 px-3 py-3.5 max-md:px-2.5 max-md:py-2.5 sm:px-3.5"
+                  className="flex h-11 flex-shrink-0 items-center gap-1.5 px-3.5 py-3.5"
                 >
                   <div className="h-3.5 w-3.5 rounded bg-gray-200" />
                   <div
@@ -101,7 +101,21 @@ export function StoreProfileSkeleton() {
       </div>
 
       <div className="animate-pulse">
-        <section className={cn(shell, "pt-10 sm:pt-14")}>
+        <section className="relative sm:hidden">
+          <div className="h-48 w-full bg-gray-300" />
+          <div className="relative z-10 -mt-5 overflow-hidden rounded-t-xl bg-gray-50 pt-3">
+            <div className={cn(shell, "space-y-8 pb-8")}>
+              <section>
+                <CarouselRowSkeleton gridCols="grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8" />
+              </section>
+              <section>
+                <CarouselRowSkeleton gridCols="grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6" />
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section className={cn(shell, "hidden pt-10 sm:block sm:pt-14")}>
           <div className="grid items-center gap-8 lg:grid-cols-2 lg:gap-12">
             <div className="space-y-4">
               <div className="h-10 w-full max-w-md rounded-md bg-gray-200 sm:h-14" />
@@ -112,11 +126,11 @@ export function StoreProfileSkeleton() {
                 <div className="h-10 w-32 rounded-full bg-gray-200" />
               </div>
             </div>
-            <div className="hidden aspect-[4/3] rounded-3xl bg-gray-200 ring-1 ring-gray-200/70 lg:block" />
+            <div className="aspect-[4/3] rounded-3xl bg-gray-200 ring-1 ring-gray-200/70 lg:block" />
           </div>
         </section>
 
-        <div className="space-y-8 pb-8 pt-3 sm:space-y-10 sm:pb-10 sm:pt-4">
+        <div className="hidden space-y-8 pb-8 pt-3 sm:block sm:space-y-10 sm:pb-10 sm:pt-4">
           <section className={shell}>
             <CarouselRowSkeleton gridCols="grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8" />
           </section>

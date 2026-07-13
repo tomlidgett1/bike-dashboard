@@ -30,3 +30,14 @@ export function resolveStoreNestBrandKey(profile: ProfileRow | null | undefined)
 
   return getNestDefaultBrandKey();
 }
+
+/**
+ * Management surfaces must never guess a brand. A guessed key is acceptable for
+ * legacy message reads, but it is unsafe for owner-authored prompt mutations.
+ */
+export function resolveExplicitStoreNestBrandKey(
+  profile: ProfileRow | null | undefined,
+): string | null {
+  const explicit = profile?.nest_brand_key?.trim().toLowerCase();
+  return explicit || null;
+}

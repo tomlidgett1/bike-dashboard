@@ -16,6 +16,7 @@
     "test:genie-orchestration": "tsx scripts/test-genie-orchestration.ts",
     "test:metrics": "tsx scripts/test-metrics-chart.ts",
     "test:crm-v2": "tsx scripts/test-crm-v2-identity.ts && tsx scripts/test-crm-v2-policy.ts && tsx scripts/test-crm-v2-ranking.ts && tsx scripts/test-crm-v2-load-fixture.ts",
+    "test:nest-knowledge": "tsx scripts/test-nest-knowledge.ts",
     "test:lightspeed-auth": "tsx scripts/test-lightspeed-token-manager.ts",
     "test:genie-quality": "tsx scripts/eval-genie-quality.ts",
     "test:composio-gmail": "tsx --env-file=.env.local scripts/test-composio-gmail.ts",

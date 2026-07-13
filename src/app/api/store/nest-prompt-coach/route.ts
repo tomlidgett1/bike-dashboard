@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireStoreUser } from "@/lib/customer-inquiries/auth";
-import { isNestMessagingConfigured } from "@/lib/nest/config";
 import {
   applyPromptCoachProposals,
   runPromptCoachChat,
@@ -9,7 +7,7 @@ import {
   type PromptCoachProposal,
   type PromptCoachUndoSnapshot,
 } from "@/lib/nest/prompt-coach";
-import { resolveStoreNestBrandKey } from "@/lib/nest/resolve-store-brand-key";
+import { requireStoreNestAccess } from "@/lib/nest/store-nest-access";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -76,17 +74,9 @@ function parseUndoSnapshot(raw: unknown): PromptCoachUndoSnapshot | null {
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireStoreUser();
-    if ("error" in auth) return auth.error;
-
-    if (!isNestMessagingConfigured()) {
-      return json({ error: "Nest messaging is not configured yet." }, 503);
-    }
-
-    const brandKey = resolveStoreNestBrandKey(auth.profile);
-    if (!brandKey) {
-      return json({ error: "Could not resolve Nest brand for this store." }, 400);
-    }
+    const access = await requireStoreNestAccess();
+    if ("error" in access) return access.error;
+    const brandKey = access.brandKey;
 
     let body: Record<string, unknown>;
     try {
@@ -123,6 +113,8 @@ export async function POST(request: NextRequest) {
       const force = body.force === true;
       const result = await applyPromptCoachProposals({
         brandKey,
+        actorUserId: access.actorUserId,
+        actorRole: access.role,
         proposals,
         force,
       });
@@ -147,7 +139,12 @@ export async function POST(request: NextRequest) {
       const undo = parseUndoSnapshot(body.undo);
       if (!undo) return json({ error: "undo snapshot is required" }, 400);
 
-      const result = await undoPromptCoachChange({ brandKey, undo });
+      const result = await undoPromptCoachChange({
+        brandKey,
+        actorUserId: access.actorUserId,
+        actorRole: access.role,
+        undo,
+      });
       return json({
         ok: result.ok,
         reply: result.summary,

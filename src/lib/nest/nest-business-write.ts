@@ -76,6 +76,7 @@ export async function writeNestBusinessFact(args: {
   value: string;
   currentFieldValue?: string;
   currentExtraKnowledge?: string;
+  expectedUpdatedAt?: string;
 }): Promise<NestBusinessWriteResult> {
   const { brandKey, field } = args;
   const value = args.value;
@@ -85,7 +86,12 @@ export async function writeNestBusinessFact(args: {
   //    when the field is in RAW_PROMPT_SYNC_FIELDS.
   await proxyNestBrandPortalRequest(brandKey, {
     method: "PATCH",
-    body: { [field]: value },
+    body: {
+      [field]: value,
+      ...(args.expectedUpdatedAt
+        ? { expectedUpdatedAt: args.expectedUpdatedAt }
+        : {}),
+    },
   });
 
   let knowledgeItemId: string | null = null;
@@ -191,12 +197,14 @@ export async function restoreNestBusinessFact(args: {
   previousFieldValue: string;
   knowledgeItemId?: string | null;
   previousExtraKnowledge?: string | null;
+  expectedUpdatedAt?: string;
 }): Promise<void> {
   await writeNestBusinessFact({
     brandKey: args.brandKey,
     field: args.field,
     value: args.previousFieldValue,
     currentFieldValue: args.previousFieldValue,
+    expectedUpdatedAt: args.expectedUpdatedAt,
   });
 
   if (typeof args.previousExtraKnowledge === "string") {

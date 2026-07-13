@@ -331,6 +331,7 @@ export async function updateKnowledgeItem(
     title?: string
     content_text?: string
     assigned_products?: BrandKnowledgeProduct[]
+    expected_updated_at?: string
   },
 ): Promise<BrandKnowledgeItem> {
   const update: Record<string, unknown> = {}
@@ -344,16 +345,29 @@ export async function updateKnowledgeItem(
     update.assigned_products = normaliseKnowledgeProducts(patch.assigned_products)
   }
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('nest_brand_knowledge_items')
     .update(update)
     .eq('id', itemId)
     .eq('brand_key', brandKey)
     .is('deleted_at', null)
-    .select('*')
-    .single()
 
-  if (error || !data) throw new Error(error?.message ?? 'Could not update knowledge item')
+  if (patch.expected_updated_at) {
+    query = query.eq('updated_at', patch.expected_updated_at)
+  }
+
+  const { data, error } = await query
+    .select('*')
+    .maybeSingle()
+
+  if (error) throw new Error(error.message)
+  if (!data) {
+    throw new Error(
+      patch.expected_updated_at
+        ? 'This knowledge item changed since you opened it. Reload and review the latest version.'
+        : 'Could not update knowledge item',
+    )
+  }
 
   const item = mapKnowledgeRow(data as Record<string, unknown>)
   if (patch.content_text !== undefined) {
@@ -366,21 +380,45 @@ export async function deleteKnowledgeItem(
   supabase: SupabaseClient,
   brandKey: string,
   itemId: string,
+  expectedUpdatedAt?: string,
 ): Promise<void> {
   const { data: existing } = await supabase
     .from('nest_brand_knowledge_items')
-    .select('storage_bucket, storage_path, legacy_field_key')
+    .select('storage_bucket, storage_path, legacy_field_key, updated_at')
     .eq('id', itemId)
     .eq('brand_key', brandKey)
     .maybeSingle()
 
-  const { error } = await supabase
+  if (
+    expectedUpdatedAt &&
+    existing?.updated_at &&
+    String(existing.updated_at) !== expectedUpdatedAt
+  ) {
+    throw new Error(
+      'This knowledge item changed since you opened it. Reload and review the latest version.',
+    )
+  }
+
+  let query = supabase
     .from('nest_brand_knowledge_items')
     .update({ deleted_at: new Date().toISOString(), status: 'archived' })
     .eq('id', itemId)
     .eq('brand_key', brandKey)
 
+  if (expectedUpdatedAt) {
+    query = query.eq('updated_at', expectedUpdatedAt)
+  }
+
+  const { data: deleted, error } = await query.select('id').maybeSingle()
+
   if (error) throw new Error(error.message)
+  if (!deleted) {
+    throw new Error(
+      expectedUpdatedAt
+        ? 'This knowledge item changed since you opened it. Reload and review the latest version.'
+        : 'Could not remove knowledge item',
+    )
+  }
 
   await supabase.from('nest_brand_knowledge_chunks').delete().eq('knowledge_item_id', itemId)
 

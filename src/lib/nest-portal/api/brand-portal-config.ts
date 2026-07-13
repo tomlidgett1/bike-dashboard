@@ -2818,6 +2818,24 @@ async function handleBrandPortalConfig(req: VercelRequest, res: VercelResponse):
       return
     }
 
+    const expectedUpdatedAt =
+      typeof body.expected_updated_at === 'string'
+        ? body.expected_updated_at
+        : typeof body.expectedUpdatedAt === 'string'
+          ? body.expectedUpdatedAt
+          : null
+    if (
+      expectedUpdatedAt &&
+      typeof existing?.updated_at === 'string' &&
+      existing.updated_at !== expectedUpdatedAt
+    ) {
+      res.status(409).json({
+        error: 'This Nest setting changed since you opened it.',
+        detail: 'Reload and review the latest version before saving.',
+      })
+      return
+    }
+
     const baseConfig = normalisePortalConfigRow(existing as Record<string, unknown> | null, session.brandKey)
     const patch: Record<string, unknown> = {}
     for (const key of ALLOWED_TEXT_FIELDS) {

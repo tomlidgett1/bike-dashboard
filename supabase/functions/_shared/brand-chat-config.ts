@@ -26,7 +26,6 @@ import {
 import { getAdminClient } from './supabase.ts';
 
 const TABLE = 'nest_brand_chat_config';
-const CACHE_TTL_MS = 30_000;
 
 /**
  * Per-tool Lightspeed access settings (mirrors website constants).
@@ -157,8 +156,6 @@ export interface BrandChatConfigRow {
   lightspeed_settings: LightspeedToolSettings;
   updated_at: string;
 }
-
-const cache = new Map<string, { at: number; row: BrandChatConfigRow | null }>();
 
 export const STYLE_TEMPLATE_PROMPTS: Record<string, string> = {
   warm_local:
@@ -449,18 +446,12 @@ function buildLiveConfigBlock(row: BrandChatConfigRow): string {
 
 export async function fetchBrandChatConfig(brandKey: string): Promise<BrandChatConfigRow | null> {
   const key = brandKey.toLowerCase();
-  const now = Date.now();
-  const hit = cache.get(key);
-  if (hit && now - hit.at < CACHE_TTL_MS) {
-    return hit.row;
-  }
 
   const supabase = getAdminClient();
   const { data, error } = await supabase.from(TABLE).select('*').eq('brand_key', key).maybeSingle();
 
   if (error) {
     console.error('[brand-chat-config] fetch failed:', error.message);
-    cache.set(key, { at: now, row: null });
     return null;
   }
 
@@ -476,7 +467,6 @@ export async function fetchBrandChatConfig(brandKey: string): Promise<BrandChatC
     row.opening_schedule = normaliseOpeningSchedule(row.opening_schedule);
     row.lightspeed_settings = normaliseLightspeedToolSettings((row as unknown as Record<string, unknown>).lightspeed_settings);
   }
-  cache.set(key, { at: now, row });
   return row;
 }
 
@@ -488,7 +478,9 @@ export async function fetchLightspeedToolSettings(brandKey: string): Promise<Lig
 }
 
 export function invalidateBrandChatConfigCache(brandKey: string): void {
-  cache.delete(brandKey.toLowerCase());
+  // Config is deliberately read fresh for every customer turn. Keeping this
+  // compatibility hook avoids breaking callers while making owner edits live.
+  void brandKey;
 }
 
 export async function fetchBrandOpeningLine(brandKey: string): Promise<string | null> {

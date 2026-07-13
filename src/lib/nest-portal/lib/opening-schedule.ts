@@ -156,6 +156,58 @@ export function normaliseBusinessTimezone(timezone: string | null | undefined): 
   return isValidIanaTimezone(trimmed) ? trimmed : DEFAULT_BUSINESS_TIMEZONE
 }
 
+export function formatNestBusinessLocalContext(
+  timezoneInput: string | null | undefined,
+  now: Date = new Date(),
+): {
+  timezone: string
+  localDateLabel: string
+  localTimeLabel: string
+  localWeekday: OpeningScheduleDay
+} {
+  const timezone = normaliseBusinessTimezone(timezoneInput)
+  const localDateLabel = now.toLocaleDateString('en-AU', {
+    timeZone: timezone,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+  const localTimeLabel = now.toLocaleTimeString('en-AU', {
+    timeZone: timezone,
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZoneName: 'short',
+  })
+
+  return {
+    timezone,
+    localDateLabel,
+    localTimeLabel,
+    localWeekday: getLocalWeekday(now, timezone),
+  }
+}
+
+/** Matches production Nest turn context so local Test uses Melbourne time, not server UTC. */
+export function buildNestBusinessTurnContextBlock(
+  timezoneInput: string | null | undefined,
+  now: Date = new Date(),
+): string {
+  const { timezone, localDateLabel, localTimeLabel } = formatNestBusinessLocalContext(
+    timezoneInput,
+    now,
+  )
+
+  return [
+    '## Turn context',
+    `Business timezone: ${timezone}`,
+    `Business local date today: ${localDateLabel}.`,
+    `Business local time now: ${localTimeLabel}.`,
+    'Interpret "today", "tomorrow", "yesterday", "this morning", "this afternoon", "tonight", and weekday names using the business timezone above.',
+  ].join('\n')
+}
+
 function weekdayToKey(weekday: string): OpeningScheduleDay {
   const key = weekday.trim().toLowerCase() as OpeningScheduleDay
   return OPENING_SCHEDULE_DAYS.includes(key) ? key : 'monday'

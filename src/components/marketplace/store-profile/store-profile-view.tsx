@@ -1600,6 +1600,11 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
   const storeContentShell = immersive
     ? "max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12"
     : STORE_PAGE_CONTENT_SHELL;
+  const homeHeroVariant = store.homepage_config?.hero?.variant;
+  const mobileHeroOverlay =
+    activeTab === "home" &&
+    homeHeroVariant !== "split" &&
+    homeHeroVariant !== "minimal";
 
   return (
     <div ref={analyticsRootRef} className={cn("min-h-screen overflow-x-hidden bg-gray-50", immersive && "pt-14")}>
@@ -1619,6 +1624,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
         onTabSelect={handleTabSelect}
         actionButtons={actionButtons}
         immersive={immersive}
+        heroOverlay={mobileHeroOverlay}
         onBehaviourEvent={trackBehaviour}
         floatingBarExtra={
           activeTab === "products" && allProducts.length > 0 ? (
@@ -1748,6 +1754,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                 onTrackBehaviour={trackBehaviour}
                 storeSearch={storeSearch}
                 onStoreSearchChange={allProducts.length > 0 ? handleStoreSearchChange : undefined}
+                activeTab={activeTab}
                 homeSearchResultsSlot={
                   isProductSearchActive ? (
                     searchedProducts.length > 0 ? (

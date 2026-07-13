@@ -1,10 +1,24 @@
 import { randomUUID } from "crypto";
 import { pickServerEnv } from "@/lib/nest-portal/lib/server-env";
+import {
+  buildNestBusinessTurnContextBlock,
+  normaliseBusinessTimezone,
+} from "@/lib/nest-portal/lib/opening-schedule";
 import { proxyNestBrandPortalRequest } from "@/lib/nest/brand-portal-client";
 import {
   restoreNestBusinessFact,
   writeNestBusinessFact,
 } from "@/lib/nest/nest-business-write";
+import { recordNestContentRevision } from "@/lib/nest/nest-content-revisions";
+import {
+  analyseNestContentDraft,
+  selectNestConflictCandidates,
+  type NestConflictEntry,
+} from "@/lib/nest/nest-knowledge-conflicts";
+import {
+  loadNestWorkspaceContext,
+  nestContextConflictEntries,
+} from "@/lib/nest/nest-workspace-context";
 import {
   COACH_CONFIG_FIELDS,
   FIELD_LABELS,
@@ -34,11 +48,15 @@ type KnowledgeContextItem = {
   content_text: string;
   summary?: string;
   legacy_field_key?: string | null;
+  updated_at?: string;
+  assigned_products?: string[];
 };
 
 type CoachContext = {
   config: Record<string, string>;
+  configUpdatedAt: string;
   knowledge: KnowledgeContextItem[];
+  businessTimezone: string;
 };
 
 const SYSTEM_PROMPT = `You are Nest Prompt Coach — a calm, precise assistant that helps Australian bike-store owners fix what their Nest chatbot gets wrong.
@@ -95,7 +113,7 @@ Respond with valid JSON only:
       "title": "<KB title when creating/updating knowledge, or null>",
       "currentSnippet": "<ONLY the exact existing sentence being removed/changed, or null>",
       "proposedSnippet": "<ONLY the new sentence being added/used as replacement, or null for delete>",
-      "mergedValue": "<FULL field/item value after the change — owners do not see this>",
+      "mergedValue": "<FULL field/item value after the change — shown to the owner for review>",
       "status": "ready" | "contradiction" | "duplicate",
       "summary": "<one plain line: what Nest will do>",
       "conflictingLine": "<ONLY if status is contradiction: the exact bad existing sentence, else null>"
@@ -110,12 +128,12 @@ Respond with valid JSON only:
 - "replace": rewrite the field so conflicting sentences are removed or rewritten. currentSnippet = old bad sentence; proposedSnippet = new sentence; mergedValue = FULL cleaned field.
 - "delete": remove a KB item or strip a fact from a config field.
 
-## Display snippet rules (critical — owners only see these)
+## Display and review rules
 
 - proposedSnippet = the NEW wording only. Never copy an unchanged existing sentence into proposedSnippet.
 - conflictingLine / currentSnippet = the OLD wording only, and ONLY when something is actually being removed or contradicted.
 - proposedSnippet MUST NOT equal conflictingLine or currentSnippet. If they would be the same, you made a mistake — fix it.
-- Each display field: one short sentence, max ~140 characters. Never dump a full field into display snippets.
+- Each display snippet: one short sentence, max ~140 characters.
 - mergedValue must still be the complete updated field/item text for applying, with contradictions resolved (not merely appended under the old claim).
 
 ## Other rules
@@ -303,22 +321,55 @@ export async function loadPromptCoachContext(brandKey: string): Promise<CoachCon
       summary: typeof row.summary === "string" ? row.summary : undefined,
       legacy_field_key:
         typeof row.legacy_field_key === "string" ? row.legacy_field_key : null,
+      updated_at: typeof row.updated_at === "string" ? row.updated_at : undefined,
+      assigned_products: Array.isArray(row.assigned_products)
+        ? row.assigned_products.filter(
+            (product): product is string => typeof product === "string",
+          )
+        : undefined,
     });
   }
 
-  return { config, knowledge };
+  return {
+    config,
+    configUpdatedAt:
+      typeof configRow.updated_at === "string" ? configRow.updated_at : "",
+    knowledge,
+    businessTimezone: normaliseBusinessTimezone(
+      typeof configRow.business_timezone === "string"
+        ? configRow.business_timezone
+        : undefined,
+    ),
+  };
 }
 
-function buildContextBlock(ctx: CoachContext): string {
+function buildContextBlock(ctx: CoachContext, ownerMessage: string): string {
   const configLines = COACH_CONFIG_FIELDS.map(
     (field) => `${field}: ${ctx.config[field]?.trim() ? truncate(ctx.config[field], 800) : "(empty)"}`,
   ).join("\n");
 
+  const candidates = selectNestConflictCandidates(
+    ownerMessage,
+    ctx.knowledge.map(
+      (item): NestConflictEntry => ({
+        sourceId: item.id,
+        sourceType: "knowledge",
+        title: item.title,
+        content: item.content_text,
+      }),
+    ),
+    null,
+    60,
+  );
+  const candidateIds = new Set(candidates.map((item) => item.sourceId));
+  const selected =
+    candidates.length > 0
+      ? ctx.knowledge.filter((item) => candidateIds.has(item.id))
+      : ctx.knowledge.slice(0, 60);
   const knowledgeLines =
-    ctx.knowledge.length === 0
+    selected.length === 0
       ? "(no knowledge items yet)"
-      : ctx.knowledge
-          .slice(0, 40)
+      : selected
           .map(
             (item) =>
               `- id=${item.id} | title=${item.title}\n  ${truncate(item.summary || item.content_text, 400)}`,
@@ -347,7 +398,7 @@ export async function runPromptCoachChat(args: {
   const history = (args.chatHistory ?? []).slice(-10);
 
   const input: { role: string; content: string }[] = [
-    { role: "developer", content: buildContextBlock(ctx) },
+    { role: "developer", content: buildContextBlock(ctx, message) },
   ];
 
   for (const turn of history) {
@@ -478,13 +529,14 @@ export async function runPromptCoachChat(args: {
 
 export async function applyPromptCoachProposals(args: {
   brandKey: string;
+  actorUserId: string;
+  actorRole: string;
   proposals: PromptCoachProposal[];
   /** When true, allow applying proposals that were flagged duplicate/contradiction after owner confirm. */
   force?: boolean;
 }): Promise<PromptCoachApplyResult> {
   const applied: PromptCoachApplyResult["applied"] = [];
   const force = args.force === true;
-  const ctx = await loadPromptCoachContext(args.brandKey);
 
   for (const proposal of args.proposals) {
     try {
@@ -508,6 +560,44 @@ export async function applyPromptCoachProposals(args: {
         continue;
       }
 
+      const [ctx, workspaceContext] = await Promise.all([
+        loadPromptCoachContext(args.brandKey),
+        loadNestWorkspaceContext(args.brandKey),
+      ]);
+      const proposedContent =
+        proposal.operation === "delete"
+          ? ""
+          : proposal.mergedValue ?? proposal.proposedSnippet ?? "";
+      if (proposedContent.trim()) {
+        const excludeSourceId =
+          proposal.target === "config" && proposal.field
+            ? `config:${proposal.field}`
+            : proposal.knowledgeItemId
+              ? `knowledge:${proposal.knowledgeItemId}`
+              : null;
+        const analysis = await analyseNestContentDraft({
+          title:
+            proposal.title?.trim() ||
+            (proposal.field ? coachFieldLabel(proposal.field) : "Nest detail"),
+          content: proposedContent,
+          entries: nestContextConflictEntries(workspaceContext),
+          excludeSourceId,
+        });
+        if (
+          !force &&
+          (analysis.status === "duplicate" ||
+            analysis.status === "contradiction")
+        ) {
+          applied.push({
+            id: proposal.id,
+            ok: false,
+            summary: proposal.summary,
+            error: analysis.summary,
+          });
+          continue;
+        }
+      }
+
       if (proposal.target === "config") {
         const field = proposal.field;
         if (!field) {
@@ -526,11 +616,55 @@ export async function applyPromptCoachProposals(args: {
           value: nextValue,
           currentFieldValue: previousValue,
           currentExtraKnowledge: ctx.config.extra_knowledge,
+          expectedUpdatedAt: ctx.configUpdatedAt || undefined,
         });
 
         ctx.config[field] = nextValue;
         if (write.extraKnowledgeUpdated && write.extraKnowledgeValue !== null) {
           ctx.config.extra_knowledge = write.extraKnowledgeValue;
+        }
+        await recordNestContentRevision({
+          brandKey: args.brandKey,
+          actorUserId: args.actorUserId,
+          actorRole: args.actorRole,
+          source: "coach",
+          targetType: "config",
+          targetKey: field,
+          operation: "update",
+          beforeValue: {
+            field,
+            value: previousValue,
+            updatedAt: ctx.configUpdatedAt,
+          },
+          afterValue: { field, value: nextValue },
+          metadata: { proposalId: proposal.id },
+        });
+        if (
+          write.extraKnowledgeUpdated &&
+          write.previousExtraKnowledge !== null &&
+          write.extraKnowledgeValue !== null
+        ) {
+          await recordNestContentRevision({
+            brandKey: args.brandKey,
+            actorUserId: args.actorUserId,
+            actorRole: args.actorRole,
+            source: "coach",
+            targetType: "config",
+            targetKey: "extra_knowledge",
+            operation: "update",
+            beforeValue: {
+              field: "extra_knowledge",
+              value: write.previousExtraKnowledge,
+            },
+            afterValue: {
+              field: "extra_knowledge",
+              value: write.extraKnowledgeValue,
+            },
+            metadata: {
+              proposalId: proposal.id,
+              reason: "booking_conflict_scrub",
+            },
+          });
         }
 
         applied.push({
@@ -558,7 +692,32 @@ export async function applyPromptCoachProposals(args: {
         await proxyNestBrandPortalRequest(args.brandKey, {
           method: "DELETE",
           endpoint: "brand-portal-knowledge",
-          query: new URLSearchParams({ id: itemId }),
+          body: {
+            id: itemId,
+            ...(existing?.updated_at
+              ? { expected_updated_at: existing.updated_at }
+              : {}),
+          },
+        });
+        await recordNestContentRevision({
+          brandKey: args.brandKey,
+          actorUserId: args.actorUserId,
+          actorRole: args.actorRole,
+          source: "coach",
+          targetType: "knowledge",
+          targetKey: itemId,
+          operation: "delete",
+          beforeValue: existing
+            ? {
+                id: existing.id,
+                title: existing.title,
+                content: existing.content_text,
+                assignedProducts: existing.assigned_products ?? [],
+                updatedAt: existing.updated_at ?? null,
+              }
+            : null,
+          afterValue: null,
+          metadata: { proposalId: proposal.id },
         });
         applied.push({
           id: proposal.id,
@@ -596,10 +755,54 @@ export async function applyPromptCoachProposals(args: {
             value: content,
             currentFieldValue: ctx.config[legacyField] ?? existing.content_text,
             currentExtraKnowledge: ctx.config.extra_knowledge,
+            expectedUpdatedAt: ctx.configUpdatedAt || undefined,
           });
           ctx.config[legacyField] = content;
           if (write.extraKnowledgeUpdated && write.extraKnowledgeValue !== null) {
             ctx.config.extra_knowledge = write.extraKnowledgeValue;
+          }
+          await recordNestContentRevision({
+            brandKey: args.brandKey,
+            actorUserId: args.actorUserId,
+            actorRole: args.actorRole,
+            source: "coach",
+            targetType: "config",
+            targetKey: legacyField,
+            operation: "update",
+            beforeValue: {
+              field: legacyField,
+              value: write.previousFieldValue,
+              updatedAt: ctx.configUpdatedAt,
+            },
+            afterValue: { field: legacyField, value: content },
+            metadata: { proposalId: proposal.id, knowledgeItemId: itemId },
+          });
+          if (
+            write.extraKnowledgeUpdated &&
+            write.previousExtraKnowledge !== null &&
+            write.extraKnowledgeValue !== null
+          ) {
+            await recordNestContentRevision({
+              brandKey: args.brandKey,
+              actorUserId: args.actorUserId,
+              actorRole: args.actorRole,
+              source: "coach",
+              targetType: "config",
+              targetKey: "extra_knowledge",
+              operation: "update",
+              beforeValue: {
+                field: "extra_knowledge",
+                value: write.previousExtraKnowledge,
+              },
+              afterValue: {
+                field: "extra_knowledge",
+                value: write.extraKnowledgeValue,
+              },
+              metadata: {
+                proposalId: proposal.id,
+                reason: "booking_conflict_scrub",
+              },
+            });
           }
           applied.push({
             id: proposal.id,
@@ -625,7 +828,35 @@ export async function applyPromptCoachProposals(args: {
             id: itemId,
             ...(proposal.title ? { title: proposal.title } : {}),
             content_text: content,
+            ...(existing?.updated_at
+              ? { expected_updated_at: existing.updated_at }
+              : {}),
           },
+        });
+        await recordNestContentRevision({
+          brandKey: args.brandKey,
+          actorUserId: args.actorUserId,
+          actorRole: args.actorRole,
+          source: "coach",
+          targetType: "knowledge",
+          targetKey: itemId,
+          operation: "update",
+          beforeValue: existing
+            ? {
+                id: existing.id,
+                title: existing.title,
+                content: existing.content_text,
+                assignedProducts: existing.assigned_products ?? [],
+                updatedAt: existing.updated_at ?? null,
+              }
+            : null,
+          afterValue: {
+            id: itemId,
+            title: proposal.title ?? existing?.title ?? "Knowledge item",
+            content,
+            assignedProducts: existing?.assigned_products ?? [],
+          },
+          metadata: { proposalId: proposal.id },
         });
         applied.push({
           id: proposal.id,
@@ -644,7 +875,7 @@ export async function applyPromptCoachProposals(args: {
       }
 
       // create
-      const content = proposal.proposedSnippet ?? proposal.mergedValue ?? "";
+      const content = proposal.mergedValue ?? proposal.proposedSnippet ?? "";
       if (!content.trim()) throw new Error("Proposed knowledge content is empty.");
       const createRes = await proxyNestBrandPortalRequest(args.brandKey, {
         method: "POST",
@@ -657,6 +888,25 @@ export async function applyPromptCoachProposals(args: {
       const createdItem = createRes.item as Record<string, unknown> | undefined;
       const createdId =
         createdItem && typeof createdItem.id === "string" ? createdItem.id : null;
+      if (createdId) {
+        await recordNestContentRevision({
+          brandKey: args.brandKey,
+          actorUserId: args.actorUserId,
+          actorRole: args.actorRole,
+          source: "coach",
+          targetType: "knowledge",
+          targetKey: createdId,
+          operation: "create",
+          beforeValue: null,
+          afterValue: {
+            id: createdId,
+            title: proposal.title?.trim() || "Store knowledge",
+            content,
+            assignedProducts: ["nest_chat", "phone_assistant", "nest_outbound"],
+          },
+          metadata: { proposalId: proposal.id },
+        });
+      }
 
       applied.push({
         id: proposal.id,
@@ -686,14 +936,18 @@ export async function applyPromptCoachProposals(args: {
 
 export async function undoPromptCoachChange(args: {
   brandKey: string;
+  actorUserId: string;
+  actorRole: string;
   undo: PromptCoachUndoSnapshot;
 }): Promise<{ ok: boolean; summary: string; error?: string }> {
   const { undo } = args;
 
   try {
+    const context = await loadNestWorkspaceContext(args.brandKey);
     if (undo.target === "config") {
       const field = undo.field;
       if (!field) throw new Error("Missing config field to undo.");
+      const current = context.fields.find((item) => item.key === field);
 
       await restoreNestBusinessFact({
         brandKey: args.brandKey,
@@ -701,6 +955,25 @@ export async function undoPromptCoachChange(args: {
         previousFieldValue: undo.previousValue ?? "",
         knowledgeItemId: undo.knowledgeItemId,
         previousExtraKnowledge: undo.previousExtraKnowledge ?? null,
+        expectedUpdatedAt: context.configUpdatedAt,
+      });
+      await recordNestContentRevision({
+        brandKey: args.brandKey,
+        actorUserId: args.actorUserId,
+        actorRole: args.actorRole,
+        source: "restore",
+        targetType: "config",
+        targetKey: field,
+        operation: "restore",
+        beforeValue: current
+          ? {
+              field,
+              value: current.value,
+              updatedAt: context.configUpdatedAt,
+            }
+          : null,
+        afterValue: { field, value: undo.previousValue ?? "" },
+        metadata: { proposalId: undo.proposalId },
       });
 
       return { ok: true, summary: `Undid change to ${coachFieldLabel(field)}` };
@@ -710,10 +983,28 @@ export async function undoPromptCoachChange(args: {
     if (undo.operationApplied === "add") {
       const itemId = undo.knowledgeItemId?.trim();
       if (!itemId) throw new Error("Missing knowledge item to undo.");
+      const current = context.knowledge.find((item) => item.id === itemId);
       await proxyNestBrandPortalRequest(args.brandKey, {
         method: "DELETE",
         endpoint: "brand-portal-knowledge",
-        query: new URLSearchParams({ id: itemId }),
+        body: {
+          id: itemId,
+          ...(current?.updatedAt
+            ? { expected_updated_at: current.updatedAt }
+            : {}),
+        },
+      });
+      await recordNestContentRevision({
+        brandKey: args.brandKey,
+        actorUserId: args.actorUserId,
+        actorRole: args.actorRole,
+        source: "restore",
+        targetType: "knowledge",
+        targetKey: itemId,
+        operation: "restore",
+        beforeValue: current ? { ...current } : null,
+        afterValue: null,
+        metadata: { proposalId: undo.proposalId },
       });
       return {
         ok: true,
@@ -724,13 +1015,37 @@ export async function undoPromptCoachChange(args: {
     if (undo.operationApplied === "delete") {
       const content = undo.deletedContent ?? "";
       if (!content.trim()) throw new Error("Nothing to restore.");
-      await proxyNestBrandPortalRequest(args.brandKey, {
+      const createRes = await proxyNestBrandPortalRequest(args.brandKey, {
         method: "POST",
         endpoint: "brand-portal-knowledge",
         body: {
           title: undo.title?.trim() || "Store knowledge",
           content_text: content,
         },
+      });
+      const created =
+        createRes.item && typeof createRes.item === "object"
+          ? (createRes.item as Record<string, unknown>)
+          : null;
+      const createdId =
+        created && typeof created.id === "string"
+          ? created.id
+          : undo.knowledgeItemId ?? "restored";
+      await recordNestContentRevision({
+        brandKey: args.brandKey,
+        actorUserId: args.actorUserId,
+        actorRole: args.actorRole,
+        source: "restore",
+        targetType: "knowledge",
+        targetKey: createdId,
+        operation: "restore",
+        beforeValue: null,
+        afterValue: {
+          id: createdId,
+          title: undo.title?.trim() || "Store knowledge",
+          content,
+        },
+        metadata: { proposalId: undo.proposalId },
       });
       return {
         ok: true,
@@ -741,13 +1056,34 @@ export async function undoPromptCoachChange(args: {
     // replace / append — restore previous content
     const itemId = undo.knowledgeItemId?.trim();
     if (!itemId) throw new Error("Missing knowledge item to undo.");
+    const current = context.knowledge.find((item) => item.id === itemId);
     await proxyNestBrandPortalRequest(args.brandKey, {
       method: "PATCH",
       endpoint: "brand-portal-knowledge",
       body: {
         id: itemId,
         content_text: undo.previousValue ?? "",
+        ...(current?.updatedAt
+          ? { expected_updated_at: current.updatedAt }
+          : {}),
       },
+    });
+    await recordNestContentRevision({
+      brandKey: args.brandKey,
+      actorUserId: args.actorUserId,
+      actorRole: args.actorRole,
+      source: "restore",
+      targetType: "knowledge",
+      targetKey: itemId,
+      operation: "restore",
+      beforeValue: current ? { ...current } : null,
+      afterValue: {
+        id: itemId,
+        title: undo.title?.trim() || current?.title || "Knowledge item",
+        content: undo.previousValue ?? "",
+        assignedProducts: current?.assignedProducts ?? [],
+      },
+      metadata: { proposalId: undo.proposalId },
     });
     return {
       ok: true,

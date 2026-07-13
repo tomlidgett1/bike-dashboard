@@ -36,7 +36,6 @@ import { InboxSourceSelect } from "@/components/settings/customer-inquiries/inbo
 import { EnquiryConversationList } from "@/components/settings/customer-inquiries/enquiry-conversation-list";
 import { EnquiryConversationPane } from "@/components/settings/customer-inquiries/enquiry-conversation-pane";
 import { NestNewMessagePanel } from "@/components/settings/customer-inquiries/nest-new-message-panel";
-import { NestPromptCoachSheet } from "@/components/settings/customer-inquiries/nest-prompt-coach-sheet";
 import {
   INBOX_STATUS_TABS,
   useUnifiedInboxController,
@@ -211,13 +210,7 @@ function EnquiriesSplitView({
   );
 }
 
-function CustomerEnquiriesHeaderActions({
-  c,
-  onOpenTrainNest,
-}: {
-  c: UnifiedInboxController;
-  onOpenTrainNest: () => void;
-}) {
+function CustomerEnquiriesHeaderActions({ c }: { c: UnifiedInboxController }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
@@ -240,18 +233,19 @@ function CustomerEnquiriesHeaderActions({
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-44 rounded-lg bg-white p-1.5">
-          <DropdownMenuItem
-            disabled={!c.nestConfigured}
-            onSelect={(event) => {
-              event.preventDefault();
-              if (!c.nestConfigured) return;
-              onOpenTrainNest();
-            }}
-            className="gap-2 rounded-md"
-          >
-            <NestLogo className="h-[15px] w-[15px]" />
-            Train Nest
-          </DropdownMenuItem>
+          {c.nestConfigured ? (
+            <DropdownMenuItem asChild className="gap-2 rounded-md">
+              <Link href="/settings/store/nest-knowledge">
+                <NestLogo className="h-[15px] w-[15px]" />
+                Nest knowledge & training
+              </Link>
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem disabled className="gap-2 rounded-md">
+              <NestLogo className="h-[15px] w-[15px]" />
+              Nest knowledge & training
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem asChild className="gap-2 rounded-md">
             <Link href="/settings/store/customer-inquiries/analytics">
               <BarChart3 className="size-[15px]" />
@@ -320,7 +314,6 @@ export function StoreCustomerInquiriesPanel({
   const searchParams = useSearchParams();
   const embedded =
     embeddedProp || (pathname?.includes("/settings/store/crm/inbox") ?? false);
-  const [trainNestOpen, setTrainNestOpen] = useState(false);
   const [composing, setComposing] = useState(false);
   const [composePrefill, setComposePrefill] = useState<NestComposeInitialRecipient | null>(
     null,
@@ -394,12 +387,7 @@ export function StoreCustomerInquiriesPanel({
     setComposing(false);
   };
 
-  const headerActions = (
-    <CustomerEnquiriesHeaderActions
-      c={c}
-      onOpenTrainNest={() => setTrainNestOpen(true)}
-    />
-  );
+  const headerActions = <CustomerEnquiriesHeaderActions c={c} />;
 
   if (!c.gmailStatusReady) {
     if (c.loading) {
@@ -488,8 +476,6 @@ export function StoreCustomerInquiriesPanel({
             </FloatingCard>
           </FloatingCardPageBody>
         )}
-
-        <NestPromptCoachSheet open={trainNestOpen} onOpenChange={setTrainNestOpen} />
       </>
     );
   }
@@ -530,9 +516,6 @@ export function StoreCustomerInquiriesPanel({
           </FloatingCard>
         </FloatingCardPageBody>
       )}
-
-      <NestPromptCoachSheet open={trainNestOpen} onOpenChange={setTrainNestOpen} />
-
       {c.sendConfirmOpen ? (
         <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
           <button

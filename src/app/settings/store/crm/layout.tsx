@@ -17,7 +17,7 @@ export default function StoreCrmLayout({ children }: { children: ReactNode }) {
         actions={enabled ? <CrmCommandBar /> : undefined}
         toolbar={enabled ? <CrmRouteTabs /> : undefined}
         flush
-        cardClassName="rounded-md"
+        cardClassName="rounded-xl"
         scrollClassName="overflow-hidden"
       >
         <div className="h-full min-h-0">{children}</div>
