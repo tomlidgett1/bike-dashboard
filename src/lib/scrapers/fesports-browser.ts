@@ -3,6 +3,10 @@ import chromium from "@sparticuz/chromium-min";
 
 const FESPORTS_BASE_URL = "https://www.fesports.com.au";
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function launchFesportsBrowser(): Promise<Browser> {
   const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_VERSION);
 
@@ -73,7 +77,7 @@ export async function loginToFesports(
     page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 60_000 }).catch(() => undefined),
     page.click('form.register-form button[type="submit"], form.register-form input[type="submit"]'),
   ]);
-  await page.waitForTimeout(1_000);
+  await sleep(1_000);
 
   if (page.url().includes("/Login")) {
     throw new Error("FEsports login failed. Check your email and password.");

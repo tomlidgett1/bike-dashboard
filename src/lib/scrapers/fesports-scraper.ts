@@ -130,7 +130,7 @@ async function waitForPage(page: Page, delayMs = 800) {
   } catch {
     // continue
   }
-  await page.waitForTimeout(delayMs);
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
 export async function discoverFesportsCategories(
