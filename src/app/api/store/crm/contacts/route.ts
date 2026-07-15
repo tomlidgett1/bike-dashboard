@@ -7,6 +7,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import type { CrmContactSort } from "@/lib/crm/types";
+import { buildContactSearchOrFilter } from "@/lib/crm/contact-search";
+import { countSelectableContactsMatchingList, type ContactListFilter } from "@/lib/crm/contact-list-query";
 
 const PAGE_SIZE = 50;
 
@@ -35,7 +37,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = request.nextUrl;
     const search = (searchParams.get("search") ?? "").trim();
-    const filter = searchParams.get("filter") ?? "all";
+    const filter = (searchParams.get("filter") ?? "all") as ContactListFilter;
     const sort = (searchParams.get("sort") ?? "recent") as CrmContactSort;
     const groupId = (searchParams.get("groupId") ?? "").trim();
     const offset = Math.max(0, Number.parseInt(searchParams.get("offset") ?? "0", 10) || 0);
@@ -76,15 +78,12 @@ export async function GET(request: NextRequest) {
     if (filter === "opted_out") query = query.eq("opted_out", true);
 
     if (search) {
-      const term = search.replace(/[,()]/g, " ").trim();
-      if (term) {
-        query = query.or(
-          `email.ilike.%${term}%,first_name.ilike.%${term}%,last_name.ilike.%${term}%`,
-        );
-      }
+      const filter = buildContactSearchOrFilter(search);
+      if (filter) query = query.or(filter);
     }
 
-    const [{ data: contacts, count, error }, totals, optedOutTotal] = await Promise.all([
+    const [{ data: contacts, count, error }, totals, optedOutTotal, eligibleFilteredCount] =
+      await Promise.all([
       query
         .order(sortConfig.column, { ascending: sortConfig.ascending, nullsFirst: false })
         .order("email", { ascending: true })
@@ -98,6 +97,14 @@ export async function GET(request: NextRequest) {
         .select("id", { count: "exact", head: true })
         .eq("user_id", user.id)
         .eq("opted_out", true),
+      countSelectableContactsMatchingList({
+        supabase,
+        userId: user.id,
+        search,
+        filter,
+        sort,
+        groupId,
+      }),
     ]);
 
     if (error) throw error;
@@ -108,6 +115,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       contacts: contacts ?? [],
       filteredCount: count ?? 0,
+      eligibleFilteredCount,
       stats: { total, optedOut, eligible: total - optedOut },
     });
   } catch (error) {

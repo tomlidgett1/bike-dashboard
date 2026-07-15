@@ -3,6 +3,7 @@ import type { ToolContext, PendingToolCall, ToolExecutionResult } from './types.
 import type { FunctionCallOutput } from '../ai/models.ts';
 import { classifyConfirmation } from '../ai/models.ts';
 import { getTool } from './registry.ts';
+import { toolOutputIndicatesFailure } from './tool-output-status.ts';
 
 // ═══════════════════════════════════════════════════════════════
 // Timeout helper
@@ -160,14 +161,11 @@ async function executeSingleCall(
     const output = await withTimeout(tool.handler(effectiveInput, ctx), tool.timeoutMs, tool.name);
     const latency = Date.now() - start;
     console.log(`[executor] ${tool.name} completed in ${latency}ms, output length: ${output.content.length}`);
-    const commitError = tool.name === 'calendar_write' && (
-      output.structuredData?.status === 'error' ||
-      output.structuredData?.verified === false
-    );
+    const commitError = toolOutputIndicatesFailure(tool.sideEffect, output.structuredData);
     if (commitError) {
       const error = typeof output.structuredData?.error === 'string'
         ? output.structuredData.error
-        : 'calendar write was not verified';
+        : `${tool.name} did not complete`;
       return {
         toolResult: { type: 'function_call_output', call_id: call.id, output: output.content },
         execResult: { toolName: tool.name, outcome: 'error', structuredData: { ...output.structuredData, error } },

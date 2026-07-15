@@ -8,6 +8,27 @@ import {
   mediaMetadataFromParts,
 } from '../inbound-media-metadata.ts';
 
+export async function persistBrandInboundMessage(input: TurnInput): Promise<void> {
+  const historyContent = historyContentForInbound(input.userMessage, input.images);
+  const mediaMetadata = mediaMetadataFromParts({
+    images: input.images,
+    audio: input.audio,
+  });
+  const hasInboundMedia = input.images.length > 0 || input.audio.length > 0;
+  if (!historyContent && !hasInboundMedia) return;
+
+  const { addMessage } = await import('../state.ts');
+  await addMessage(input.chatId, 'user', historyContent, input.senderHandle, {
+    isGroupChat: input.isGroupChat,
+    chatName: input.chatName,
+    participantNames: input.participantNames,
+    service: input.service,
+    engagement: getTurnConversationEngagement(input),
+    metadata: mediaMetadata,
+    providerMessageId: input.providerMessageId,
+  });
+}
+
 export async function buildBrandRouterContext(
   input: TurnInput,
 ): Promise<RouterContext> {
@@ -51,7 +72,7 @@ export async function buildBrandContext(
   const hasPreloadedHistory = routerCtx?.preloadedHistory !== undefined;
   const engagement = getTurnConversationEngagement(input);
   const brandFilter = { scope: 'brand' as const, brandKey: engagement.brandKey };
-  const { getConversation, getConversationSummaries, getRecentToolTraces, addMessage } =
+  const { getConversation, getConversationSummaries, getRecentToolTraces } =
     await import('../state.ts');
 
   const historyP = hasPreloadedHistory
@@ -78,28 +99,11 @@ export async function buildBrandContext(
   const { messageContent, transcriptions, transcriptionFailed, textToSend } =
     messageContentT.result;
 
-  const historyContent = historyContentForInbound(input.userMessage, input.images);
-  const mediaMetadata = mediaMetadataFromParts({
-    images: input.images,
-    audio: input.audio,
-  });
-  const hasInboundMedia = input.images.length > 0 || input.audio.length > 0;
-
   // Persist only real customer text and/or media — never AI placeholder strings like
   // "What's in this image?" which are for the model only.
-  if (historyContent || hasInboundMedia) {
-    addMessage(input.chatId, 'user', historyContent, input.senderHandle, {
-      isGroupChat: input.isGroupChat,
-      chatName: input.chatName,
-      participantNames: input.participantNames,
-      service: input.service,
-      engagement,
-      metadata: mediaMetadata,
-      providerMessageId: input.providerMessageId,
-    }).catch((err) =>
+  persistBrandInboundMessage(input).catch((err) =>
       console.warn('[build-brand-context] addMessage failed:', (err as Error).message)
     );
-  }
 
   const recentTurns = routerCtx?.recentTurns ?? history.slice(-6).map((message) => ({
     role: message.role,

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { Loader2, ReceiptText } from "@/components/layout/app-sidebar/dashboard-icons";
+import { Loader2 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { LightspeedLogo } from "@/components/genie/lightspeed-logo";
 import { storeSettingsHeaderActionClass } from "@/components/settings/actions-page-header";
 import { cn } from "@/lib/utils";
@@ -375,7 +375,7 @@ export function NestSendReceiptPopover({
         {isPreparing ? (
           <Loader2 className="size-[14px] animate-spin" />
         ) : (
-          <ReceiptText className="size-[14px] text-amber-600" />
+          <LightspeedLogo className="size-[14px] shrink-0 rounded-full object-cover" />
         )}
         Send receipt
       </button>

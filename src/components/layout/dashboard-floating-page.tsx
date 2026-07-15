@@ -10,8 +10,10 @@ import {
 import { cn } from "@/lib/utils";
 
 export type DashboardFloatingPageProps = {
-  title: string;
-  icon: LucideIcon;
+  title?: string;
+  icon?: LucideIcon;
+  /** Hide the sticky title row above the floating card (toolbar-only pages). */
+  hideTitle?: boolean;
   description?: ReactNode;
   actions?: ReactNode;
   toolbar?: ReactNode;
@@ -30,17 +32,21 @@ export function DashboardFloatingPage({
   actions,
   toolbar,
   children,
+  hideTitle = false,
   flush = false,
   cardClassName,
   scrollClassName,
 }: DashboardFloatingPageProps) {
   const showToolbar = description != null || toolbar != null;
+  const showTitleRow = !hideTitle && title != null && icon != null;
 
   return (
     <FloatingCardPage>
-      <FloatingCardPageHeader>
-        <FloatingCardPageTitleRow title={title} icon={icon} actions={actions} />
-      </FloatingCardPageHeader>
+      {showTitleRow ? (
+        <FloatingCardPageHeader>
+          <FloatingCardPageTitleRow title={title} icon={icon} actions={actions} />
+        </FloatingCardPageHeader>
+      ) : null}
       <FloatingCardPageBody>
         <FloatingCard className={cn("flex min-h-0 flex-1 flex-col", cardClassName)}>
           {showToolbar ? (

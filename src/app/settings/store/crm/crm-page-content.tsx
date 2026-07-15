@@ -14,8 +14,8 @@ import {
   Eye,
   Letter,
   Loader2,
-  Mailbox,
   MoreHorizontal,
+  Phone,
   RefreshCw,
   Route,
   Search,
@@ -25,7 +25,6 @@ import {
   Trash2,
   Users,
 } from "@/components/layout/app-sidebar/dashboard-icons";
-import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-page";
 import { SettingsNavTabs } from "@/components/settings/settings-nav-tabs";
 import {
   AlertDialog,
@@ -66,10 +65,11 @@ import { crmFilterPillClass, crmFilterPillsClass } from "./crm-page-button-style
 import { ContactGroupsPanel } from "./contact-groups-panel";
 import { CrmAgentPanel, type CampaignTemplateSeed } from "./crm-agent-panel";
 import { LifecyclePanel } from "./lifecycle/lifecycle-panel";
+import { SmsBlastPanel } from "./sms-blast-panel";
 
 type ContactStats = { total: number; optedOut: number; eligible: number };
 type ContactFilter = "all" | "opted_in" | "opted_out";
-type CrmSection = "lifecycle" | "create" | "people" | "activity";
+type CrmSection = "lifecycle" | "create" | "people" | "activity" | "sms_blast";
 type PeopleTab = "contacts" | "groups";
 
 const PAGE_SIZE = 50;
@@ -215,6 +215,7 @@ const CRM_SECTIONS = [
   { id: "lifecycle", label: "Lifecycle", icon: Route },
   { id: "create", label: "Create", icon: Sparkles },
   { id: "people", label: "People", icon: Users },
+  { id: "sms_blast", label: "SMS blast", icon: Phone },
   { id: "activity", label: "Activity", icon: Letter },
 ] as const satisfies readonly { id: CrmSection; label: string; icon: typeof Sparkles }[];
 
@@ -223,11 +224,7 @@ const PEOPLE_TABS = [
   { id: "groups", label: "Groups", icon: Tag },
 ] as const satisfies readonly { id: PeopleTab; label: string; icon: React.ComponentType<{ className?: string }> }[];
 
-export function CrmPageContent({
-  embedded = false,
-}: {
-  embedded?: boolean;
-} = {}) {
+export function CrmPageContent() {
   const [section, setSection] = React.useState<CrmSection>("lifecycle");
   const [peopleTab, setPeopleTab] = React.useState<PeopleTab>("contacts");
   const [createTemplateSeed, setCreateTemplateSeed] = React.useState<CampaignTemplateSeed | null>(null);
@@ -254,6 +251,9 @@ export function CrmPageContent({
   const [contacts, setContacts] = React.useState<CrmContact[]>([]);
   const [stats, setStats] = React.useState<ContactStats | null>(null);
   const [filteredCount, setFilteredCount] = React.useState(0);
+  const [eligibleFilteredCount, setEligibleFilteredCount] = React.useState(0);
+  const [bulkContactIds, setBulkContactIds] = React.useState<string[] | null>(null);
+  const [loadingBulkSelect, setLoadingBulkSelect] = React.useState(false);
   const [search, setSearch] = React.useState("");
   const [filter, setFilter] = React.useState<ContactFilter>("all");
   const [sort, setSort] = React.useState<CrmContactSort>("recent");
@@ -302,6 +302,7 @@ export function CrmPageContent({
         setContacts((prev) => (opts?.append ? [...prev, ...data.contacts] : data.contacts));
         setStats(data.stats);
         setFilteredCount(data.filteredCount);
+        setEligibleFilteredCount(data.eligibleFilteredCount ?? 0);
       } catch (error) {
         setNotice({ kind: "error", text: error instanceof Error ? error.message : "Failed to load contacts" });
       } finally {
@@ -311,6 +312,44 @@ export function CrmPageContent({
     },
     [search, filter, sort, groupFilterId],
   );
+
+  React.useEffect(() => {
+    setBulkContactIds(null);
+    setSelected(new Map());
+  }, [search, filter, sort, groupFilterId]);
+
+  const selectedCount = bulkContactIds?.length ?? selected.size;
+
+  const isContactSelected = React.useCallback(
+    (contactId: string) =>
+      bulkContactIds ? bulkContactIds.includes(contactId) : selected.has(contactId),
+    [bulkContactIds, selected],
+  );
+
+  const clearSelection = React.useCallback(() => {
+    setSelected(new Map());
+    setBulkContactIds(null);
+  }, []);
+
+  const selectAllMatching = React.useCallback(async () => {
+    setLoadingBulkSelect(true);
+    try {
+      const params = new URLSearchParams({ search, filter, sort });
+      if (groupFilterId) params.set("groupId", groupFilterId);
+      const res = await fetch(`/api/store/crm/contacts/bulk-ids?${params}`, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to select all contacts");
+      setBulkContactIds(data.contactIds ?? []);
+      setSelected(new Map());
+    } catch (error) {
+      setNotice({
+        kind: "error",
+        text: error instanceof Error ? error.message : "Failed to select all contacts",
+      });
+    } finally {
+      setLoadingBulkSelect(false);
+    }
+  }, [search, filter, sort, groupFilterId]);
 
   const loadGroups = React.useCallback(async () => {
     try {
@@ -389,6 +428,15 @@ export function CrmPageContent({
   }, [loadContacts]);
 
   const toggleContact = (contact: CrmContact) => {
+    if (bulkContactIds) {
+      setBulkContactIds((prev) => {
+        if (!prev) return prev;
+        return prev.includes(contact.id)
+          ? prev.filter((id) => id !== contact.id)
+          : [...prev, contact.id];
+      });
+      return;
+    }
     setSelected((prev) => {
       const next = new Map(prev);
       if (next.has(contact.id)) next.delete(contact.id);
@@ -398,17 +446,29 @@ export function CrmPageContent({
   };
 
   const eligibleLoaded = contacts.filter((contact) => !contact.opted_out);
-  const allLoadedSelected =
-    eligibleLoaded.length > 0 && eligibleLoaded.every((contact) => selected.has(contact.id));
+  const allPageSelected =
+    eligibleLoaded.length > 0 && eligibleLoaded.every((contact) => isContactSelected(contact.id));
+  const allMatchingSelected =
+    bulkContactIds != null &&
+    eligibleFilteredCount > 0 &&
+    bulkContactIds.length === eligibleFilteredCount;
+  const headerCheckboxChecked = allMatchingSelected || allPageSelected;
+  const headerCheckboxIndeterminate =
+    selectedCount > 0 && !headerCheckboxChecked && !loadingBulkSelect;
 
   const toggleAllLoaded = () => {
+    if (loadingBulkSelect) return;
+    if (headerCheckboxChecked) {
+      clearSelection();
+      return;
+    }
+    if (eligibleFilteredCount > eligibleLoaded.length) {
+      void selectAllMatching();
+      return;
+    }
     setSelected((prev) => {
       const next = new Map(prev);
-      if (allLoadedSelected) {
-        for (const contact of eligibleLoaded) next.delete(contact.id);
-      } else {
-        for (const contact of eligibleLoaded) next.set(contact.id, contact);
-      }
+      for (const contact of eligibleLoaded) next.set(contact.id, contact);
       return next;
     });
   };
@@ -474,68 +534,76 @@ export function CrmPageContent({
 
   const hasAnyContacts = (stats?.total ?? 0) > 0;
 
-  const page = (
-    <DashboardFloatingPage
-        title="Outreach"
-        icon={Mailbox}
-        actions={
-          <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon-sm" aria-label="Outreach settings">
-                  <Cog className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52 rounded-md">
-                <DropdownMenuItem onClick={() => void runEnrich()} disabled={enriching}>
-                  {enriching ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="size-4" />
-                  )}
-                  {enriching ? "Syncing…" : "Sync Lightspeed stats"}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => void runImport()} disabled={importing}>
-                  {importing ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="size-4" />
-                  )}
-                  {importing ? "Importing…" : "Import from Lightspeed"}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button size="sm" className="rounded-full" onClick={() => openComposer()} disabled={(stats?.eligible ?? 0) === 0 && selected.size === 0}>
-              <Send className="mr-1.5 size-4" />
-              New campaign
-            </Button>
-          </div>
-        }
-        toolbar={
-          <div className="flex flex-col gap-2.5">
-            <SettingsNavTabs
-              items={CRM_SECTIONS}
-              value={section}
-              onChange={handleSectionChange}
-              layoutId="crm-main-tabs"
-            />
-            {section === "people" ? (
-              <SettingsNavTabs
-                size="sm"
-                items={PEOPLE_TABS}
-                value={peopleTab}
-                onChange={setPeopleTab}
-                layoutId="crm-people-tabs"
-              />
-            ) : null}
-          </div>
-        }
-        flush
-        scrollClassName={
-          section === "create" ? "flex min-h-0 flex-1 flex-col overflow-hidden" : undefined
-        }
+  const outreachToolbarActions = (
+    <div className="flex shrink-0 items-center gap-2">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="icon-sm" aria-label="Outreach settings">
+            <Cog className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52 rounded-md">
+          <DropdownMenuItem onClick={() => void runEnrich()} disabled={enriching}>
+            {enriching ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+            {enriching ? "Syncing…" : "Sync Lightspeed stats"}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => void runImport()} disabled={importing}>
+            {importing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+            {importing ? "Importing…" : "Import from Lightspeed"}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <Button
+        size="sm"
+        className="rounded-full"
+        onClick={() => openComposer()}
+        disabled={(stats?.eligible ?? 0) === 0 && selectedCount === 0}
       >
-        <div className={cn("flex min-h-0 flex-1 flex-col", section === "create" && "h-full")}>
+        <Send className="mr-1.5 size-4" />
+        New campaign
+      </Button>
+    </div>
+  );
+
+  const outreachToolbar = (
+    <div className="flex shrink-0 flex-col gap-2.5 border-b border-border/60 bg-gray-50 px-4 py-3 md:px-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SettingsNavTabs
+          items={CRM_SECTIONS}
+          value={section}
+          onChange={handleSectionChange}
+          layoutId="crm-main-tabs"
+        />
+        {outreachToolbarActions}
+      </div>
+      {section === "people" ? (
+        <SettingsNavTabs
+          size="sm"
+          items={PEOPLE_TABS}
+          value={peopleTab}
+          onChange={setPeopleTab}
+          layoutId="crm-people-tabs"
+        />
+      ) : null}
+    </div>
+  );
+
+  const outreachScrollClassName =
+    section === "create" || section === "sms_blast"
+      ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+      : "overflow-y-auto";
+
+  return (
+    <>
+      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
+        {outreachToolbar}
+        <div className={cn("min-h-0 flex-1", outreachScrollClassName)}>
+          <div
+            className={cn(
+              "flex min-h-0 flex-1 flex-col",
+              (section === "create" || section === "sms_blast") && "h-full",
+            )}
+          >
           {notice ? (
             <div
               className={cn(
@@ -568,6 +636,7 @@ export function CrmPageContent({
               loading={loadingContacts}
               loadingMore={loadingMore}
               filteredCount={filteredCount}
+              eligibleFilteredCount={eligibleFilteredCount}
               hasAnyContacts={hasAnyContacts}
               importing={importing}
               onImport={() => void runImport()}
@@ -581,16 +650,23 @@ export function CrmPageContent({
               groupFilterId={groupFilterId}
               onGroupFilter={setGroupFilterId}
               selected={selected}
+              selectedCount={selectedCount}
+              isContactSelected={isContactSelected}
               onToggle={toggleContact}
-              allLoadedSelected={allLoadedSelected}
+              headerCheckboxChecked={headerCheckboxChecked}
+              headerCheckboxIndeterminate={headerCheckboxIndeterminate}
+              loadingBulkSelect={loadingBulkSelect}
               onToggleAll={toggleAllLoaded}
-              onClearSelection={() => setSelected(new Map())}
+              onClearSelection={clearSelection}
               onLoadMore={() => void loadContacts({ append: true, offset: contacts.length })}
-              onCreateCampaign={() => openComposer()}
+              onCreateCampaign={() => {
+                if (bulkContactIds?.length) openComposer(undefined, bulkContactIds);
+                else openComposer();
+              }}
             />
           ) : section === "people" && peopleTab === "groups" ? (
             <ContactGroupsPanel
-              selectedContactIds={Array.from(selected.keys())}
+              selectedContactIds={bulkContactIds ?? Array.from(selected.keys())}
               onGroupsChange={() => {
                 void loadGroups();
                 void loadContacts();
@@ -610,6 +686,8 @@ export function CrmPageContent({
               templateSeed={createTemplateSeed}
               onTemplateSeedConsumed={() => setCreateTemplateSeed(null)}
             />
+          ) : section === "sms_blast" ? (
+            <SmsBlastPanel />
           ) : section === "activity" ? (
             <CampaignsView
               campaigns={campaigns}
@@ -629,19 +707,9 @@ export function CrmPageContent({
               onSendDraft={(campaign) => void sendDraft(campaign)}
             />
           ) : null}
+          </div>
         </div>
-    </DashboardFloatingPage>
-  );
-
-  return (
-    <>
-      {embedded ? (
-        <div className="h-full min-h-0 [&>div]:!h-full [&>div]:!pt-0">
-          {page}
-        </div>
-      ) : (
-        page
-      )}
+      </div>
       {composerSeed ? (
         <CampaignComposer
           seed={composerSeed}
@@ -653,7 +721,7 @@ export function CrmPageContent({
           onClose={() => setComposerSeed(null)}
           onSent={() => {
             setComposerSeed(null);
-            setSelected(new Map());
+            clearSelection();
             goToCampaigns();
             void loadCampaigns();
           }}
@@ -690,6 +758,7 @@ function ContactsView(props: {
   loading: boolean;
   loadingMore: boolean;
   filteredCount: number;
+  eligibleFilteredCount: number;
   hasAnyContacts: boolean;
   importing: boolean;
   onImport: () => void;
@@ -703,8 +772,12 @@ function ContactsView(props: {
   groupFilterId: string;
   onGroupFilter: (value: string) => void;
   selected: Map<string, CrmContact>;
+  selectedCount: number;
+  isContactSelected: (contactId: string) => boolean;
   onToggle: (contact: CrmContact) => void;
-  allLoadedSelected: boolean;
+  headerCheckboxChecked: boolean;
+  headerCheckboxIndeterminate: boolean;
+  loadingBulkSelect: boolean;
   onToggleAll: () => void;
   onClearSelection: () => void;
   onLoadMore: () => void;
@@ -716,6 +789,7 @@ function ContactsView(props: {
     loading,
     loadingMore,
     filteredCount,
+    eligibleFilteredCount,
     hasAnyContacts,
     importing,
     onImport,
@@ -729,8 +803,12 @@ function ContactsView(props: {
     groupFilterId,
     onGroupFilter,
     selected,
+    selectedCount,
+    isContactSelected,
     onToggle,
-    allLoadedSelected,
+    headerCheckboxChecked,
+    headerCheckboxIndeterminate,
+    loadingBulkSelect,
     onToggleAll,
     onClearSelection,
     onLoadMore,
@@ -819,11 +897,15 @@ function ContactsView(props: {
           </span>
         </div>
 
-        {selected.size > 0 ? (
+        {selectedCount > 0 ? (
           <div className="flex flex-col gap-2 rounded-lg bg-zinc-900 px-3 py-2 text-white sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <span className="text-sm">
-                <span className="font-semibold tabular-nums">{selected.size}</span> selected
+                <span className="font-semibold tabular-nums">{selectedCount.toLocaleString()}</span>{" "}
+                selected
+                {selectedCount === eligibleFilteredCount && eligibleFilteredCount > 0 ? (
+                  <span className="text-white/70"> (all matching)</span>
+                ) : null}
               </span>
               <button
                 type="button"
@@ -861,9 +943,14 @@ function ContactsView(props: {
           {/* Column header */}
           <div className="sticky top-0 z-[1] flex items-center gap-3 border-b border-border/40 bg-white/95 px-4 py-2 backdrop-blur-sm md:px-5">
             <Checkbox
-              checked={allLoadedSelected}
+              checked={headerCheckboxIndeterminate ? "indeterminate" : headerCheckboxChecked}
+              disabled={filter === "opted_out" || loadingBulkSelect || eligibleFilteredCount === 0}
               onCheckedChange={onToggleAll}
-              aria-label="Select all eligible contacts on this page"
+              aria-label={
+                eligibleFilteredCount > contacts.filter((contact) => !contact.opted_out).length
+                  ? `Select all ${eligibleFilteredCount.toLocaleString()} matching contacts`
+                  : "Select all matching contacts"
+              }
             />
             <span className="min-w-0 flex-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               Customer
@@ -881,7 +968,7 @@ function ContactsView(props: {
           <ul>
             {contacts.map((contact) => {
               const name = contactName(contact);
-              const isSelected = selected.has(contact.id);
+              const isSelected = isContactSelected(contact.id);
               return (
                 <li
                   key={contact.id}

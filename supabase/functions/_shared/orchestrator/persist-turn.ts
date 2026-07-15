@@ -41,14 +41,14 @@ export async function persistTurn(
     await addMessage(input.chatId, 'assistant', `[reacted with ${display}]`, undefined, { engagement });
   }
 
-  if (MEMORY_V2_ENABLED && loopResult.toolsUsed.length > 0) {
-    const tracePromises = loopResult.toolsUsed.map((t) =>
+  if (MEMORY_V2_ENABLED && loopResult.toolCallTraces.length > 0) {
+    const tracePromises = loopResult.toolCallTraces.map((toolTrace) =>
       insertToolTrace({
         chatId: input.chatId,
         engagement,
-        toolName: t.tool,
-        outcome: 'success',
-        safeSummary: t.detail ?? null,
+        toolName: toolTrace.name,
+        outcome: toolTrace.outcome,
+        safeSummary: toolTrace.inputSummary ?? null,
       }),
     );
     await Promise.allSettled(tracePromises);

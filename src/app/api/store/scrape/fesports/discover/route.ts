@@ -28,15 +28,32 @@ export async function POST(request: NextRequest) {
         : null;
     const cookies = Array.isArray(body?.cookies) ? (body.cookies as CookieParam[]) : null;
 
-    const categories = await withFesportsPage(cookies, async (page) => {
-      return discoverFesportsCategories(page, startUrl, maxCategories);
+    const startedAt = Date.now();
+    console.log("[FEsports Scrape] Discover start", { startUrl, maxCategories });
+
+    const discovery = await withFesportsPage(cookies, async (page) => {
+      return discoverFesportsCategories(page, startUrl, maxCategories, (progress) => {
+        if (progress.pagesVisited === 1 || progress.pagesVisited % 10 === 0) {
+          console.log("[FEsports Scrape] Discover progress", progress);
+        }
+      });
+    });
+
+    const durationMs = Date.now() - startedAt;
+    console.log("[FEsports Scrape] Discover complete", {
+      startUrl,
+      categories: discovery.categories.length,
+      pagesVisited: discovery.pagesVisited,
+      durationMs,
     });
 
     return NextResponse.json({
       success: true,
       startUrl,
-      categories,
-      count: categories.length,
+      categories: discovery.categories,
+      count: discovery.categories.length,
+      pagesVisited: discovery.pagesVisited,
+      durationMs,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to discover FEsports categories";

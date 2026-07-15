@@ -23,6 +23,7 @@ import { MODEL_MAP } from './ai/models.ts';
 import { getOptionalEnv } from './env.ts';
 import { shouldDeferBookingToMainLlm } from './brand-lightspeed-booking-deferral.ts';
 import { lookupLightspeedCustomerByPhone } from './brand-lightspeed-workorders.ts';
+import { UNCOMMITTED_VISIT_TIME_CLAIM_RE } from './lightspeed-booking-create.ts';
 
 const STATE_TABLE = 'nest_brand_lightspeed_booking_state';
 /** Keep draft bookings usable across a long same-day thread (was 6h — too easy to lose before "Yes"). */
@@ -420,6 +421,7 @@ export async function populateBookingCustomerName(
 export async function createBookingWorkorder(
   payload: {
     brand_key: string;
+    chat_id: string;
     customer_name: string;
     customer_phone_e164: string | null;
     bike: string | null;
@@ -454,6 +456,7 @@ export async function createBookingWorkorder(
         http_status: res.status,
         request: {
           brand_key: payload.brand_key,
+          chat_id: payload.chat_id,
           drop_off_date: payload.drop_off_date,
           customer_name: payload.customer_name,
         },
@@ -585,6 +588,7 @@ export async function tryDeterministicBookingCommit(
   const create = await createBookingWorkorder(
     {
       brand_key: deps.brandKey,
+      chat_id: deps.chatId,
       customer_name: bookingState.customer_name!,
       customer_phone_e164: bookingState.sender_phone_e164,
       bike: bookingState.bike,
@@ -632,17 +636,9 @@ export async function tryDeterministicBookingCommit(
 // Problem we are guarding against: the LLM produces a response that sounds
 // like the booking is locked in ("we've got it set", "booked in", "pencilled
 // you in", "you're on the sheet"), but it never actually called the
-// `brand_booking_create` tool — so no Lightspeed workorder exists. The
-// customer believes their bike is booked; the shop never sees a job.
-//
-// Without this guard the failure is silent. With it:
-//   • If the draft is complete and we have a phone on file, we auto-commit
-//     the workorder server-side. The LLM's confirmation text is preserved
-//     (it's now accurate) and the booking state is cleared.
-//   • If the draft is incomplete or we have no phone, we override the reply
-//     so the customer isn't misled — ask for the missing field instead.
-//   • If the Lightspeed call fails, we override with a retry/handoff reply
-//     and keep the draft around so the next turn can try again.
+// `brand_booking_create` tool. The guard must correct the claim, never turn a
+// model mistake into an unconfirmed side effect. Confirmed bookings are
+// committed deterministically before the LLM runs or through the create tool.
 
 /**
  * Phrases that mean "this booking IS done" — past tense or present perfect.
@@ -693,7 +689,12 @@ export type BookingGuardInput = {
 
 export type BookingGuardResult = {
   text: string;
-  overrideReason?: 'auto_committed' | 'missing_fields' | 'create_failed' | 'no_phone';
+  overrideReason?:
+    | 'missing_fields'
+    | 'create_failed'
+    | 'no_phone'
+    | 'uncommitted_time'
+    | 'unconfirmed_claim';
 };
 
 /**
@@ -708,8 +709,10 @@ export async function applyBookingClaimGuard(
   input: BookingGuardInput,
 ): Promise<BookingGuardResult> {
   const { text, bookingState, executedTools } = input;
+  const madeDoneClaim = BOOKING_DONE_CLAIM_RE.test(text);
+  const madeVisitTimeClaim = UNCOMMITTED_VISIT_TIME_CLAIM_RE.test(text);
 
-  if (!text || !BOOKING_DONE_CLAIM_RE.test(text)) {
+  if (!text || (!madeDoneClaim && !madeVisitTimeClaim)) {
     return { text };
   }
 
@@ -720,12 +723,35 @@ export async function applyBookingClaimGuard(
     return { text };
   }
 
+  const touchedBookingTools = executedTools.some((t) => t.name.startsWith('brand_booking_'));
+
+  if (madeVisitTimeClaim && touchedBookingTools) {
+    if (!bookingState) {
+      return {
+        text:
+          'I can note that as your requested drop-off time, but it is not booked yet. Is that for today, and what bike are you bringing in?',
+        overrideReason: 'uncommitted_time',
+      };
+    }
+    if (!bookingDraftIsComplete(bookingState, deps.settings)) {
+      const missing = buildBookingMissingFieldPrompt(
+        { ...bookingState, status: 'collecting' },
+        deps.settings,
+      );
+      await upsertBookingState(deps.supabase, { ...bookingState, status: 'collecting' });
+      return {
+        text:
+          `I have noted that as your requested drop-off time, but it is not booked yet. ${missing}`,
+        overrideReason: 'uncommitted_time',
+      };
+    }
+  }
+
   // No active booking draft and the LLM did not touch the booking tools this
   // turn: the confirmatory phrase is almost certainly referring to a
   // previously created workorder (state row gets wiped on success). Do not
   // interfere — rewriting "see you tomorrow" into "I do not have a booking"
   // would be a regression on legitimate follow-up turns.
-  const touchedBookingTools = executedTools.some((t) => t.name.startsWith('brand_booking_'));
   if (!bookingState && !touchedBookingTools) {
     return { text };
   }
@@ -770,48 +796,24 @@ export async function applyBookingClaimGuard(
     return { text: prompt, overrideReason: 'missing_fields' };
   }
 
-  // Auto-commit: draft is complete, phone is on file, and the LLM already told
-  // the customer it was done. Create the workorder server-side as the safety
-  // net so the claim becomes true.
+  // A complete draft is still only a draft. Do not turn the model's premature
+  // wording into an unconfirmed real-world side effect. Re-state the details
+  // and require a fresh confirmation; the next clear "yes" is committed by the
+  // deterministic pre-LLM path.
   console.warn(
-    '[brand-booking] hallucination guard: auto-committing workorder',
+    '[brand-booking] hallucination guard: blocking unconfirmed booking claim',
     JSON.stringify({
       brand_key: deps.brandKey,
       chat_id: deps.chatId,
       drop_off_date: bookingState.drop_off_date,
     }),
   );
-  const create = await createBookingWorkorder(
-    {
-      brand_key: deps.brandKey,
-      customer_name: bookingState.customer_name!,
-      customer_phone_e164: bookingState.sender_phone_e164,
-      bike: bookingState.bike,
-      comments: bookingState.comments!,
-      drop_off_date: bookingState.drop_off_date!,
-      default_note: deps.settings.booking.default_note,
-    },
-    deps.brandApiDebug,
-  );
-
-  if (!create.ok) {
-    console.error('[brand-booking] hallucination guard: auto-commit failed:', create.error);
-    await upsertBookingState(deps.supabase, { ...bookingState, status: 'awaiting_confirm' });
-    return {
-      text: 'I had trouble locking that booking in with the workshop just now. Could you try again in a moment, or give the shop a quick call so the team can confirm it for you?',
-      overrideReason: 'create_failed',
-    };
-  }
-
-  await upsertBookingState(deps.supabase, {
-    ...bookingState,
-    status: 'created',
-    workorder_id: create.workorder_id,
-  });
-  await deleteBookingState(deps.supabase, deps.brandKey, deps.chatId);
-
-  // Keep the LLM's reply — it's now accurate because we committed behind it.
-  return { text, overrideReason: 'auto_committed' };
+  const awaitingConfirmation = { ...bookingState, status: 'awaiting_confirm' as const };
+  await upsertBookingState(deps.supabase, awaitingConfirmation);
+  return {
+    text: buildBookingSummary(awaitingConfirmation, deps.settings),
+    overrideReason: 'unconfirmed_claim',
+  };
 }
 
 // ── Public entry point ────────────────────────────────────────
@@ -938,6 +940,7 @@ export async function tryHandleLightspeedBookingTurn(
     const create = await createBookingWorkorder(
       {
         brand_key: brandKey,
+        chat_id: chatId,
         customer_name: merged.customer_name!,
         customer_phone_e164: merged.sender_phone_e164,
         bike: merged.bike,

@@ -9,7 +9,8 @@ export function isLightspeedProduct(p: ProductSourceRow): boolean {
   if (
     p.listing_source === "manual" ||
     p.listing_source === "online_catalog" ||
-    p.listing_source === "fesports_scrape"
+    p.listing_source === "fesports_scrape" ||
+    p.listing_source === "supplier_scrape"
   ) {
     return false;
   }
@@ -23,11 +24,11 @@ export function productSourceLabel(p: ProductSourceRow): "Lightspeed" | "Manual"
 
 /** PostgREST `.or()` filter — must stay in sync with `isLightspeedProduct`. */
 export const LIGHTSPEED_SOURCE_OR_FILTER =
-  "listing_source.eq.lightspeed,and(lightspeed_item_id.not.is.null,or(listing_source.is.null,listing_source.not.in.(manual,online_catalog,fesports_scrape)))";
+  "listing_source.eq.lightspeed,and(lightspeed_item_id.not.is.null,or(listing_source.is.null,listing_source.not.in.(manual,online_catalog,fesports_scrape,supplier_scrape)))";
 
 /** PostgREST `.or()` filter — must stay in sync with `isLightspeedProduct`. */
 export const MANUAL_SOURCE_OR_FILTER =
-  "listing_source.in.(manual,online_catalog,fesports_scrape),and(lightspeed_item_id.is.null,or(listing_source.is.null,listing_source.neq.lightspeed))";
+  "listing_source.in.(manual,online_catalog,fesports_scrape,supplier_scrape),and(lightspeed_item_id.is.null,or(listing_source.is.null,listing_source.neq.lightspeed))";
 
 export function formatLightspeedCategory(p: {
   full_category_path?: string | null;

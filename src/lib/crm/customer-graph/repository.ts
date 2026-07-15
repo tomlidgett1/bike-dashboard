@@ -185,6 +185,46 @@ function cleanSearchQuery(value: string): string {
     .slice(0, 100);
 }
 
+/** Build a PostgREST `or=` clause that matches full names across first/last. */
+function customerNameSearchOrClause(search: string): string {
+  const pattern = postgrestLiteral(`%${search}%`);
+  const parts = search.split(/\s+/).filter(Boolean);
+  const clauses = [
+    `display_name.ilike.${pattern}`,
+    `first_name.ilike.${pattern}`,
+    `last_name.ilike.${pattern}`,
+    `primary_email.ilike.${pattern}`,
+    `primary_phone.ilike.${pattern}`,
+    `lightspeed_customer_id.ilike.${pattern}`,
+  ];
+  if (parts.length >= 2) {
+    const first = postgrestLiteral(`%${parts[0]}%`);
+    const last = postgrestLiteral(`%${parts.slice(1).join(" ")}%`);
+    clauses.push(`and(first_name.ilike.${first},last_name.ilike.${last})`);
+    clauses.push(`and(first_name.ilike.${last},last_name.ilike.${first})`);
+  }
+  return clauses.join(",");
+}
+
+function legacyContactNameSearchOrClause(search: string): string {
+  const pattern = postgrestLiteral(`%${search}%`);
+  const parts = search.split(/\s+/).filter(Boolean);
+  const clauses = [
+    `email.ilike.${pattern}`,
+    `first_name.ilike.${pattern}`,
+    `last_name.ilike.${pattern}`,
+    `phone.ilike.${pattern}`,
+    `lightspeed_customer_id.ilike.${pattern}`,
+  ];
+  if (parts.length >= 2) {
+    const first = postgrestLiteral(`%${parts[0]}%`);
+    const last = postgrestLiteral(`%${parts.slice(1).join(" ")}%`);
+    clauses.push(`and(first_name.ilike.${first},last_name.ilike.${last})`);
+    clauses.push(`and(first_name.ilike.${last},last_name.ilike.${first})`);
+  }
+  return clauses.join(",");
+}
+
 function postgrestLiteral(value: string | number): string {
   if (typeof value === "number") return String(value);
   return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
@@ -469,10 +509,7 @@ async function searchLegacyCustomers(
   }
   const search = cleanSearchQuery(filters.query ?? "");
   if (search) {
-    const pattern = `%${search}%`;
-    query = query.or(
-      `email.ilike.${pattern},first_name.ilike.${pattern},last_name.ilike.${pattern},phone.ilike.${pattern},lightspeed_customer_id.ilike.${pattern}`,
-    );
+    query = query.or(legacyContactNameSearchOrClause(search));
   }
   if (filters.specialFilter === "no_email") query = query.is("email", null);
   if (filters.specialFilter === "opted_in") query = query.eq("opted_out", false);
@@ -574,8 +611,11 @@ export async function searchCustomers(
     throw new CrmRepositoryError("The customer cursor is invalid for this sort.", "search_customers");
   }
 
-  if (filters.specialFilter || (filters.query && sort === "updated_desc")) {
-    if (filters.specialFilter && sort !== "updated_desc") {
+  // Text queries use the direct ILIKE path below so substring name matches
+  // (e.g. "Tom Lidgett") work reliably. The RPC path is reserved for special
+  // filters that need consent / missing-email joins.
+  if (filters.specialFilter) {
+    if (sort !== "updated_desc") {
       throw new CrmRepositoryError(
         "Opt-in and missing-email filters currently use recent order.",
         "search_customers",
@@ -634,10 +674,7 @@ export async function searchCustomers(
   if (filters.lifecycleStage) query = query.eq("lifecycle_stage", filters.lifecycleStage);
   const search = cleanSearchQuery(filters.query ?? "");
   if (search) {
-    const pattern = `%${search}%`;
-    query = query.or(
-      `display_name.ilike.${pattern},primary_email.ilike.${pattern},primary_phone.ilike.${pattern},lightspeed_customer_id.ilike.${pattern}`,
-    );
+    query = query.or(customerNameSearchOrClause(search));
   }
   if (cursor) {
     const value = cursor.value;

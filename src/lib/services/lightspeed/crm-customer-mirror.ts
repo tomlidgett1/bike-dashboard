@@ -16,7 +16,10 @@ import type {
 type AdminClient = ReturnType<typeof createServiceRoleClient>;
 
 const CUSTOMER_OVERLAP_MS = 10 * 60 * 1000;
-const CUSTOMER_PAGE_LIMIT = 5;
+/** Cron incremental / continued backfill pages (100 customers each). */
+const CUSTOMER_PAGE_LIMIT = 50;
+/** Manual / forced full sync pages — matches email import coverage. */
+const CUSTOMER_FULL_SYNC_PAGE_LIMIT = 300;
 const BIKE_CUSTOMERS_PER_RUN = 25;
 const WORKORDERS_PER_RUN = 250;
 const UPSERT_CHUNK = 200;
@@ -109,8 +112,52 @@ async function requireStore(admin: AdminClient, userId: string): Promise<{ id: s
     .maybeSingle();
 
   if (error) throw new Error(`Could not load CRM store: ${error.message}`);
-  if (!store) throw new Error("CRM store foundation is not initialised for this Lightspeed connection.");
-  return store;
+  if (store) return store;
+
+  // Auto-bootstrap the CRM store row for verified bike-store accounts that
+  // pre-date (or skipped) the foundation backfill.
+  const { data: profile, error: profileError } = await admin
+    .from("users")
+    .select("business_name, account_type, bicycle_store")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (profileError) {
+    throw new Error(`Could not load store profile for CRM bootstrap: ${profileError.message}`);
+  }
+  if (profile?.account_type !== "bicycle_store" || profile.bicycle_store !== true) {
+    throw new Error("CRM store foundation is not initialised for this Lightspeed connection.");
+  }
+
+  const storeName = clean(profile.business_name) || "Bike store";
+  const { data: created, error: createError } = await admin
+    .from("stores")
+    .upsert(
+      {
+        owner_user_id: userId,
+        name: storeName,
+        crm_enabled: true,
+      },
+      { onConflict: "owner_user_id" },
+    )
+    .select("id")
+    .maybeSingle();
+  if (createError || !created) {
+    throw new Error(
+      `Could not bootstrap CRM store: ${createError?.message ?? "store row was not created"}`,
+    );
+  }
+
+  await admin.from("store_memberships").upsert(
+    {
+      store_id: created.id,
+      user_id: userId,
+      role: "owner",
+      status: "active",
+    },
+    { onConflict: "store_id,user_id" },
+  );
+
+  return created;
 }
 
 async function setSyncState(
@@ -146,6 +193,62 @@ async function syncSince(
     .maybeSingle();
   if (!data?.last_successful_at) return null;
   return new Date(Date.parse(data.last_successful_at) - CUSTOMER_OVERLAP_MS).toISOString();
+}
+
+type CustomerSyncStateRow = {
+  last_successful_at: string | null;
+  metadata: Record<string, unknown> | null;
+};
+
+async function loadCustomerSyncState(
+  admin: AdminClient,
+  storeId: string,
+): Promise<CustomerSyncStateRow | null> {
+  const { data, error } = await admin
+    .from("store_crm_sync_state")
+    .select("last_successful_at, metadata")
+    .eq("store_id", storeId)
+    .eq("source", "lightspeed_customers")
+    .maybeSingle();
+  if (error) throw new Error(`Could not load customer sync state: ${error.message}`);
+  if (!data) return null;
+  const metadata =
+    data.metadata && typeof data.metadata === "object" && !Array.isArray(data.metadata)
+      ? (data.metadata as Record<string, unknown>)
+      : null;
+  return {
+    last_successful_at: data.last_successful_at ? String(data.last_successful_at) : null,
+    metadata,
+  };
+}
+
+/**
+ * Decide the Lightspeed timeStamp cursor for customer mirroring.
+ *
+ * Until a full pass completes without hitting the page cap, keep walking ascending
+ * timeStamp from the watermark. If a prior run incorrectly marked itself complete
+ * (common when an empty/partial batch advanced the cursor to "now"), restart from
+ * the beginning so older customers are not permanently skipped.
+ */
+function resolveCustomerSyncSince(
+  state: CustomerSyncStateRow | null,
+  options: { fullSync?: boolean },
+): string | null {
+  if (options.fullSync) return null;
+
+  const metadata = state?.metadata ?? {};
+  const backfillComplete = metadata.backfill_complete === true;
+  const hitPageLimit = metadata.hit_page_limit === true;
+  const lastSuccessfulAt = state?.last_successful_at;
+  if (!lastSuccessfulAt) return null;
+
+  if (backfillComplete || hitPageLimit) {
+    return new Date(Date.parse(lastSuccessfulAt) - CUSTOMER_OVERLAP_MS).toISOString();
+  }
+
+  // Prior runs never recorded a finished backfill. Restart from the oldest
+  // customers so the catalogue is rebuilt completely.
+  return null;
 }
 
 async function existingCustomersByLightspeedId(
@@ -201,10 +304,13 @@ export async function syncCrmCustomersForUser(args: {
   userId: string;
   admin?: AdminClient;
   maxPages?: number;
+  /** Ignore sync cursor and re-pull from the oldest Lightspeed customers. */
+  fullSync?: boolean;
 }): Promise<CrmMirrorResult> {
   const admin = args.admin ?? createServiceRoleClient();
   const store = await requireStore(admin, args.userId);
   const startedAt = new Date().toISOString();
+  const previousState = await loadCustomerSyncState(admin, store.id);
   await setSyncState(admin, store.id, "lightspeed_customers", {
     status: "running",
     last_started_at: startedAt,
@@ -212,7 +318,9 @@ export async function syncCrmCustomersForUser(args: {
   });
 
   try {
-    const since = await syncSince(admin, store.id, "lightspeed_customers");
+    const since = resolveCustomerSyncSince(previousState, { fullSync: args.fullSync });
+    const maxPages = args.maxPages
+      ?? (args.fullSync || since === null ? CUSTOMER_FULL_SYNC_PAGE_LIMIT : CUSTOMER_PAGE_LIMIT);
     const client = createLightspeedClient(args.userId);
     const { customers, pagesFetched, hitPageLimit } = await client.getAllCustomersCursor(
       {
@@ -223,7 +331,7 @@ export async function syncCrmCustomersForUser(args: {
       },
       {
         limit: 100,
-        maxPages: args.maxPages ?? CUSTOMER_PAGE_LIMIT,
+        maxPages,
       },
     );
 
@@ -398,14 +506,33 @@ export async function syncCrmCustomersForUser(args: {
       0,
     );
     const completedAt = new Date().toISOString();
+    const previousSuccessfulAt = previousState?.last_successful_at
+      ? Date.parse(previousState.last_successful_at)
+      : 0;
+
+    // Never jump the cursor to "now" on an empty batch — that permanently skips
+    // older Lightspeed customers on the next incremental sync.
+    let nextSuccessfulAt = completedAt;
+    if (latestSourceTimestamp > 0) {
+      nextSuccessfulAt = new Date(latestSourceTimestamp).toISOString();
+    } else if (previousSuccessfulAt > 0) {
+      nextSuccessfulAt = new Date(previousSuccessfulAt).toISOString();
+    }
+
+    const backfillComplete = !hitPageLimit;
+
     await setSyncState(admin, store.id, "lightspeed_customers", {
       status: "completed",
       last_completed_at: completedAt,
-      last_successful_at: latestSourceTimestamp > 0
-        ? new Date(latestSourceTimestamp).toISOString()
-        : completedAt,
+      last_successful_at: nextSuccessfulAt,
       records_processed: rows.length,
-      metadata: { pages_fetched: pagesFetched, hit_page_limit: hitPageLimit },
+      metadata: {
+        pages_fetched: pagesFetched,
+        hit_page_limit: hitPageLimit,
+        backfill_complete: backfillComplete,
+        sync_since: since,
+        full_sync: Boolean(args.fullSync),
+      },
     });
 
     return {
@@ -678,10 +805,16 @@ export async function syncCrmBikesForUser(args: {
 export async function syncCrmMirrorsForUser(args: {
   userId: string;
   admin?: AdminClient;
+  /** Force a full Lightspeed customer re-pull (ignores sync cursor). */
+  fullCustomerSync?: boolean;
 }): Promise<CrmMirrorResult[]> {
   const admin = args.admin ?? createServiceRoleClient();
   const results: CrmMirrorResult[] = [];
-  results.push(await syncCrmCustomersForUser({ userId: args.userId, admin }));
+  results.push(await syncCrmCustomersForUser({
+    userId: args.userId,
+    admin,
+    fullSync: args.fullCustomerSync,
+  }));
   results.push(await syncCrmWorkordersForUser({ userId: args.userId, admin }));
   results.push(await syncCrmBikesForUser({ userId: args.userId, admin }));
   await projectCustomerTimelineForUser({ userId: args.userId, admin });

@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
+import Image from "next/image";
 import {
-  Banknote,
   Bike,
   Loader2,
   Phone,
@@ -103,7 +103,6 @@ async function loadNestComposeStoreContext(): Promise<NestComposeStoreContext> {
 }
 
 function builtinActionIcon(builtin: NestComposeBuiltinId) {
-  if (builtin === "request_money") return Banknote;
   if (builtin === "ask_to_call") return Phone;
   if (builtin === "bike_ready") return Bike;
   if (builtin === "request_review") return Star;
@@ -569,7 +568,14 @@ export function NestComposePill({
                         "inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap px-2.5 text-xs",
                       )}
                     >
-                      <Banknote className={cn("size-[14px]", builtinActionIconClass("request_money"))} />
+                      <Image
+                        src="/stripe.svg"
+                        alt=""
+                        width={48}
+                        height={20}
+                        className="h-[14px] w-auto shrink-0 object-contain opacity-80"
+                        unoptimized
+                      />
                       {NEST_COMPOSE_BUILTIN_META.request_money.label}
                     </button>
                   );

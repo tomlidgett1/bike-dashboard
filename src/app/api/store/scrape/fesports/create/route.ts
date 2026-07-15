@@ -5,22 +5,15 @@ import {
   catalogMatchKey,
   findDuplicateForProduct,
 } from "@/lib/store/online-products-csv";
+import {
+  applyFieldMapping,
+  type FieldMapping,
+} from "@/lib/scrapers/fesports-field-mapping";
 import type { FEsportsScrapedProduct } from "@/lib/scrapers/fesports-scraper";
+import { getImageVariantKey } from "@/lib/scrapers/fesports-scraper";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
-
-interface CreatePayloadProduct {
-  productId: string;
-  name: string;
-  brand: string | null;
-  price: number | null;
-  soh: number | null;
-  sku: string | null;
-  categoryUrl: string;
-  url: string;
-  imageUrls: string[];
-}
 
 function resolveProductQoh(soh: number | null | undefined) {
   if (typeof soh === "number" && Number.isFinite(soh)) {
@@ -78,20 +71,6 @@ async function ensureCanonical(
   return created.id;
 }
 
-function toPayloadProduct(product: FEsportsScrapedProduct | CreatePayloadProduct): CreatePayloadProduct {
-  return {
-    productId: product.productId,
-    name: product.name,
-    brand: product.brand,
-    price: product.price,
-    soh: product.soh,
-    sku: product.sku,
-    categoryUrl: product.categoryUrl,
-    url: product.url,
-    imageUrls: product.imageUrls ?? [],
-  };
-}
-
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -118,12 +97,14 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const rawProducts: Array<FEsportsScrapedProduct | CreatePayloadProduct> = body.products ?? [];
+    const rawProducts = (body.products ?? []) as FEsportsScrapedProduct[];
+    const fieldMapping = (body.fieldMapping ?? {}) as FieldMapping;
+
     if (!rawProducts.length) {
       return NextResponse.json({ error: "No products provided" }, { status: 400 });
     }
 
-    const products = rawProducts.map(toPayloadProduct);
+    const products = rawProducts.map((product) => applyFieldMapping(product, fieldMapping));
     const createdIds: string[] = [];
     const errors: string[] = [];
     const skippedDuplicates: string[] = [];
@@ -140,25 +121,27 @@ export async function POST(request: NextRequest) {
 
     for (let i = 0; i < products.length; i++) {
       const product = products[i];
-      const duplicate = findDuplicateForProduct(product.name, product.brand, catalogIndex);
+      const duplicate = findDuplicateForProduct(product.display_name, product.brand, catalogIndex);
       if (duplicate) {
-        skippedDuplicates.push(product.name);
-        errors.push(`${product.name}: duplicate of existing store product`);
+        skippedDuplicates.push(product.display_name);
+        errors.push(`${product.display_name}: duplicate of existing store product`);
         continue;
       }
 
       const resolvedPrice =
         typeof product.price === "number" && Number.isFinite(product.price) ? product.price : 0;
-      const marketplace = inferMarketplaceCategory(product.brand);
+      const resolvedBrand = product.brand?.trim() || null;
+      const marketplace = inferMarketplaceCategory(resolvedBrand);
       const descriptionParts = [
-        product.brand ? `Brand: ${product.brand}` : null,
-        product.sku ? `SKU: ${product.sku}` : null,
+        resolvedBrand ? `Brand: ${resolvedBrand}` : null,
+        product.system_sku ? `SKU: ${product.system_sku}` : null,
         `Source: FEsports`,
-        product.url,
+        product.sourceUrl,
       ].filter(Boolean);
 
-      const canonicalId = await ensureCanonical(supabase, product.name, product.brand);
-      const primaryUrl = product.imageUrls[0] ?? null;
+      const canonicalId = await ensureCanonical(supabase, product.display_name, resolvedBrand);
+      const primaryUrl = product.heroImageUrl ?? product.imageUrls[0] ?? null;
+      const primaryVariantKey = primaryUrl ? getImageVariantKey(primaryUrl) : null;
 
       const { data: inserted, error: insertError } = await supabase
         .from("products")
@@ -169,16 +152,17 @@ export async function POST(request: NextRequest) {
           listing_status: "active",
           is_active: true,
           canonical_product_id: canonicalId,
-          description: product.name,
-          display_name: product.name,
-          brand: product.brand,
+          description: product.description ?? product.display_name,
+          display_name: product.display_name,
+          brand: resolvedBrand,
+          manufacturer_name: resolvedBrand,
           price: resolvedPrice,
-          marketplace_category: marketplace.category,
-          marketplace_subcategory: marketplace.subcategory,
-          product_description: descriptionParts.join("\n"),
-          product_specs: product.sku ? `SKU: ${product.sku}` : null,
-          qoh: resolveProductQoh(product.soh),
-          system_sku: product.sku || `FE-${product.productId}`,
+          marketplace_category: product.marketplace_category || marketplace.category,
+          marketplace_subcategory: product.marketplace_subcategory || marketplace.subcategory,
+          product_description: product.product_description ?? descriptionParts.join("\n"),
+          product_specs: product.product_specs,
+          qoh: resolveProductQoh(product.qoh),
+          system_sku: product.system_sku || `FE-${product.productId}`,
           lightspeed_item_id: `fesports_scrape-${product.productId}-${now}`,
           primary_image_url: primaryUrl,
         })
@@ -186,17 +170,17 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (insertError || !inserted) {
-        errors.push(`${product.name}: ${insertError?.message ?? "unknown error"}`);
+        errors.push(`${product.display_name}: ${insertError?.message ?? "unknown error"}`);
         continue;
       }
 
       createdIds.push(inserted.id);
 
-      const matchKey = catalogMatchKey(product.name, product.brand);
+      const matchKey = catalogMatchKey(product.display_name, resolvedBrand);
       if (matchKey) {
         catalogIndex.byCatalogKey.set(matchKey, {
           existingProductId: inserted.id,
-          existingProductName: product.name,
+          existingProductName: product.display_name,
         });
       }
 
@@ -218,7 +202,9 @@ export async function POST(request: NextRequest) {
               external_url: imageUrl,
               is_downloaded: false,
               approval_status: "approved",
-              is_primary: imageUrl === primaryUrl,
+              is_primary: primaryVariantKey
+                ? getImageVariantKey(imageUrl) === primaryVariantKey
+                : imageIndex === 0,
               sort_order: imageIndex,
               source: "fesports_scrape",
               uploaded_by: user.id,

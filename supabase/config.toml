@@ -387,6 +387,13 @@ entrypoint = "./functions/upload-to-cloudinary/index.ts"
 [functions.linq-webhook]
 verify_jwt = false
 
+[functions.lightspeed-create-workorder]
+enabled = true
+# Internal service-to-service endpoint. The function validates
+# x-internal-secret itself because the Nest caller does not send a user JWT.
+verify_jwt = false
+entrypoint = "./functions/lightspeed-create-workorder/index.ts"
+
 # --- Search Dominance Agent --------------------------------------------------
 # Both are internal: cron (pg_net) and the admin API call them with the
 # service-role JWT, so verify_jwt stays on to block anonymous callers.

@@ -27,7 +27,7 @@ export function CrmRouteTabs() {
 
   return (
     <nav aria-label="CRM sections" className="overflow-x-auto pb-0.5">
-      <div className="flex w-max items-center rounded-xl bg-gray-100 p-1">
+      <div className="flex w-fit items-center rounded-full bg-gray-100 p-0.5">
         {CRM_TABS.map((tab) => {
           const active =
             pathname === tab.href ||
@@ -41,19 +41,23 @@ export function CrmRouteTabs() {
               href={tab.href}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "relative flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1",
+                "relative flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 focus-visible:ring-offset-1",
                 active ? "text-gray-800" : "text-gray-600 hover:bg-gray-200/70",
               )}
             >
               {active ? (
                 <motion.div
                   layoutId="crm-route-tabs-slider"
-                  className="absolute inset-0 rounded-lg bg-white shadow-sm"
-                  transition={{ duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] }}
+                  className="absolute inset-0 rounded-full bg-white shadow-sm"
+                  transition={{
+                    type: "spring",
+                    bounce: 0.2,
+                    duration: 0.4,
+                  }}
                 />
               ) : null}
               <span className="relative z-10 flex items-center gap-1.5">
-                <Icon size={15} aria-hidden />
+                <Icon className="size-[15px]" aria-hidden />
                 {tab.label}
               </span>
             </Link>

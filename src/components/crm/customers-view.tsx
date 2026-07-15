@@ -18,7 +18,6 @@ import {
 import { NestLogo } from "@/components/genie/nest-logo";
 import {
   CrmSkeleton,
-  FreshnessBadge,
   LifecycleBadge,
 } from "@/components/crm/primitives";
 import { CustomerProfileView } from "@/components/crm/customer-profile-view";
@@ -332,15 +331,14 @@ export function CustomersView() {
             <p className="mt-1 text-xs text-gray-500">Try another name, email, or cohort.</p>
           </div>
         ) : (
-          <div className="min-w-[1040px]">
-            <div className="sticky top-0 z-10 grid grid-cols-[minmax(14rem,1.4fr)_minmax(12rem,1.2fr)_7.5rem_6.5rem_4.5rem_7.5rem_6.5rem_9.5rem] gap-3 border-b border-gray-200 bg-gray-50/95 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 backdrop-blur md:px-5">
+          <div className="min-w-[960px]">
+            <div className="sticky top-0 z-10 grid grid-cols-[minmax(14rem,1.4fr)_minmax(12rem,1.2fr)_7.5rem_6.5rem_4.5rem_7.5rem_9.5rem] gap-3 border-b border-gray-200 bg-gray-50/95 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500 backdrop-blur md:px-5">
               <span>Customer</span>
               <span>Contact</span>
               <span>Cohort</span>
               <span className="text-right">Spend</span>
               <span className="text-right">Sales</span>
               <span>Last purchase</span>
-              <span>Freshness</span>
               <span className="text-right">Actions</span>
             </div>
 
@@ -387,7 +385,7 @@ export function CustomersView() {
                       }}
                       aria-pressed={selected}
                       className={cn(
-                        "grid h-full w-full cursor-pointer grid-cols-[minmax(14rem,1.4fr)_minmax(12rem,1.2fr)_7.5rem_6.5rem_4.5rem_7.5rem_6.5rem_9.5rem] gap-3 border-b border-gray-100 px-4 text-left transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400 md:px-5",
+                        "grid h-full w-full cursor-pointer grid-cols-[minmax(14rem,1.4fr)_minmax(12rem,1.2fr)_7.5rem_6.5rem_4.5rem_7.5rem_9.5rem] gap-3 border-b border-gray-100 px-4 text-left transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-gray-400 md:px-5",
                         selected && "bg-gray-50",
                       )}
                     >
@@ -428,9 +426,6 @@ export function CustomersView() {
                       </span>
                       <span className="flex items-center text-sm text-gray-600">
                         {formatCrmDate(customer.lastPurchaseAt)}
-                      </span>
-                      <span className="flex items-center">
-                        <FreshnessBadge value={customer.dataFreshnessAt} />
                       </span>
                       <span
                         className="flex items-center justify-end gap-1.5"

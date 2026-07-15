@@ -3,7 +3,13 @@
 // ============================================================
 
 export type ListingType = 'store_inventory' | 'private_listing';
-export type ListingSource = 'lightspeed' | 'manual' | 'facebook_import' | 'online_catalog' | 'fesports_scrape';
+export type ListingSource =
+  | 'lightspeed'
+  | 'manual'
+  | 'facebook_import'
+  | 'online_catalog'
+  | 'fesports_scrape'
+  | 'supplier_scrape';
 export type ListingStatus = 'draft' | 'active' | 'sold' | 'expired' | 'removed';
 
 export type ItemType = 'bike' | 'part' | 'apparel';

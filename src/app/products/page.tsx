@@ -305,6 +305,8 @@ function formatProductCurrency(value: number | null | undefined) {
 function formatSource(product: Product) {
   if (isLightspeedProduct(product)) return "Catalogue";
   if (product.listing_source === "online_catalog") return "Online";
+  if (product.listing_source === "fesports_scrape") return "FE Sports";
+  if (product.listing_source === "supplier_scrape") return "Supplier";
   if (product.listing_source === "manual") return "Listing";
   return "Listing";
 }

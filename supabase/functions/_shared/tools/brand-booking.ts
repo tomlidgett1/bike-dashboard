@@ -274,6 +274,7 @@ export const brandBookingCreateTool: ToolContract = {
     const create = await createBookingWorkorder(
       {
         brand_key: brand.baseBrandKey,
+        chat_id: ctx.chatId,
         customer_name: state.customer_name!,
         customer_phone_e164: state.sender_phone_e164,
         bike: state.bike,

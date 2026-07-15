@@ -1,0 +1,23 @@
+---
+description: Never use em dashes in any writing
+alwaysApply: true
+---
+
+# No em dashes
+
+Never use em dashes (—) in chat responses, commit messages, PR descriptions, documentation, comments, or UI copy.
+
+## Use instead
+
+- Commas for light asides
+- Parentheses for supplementary detail
+- Colons to introduce explanations
+- Separate sentences when clarity needs a break
+
+## Examples
+
+Bad: "The booking failed — the API returned 404."
+Good: "The booking failed because the API returned 404."
+
+Bad: "Nest — our AI assistant — confirmed the slot."
+Good: "Nest, our AI assistant, confirmed the slot."

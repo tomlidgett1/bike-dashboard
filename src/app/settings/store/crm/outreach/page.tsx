@@ -12,5 +12,5 @@ const CrmPageContent = nextDynamic(
 );
 
 export default function StoreCrmOutreachPage() {
-  return <CrmPageContent embedded />;
+  return <CrmPageContent />;
 }
