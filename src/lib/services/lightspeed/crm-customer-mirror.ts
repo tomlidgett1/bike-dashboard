@@ -104,6 +104,17 @@ function chunk<T>(values: T[], size = UPSERT_CHUNK): T[][] {
   return result;
 }
 
+function dedupeByKey<T extends Record<string, unknown>>(
+  values: T[],
+  keyFor: (value: T) => string,
+): T[] {
+  const byKey = new Map<string, T>();
+  for (const value of values) {
+    byKey.set(keyFor(value), value);
+  }
+  return [...byKey.values()];
+}
+
 async function requireStore(admin: AdminClient, userId: string): Promise<{ id: string }> {
   const { data: store, error } = await admin
     .from("stores")
@@ -454,13 +465,24 @@ export async function syncCrmCustomersForUser(args: {
       }
     }
 
-    for (const part of chunk(identities)) {
+    const uniqueIdentities = dedupeByKey(
+      identities,
+      (identity) =>
+        `${identity.store_id}|${identity.identity_type}|${identity.normalized_value}`,
+    );
+    const uniqueConsents = dedupeByKey(
+      consents,
+      (consent) =>
+        `${consent.store_id}|${consent.customer_id}|${consent.channel}|${consent.purpose}`,
+    );
+
+    for (const part of chunk(uniqueIdentities)) {
       const { error } = await admin.from("store_customer_identities").upsert(part, {
         onConflict: "store_id,identity_type,normalized_value",
       });
       if (error) throw new Error(`Could not upsert customer identities: ${error.message}`);
     }
-    for (const part of chunk(consents)) {
+    for (const part of chunk(uniqueConsents)) {
       const { error } = await admin.from("store_customer_consents").upsert(part, {
         onConflict: "store_id,customer_id,channel,purpose",
       });
