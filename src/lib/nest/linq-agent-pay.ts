@@ -122,7 +122,8 @@ export async function createLinqPaymentRequest(input: {
     },
     body: JSON.stringify({
       amount: Math.round(input.amountCents),
-      currency: (input.currency || "aud").toLowerCase(),
+      // Agent Pay currently only accepts USD (Linq error 1005 for other currencies).
+      currency: (input.currency || "usd").toLowerCase(),
       ...(input.description?.trim()
         ? { description: input.description.trim().slice(0, 200) }
         : {}),
@@ -134,15 +135,33 @@ export async function createLinqPaymentRequest(input: {
 
   const payload = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
+    const nestedError =
+      payload.error && typeof payload.error === "object"
+        ? (payload.error as Record<string, unknown>)
+        : null;
     const detail =
       typeof payload.error === "string"
         ? payload.error
-        : typeof payload.message === "string"
-          ? payload.message
-          : JSON.stringify(payload).slice(0, 240);
+        : typeof nestedError?.message === "string"
+          ? nestedError.message
+          : typeof payload.message === "string"
+            ? payload.message
+            : JSON.stringify(payload).slice(0, 240);
+    const code =
+      typeof nestedError?.code === "number"
+        ? nestedError.code
+        : typeof payload.code === "number"
+          ? payload.code
+          : null;
+
     if (res.status === 403) {
       throw new Error(
         "LinkPay is not ready yet. Connect Stripe in your Linq Agent Pay dashboard, then try again.",
+      );
+    }
+    if (code === 1005 || /only usd is available/i.test(detail)) {
+      throw new Error(
+        "Linq Agent Pay currently only supports USD. Use a USD amount for LinkPay.",
       );
     }
     throw new Error(`Linq Agent Pay ${res.status}: ${detail}`);

@@ -98,7 +98,8 @@ export async function POST(request: NextRequest) {
       customer_name: customerName,
       customer_handle: customerHandle,
       amount_cents: amountCents,
-      currency: "aud",
+      // Linq Agent Pay currently only supports USD (error 1005 for other currencies).
+      currency: "usd",
       description: description || null,
       provider: "linkpay",
       lightspeed_sync_status: "pending",
@@ -115,7 +116,7 @@ export async function POST(request: NextRequest) {
   try {
     linqRequest = await createLinqPaymentRequest({
       amountCents,
-      currency: "aud",
+      currency: "usd",
       description: description || `Store credit · ${customerName || customerHandle || "customer"}`,
       metadata: {
         payment_request_id: paymentRequest.id,

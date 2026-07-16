@@ -8,6 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { buildPaymentLinkMessage } from "@/lib/nest/sms-link-format";
 
+function formatUsd(amount: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(amount);
+}
+
 function formatAud(amount: number) {
   return new Intl.NumberFormat("en-AU", {
     style: "currency",
@@ -85,7 +92,7 @@ export function NestLinkPayDialog({
           amount,
           description: description.trim(),
           url: data.url,
-          formatAmount: formatAud,
+          formatAmount: formatUsd,
         }),
       );
       onOpenChange(false);
@@ -118,9 +125,10 @@ export function NestLinkPayDialog({
             <h3 className="text-base font-semibold text-gray-900">LinkPay</h3>
             <p className="mt-1 text-sm text-gray-500">
               Creates a Linq Agent Pay checkout card and drops it into your message box so
-              you can edit before sending. On iPhone it opens as an Apple Pay App Clip;
-              everywhere else it opens a web checkout. Once paid, the amount is deposited
-              onto their Lightspeed credit account.
+              you can edit before sending. Agent Pay currently charges in USD only. On
+              iPhone it opens as an Apple Pay App Clip; everywhere else it opens a web
+              checkout. Once paid, the amount is deposited onto their Lightspeed credit
+              account.
               {creditBalance != null && creditBalance > 0
                 ? ` Current Yellow Jersey credit: ${formatAud(creditBalance)}.`
                 : ""}
@@ -145,7 +153,7 @@ export function NestLinkPayDialog({
         >
           <div>
             <label htmlFor="linkpay-amount" className="text-xs font-medium text-gray-700">
-              Amount (AUD)
+              Amount (USD)
             </label>
             <div className="relative mt-1">
               <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">
