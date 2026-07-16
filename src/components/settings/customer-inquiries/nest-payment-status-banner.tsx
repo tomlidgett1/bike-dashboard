@@ -24,6 +24,7 @@ export type NestChatPaymentRequest = {
   createdAt: string;
   paidAt: string | null;
   url: string;
+  provider?: "stripe" | "linkpay" | string;
   lightspeedSaleId?: string | null;
   lightspeedCreditAccountId?: string | null;
   lightspeedCustomerId?: string | null;
@@ -65,6 +66,19 @@ function StripeMark({ className }: { className?: string }) {
   );
 }
 
+function LinkPayMark({ className }: { className?: string }) {
+  return (
+    <Image
+      src="/linkpay.svg"
+      alt=""
+      width={12}
+      height={12}
+      className={cn("h-3 w-3 object-contain", className)}
+      unoptimized
+    />
+  );
+}
+
 function PaymentRow({
   request,
   syncing,
@@ -101,7 +115,7 @@ function PaymentRow({
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-[14px] text-[10px] text-gray-500">
           <span className="inline-flex items-center gap-1">
-            <StripeMark />
+            {request.provider === "linkpay" ? <LinkPayMark /> : <StripeMark />}
             {paid ? (paidWhen ? paidWhen : "Paid") : "Link sent"}
           </span>
           {paid ? (

@@ -1,16 +1,14 @@
 // ============================================================
-// Store Payment Requests API
+// Store LinkPay (Linq Agent Pay) Requests API
 // ============================================================
-// POST: creates a payment request for a Nest conversation and returns the
-//       public /pay/<id> link the store can text to the customer.
-// GET:  lists recent requests for a chat (with paid/pending status) plus the
-//       customer's current credit balance. Without chatId, returns the store's
-//       full payment audit list.
+// POST: creates a Linq Agent Pay payment request for a Nest conversation and
+//       returns the hosted checkout_url to draft into the message box.
+// GET:  lists recent LinkPay requests for a chat (optional) plus credit balance.
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createLinqPaymentRequest } from "@/lib/nest/linq-agent-pay";
 import { logStorePaymentRequestEvent } from "@/lib/store-payments/audit";
-import { enrichPaymentRequestCustomerNames } from "@/lib/store-payments/enrich-payment-requests";
 
 const MIN_AMOUNT = 1;
 const MAX_AMOUNT = 10000;
@@ -50,10 +48,6 @@ async function requireStoreUser() {
   return { supabase, userId: user.id } as const;
 }
 
-function appUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-}
-
 export async function POST(request: NextRequest) {
   const auth = await requireStoreUser();
   if ("error" in auth) return auth.error;
@@ -80,8 +74,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Resolve the customer from the cached Nest conversation so the credit can
-  // be tied back to them once the payment lands.
   const { data: conversation, error: conversationError } = await auth.supabase
     .from("store_nest_conversations")
     .select("chat_id, title, display_name, participant_handle")
@@ -96,7 +88,6 @@ export async function POST(request: NextRequest) {
   const customerName =
     conversation.display_name?.trim() || conversation.title?.trim() || null;
   const customerHandle = conversation.participant_handle?.trim() || null;
-
   const amountCents = Math.round(amount * 100);
 
   const { data: paymentRequest, error: insertError } = await auth.supabase
@@ -109,14 +100,76 @@ export async function POST(request: NextRequest) {
       amount_cents: amountCents,
       currency: "aud",
       description: description || null,
+      provider: "linkpay",
       lightspeed_sync_status: "pending",
     })
     .select("id, amount_cents, description, customer_name")
     .single();
 
   if (insertError || !paymentRequest) {
-    console.error("[payment-requests] insert failed:", insertError);
-    return json({ error: "Could not create the payment request." }, 500);
+    console.error("[linkpay-requests] insert failed:", insertError);
+    return json({ error: "Could not create the LinkPay request." }, 500);
+  }
+
+  let linqRequest;
+  try {
+    linqRequest = await createLinqPaymentRequest({
+      amountCents,
+      currency: "aud",
+      description: description || `Store credit · ${customerName || customerHandle || "customer"}`,
+      metadata: {
+        payment_request_id: paymentRequest.id,
+        nest_chat_id: chatId,
+        store_user_id: auth.userId,
+        provider: "linkpay",
+      },
+    });
+  } catch (error) {
+    console.error("[linkpay-requests] Linq create failed:", error);
+    await auth.supabase
+      .from("store_payment_requests")
+      .update({
+        status: "canceled",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", paymentRequest.id)
+      .eq("status", "pending");
+
+    await logStorePaymentRequestEvent({
+      paymentRequestId: paymentRequest.id,
+      storeUserId: auth.userId,
+      eventType: "linkpay_create_failed",
+      actor: "store",
+      message:
+        error instanceof Error
+          ? error.message
+          : "Could not create the Linq Agent Pay request.",
+      metadata: { amountCents, nestChatId: chatId },
+    });
+
+    return json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Could not create the LinkPay checkout link.",
+      },
+      502,
+    );
+  }
+
+  const { error: updateError } = await auth.supabase
+    .from("store_payment_requests")
+    .update({
+      linq_payment_request_id: linqRequest.id,
+      checkout_url: linqRequest.checkout_url,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", paymentRequest.id);
+
+  if (updateError) {
+    console.error("[linkpay-requests] update checkout_url failed:", updateError);
+    return json({ error: "LinkPay link was created but could not be saved." }, 500);
   }
 
   await logStorePaymentRequestEvent({
@@ -124,14 +177,16 @@ export async function POST(request: NextRequest) {
     storeUserId: auth.userId,
     eventType: "created",
     actor: "store",
-    message: `Payment request created for ${customerName || customerHandle || "customer"} — $${(amountCents / 100).toFixed(2)}.`,
+    message: `LinkPay request created for ${customerName || customerHandle || "customer"}: $${(amountCents / 100).toFixed(2)}.`,
     metadata: {
       amountCents,
       description: description || null,
       nestChatId: chatId,
       customerName,
       customerHandle,
-      payUrl: `${appUrl()}/pay/${paymentRequest.id}`,
+      provider: "linkpay",
+      linqPaymentRequestId: linqRequest.id,
+      checkoutUrl: linqRequest.checkout_url,
     },
   });
 
@@ -140,16 +195,22 @@ export async function POST(request: NextRequest) {
     storeUserId: auth.userId,
     eventType: "link_sent",
     actor: "store",
-    message: "Secure payment link ready to send in Nest.",
-    metadata: { payUrl: `${appUrl()}/pay/${paymentRequest.id}` },
+    message: "Linq Agent Pay checkout link ready to send in Nest.",
+    metadata: {
+      provider: "linkpay",
+      checkoutUrl: linqRequest.checkout_url,
+      linqPaymentRequestId: linqRequest.id,
+    },
   });
 
   return json({
     id: paymentRequest.id,
-    url: `${appUrl()}/pay/${paymentRequest.id}`,
+    url: linqRequest.checkout_url,
+    linqPaymentRequestId: linqRequest.id,
     amount: amountCents / 100,
     description: paymentRequest.description,
     customerName: paymentRequest.customer_name,
+    provider: "linkpay",
   });
 }
 
@@ -159,102 +220,26 @@ export async function GET(request: NextRequest) {
 
   const url = new URL(request.url);
   const chatId = url.searchParams.get("chatId")?.trim();
-  const includeEvents = url.searchParams.get("includeEvents") === "1";
-  const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 50), 1), 200);
-
-  // Full store audit list (Payments page).
   if (!chatId) {
-    const { data: requests, error: requestsError } = await auth.supabase
-      .from("store_payment_requests")
-      .select(
-        "id, amount_cents, description, status, created_at, paid_at, customer_name, customer_handle, nest_chat_id, stripe_session_id, stripe_payment_intent_id, lightspeed_sale_id, lightspeed_credit_account_id, lightspeed_customer_id, lightspeed_workorder_id, lightspeed_synced_at, lightspeed_sync_status, lightspeed_sync_error, provider, checkout_url, linq_payment_request_id",
-      )
-      .eq("store_user_id", auth.userId)
-      .order("created_at", { ascending: false })
-      .limit(limit);
-
-    if (requestsError) {
-      console.error("[payment-requests] list-all failed:", requestsError);
-      return json({ error: "Could not load payment requests." }, 500);
-    }
-
-    const enrichedRequests = await enrichPaymentRequestCustomerNames(
-      auth.supabase,
-      auth.userId,
-      requests ?? [],
-    );
-
-    let eventsByRequest: Record<string, Array<Record<string, unknown>>> = {};
-    if (includeEvents && enrichedRequests.length > 0) {
-      const ids = enrichedRequests.map((row) => row.id);
-      const { data: events } = await auth.supabase
-        .from("store_payment_request_events")
-        .select("id, payment_request_id, event_type, message, actor, metadata, created_at")
-        .eq("store_user_id", auth.userId)
-        .in("payment_request_id", ids)
-        .order("created_at", { ascending: true });
-
-      eventsByRequest = {};
-      for (const event of events ?? []) {
-        const key = event.payment_request_id as string;
-        if (!eventsByRequest[key]) eventsByRequest[key] = [];
-        eventsByRequest[key].push({
-          id: event.id,
-          type: event.event_type,
-          message: event.message,
-          actor: event.actor,
-          metadata: event.metadata,
-          createdAt: event.created_at,
-        });
-      }
-    }
-
-    return json({
-      requests: enrichedRequests.map((row) => ({
-        id: row.id,
-        amount: row.amount_cents / 100,
-        description: row.description,
-        status: row.status,
-        createdAt: row.created_at,
-        paidAt: row.paid_at,
-        customerName: row.customer_name,
-        customerHandle: row.customer_handle,
-        nestChatId: row.nest_chat_id,
-        stripeSessionId: row.stripe_session_id,
-        stripePaymentIntentId: row.stripe_payment_intent_id,
-        lightspeedSaleId: row.lightspeed_sale_id,
-        lightspeedCreditAccountId: row.lightspeed_credit_account_id,
-        lightspeedCustomerId: row.lightspeed_customer_id,
-        lightspeedWorkorderId: row.lightspeed_workorder_id,
-        lightspeedSyncedAt: row.lightspeed_synced_at,
-        lightspeedSyncStatus: row.lightspeed_sync_status,
-        lightspeedSyncError: row.lightspeed_sync_error,
-        provider: row.provider ?? "stripe",
-        url:
-          row.provider === "linkpay" && row.checkout_url
-            ? row.checkout_url
-            : `${appUrl()}/pay/${row.id}`,
-        events: includeEvents ? eventsByRequest[row.id] ?? [] : undefined,
-      })),
-    });
+    return json({ error: "chatId is required." }, 400);
   }
 
   const { data: requests, error: requestsError } = await auth.supabase
     .from("store_payment_requests")
     .select(
-      "id, amount_cents, description, status, created_at, paid_at, customer_handle, lightspeed_sale_id, lightspeed_credit_account_id, lightspeed_customer_id, lightspeed_synced_at, lightspeed_sync_status, lightspeed_sync_error, provider, checkout_url",
+      "id, amount_cents, description, status, created_at, paid_at, customer_handle, checkout_url, provider, lightspeed_sale_id, lightspeed_credit_account_id, lightspeed_customer_id, lightspeed_synced_at, lightspeed_sync_status, lightspeed_sync_error",
     )
     .eq("store_user_id", auth.userId)
     .eq("nest_chat_id", chatId)
+    .eq("provider", "linkpay")
     .order("created_at", { ascending: false })
     .limit(10);
 
   if (requestsError) {
-    console.error("[payment-requests] list failed:", requestsError);
-    return json({ error: "Could not load payment requests." }, 500);
+    console.error("[linkpay-requests] list failed:", requestsError);
+    return json({ error: "Could not load LinkPay requests." }, 500);
   }
 
-  // Credit balance for this customer (keyed by their phone handle).
   let creditBalanceCents = 0;
   const { data: conversation } = await auth.supabase
     .from("store_nest_conversations")
@@ -283,11 +268,8 @@ export async function GET(request: NextRequest) {
       status: row.status,
       createdAt: row.created_at,
       paidAt: row.paid_at,
-      url:
-        row.provider === "linkpay" && row.checkout_url
-          ? row.checkout_url
-          : `${appUrl()}/pay/${row.id}`,
-      provider: row.provider ?? "stripe",
+      url: row.checkout_url,
+      provider: row.provider ?? "linkpay",
       lightspeedSaleId: row.lightspeed_sale_id,
       lightspeedCreditAccountId: row.lightspeed_credit_account_id,
       lightspeedCustomerId: row.lightspeed_customer_id,

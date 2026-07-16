@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { NestRequestMoneyDialog } from "@/components/settings/customer-inquiries/nest-request-money-dialog";
+import { NestLinkPayDialog } from "@/components/settings/customer-inquiries/nest-linkpay-dialog";
 import { NestSendReceiptPopover } from "@/components/settings/customer-inquiries/nest-send-receipt-popover";
 import { NestComposeQuickActionsEditor } from "@/components/settings/customer-inquiries/nest-compose-quick-actions-editor";
 import {
@@ -111,6 +112,7 @@ function builtinActionIcon(builtin: NestComposeBuiltinId) {
 
 function builtinActionIconClass(builtin: NestComposeBuiltinId): string {
   if (builtin === "request_money") return "text-emerald-600";
+  if (builtin === "linkpay") return "text-gray-800";
   if (builtin === "send_receipt") return "text-amber-600";
   if (builtin === "ask_to_call") return "text-sky-600";
   if (builtin === "bike_ready") return "text-violet-600";
@@ -209,6 +211,7 @@ export function NestComposePill({
   const [inFlight, setInFlight] = React.useState(0);
   const [sendErr, setSendErr] = React.useState<string | null>(null);
   const [requestMoneyOpen, setRequestMoneyOpen] = React.useState(false);
+  const [linkPayOpen, setLinkPayOpen] = React.useState(false);
   const [draftingActionId, setDraftingActionId] = React.useState<string | null>(null);
   const [quickActions, setQuickActions] = React.useState<NestComposeQuickAction[]>(
     DEFAULT_NEST_COMPOSE_QUICK_ACTIONS,
@@ -454,7 +457,9 @@ export function NestComposePill({
     if (draftingActionId || inFlight > 0) return;
     if (
       action.kind === "builtin" &&
-      (action.builtin === "request_money" || action.builtin === "send_receipt")
+      (action.builtin === "request_money" ||
+        action.builtin === "linkpay" ||
+        action.builtin === "send_receipt")
     ) {
       return;
     }
@@ -577,6 +582,30 @@ export function NestComposePill({
                         unoptimized
                       />
                       {NEST_COMPOSE_BUILTIN_META.request_money.label}
+                    </button>
+                  );
+                }
+
+                if (action.kind === "builtin" && action.builtin === "linkpay") {
+                  return (
+                    <button
+                      key={action.id}
+                      type="button"
+                      onClick={() => setLinkPayOpen(true)}
+                      className={cn(
+                        storeSettingsHeaderActionClass(),
+                        "inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap px-2.5 text-xs",
+                      )}
+                    >
+                      <Image
+                        src="/linkpay.svg"
+                        alt=""
+                        width={14}
+                        height={14}
+                        className="h-[14px] w-[14px] shrink-0 object-contain"
+                        unoptimized
+                      />
+                      {NEST_COMPOSE_BUILTIN_META.linkpay.label}
                     </button>
                   );
                 }
@@ -757,6 +786,12 @@ export function NestComposePill({
           <NestRequestMoneyDialog
             open={requestMoneyOpen}
             onOpenChange={setRequestMoneyOpen}
+            chatId={chatId}
+            onDraftMessage={draftIntoInput}
+          />
+          <NestLinkPayDialog
+            open={linkPayOpen}
+            onOpenChange={setLinkPayOpen}
             chatId={chatId}
             onDraftMessage={draftIntoInput}
           />

@@ -1,5 +1,6 @@
 export type NestComposeBuiltinId =
   | "request_money"
+  | "linkpay"
   | "send_receipt"
   | "ask_to_call"
   | "bike_ready"
@@ -29,6 +30,10 @@ export const NEST_COMPOSE_BUILTIN_META: Record<
     label: "Request money",
     description: "Create a payment link for store credit",
   },
+  linkpay: {
+    label: "LinkPay",
+    description: "Create a Linq Agent Pay checkout card for store credit",
+  },
   send_receipt: {
     label: "Send receipt",
     description: "Attach a Lightspeed workorder receipt",
@@ -49,6 +54,7 @@ export const NEST_COMPOSE_BUILTIN_META: Record<
 
 export const DEFAULT_NEST_COMPOSE_QUICK_ACTIONS: NestComposeQuickAction[] = [
   { id: "builtin:request_money", kind: "builtin", builtin: "request_money" },
+  { id: "builtin:linkpay", kind: "builtin", builtin: "linkpay" },
   { id: "builtin:send_receipt", kind: "builtin", builtin: "send_receipt" },
   { id: "builtin:ask_to_call", kind: "builtin", builtin: "ask_to_call" },
   { id: "builtin:bike_ready", kind: "builtin", builtin: "bike_ready" },
@@ -154,6 +160,7 @@ export function resolveGoogleReviewUrl(options?: {
 function isBuiltinId(value: unknown): value is NestComposeBuiltinId {
   return (
     value === "request_money" ||
+    value === "linkpay" ||
     value === "send_receipt" ||
     value === "ask_to_call" ||
     value === "bike_ready" ||

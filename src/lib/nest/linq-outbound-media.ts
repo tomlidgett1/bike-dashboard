@@ -6,7 +6,8 @@ const LINQ_BASE_URL =
 export type LinqMessagePart =
   | { type: "text"; value: string }
   | { type: "media"; attachment_id: string }
-  | { type: "media"; url: string };
+  | { type: "media"; url: string }
+  | { type: "link"; value: string };
 
 function linqToken(): string {
   const token = pickServerEnv(["LINQ_API_TOKEN"]);

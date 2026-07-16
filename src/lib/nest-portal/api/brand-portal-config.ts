@@ -24,6 +24,10 @@ import {
 import { getLinqFromNumber } from '@/lib/nest/linq-sender'
 import { ensureSmsUrlsAreClickable } from '@/lib/nest/sms-link-format'
 import { moderateNestOutboundMessage } from '@/lib/nest/outbound-content-moderation'
+import {
+  extractAgentPayCheckoutUrl,
+  stripCheckoutUrlFromText,
+} from '@/lib/nest/linq-agent-pay'
 import { getLightspeedAccess, lightspeedGetJson } from '../lib/lightspeed-portal-access'
 
 /** Inlined so the Vercel Node bundle always includes it (nested `api/lib/*` can be omitted). */
@@ -116,23 +120,14 @@ async function linqCreateChat(from: string, to: string, text: string): Promise<L
   return { chatId, providerMessageId: extractProviderMessageId(payload) }
 }
 
-async function linqSendMessage(
+async function linqPostMessageParts(
   chatId: string,
-  text: string,
-  attachmentIds: string[] = [],
+  parts: Array<{ type: string; value?: string; attachment_id?: string }>,
 ): Promise<LinqMessageResult> {
   const token = pickServerEnv(['LINQ_API_TOKEN'])
   if (!token) throw new Error('LINQ_API_TOKEN is not configured')
-
-  const parts: Array<{ type: string; value?: string; attachment_id?: string }> = []
-  const trimmed = text.trim()
-  if (trimmed) parts.push({ type: 'text', value: trimmed })
-  for (const attachmentId of attachmentIds) {
-    const id = attachmentId.trim()
-    if (id) parts.push({ type: 'media', attachment_id: id })
-  }
   if (parts.length === 0) {
-    throw new Error('Message must include text or an attachment')
+    throw new Error('Message must include text, a link, or an attachment')
   }
 
   const res = await fetch(`${LINQ_BASE_URL}/chats/${encodeURIComponent(chatId)}/messages`, {
@@ -152,6 +147,36 @@ async function linqSendMessage(
   }
 
   return { chatId, providerMessageId: extractProviderMessageId(payload) }
+}
+
+async function linqSendMessage(
+  chatId: string,
+  text: string,
+  attachmentIds: string[] = [],
+): Promise<LinqMessageResult> {
+  const trimmed = text.trim()
+
+  // Agent Pay checkout URLs must be sent as a lone `link` part so iMessage
+  // renders the tappable payment card (App Clip / web checkout) instead of a bare URL.
+  const agentPayUrl =
+    attachmentIds.length === 0 ? extractAgentPayCheckoutUrl(trimmed) : null
+  if (agentPayUrl) {
+    const intro = stripCheckoutUrlFromText(trimmed, agentPayUrl)
+      .replace(/\n*Tap to pay:\s*$/i, '')
+      .trim()
+    if (intro) {
+      await linqPostMessageParts(chatId, [{ type: 'text', value: intro }])
+    }
+    return linqPostMessageParts(chatId, [{ type: 'link', value: agentPayUrl }])
+  }
+
+  const parts: Array<{ type: string; value?: string; attachment_id?: string }> = []
+  if (trimmed) parts.push({ type: 'text', value: trimmed })
+  for (const attachmentId of attachmentIds) {
+    const id = attachmentId.trim()
+    if (id) parts.push({ type: 'media', attachment_id: id })
+  }
+  return linqPostMessageParts(chatId, parts)
 }
 
 function normaliseBrandInternalAccessHandle(input: string): string | null {
