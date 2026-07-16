@@ -9,7 +9,9 @@ export type ListingSource =
   | 'facebook_import'
   | 'online_catalog'
   | 'fesports_scrape'
-  | 'supplier_scrape';
+  | 'supplier_scrape'
+  | 'bike_url_import';
+
 export type ListingStatus = 'draft' | 'active' | 'sold' | 'expired' | 'removed';
 
 export type ItemType = 'bike' | 'part' | 'apparel';

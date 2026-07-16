@@ -1,5 +1,9 @@
 import type { Page } from "puppeteer-core";
 import { buildProductImageList } from "@/lib/scrapers/fesports-scraper";
+import {
+  chooseHighestQualityImageUrls,
+  upgradeProductImageUrl,
+} from "@/lib/scrapers/product-image-quality";
 import type { SupplierScraperLogger } from "@/lib/scrapers/supplier-logger";
 import {
   launchSupplierBrowser,
@@ -204,7 +208,11 @@ function buildMatchFromExtracted(
   matchScore: number,
 ): AlternatePhotoMatch {
   const imageList = buildProductImageList(extracted.heroImageUrl, extracted.imageUrls);
-  if (imageList.imageUrls.length === 0) {
+  const imageUrls = chooseHighestQualityImageUrls(imageList.imageUrls, extracted.url);
+  const heroImageUrl = imageList.heroImageUrl
+    ? upgradeProductImageUrl(imageList.heroImageUrl, extracted.url)
+    : imageUrls[0] ?? null;
+  if (imageUrls.length === 0) {
     return {
       ...emptyMatch(config, "not_found"),
       productUrl: extracted.url,
@@ -217,8 +225,8 @@ function buildMatchFromExtracted(
     sourceName: config.sourceName,
     websiteUrl: config.websiteUrl,
     productUrl: extracted.url,
-    imageUrls: imageList.imageUrls,
-    heroImageUrl: imageList.heroImageUrl,
+    imageUrls,
+    heroImageUrl,
     matchMethod,
     matchScore,
     status: "matched",

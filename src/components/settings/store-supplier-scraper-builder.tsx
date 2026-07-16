@@ -1,9 +1,14 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import {
   AlertCircle,
+  ArrowLeft,
+  Check,
   CheckCircle2,
+  ChevronDown,
+  ExternalLink,
   Globe,
   ImageIcon,
   Loader2,
@@ -13,13 +18,27 @@ import {
   Plus,
   ScanSearch,
   Sparkles,
+  Trash2,
 } from "@/components/layout/app-sidebar/dashboard-icons";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { StoreFesportsScrapeReview } from "@/components/settings/store-fesports-scrape-review";
 import type { SupplierExcludedImages } from "@/components/settings/store-supplier-photo-preview";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import type { FieldMapping } from "@/lib/scrapers/fesports-field-mapping";
+import type { SupplierCategoryOverrides } from "@/lib/scrapers/supplier-category";
+import { summariseReadiness } from "@/lib/scrapers/supplier-readiness";
 import type {
   AlternatePhotoSourceConfig,
   StoredSupplierScraper,
@@ -41,13 +60,23 @@ import { cn } from "@/lib/utils";
 type BuilderPhase =
   | "idle"
   | "building"
-  | "configured"
   | "running"
   | "fetching_photos"
-  | "review"
-  | "importing"
-  | "done"
-  | "error";
+  | "importing";
+
+type FlowStep = "select" | "scrape" | "review" | "done";
+
+type BuilderView =
+  | { kind: "home" }
+  | { kind: "create" }
+  | { kind: "run"; step: FlowStep };
+
+const RUN_STEPS: Array<{ id: FlowStep; label: string }> = [
+  { id: "select", label: "Select products" },
+  { id: "scrape", label: "Scrape" },
+  { id: "review", label: "Review" },
+  { id: "done", label: "Import" },
+];
 
 interface ImportSummary {
   created: number;
@@ -101,6 +130,27 @@ function formatElapsed(ms: number): string {
   return `${minutes}m ${remainingSeconds}s`;
 }
 
+function scraperStatusLabel(scraper: StoredSupplierScraper): string {
+  if (scraper.status === "error" || scraper.lastRunStatus === "failed") {
+    return "Last run failed";
+  }
+  if (!scraper.lastRunAt) return "Ready for first run";
+  return "Ready";
+}
+
+/* ── Shared pieces ─────────────────────────────────────────────────── */
+
+function ErrorBanner({ message }: { message: string }) {
+  return (
+    <div className="rounded-md border border-red-200 bg-white p-4 text-sm text-red-700">
+      <div className="flex items-start gap-2">
+        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+        <span>{message}</span>
+      </div>
+    </div>
+  );
+}
+
 function SupplierScraperLogPanel({
   logs,
   title,
@@ -124,16 +174,14 @@ function SupplierScraperLogPanel({
         <div>
           <p className="text-sm font-semibold text-gray-900">{title}</p>
           <p className="mt-1 text-xs text-gray-500">
-            Live progress from YJ while the scraper runs.
+            Live progress from YJ while it works.
           </p>
         </div>
-        <span className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-600">
-          {logs.length} steps
-        </span>
+        <span className="text-[11px] font-medium text-gray-500">{logs.length} steps</span>
       </div>
       <div
         ref={containerRef}
-        className="max-h-72 overflow-y-auto rounded-md border border-gray-200 bg-gray-50 p-3 font-mono text-[11px] leading-5 text-gray-700"
+        className="max-h-64 overflow-y-auto rounded-md border border-gray-200 bg-gray-50 p-3 font-mono text-[11px] leading-5 text-gray-700"
       >
         {logs.map((entry) => (
           <div key={entry.id} className="border-b border-gray-200/80 py-1.5 last:border-b-0">
@@ -147,23 +195,95 @@ function SupplierScraperLogPanel({
   );
 }
 
+function WorkflowStepper({
+  current,
+  furthest,
+  busy,
+  onNavigate,
+}: {
+  current: FlowStep;
+  furthest: number;
+  busy: boolean;
+  onNavigate: (step: FlowStep) => void;
+}) {
+  const currentIndex = RUN_STEPS.findIndex((step) => step.id === current);
+
+  return (
+    <ol className="flex flex-wrap items-center gap-1">
+      {RUN_STEPS.map((step, index) => {
+        const isCurrent = index === currentIndex;
+        const isComplete = index < currentIndex || (current === "done" && index === currentIndex);
+        const reachable =
+          !busy && index <= furthest && index !== currentIndex && step.id !== "scrape";
+        return (
+          <li key={step.id} className="flex items-center gap-1">
+            {index > 0 ? <div className="h-px w-5 bg-gray-300 sm:w-8" /> : null}
+            <button
+              type="button"
+              disabled={!reachable}
+              onClick={() => reachable && onNavigate(step.id)}
+              className={cn(
+                "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
+                isCurrent ? "text-gray-900" : "text-gray-500",
+                reachable ? "hover:bg-gray-100 hover:text-gray-800" : "cursor-default",
+              )}
+            >
+              <span
+                className={cn(
+                  "flex h-5 w-5 items-center justify-center rounded-full border text-[10px]",
+                  isCurrent
+                    ? "border-gray-900 bg-gray-900 text-white"
+                    : isComplete
+                      ? "border-gray-400 bg-white text-gray-700"
+                      : "border-gray-300 bg-white text-gray-400",
+                )}
+              >
+                {isComplete && !isCurrent ? <Check className="h-3 w-3" /> : index + 1}
+              </span>
+              {step.label}
+            </button>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/* ── Main component ────────────────────────────────────────────────── */
+
 export function StoreSupplierScraperBuilder() {
-  const reviewRef = React.useRef<HTMLDivElement>(null);
+  const [view, setView] = React.useState<BuilderView>({ kind: "home" });
   const [scrapers, setScrapers] = React.useState<StoredSupplierScraper[]>([]);
   const [activeScraperId, setActiveScraperId] = React.useState<string | null>(null);
   const [loadingScrapers, setLoadingScrapers] = React.useState(true);
   const [phase, setPhase] = React.useState<BuilderPhase>("idle");
   const [error, setError] = React.useState<string | null>(null);
+  const [archiveTarget, setArchiveTarget] = React.useState<StoredSupplierScraper | null>(null);
+  const [isArchiving, setIsArchiving] = React.useState(false);
+
+  // New-supplier form
   const [supplierName, setSupplierName] = React.useState("");
   const [websiteUrl, setWebsiteUrl] = React.useState("");
   const [loginUrl, setLoginUrl] = React.useState("");
   const [username, setUsername] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [sampleProducts, setSampleProducts] = React.useState<SupplierScrapedProduct[]>([]);
+
+  // Run configuration
   const [browseMode, setBrowseMode] = React.useState<SupplierBrowseMode>("category");
   const [optionSearch, setOptionSearch] = React.useState("");
   const [selectedOptionIds, setSelectedOptionIds] = React.useState<Set<string>>(new Set());
   const [maxProducts, setMaxProducts] = React.useState("");
+  const [runOptionsOpen, setRunOptionsOpen] = React.useState(false);
+  const [brandCategories, setBrandCategories] = React.useState<
+    Record<string, SupplierBrowseOption[]>
+  >({});
+  const [selectedSubcategoryIds, setSelectedSubcategoryIds] = React.useState<Set<string>>(
+    new Set(),
+  );
+  const [isLoadingBrandCategories, setIsLoadingBrandCategories] = React.useState(false);
+
+  // Scrape results
   const [products, setProducts] = React.useState<SupplierScrapedProduct[]>([]);
   const [matches, setMatches] = React.useState<SupplierProductMatches>({});
   const [selectedProductIds, setSelectedProductIds] = React.useState<Set<string>>(new Set());
@@ -173,6 +293,8 @@ export function StoreSupplierScraperBuilder() {
     scraped: number;
     total: number;
   } | null>(null);
+
+  // Official photo source
   const [alternatePhotoWebsite, setAlternatePhotoWebsite] = React.useState("");
   const [alternatePhotoName, setAlternatePhotoName] = React.useState("");
   const [alternatePhotoSearchTemplate, setAlternatePhotoSearchTemplate] = React.useState("");
@@ -186,14 +308,6 @@ export function StoreSupplierScraperBuilder() {
     null,
   );
   const [excludedImages, setExcludedImages] = React.useState<SupplierExcludedImages>({});
-  const [brandCategories, setBrandCategories] = React.useState<
-    Record<string, SupplierBrowseOption[]>
-  >({});
-  const [selectedSubcategoryIds, setSelectedSubcategoryIds] = React.useState<Set<string>>(
-    new Set(),
-  );
-  const [isLoadingBrandCategories, setIsLoadingBrandCategories] = React.useState(false);
-  const hasEnteredReviewRef = React.useRef(false);
 
   const appendLog = React.useCallback((entry: SupplierLogEntry) => {
     setActivityLogs((current) => [...current, entry]);
@@ -216,6 +330,7 @@ export function StoreSupplierScraperBuilder() {
     alternatePhotoWebsite.trim() ||
       (alternatePhotoConfig?.enabled && alternatePhotoConfig.websiteUrl),
   );
+  const busy = phase === "building" || phase === "running" || phase === "fetching_photos" || phase === "importing";
 
   const syncAlternatePhotoForm = React.useCallback((scraper: StoredSupplierScraper) => {
     const source = scraper.config.alternatePhotoSource;
@@ -223,10 +338,6 @@ export function StoreSupplierScraperBuilder() {
     setAlternatePhotoName(source?.sourceName ?? "");
     setAlternatePhotoSearchTemplate(source?.searchUrlTemplate ?? "");
   }, []);
-
-  React.useEffect(() => {
-    if (activeScraper) syncAlternatePhotoForm(activeScraper);
-  }, [activeScraper, syncAlternatePhotoForm]);
 
   React.useEffect(() => {
     setAlternatePhotoSaveMessage(null);
@@ -252,6 +363,29 @@ export function StoreSupplierScraperBuilder() {
     void loadScrapers();
   }, [loadScrapers]);
 
+  const resetRunState = () => {
+    setProducts([]);
+    setMatches({});
+    setSelectedProductIds(new Set());
+    setImportSummary(null);
+    setError(null);
+    setActivityLogs([]);
+    setScrapeProgress(null);
+    setImagePreferences({});
+    setExcludedImages({});
+    setAlternatePhotoProgress(null);
+  };
+
+  const goHome = () => {
+    setActiveScraperId(null);
+    resetRunState();
+    setSelectedOptionIds(new Set());
+    setSelectedSubcategoryIds(new Set());
+    setBrandCategories({});
+    setOptionSearch("");
+    setView({ kind: "home" });
+  };
+
   const openScraper = (scraper: StoredSupplierScraper) => {
     const mode = scraper.config.browseModes.includes("category")
       ? "category"
@@ -260,21 +394,12 @@ export function StoreSupplierScraperBuilder() {
     setBrowseMode(mode);
     setSelectedOptionIds(new Set());
     setOptionSearch("");
-    setProducts([]);
-    setMatches({});
-    setSelectedProductIds(new Set());
-    setImportSummary(null);
-    setError(null);
-    setActivityLogs([]);
-    setScrapeProgress(null);
-    hasEnteredReviewRef.current = false;
-    setImagePreferences({});
-    setExcludedImages({});
-    setAlternatePhotoProgress(null);
+    resetRunState();
     setBrandCategories({});
     setSelectedSubcategoryIds(new Set());
+    setRunOptionsOpen(false);
     syncAlternatePhotoForm(scraper);
-    setPhase("configured");
+    setView({ kind: "run", step: "select" });
   };
 
   const startNewScraper = () => {
@@ -285,19 +410,32 @@ export function StoreSupplierScraperBuilder() {
     setUsername("");
     setPassword("");
     setSampleProducts([]);
-    setProducts([]);
-    setMatches({});
+    resetRunState();
     setSelectedOptionIds(new Set());
-    setSelectedProductIds(new Set());
-    setImportSummary(null);
-    setError(null);
-    setActivityLogs([]);
-    setScrapeProgress(null);
-    hasEnteredReviewRef.current = false;
-    setExcludedImages({});
     setBrandCategories({});
     setSelectedSubcategoryIds(new Set());
-    setPhase("idle");
+    setView({ kind: "create" });
+  };
+
+  const archiveScraper = async () => {
+    if (!archiveTarget) return;
+    setIsArchiving(true);
+    try {
+      const response = await fetch(`/api/store/scrape/suppliers/${archiveTarget.id}`, {
+        method: "DELETE",
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "Could not archive the scraper.");
+      setScrapers((current) => current.filter((item) => item.id !== archiveTarget.id));
+      if (activeScraperId === archiveTarget.id) goHome();
+    } catch (archiveError) {
+      setError(
+        archiveError instanceof Error ? archiveError.message : "Could not archive the scraper.",
+      );
+    } finally {
+      setIsArchiving(false);
+      setArchiveTarget(null);
+    }
   };
 
   const buildScraper = async () => {
@@ -340,9 +478,11 @@ export function StoreSupplierScraperBuilder() {
       setSelectedOptionIds(new Set());
       setBrandCategories({});
       setSelectedSubcategoryIds(new Set());
-      setPhase("configured");
+      syncAlternatePhotoForm(scraper);
+      setPhase("idle");
+      setView({ kind: "run", step: "select" });
     } catch (buildError) {
-      setPhase("error");
+      setPhase("idle");
       setError(
         buildError instanceof Error
           ? buildError.message
@@ -402,7 +542,6 @@ export function StoreSupplierScraperBuilder() {
 
     setIsLoadingBrandCategories(true);
     setError(null);
-    setActivityLogs([]);
     try {
       const response = await fetch(
         `/api/store/scrape/suppliers/${activeScraper.id}/brand-categories`,
@@ -427,7 +566,7 @@ export function StoreSupplierScraperBuilder() {
           event: "result";
           categoriesByBrand?: Record<string, SupplierBrowseOption[]>;
           categoriesByOption?: Record<string, SupplierBrowseOption[]>;
-        }>(response, appendLog);
+        }>(response, () => undefined);
         categoriesByOption =
           payload.categoriesByOption ?? payload.categoriesByBrand ?? {};
       } else {
@@ -514,15 +653,13 @@ export function StoreSupplierScraperBuilder() {
   // Whenever brands/categories are selected, load their nested categories for this run.
   React.useEffect(() => {
     if (!activeScraper) return;
+    if (view.kind !== "run" || view.step !== "select") return;
     if (selectedOptionIds.size === 0) return;
-    if (phase !== "configured" && phase !== "error" && phase !== "done" && phase !== "review") {
-      return;
-    }
     const missing = [...selectedOptionIds].filter((id) => brandCategories[id] === undefined);
     if (missing.length === 0) return;
     void loadOptionCategories(missing);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeScraperId, selectedOptionIds, browseMode, phase]);
+  }, [activeScraperId, selectedOptionIds, browseMode, view]);
 
   const toggleVisibleOptions = () => {
     const allVisibleSelected =
@@ -548,25 +685,16 @@ export function StoreSupplierScraperBuilder() {
       );
       return;
     }
-    setPhase("running");
-    setError(null);
-    setProducts([]);
-    setMatches({});
-    setSelectedProductIds(new Set());
-    setImportSummary(null);
-    setActivityLogs([]);
-    setScrapeProgress(null);
-    hasEnteredReviewRef.current = false;
-    setImagePreferences({});
-    setExcludedImages({});
-    setAlternatePhotoProgress(null);
-
     const scrapeTargets = buildScrapeTargets();
     if (scrapeTargets.length === 0) {
-      setPhase("error");
       setError("Select at least one category or subcategory to scrape.");
       return;
     }
+
+    setPhase("running");
+    resetRunState();
+    setView({ kind: "run", step: "scrape" });
+
     const alternatePhotoSource = alternatePhotoWebsite.trim()
       ? {
           enabled: true,
@@ -640,12 +768,6 @@ export function StoreSupplierScraperBuilder() {
                 });
               }
             }
-            if (!hasEnteredReviewRef.current) {
-              hasEnteredReviewRef.current = true;
-              window.setTimeout(() => {
-                reviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-              }, 100);
-            }
           }
         },
       );
@@ -673,17 +795,14 @@ export function StoreSupplierScraperBuilder() {
           ]),
         ),
       );
-      setPhase("review");
-      if (!hasEnteredReviewRef.current) {
-        window.setTimeout(() => {
-          reviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-        }, 100);
-      }
+      setPhase("idle");
+      setView({ kind: "run", step: "review" });
     } catch (runError) {
-      setPhase("error");
+      setPhase("idle");
       setError(
         runError instanceof Error ? runError.message : "The supplier scrape failed.",
       );
+      setView({ kind: "run", step: "select" });
     }
   };
 
@@ -744,10 +863,8 @@ export function StoreSupplierScraperBuilder() {
     }
   };
 
-  const fetchAlternatePhotos = async (
-    productsOverride?: SupplierScrapedProduct[],
-  ) => {
-    const productsToMatch = productsOverride ?? selectedProducts;
+  const fetchAlternatePhotos = async () => {
+    const productsToMatch = selectedProducts;
     if (!activeScraper || productsToMatch.length === 0 || !alternatePhotoWebsite.trim()) {
       return;
     }
@@ -821,9 +938,9 @@ export function StoreSupplierScraperBuilder() {
         matched: enriched.filter((product) => product.alternatePhoto?.status === "matched").length,
         total: enriched.length,
       });
-      setPhase("review");
+      setPhase("idle");
     } catch (fetchError) {
-      setPhase("error");
+      setPhase("idle");
       setError(
         fetchError instanceof Error
           ? fetchError.message
@@ -873,6 +990,7 @@ export function StoreSupplierScraperBuilder() {
   const importProducts = async (
     fieldMapping: FieldMapping,
     preferences?: SupplierImageSourcePreferences,
+    categoryOverrides?: SupplierCategoryOverrides,
   ) => {
     if (!activeScraper || selectedProducts.length === 0) return;
     setPhase("importing");
@@ -889,6 +1007,7 @@ export function StoreSupplierScraperBuilder() {
             fieldMapping,
             imagePreferences: preferences,
             excludedImages,
+            categoryOverrides,
           }),
         },
       );
@@ -910,9 +1029,10 @@ export function StoreSupplierScraperBuilder() {
             : scraper,
         ),
       );
-      setPhase("done");
+      setPhase("idle");
+      setView({ kind: "run", step: "done" });
     } catch (importError) {
-      setPhase("error");
+      setPhase("idle");
       setError(
         importError instanceof Error
           ? importError.message
@@ -921,83 +1041,154 @@ export function StoreSupplierScraperBuilder() {
     }
   };
 
-  return (
-    <div className="space-y-6 p-6">
-      <div className="rounded-md border border-gray-200 bg-white p-5">
+  /* ── Views ───────────────────────────────────────────────────────── */
+
+  if (view.kind === "home") {
+    return (
+      <div className="space-y-6 p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3">
             <div className="rounded-md bg-gray-100 p-2">
               <Sparkles className="h-5 w-5 text-gray-700" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-gray-900">Build a scraper with YJ</h3>
-              <p className="mt-1 max-w-3xl text-sm text-gray-600">
-                Give YJ a supplier website and login. YJ signs in, finds the catalogue,
-                detects brand and category paths, learns the product fields, and saves a
-                reusable scraper for reviewed manual runs.
+              <h3 className="text-sm font-semibold text-gray-900">Supplier scrapers</h3>
+              <p className="mt-1 max-w-2xl text-sm text-gray-600">
+                Connect a supplier once — YJ learns the site, then every run walks you through
+                selecting, scraping, reviewing, and importing products into your catalogue.
               </p>
             </div>
           </div>
-          {activeScraper ? (
-            <Button variant="outline" className="rounded-md" onClick={startNewScraper}>
-              <Plus className="h-4 w-4" />
-              New scraper
-            </Button>
-          ) : null}
+          <Button className="rounded-md" onClick={startNewScraper}>
+            <Plus className="h-4 w-4" />
+            New supplier
+          </Button>
         </div>
-      </div>
 
-      {loadingScrapers ? (
-        <div className="rounded-md border border-gray-200 bg-white p-5">
-          <div className="flex items-center gap-3 text-sm text-gray-600">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading saved scrapers
+        {error ? <ErrorBanner message={error} /> : null}
+
+        {loadingScrapers ? (
+          <div className="rounded-md border border-gray-200 bg-white p-5">
+            <div className="flex items-center gap-3 text-sm text-gray-600">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading saved scrapers
+            </div>
           </div>
-        </div>
-      ) : scrapers.length > 0 ? (
-        <div className="rounded-md border border-gray-200 bg-white">
-          <div className="border-b border-gray-200 px-5 py-4">
-            <h3 className="text-sm font-semibold text-gray-900">Saved supplier scrapers</h3>
-            <p className="mt-1 text-sm text-gray-600">
-              Run a saved scraper manually whenever you need updated supplier data.
-            </p>
+        ) : scrapers.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 rounded-md border border-dashed border-gray-300 bg-white px-6 py-14 text-center">
+            <ScanSearch className="h-8 w-8 text-gray-400" />
+            <div>
+              <p className="text-sm font-semibold text-gray-900">No suppliers connected yet</p>
+              <p className="mx-auto mt-1 max-w-md text-sm text-gray-600">
+                Give YJ a supplier website and login. It signs in, learns the catalogue
+                structure, and saves a reusable scraper you can run any time.
+              </p>
+            </div>
+            <Button className="mt-2 rounded-md" onClick={startNewScraper}>
+              <Plus className="h-4 w-4" />
+              Connect your first supplier
+            </Button>
           </div>
-          <div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-3">
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {scrapers.map((scraper) => (
-              <button
-                type="button"
+              <div
                 key={scraper.id}
-                onClick={() => openScraper(scraper)}
-                className={cn(
-                  "rounded-md border bg-white p-4 text-left transition-colors",
-                  activeScraperId === scraper.id
-                    ? "border-gray-400"
-                    : "border-gray-200 hover:border-gray-300 hover:bg-gray-50",
-                )}
+                className="group relative rounded-md border border-gray-200 bg-white p-4 transition-colors hover:border-gray-300"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-gray-900">{scraper.name}</p>
-                    <p className="mt-1 truncate text-xs text-gray-500">
-                      {hostname(scraper.baseUrl)}
-                    </p>
+                <button
+                  type="button"
+                  onClick={() => openScraper(scraper)}
+                  className="block w-full text-left"
+                >
+                  <div className="flex items-start justify-between gap-3 pr-7">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-gray-900">
+                        {scraper.name}
+                      </p>
+                      <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-gray-500">
+                        <Globe className="h-3 w-3 shrink-0" />
+                        {hostname(scraper.baseUrl)}
+                      </p>
+                    </div>
                   </div>
-                  <span className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-600">
-                    {scraper.status}
-                  </span>
-                </div>
-                <p className="mt-3 text-xs text-gray-500">
-                  Last run: {formatDate(scraper.lastRunAt)}
-                </p>
-              </button>
+                  <div className="mt-4 flex items-center justify-between gap-2 text-xs text-gray-500">
+                    <span>{scraperStatusLabel(scraper)}</span>
+                    <span>Last run: {formatDate(scraper.lastRunAt)}</span>
+                  </div>
+                  <div className="mt-3 flex items-center gap-1.5 text-xs font-medium text-gray-700">
+                    <Play className="h-3.5 w-3.5" />
+                    Start a run
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Archive ${scraper.name}`}
+                  onClick={() => setArchiveTarget(scraper)}
+                  className="absolute right-3 top-3 rounded-md p-1 text-gray-400 opacity-0 transition-opacity hover:bg-gray-100 hover:text-gray-700 focus-visible:opacity-100 group-hover:opacity-100"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
             ))}
           </div>
-        </div>
-      ) : null}
+        )}
 
-      {!activeScraper ? (
+        <AlertDialog
+          open={archiveTarget !== null}
+          onOpenChange={(open) => {
+            if (!open) setArchiveTarget(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Archive {archiveTarget?.name}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                The scraper and its saved login are removed from this list. Products already
+                imported stay in your catalogue.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isArchiving}>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={archiveScraper} disabled={isArchiving}>
+                {isArchiving ? "Archiving…" : "Archive scraper"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    );
+  }
+
+  if (view.kind === "create") {
+    return (
+      <div className="space-y-6 p-6">
+        <button
+          type="button"
+          onClick={goHome}
+          className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-gray-900"
+          disabled={phase === "building"}
+        >
+          <ArrowLeft className="h-4 w-4" />
+          All suppliers
+        </button>
+
         <div className="rounded-md border border-gray-200 bg-white p-5">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="flex items-start gap-3">
+            <div className="rounded-md bg-gray-100 p-2">
+              <Sparkles className="h-5 w-5 text-gray-700" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Connect a supplier</h3>
+              <p className="mt-1 max-w-2xl text-sm text-gray-600">
+                YJ signs in, finds the catalogue, detects brand and category paths, learns the
+                product fields, and saves a reusable scraper. This usually takes a couple of
+                minutes.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="supplier-name">Supplier name</Label>
               <Input
@@ -1083,176 +1274,188 @@ export function StoreSupplierScraperBuilder() {
             </Button>
           </div>
         </div>
-      ) : null}
 
-      {phase === "building" || phase === "running" || phase === "fetching_photos" ? (
-        <SupplierScraperLogPanel
-          logs={activityLogs}
-          title={
-            phase === "building"
-              ? "YJ build log"
-              : phase === "fetching_photos"
-                ? "Official photo match log"
-                : "YJ scrape log"
-          }
-        />
-      ) : null}
+        {error ? <ErrorBanner message={error} /> : null}
 
-      {phase === "building" ? (
-        <div className="rounded-md border border-gray-200 bg-white p-5">
-          <div className="flex items-start gap-3">
-            <Loader2 className="mt-0.5 h-5 w-5 animate-spin text-gray-600" />
+        {phase === "building" ? (
+          <SupplierScraperLogPanel logs={activityLogs} title="YJ build log" />
+        ) : null}
+      </div>
+    );
+  }
+
+  /* ── Run workflow ────────────────────────────────────────────────── */
+
+  if (!activeScraper) {
+    return (
+      <div className="p-6">
+        <ErrorBanner message="This scraper is no longer available." />
+        <Button variant="outline" className="mt-4 rounded-md" onClick={goHome}>
+          <ArrowLeft className="h-4 w-4" />
+          All suppliers
+        </Button>
+      </div>
+    );
+  }
+
+  const step = view.step;
+  const furthestStep =
+    step === "done" ? 3 : products.length > 0 ? 2 : 0;
+  const readinessSummary =
+    step === "review" || step === "done"
+      ? summariseReadiness(selectedProducts, activeScraper.fieldMapping, imagePreferences, excludedImages)
+      : null;
+
+  return (
+    <div className="flex min-h-full flex-col">
+      {/* Workflow header */}
+      <div className="space-y-3 border-b border-gray-200 bg-white px-6 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={goHome}
+              disabled={busy}
+              className="flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              All suppliers
+            </button>
+            <span className="text-gray-300">/</span>
             <div>
-              <p className="text-sm font-semibold text-gray-900">YJ is building the scraper</p>
-              <p className="mt-1 text-sm text-gray-600">
-                Signing in, locating the catalogue, checking brand and category paths,
-                opening a sample product, and learning its fields and image gallery.
-              </p>
+              <span className="text-sm font-semibold text-gray-900">{activeScraper.name}</span>
+              <span className="ml-2 text-xs text-gray-500">
+                {hostname(activeScraper.config.catalogueUrl)}
+                {activeScraper.credentialSaved ? " · credentials saved" : ""}
+              </span>
             </div>
           </div>
+          <WorkflowStepper
+            current={step}
+            furthest={furthestStep}
+            busy={busy}
+            onNavigate={(target) => setView({ kind: "run", step: target })}
+          />
         </div>
-      ) : null}
+      </div>
 
-      {activeScraper && ["configured", "running", "review", "importing", "fetching_photos", "done", "error"].includes(phase) ? (
-        <div className="rounded-md border border-gray-200 bg-white">
-          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-gray-200 px-5 py-4">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-sm font-semibold text-gray-900">{activeScraper.name}</h3>
-                <span className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-600">
-                  Credentials saved
-                </span>
-              </div>
-              <p className="mt-1 text-sm text-gray-600">
-                YJ found {activeScraper.config.brandOptions.length} brands and{" "}
-                {activeScraper.config.categoryOptions.length} categories.
-                {sampleProducts[0] ? ` Sample: ${sampleProducts[0].name}.` : ""}
-              </p>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <Globe className="h-4 w-4" />
-              {hostname(activeScraper.config.catalogueUrl)}
-            </div>
-          </div>
+      <div className="flex-1 space-y-4 p-6">
+        {error && step !== "select" ? <ErrorBanner message={error} /> : null}
 
-          <div className="space-y-5 p-5">
-            <div>
-              <Label>Search products by</Label>
-              <div className="mt-2 flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
-                {activeScraper.config.browseModes.includes("category") ? (
-                  <button
-                    type="button"
-                    onClick={() => changeBrowseMode("category")}
-                    className={cn(
-                      "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
-                      browseMode === "category"
-                        ? "text-gray-800 bg-white shadow-sm"
-                        : "text-gray-600 hover:bg-gray-200/70",
-                    )}
-                  >
-                    <Package className="h-3 w-3" />
-                    Category
-                  </button>
-                ) : null}
-                {activeScraper.config.browseModes.includes("brand") ? (
-                  <button
-                    type="button"
-                    onClick={() => changeBrowseMode("brand")}
-                    className={cn(
-                      "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
-                      browseMode === "brand"
-                        ? "text-gray-800 bg-white shadow-sm"
-                        : "text-gray-600 hover:bg-gray-200/70",
-                    )}
-                  >
-                    <Globe className="h-3 w-3" />
-                    Brand
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <Label>
-                  1. Choose {browseMode === "brand" ? "brands" : "categories"}
-                </Label>
-                <p className="mt-1 text-xs text-gray-500">
-                  Then pick the categories or subcategories to include in this scrape.
-                </p>
-              </div>
-              <div className="grid gap-3 md:grid-cols-[1fr_220px_auto]">
-                <Input
-                  value={optionSearch}
-                  onChange={(event) => setOptionSearch(event.target.value)}
-                  placeholder={`Search ${browseMode === "brand" ? "brands" : "categories"}`}
-                  className="rounded-md"
-                />
-                <div className="space-y-1">
-                  <Input
-                    type="number"
-                    min={1}
-                    max={5000}
-                    value={maxProducts}
-                    onChange={(event) => setMaxProducts(event.target.value)}
-                    placeholder="Max products per selection"
-                    className="rounded-md"
-                  />
-                  <p className="text-[11px] text-gray-500">
-                    Leave blank for all products in each selected category.
+        {/* ── Step 1: Select ─────────────────────────────────────────── */}
+        {step === "select" ? (
+          <>
+            {error ? <ErrorBanner message={error} /> : null}
+            <div className="rounded-md border border-gray-200 bg-white">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-5 py-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">
+                    What should this run scrape?
+                  </h3>
+                  <p className="mt-0.5 text-sm text-gray-600">
+                    YJ found {activeScraper.config.brandOptions.length} brands and{" "}
+                    {activeScraper.config.categoryOptions.length} categories on this site.
+                    {sampleProducts[0] ? ` Sample product: ${sampleProducts[0].name}.` : ""}
                   </p>
                 </div>
-                <Button
-                  variant="outline"
-                  className="rounded-md h-10"
-                  onClick={toggleVisibleOptions}
-                  disabled={filteredOptions.length === 0 || phase === "running"}
-                >
-                  {filteredOptions.every((option) => selectedOptionIds.has(option.id)) &&
-                  filteredOptions.length > 0
-                    ? "Deselect shown"
-                    : "Select shown"}
-                </Button>
-              </div>
-
-              <div className="grid max-h-56 gap-2 overflow-y-auto rounded-md border border-gray-200 bg-white p-3 sm:grid-cols-2 lg:grid-cols-3">
-                {filteredOptions.map((option: SupplierBrowseOption) => {
-                  const isSelected = selectedOptionIds.has(option.id);
-                  return (
-                    <label
-                      key={option.id}
+                <div className="flex items-center bg-gray-100 p-0.5 rounded-md w-fit">
+                  {activeScraper.config.browseModes.includes("category") ? (
+                    <button
+                      type="button"
+                      onClick={() => changeBrowseMode("category")}
                       className={cn(
-                        "flex cursor-pointer items-center gap-2 rounded-md border bg-white px-3 py-2.5 text-sm transition-colors",
-                        isSelected
-                          ? "border-gray-400 text-gray-900"
-                          : "border-gray-200 text-gray-600 hover:border-gray-300",
+                        "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+                        browseMode === "category"
+                          ? "text-gray-800 bg-white shadow-sm"
+                          : "text-gray-600 hover:bg-gray-200/70",
                       )}
                     >
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleOption(option.id)}
-                      />
-                      <span className="min-w-0 flex-1 truncate">{option.name}</span>
-                    </label>
-                  );
-                })}
-                {filteredOptions.length === 0 ? (
-                  <p className="col-span-full px-1 py-2 text-sm text-gray-500">
-                    No {browseMode === "brand" ? "brands" : "categories"} match this search.
-                  </p>
-                ) : null}
+                      <Package className="h-3 w-3" />
+                      By category
+                    </button>
+                  ) : null}
+                  {activeScraper.config.browseModes.includes("brand") ? (
+                    <button
+                      type="button"
+                      onClick={() => changeBrowseMode("brand")}
+                      className={cn(
+                        "flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors",
+                        browseMode === "brand"
+                          ? "text-gray-800 bg-white shadow-sm"
+                          : "text-gray-600 hover:bg-gray-200/70",
+                      )}
+                    >
+                      <Globe className="h-3 w-3" />
+                      By brand
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="space-y-3 p-5">
+                <div className="flex flex-wrap items-center gap-3">
+                  <Input
+                    value={optionSearch}
+                    onChange={(event) => setOptionSearch(event.target.value)}
+                    placeholder={`Search ${browseMode === "brand" ? "brands" : "categories"}`}
+                    className="w-64 rounded-md"
+                  />
+                  <Button
+                    variant="outline"
+                    className="rounded-md"
+                    onClick={toggleVisibleOptions}
+                    disabled={filteredOptions.length === 0}
+                  >
+                    {filteredOptions.every((option) => selectedOptionIds.has(option.id)) &&
+                    filteredOptions.length > 0
+                      ? "Deselect shown"
+                      : "Select shown"}
+                  </Button>
+                  <span className="text-xs text-gray-500">
+                    {selectedOptionIds.size} selected
+                  </span>
+                </div>
+
+                <div className="grid max-h-64 gap-2 overflow-y-auto rounded-md border border-gray-200 bg-white p-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {filteredOptions.map((option: SupplierBrowseOption) => {
+                    const isSelected = selectedOptionIds.has(option.id);
+                    return (
+                      <label
+                        key={option.id}
+                        className={cn(
+                          "flex cursor-pointer items-center gap-2 rounded-md border bg-white px-3 py-2.5 text-sm transition-colors",
+                          isSelected
+                            ? "border-gray-400 text-gray-900"
+                            : "border-gray-200 text-gray-600 hover:border-gray-300",
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleOption(option.id)}
+                        />
+                        <span className="min-w-0 flex-1 truncate">{option.name}</span>
+                      </label>
+                    );
+                  })}
+                  {filteredOptions.length === 0 ? (
+                    <p className="col-span-full px-1 py-2 text-sm text-gray-500">
+                      No {browseMode === "brand" ? "brands" : "categories"} match this search.
+                    </p>
+                  ) : null}
+                </div>
               </div>
             </div>
 
             {selectedOptionIds.size > 0 ? (
-              <div className="rounded-md border border-gray-200 bg-white p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="rounded-md border border-gray-200 bg-white">
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-200 px-5 py-4">
                   <div>
-                    <Label>2. Choose categories / subcategories for this run</Label>
-                    <p className="mt-1 text-xs text-gray-500">
-                      Tick every category you want scraped. The run only includes what you select
-                      here.
+                    <h3 className="text-sm font-semibold text-gray-900">
+                      Narrow down each selection
+                    </h3>
+                    <p className="mt-0.5 text-sm text-gray-600">
+                      Tick the categories to include. The run only scrapes what you select here.
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -1266,19 +1469,16 @@ export function StoreSupplierScraperBuilder() {
                         variant="outline"
                         className="rounded-md"
                         onClick={() => void loadOptionCategories([...selectedOptionIds], { force: true })}
-                        disabled={phase === "running" || phase === "importing"}
                       >
-                        Reload categories
+                        Reload
                       </Button>
                     )}
                     <Button
                       variant="outline"
                       className="rounded-md"
-                      disabled={
-                        [...selectedOptionIds].every(
-                          (parentId) => (brandCategories[parentId] ?? []).length === 0,
-                        ) || phase === "running"
-                      }
+                      disabled={[...selectedOptionIds].every(
+                        (parentId) => (brandCategories[parentId] ?? []).length === 0,
+                      )}
                       onClick={() => {
                         setSelectedSubcategoryIds((current) => {
                           const next = new Set(current);
@@ -1291,20 +1491,20 @@ export function StoreSupplierScraperBuilder() {
                         });
                       }}
                     >
-                      Select all categories
+                      Select all
                     </Button>
                     <Button
                       variant="outline"
                       className="rounded-md"
-                      disabled={selectedSubcategoryIds.size === 0 || phase === "running"}
+                      disabled={selectedSubcategoryIds.size === 0}
                       onClick={() => setSelectedSubcategoryIds(new Set())}
                     >
-                      Clear categories
+                      Clear
                     </Button>
                   </div>
                 </div>
 
-                <div className="mt-4 space-y-4">
+                <div className="space-y-4 p-5">
                   {[...selectedOptionIds].map((parentId) => {
                     const parent = availableOptions.find((option) => option.id === parentId);
                     if (!parent) return null;
@@ -1325,7 +1525,7 @@ export function StoreSupplierScraperBuilder() {
                             {!loaded || isLoadingBrandCategories
                               ? "Loading…"
                               : categories.length === 0
-                                ? "No nested categories found · whole catalogue will be scraped"
+                                ? "No nested categories · whole catalogue will be scraped"
                                 : `${selectedInParent} of ${categories.length} selected`}
                           </span>
                         </div>
@@ -1358,303 +1558,415 @@ export function StoreSupplierScraperBuilder() {
                       </div>
                     );
                   })}
-                </div>
 
-                {parentsNeedingCategoryChoice.length > 0 && selectedCategoryCount === 0 ? (
-                  <div className="mt-3 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700">
-                    Select at least one category or subcategory above before running the scraper.
-                  </div>
-                ) : null}
+                  {parentsNeedingCategoryChoice.length > 0 && selectedCategoryCount === 0 ? (
+                    <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                      Select at least one category or subcategory above before starting the
+                      scrape.
+                    </div>
+                  ) : null}
+                </div>
               </div>
             ) : null}
 
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                className="rounded-md"
-                onClick={runScraper}
-                disabled={
-                  !canRunScrape ||
-                  phase === "running" ||
-                  phase === "importing" ||
-                  phase === "fetching_photos"
-                }
+            <div className="rounded-md border border-gray-200 bg-white">
+              <button
+                type="button"
+                onClick={() => setRunOptionsOpen((current) => !current)}
+                className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
               >
-                {phase === "running" ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Scraping products and images
-                  </>
-                ) : (
-                  <>
-                    <Play className="h-4 w-4" />
-                    Run scraper
-                  </>
-                )}
-              </Button>
-              <span className="text-sm text-gray-500">
-                {selectedOptionIds.size}{" "}
-                {browseMode === "brand"
-                  ? selectedOptionIds.size === 1
-                    ? "brand"
-                    : "brands"
-                  : selectedOptionIds.size === 1
-                    ? "category"
-                    : "categories"}
-                {selectedCategoryCount > 0
-                  ? ` · ${selectedCategoryCount} ${
-                      selectedCategoryCount === 1 ? "subcategory" : "subcategories"
-                    } selected`
-                  : ""}{" "}
-                ready to scrape
-              </span>
-            </div>
-
-            <div className="rounded-md border border-gray-200 bg-white p-4">
-              <div className="flex items-start gap-3">
-                <ImageIcon className="mt-0.5 h-5 w-5 text-gray-700" />
-                <div className="w-full space-y-4">
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">Official photo source</p>
-                    <p className="mt-1 text-sm text-gray-600">
-                      Optional. When set, YJ matches official photos automatically during the
-                      scrape while still importing pricing, stock, and descriptions from the
-                      supplier.
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">Run options</h3>
+                  <p className="mt-0.5 text-sm text-gray-600">
+                    {maxProducts.trim()
+                      ? `Up to ${maxProducts} products per selection`
+                      : "All products in each selection"}
+                    {alternatePhotoWebsite.trim() || alternatePhotoConfig?.websiteUrl
+                      ? ` · official photos from ${
+                          alternatePhotoName.trim() ||
+                          alternatePhotoConfig?.sourceName ||
+                          hostname(alternatePhotoWebsite)
+                        }`
+                      : " · no official photo source"}
+                  </p>
+                </div>
+                <ChevronDown
+                  className={cn(
+                    "h-4 w-4 shrink-0 text-gray-500 transition-transform",
+                    runOptionsOpen ? "rotate-180" : "",
+                  )}
+                />
+              </button>
+              {runOptionsOpen ? (
+                <div className="space-y-5 border-t border-gray-200 px-5 py-4">
+                  <div className="max-w-xs space-y-1.5">
+                    <Label htmlFor="max-products">Max products per selection</Label>
+                    <Input
+                      id="max-products"
+                      type="number"
+                      min={1}
+                      max={5000}
+                      value={maxProducts}
+                      onChange={(event) => setMaxProducts(event.target.value)}
+                      placeholder="No limit"
+                      className="rounded-md"
+                    />
+                    <p className="text-[11px] text-gray-500">
+                      Leave blank to scrape every product in each selected category.
                     </p>
                   </div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="alternate-photo-website">Official website URL</Label>
-                      <Input
-                        id="alternate-photo-website"
-                        type="url"
-                        value={alternatePhotoWebsite}
-                        onChange={(event) => setAlternatePhotoWebsite(event.target.value)}
-                        placeholder="https://www.focus-bikes.com/int/"
-                        className="rounded-md"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="alternate-photo-name">Photo source label</Label>
-                      <Input
-                        id="alternate-photo-name"
-                        value={alternatePhotoName}
-                        onChange={(event) => setAlternatePhotoName(event.target.value)}
-                        placeholder="Focus official"
-                        className="rounded-md"
-                      />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label htmlFor="alternate-photo-search">Search URL template (optional)</Label>
-                      <Input
-                        id="alternate-photo-search"
-                        value={alternatePhotoSearchTemplate}
-                        onChange={(event) => setAlternatePhotoSearchTemplate(event.target.value)}
-                        placeholder="https://bike.shimano.com/search?q={query}"
-                        className="rounded-md"
-                      />
-                      <p className="text-xs text-gray-500">
-                        Use {"{query}"} where the SKU or product name should be inserted.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <Button
-                      variant="outline"
-                      className="rounded-md"
-                      onClick={saveAlternatePhotoConfig}
-                      disabled={
-                        !alternatePhotoWebsite.trim() ||
-                        phase === "fetching_photos" ||
-                        isSavingAlternatePhoto
-                      }
-                    >
-                      {isSavingAlternatePhoto ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Saving official photo source
-                        </>
-                      ) : (
-                        "Save official photo source"
-                      )}
-                    </Button>
-                    {alternatePhotoSaveMessage ? (
-                      <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700">
-                        <CheckCircle2 className="h-4 w-4 text-gray-700" />
-                        <span>{alternatePhotoSaveMessage}</span>
+
+                  <div className="flex items-start gap-3 border-t border-gray-100 pt-4">
+                    <ImageIcon className="mt-0.5 h-5 w-5 text-gray-700" />
+                    <div className="w-full space-y-4">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">
+                          Official photo source
+                        </p>
+                        <p className="mt-1 text-sm text-gray-600">
+                          Optional. When set, YJ matches photos from the brand&apos;s official
+                          website during the scrape — pricing, stock, and descriptions still come
+                          from the supplier.
+                        </p>
                       </div>
-                    ) : null}
-                    {alternatePhotoConfig?.websiteUrl ? (
-                      <span className="text-xs text-gray-500">
-                        Saved on scraper: {alternatePhotoConfig.sourceName} (
-                        {hostname(alternatePhotoConfig.websiteUrl)})
-                      </span>
-                    ) : null}
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="alternate-photo-website">Official website URL</Label>
+                          <Input
+                            id="alternate-photo-website"
+                            type="url"
+                            value={alternatePhotoWebsite}
+                            onChange={(event) => setAlternatePhotoWebsite(event.target.value)}
+                            placeholder="https://www.focus-bikes.com/int/"
+                            className="rounded-md"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="alternate-photo-name">Photo source label</Label>
+                          <Input
+                            id="alternate-photo-name"
+                            value={alternatePhotoName}
+                            onChange={(event) => setAlternatePhotoName(event.target.value)}
+                            placeholder="Focus official"
+                            className="rounded-md"
+                          />
+                        </div>
+                        <div className="space-y-2 md:col-span-2">
+                          <Label htmlFor="alternate-photo-search">
+                            Search URL template (optional)
+                          </Label>
+                          <Input
+                            id="alternate-photo-search"
+                            value={alternatePhotoSearchTemplate}
+                            onChange={(event) =>
+                              setAlternatePhotoSearchTemplate(event.target.value)
+                            }
+                            placeholder="https://bike.shimano.com/search?q={query}"
+                            className="rounded-md"
+                          />
+                          <p className="text-xs text-gray-500">
+                            Use {"{query}"} where the SKU or product name should be inserted.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <Button
+                          variant="outline"
+                          className="rounded-md"
+                          onClick={saveAlternatePhotoConfig}
+                          disabled={!alternatePhotoWebsite.trim() || isSavingAlternatePhoto}
+                        >
+                          {isSavingAlternatePhoto ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Saving…
+                            </>
+                          ) : (
+                            "Save as default for this supplier"
+                          )}
+                        </Button>
+                        {alternatePhotoSaveMessage ? (
+                          <span className="inline-flex items-center gap-1.5 text-sm text-gray-700">
+                            <CheckCircle2 className="h-4 w-4" />
+                            {alternatePhotoSaveMessage}
+                          </span>
+                        ) : alternatePhotoConfig?.websiteUrl ? (
+                          <span className="text-xs text-gray-500">
+                            Saved default: {alternatePhotoConfig.sourceName} (
+                            {hostname(alternatePhotoConfig.websiteUrl)})
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : null}
             </div>
-          </div>
-        </div>
-      ) : null}
 
-      {phase === "running" ? (
-        <div className="rounded-md border border-gray-200 bg-white p-5">
-          <div className="flex items-start gap-3">
-            <Loader2 className="mt-0.5 h-5 w-5 animate-spin text-gray-600" />
-            <div>
-              <p className="text-sm font-semibold text-gray-900">Scraping supplier catalogue</p>
-              <p className="mt-1 text-sm text-gray-600">
-                {alternatePhotoProgress
-                  ? `Matching official photos: ${alternatePhotoProgress.matched} of ${alternatePhotoProgress.total} products.`
-                  : scrapeProgress
-                    ? `Scraped ${scrapeProgress.scraped} of ${scrapeProgress.total} products so far. New rows appear below as each product page is processed.`
-                    : "YJ is finding product pages, then it will open each one and collect variants, stock, and image URLs."}
-                {alternatePhotoWebsite.trim() && !alternatePhotoProgress
-                  ? " Official photos will be matched after the catalogue scrape."
-                  : ""}
-              </p>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {error ? (
-        <div className="rounded-md border border-red-200 bg-white p-4 text-sm text-red-700">
-          <div className="flex items-start gap-2">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        </div>
-      ) : null}
-
-      {phase === "fetching_photos" ? (
-        <div className="rounded-md border border-gray-200 bg-white p-5">
-          <div className="flex items-start gap-3">
-            <Loader2 className="mt-0.5 h-5 w-5 animate-spin text-gray-600" />
-            <div>
-              <p className="text-sm font-semibold text-gray-900">Matching official product photos</p>
-              <p className="mt-1 text-sm text-gray-600">
-                {alternatePhotoProgress
-                  ? `Processed ${alternatePhotoProgress.matched} of ${alternatePhotoProgress.total} selected products.`
-                  : "YJ is searching the official website by SKU and product name, then extracting gallery images."}
-              </p>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {activeScraper &&
-      (phase === "review" ||
-        phase === "importing" ||
-        phase === "fetching_photos" ||
-        (phase === "running" && products.length > 0)) &&
-      products.length > 0 ? (
-        <div ref={reviewRef}>
-          <div className="mb-4 rounded-md border border-gray-200 bg-white p-5">
-            <div className="flex items-start gap-3">
-              {phase === "running" ? (
-                <Loader2 className="mt-0.5 h-5 w-5 animate-spin text-gray-600" />
-              ) : (
-                <ScanSearch className="mt-0.5 h-5 w-5 text-gray-700" />
-              )}
-              <div>
-                <p className="text-sm font-semibold text-gray-900">
-                  {phase === "running"
-                    ? "Products appearing as they are scraped"
-                    : "Review extracted fields and catalogue changes"}
-                </p>
-                <p className="mt-1 text-sm text-gray-600">
-                  {phase === "running" ? (
-                    <>
-                      {scrapeProgress
-                        ? `${scrapeProgress.scraped} of ${scrapeProgress.total} products loaded. `
-                        : `${products.length} products loaded. `}
-                      {alternatePhotoWebsite.trim()
-                        ? "Official photos are matched during the scrape. "
-                        : ""}
-                      Import unlocks once the scrape finishes.
-                    </>
+            {/* Sticky run bar */}
+            <div className="sticky bottom-0 z-20 -mx-1 rounded-md border border-gray-200 bg-white/95 px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)] backdrop-blur">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-gray-600">
+                  {selectedOptionIds.size === 0 ? (
+                    <>Choose at least one {browseMode} to continue.</>
                   ) : (
                     <>
-                      Confirm the supplier-to-YJ field mapping, review new and changed products,
-                      and choose which photos to keep before import.
+                      <span className="font-medium text-gray-900">{selectedOptionIds.size}</span>{" "}
+                      {browseMode === "brand"
+                        ? selectedOptionIds.size === 1
+                          ? "brand"
+                          : "brands"
+                        : selectedOptionIds.size === 1
+                          ? "category"
+                          : "categories"}
+                      {selectedCategoryCount > 0
+                        ? ` · ${selectedCategoryCount} ${
+                            selectedCategoryCount === 1 ? "subcategory" : "subcategories"
+                          }`
+                        : ""}{" "}
+                      ready to scrape
                     </>
                   )}
                 </p>
-                {showPhotoPreview && (phase === "review" || phase === "fetching_photos") ? (
-                  <div className="mt-3">
-                    <button
-                      type="button"
-                      className="text-xs font-medium text-gray-500 underline-offset-2 hover:text-gray-700 hover:underline disabled:opacity-50"
-                      onClick={() => void fetchAlternatePhotos()}
-                      disabled={selectedProducts.length === 0 || phase === "fetching_photos"}
-                    >
-                      {phase === "fetching_photos"
-                        ? "Refreshing official photos…"
-                        : "Refresh official photos"}
-                    </button>
-                  </div>
-                ) : null}
+                <Button className="rounded-md" onClick={runScraper} disabled={!canRunScrape}>
+                  <Play className="h-4 w-4" />
+                  Start scrape
+                </Button>
               </div>
             </div>
-          </div>
-          <StoreFesportsScrapeReview
-            key={activeScraper.id}
-            products={products}
-            selectedIds={selectedProductIds}
-            onToggleProduct={toggleProduct}
-            onToggleAll={toggleAllProducts}
-            onCreateListings={importProducts}
-            isCreating={
-              phase === "importing" || phase === "running" || phase === "fetching_photos"
-            }
-            sourceName={activeScraper.name}
-            initialFieldMapping={activeScraper.fieldMapping}
-            productMatches={phase === "running" || phase === "fetching_photos" ? undefined : matches}
-            actionLabel={
-              phase === "running" || phase === "fetching_photos"
-                ? "Import after scrape"
-                : "Import or update"
-            }
-            showPhotoPreview={showPhotoPreview}
-            supplierPhotoLabel={activeScraper.name}
-            alternatePhotoSourceName={
-              alternatePhotoConfig?.sourceName || hostname(alternatePhotoWebsite)
-            }
-            imagePreferences={imagePreferences}
-            onImagePreferenceChange={updateImagePreference}
-            onApplyImagePreferenceToAll={applyImagePreferenceToAll}
-            isFetchingAlternatePhotos={phase === "fetching_photos"}
-            excludedImages={excludedImages}
-            onRemoveImage={removeProductImage}
-            onRestoreImage={restoreProductImage}
-          />
-        </div>
-      ) : null}
+          </>
+        ) : null}
 
-      {phase === "done" && importSummary ? (
-        <div className="rounded-md border border-gray-200 bg-white p-5">
-          <div className="flex items-start gap-3">
-            <CheckCircle2 className="mt-0.5 h-5 w-5 text-gray-700" />
-            <div>
-              <p className="text-sm font-semibold text-gray-900">Supplier import complete</p>
+        {/* ── Step 2: Scrape ─────────────────────────────────────────── */}
+        {step === "scrape" ? (
+          <>
+            <div className="rounded-md border border-gray-200 bg-white p-5">
+              <div className="flex items-start gap-3">
+                <Loader2 className="mt-0.5 h-5 w-5 animate-spin text-gray-600" />
+                <div className="w-full">
+                  <p className="text-sm font-semibold text-gray-900">
+                    {alternatePhotoProgress
+                      ? "Matching official photos"
+                      : "Scraping supplier catalogue"}
+                  </p>
+                  <p className="mt-1 text-sm text-gray-600">
+                    {alternatePhotoProgress
+                      ? `Matched ${alternatePhotoProgress.matched} of ${alternatePhotoProgress.total} products against the official website.`
+                      : scrapeProgress
+                        ? `Scraped ${scrapeProgress.scraped} of ${scrapeProgress.total} products. Each product page is opened for variants, stock, and photos.`
+                        : "YJ is finding product pages, then it will open each one and collect variants, stock, and image URLs."}
+                    {alternatePhotoWebsite.trim() && !alternatePhotoProgress
+                      ? " Official photos are matched after the catalogue scrape."
+                      : ""}
+                  </p>
+                  {scrapeProgress && scrapeProgress.total > 0 ? (
+                    <Progress
+                      value={
+                        ((alternatePhotoProgress?.matched ?? scrapeProgress.scraped) /
+                          (alternatePhotoProgress?.total ?? scrapeProgress.total)) *
+                        100
+                      }
+                      className="mt-3 h-2"
+                    />
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            {products.length > 0 ? (
+              <div className="rounded-md border border-gray-200 bg-white">
+                <div className="border-b border-gray-200 px-5 py-3">
+                  <p className="text-sm font-semibold text-gray-900">
+                    {products.length} product{products.length === 1 ? "" : "s"} scraped so far
+                  </p>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {products.slice(-6).map((product) => (
+                    <div key={product.productId} className="flex items-center gap-3 px-5 py-2.5">
+                      {product.heroImageUrl || product.imageUrls[0] ? (
+                        <img
+                          src={product.heroImageUrl ?? product.imageUrls[0]}
+                          alt=""
+                          loading="lazy"
+                          className="h-9 w-9 shrink-0 rounded-md border border-gray-200 object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-dashed border-gray-200 text-gray-400">
+                          <ImageIcon className="h-4 w-4" />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm text-gray-900">{product.name}</p>
+                        <p className="truncate text-xs text-gray-500">
+                          {[
+                            product.sku ? `SKU ${product.sku}` : null,
+                            product.price != null ? `$${product.price}` : null,
+                            `${product.imageUrls.length} photo${product.imageUrls.length === 1 ? "" : "s"}`,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <SupplierScraperLogPanel logs={activityLogs} title="YJ scrape log" />
+          </>
+        ) : null}
+
+        {/* ── Step 3: Review ─────────────────────────────────────────── */}
+        {step === "review" ? (
+          products.length === 0 ? (
+            <div className="rounded-md border border-gray-200 bg-white p-8 text-center">
+              <p className="text-sm font-semibold text-gray-900">No products scraped</p>
               <p className="mt-1 text-sm text-gray-600">
-                Created {importSummary.created} product rows, updated {importSummary.updated},
-                created {importSummary.groupsCreated} variant groups, and saved{" "}
-                {importSummary.imagesSaved} new images. Image files continue uploading in the
+                The last run returned no products. Adjust the selection and try again.
+              </p>
+              <Button
+                variant="outline"
+                className="mt-4 rounded-md"
+                onClick={() => setView({ kind: "run", step: "select" })}
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to selection
+              </Button>
+            </div>
+          ) : (
+            <>
+              {readinessSummary ? (
+                <div className="rounded-md border border-gray-200 bg-white px-5 py-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900">
+                        Review before import
+                      </h3>
+                      <p className="mt-0.5 text-sm text-gray-600">
+                        Check field mapping, categories, and photos. &ldquo;Page-ready&rdquo;
+                        means the product page will have a price, photos, a description, and a
+                        brand.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600">
+                      <span>
+                        <span className="font-semibold text-gray-900">
+                          {readinessSummary.ready}
+                        </span>{" "}
+                        of {selectedProducts.length} page-ready
+                      </span>
+                      {readinessSummary.missingPhotos > 0 ? (
+                        <span>{readinessSummary.missingPhotos} without photos</span>
+                      ) : null}
+                      {readinessSummary.missingDescriptions > 0 ? (
+                        <span>{readinessSummary.missingDescriptions} without descriptions</span>
+                      ) : null}
+                      {readinessSummary.missingBrand > 0 ? (
+                        <span>{readinessSummary.missingBrand} without a brand</span>
+                      ) : null}
+                      {readinessSummary.missingPrice > 0 ? (
+                        <span>{readinessSummary.missingPrice} without a price</span>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              <StoreFesportsScrapeReview
+                key={activeScraper.id}
+                products={products}
+                selectedIds={selectedProductIds}
+                onToggleProduct={toggleProduct}
+                onToggleAll={toggleAllProducts}
+                onCreateListings={importProducts}
+                isCreating={phase === "importing" || phase === "fetching_photos"}
+                sourceName={activeScraper.name}
+                initialFieldMapping={activeScraper.fieldMapping}
+                productMatches={matches}
+                actionLabel="Import"
+                enableCategoryAssignment
+                showPhotoPreview={showPhotoPreview}
+                supplierPhotoLabel={activeScraper.name}
+                alternatePhotoSourceName={
+                  alternatePhotoConfig?.sourceName || hostname(alternatePhotoWebsite)
+                }
+                imagePreferences={imagePreferences}
+                onImagePreferenceChange={updateImagePreference}
+                onApplyImagePreferenceToAll={applyImagePreferenceToAll}
+                isFetchingAlternatePhotos={phase === "fetching_photos"}
+                onRefreshAlternatePhotos={() => void fetchAlternatePhotos()}
+                excludedImages={excludedImages}
+                onRemoveImage={removeProductImage}
+                onRestoreImage={restoreProductImage}
+              />
+
+              {phase === "fetching_photos" ? (
+                <SupplierScraperLogPanel logs={activityLogs} title="Official photo match log" />
+              ) : null}
+            </>
+          )
+        ) : null}
+
+        {/* ── Step 4: Done ───────────────────────────────────────────── */}
+        {step === "done" && importSummary ? (
+          <div className="mx-auto w-full max-w-2xl space-y-4 pt-6">
+            <div className="rounded-md border border-gray-200 bg-white p-6 text-center">
+              <CheckCircle2 className="mx-auto h-8 w-8 text-gray-700" />
+              <h3 className="mt-3 text-sm font-semibold text-gray-900">Import complete</h3>
+              <p className="mx-auto mt-1 max-w-md text-sm text-gray-600">
+                Products are now in your catalogue. Image files keep uploading in the
                 background.
               </p>
+              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[
+                  { label: "Created", value: importSummary.created },
+                  { label: "Updated", value: importSummary.updated },
+                  { label: "Variant groups", value: importSummary.groupsCreated },
+                  { label: "Images saved", value: importSummary.imagesSaved },
+                ].map((stat) => (
+                  <div
+                    key={stat.label}
+                    className="rounded-md border border-gray-200 bg-gray-50 px-3 py-4"
+                  >
+                    <p className="text-lg font-semibold text-gray-900">{stat.value}</p>
+                    <p className="mt-0.5 text-xs text-gray-500">{stat.label}</p>
+                  </div>
+                ))}
+              </div>
               {importSummary.errors.length > 0 ? (
-                <div className="mt-3 rounded-md border border-gray-200 bg-white p-3 text-xs text-gray-600">
+                <div className="mt-4 rounded-md border border-gray-200 bg-white p-3 text-left text-xs text-gray-600">
+                  <p className="mb-1 font-medium text-gray-800">
+                    {importSummary.errors.length} item
+                    {importSummary.errors.length === 1 ? "" : "s"} had problems:
+                  </p>
                   {importSummary.errors.map((message) => (
                     <p key={message}>{message}</p>
                   ))}
                 </div>
               ) : null}
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+                <Button asChild className="rounded-md">
+                  <Link href="/products">
+                    <ExternalLink className="h-4 w-4" />
+                    View products
+                  </Link>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="rounded-md"
+                  onClick={() => setView({ kind: "run", step: "select" })}
+                >
+                  Run another scrape
+                </Button>
+                <Button variant="outline" className="rounded-md" onClick={goHome}>
+                  All suppliers
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </div>
   );
 }

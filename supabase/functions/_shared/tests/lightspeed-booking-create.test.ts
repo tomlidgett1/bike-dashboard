@@ -3,6 +3,7 @@ import {
   extractWorkorderId,
   isFreshBookingConfirmation,
   melbourneDropOffIso,
+  melbourneEtaOutIso,
   normaliseDropOffTime,
   UNCOMMITTED_VISIT_TIME_CLAIM_RE,
 } from '../lightspeed-booking-create.ts';
@@ -42,6 +43,7 @@ Deno.test('preserves the requested 10am drop-off from booking comments', () => {
 
   assertEquals(built.requestedTime, '10:00');
   assertEquals(built.payload.timeIn, '2026-07-14T10:00:00+10:00');
+  assertEquals(built.payload.etaOut, '2026-07-14T17:00:00+10:00');
   assertEquals(built.payload.customerID, 9500);
   assertEquals(built.payload.shopID, 1);
   assertStringIncludes(String(built.payload.note), 'SL7 Tarmac');
@@ -54,6 +56,13 @@ Deno.test('preserves the requested 10am drop-off from booking comments', () => {
 Deno.test('uses the correct Melbourne daylight-saving offset', () => {
   assertEquals(melbourneDropOffIso('2026-01-14', '10:00'), '2026-01-14T10:00:00+11:00');
   assertEquals(melbourneDropOffIso('2026-07-14', '10:00'), '2026-07-14T10:00:00+10:00');
+});
+
+Deno.test('etaOut always lands after the drop-off timeIn', () => {
+  assertEquals(melbourneEtaOutIso('2026-07-14', '10:00'), '2026-07-14T17:00:00+10:00');
+  assertEquals(melbourneEtaOutIso('2026-07-14', null), '2026-07-14T17:00:00+10:00');
+  assertEquals(melbourneEtaOutIso('2026-07-14', '17:30'), '2026-07-14T19:00:00+10:00');
+  assertEquals(melbourneEtaOutIso('2026-07-14', '22:30'), '2026-07-14T23:00:00+10:00');
 });
 
 Deno.test('extracts workorder IDs from Lightspeed responses', () => {

@@ -7,13 +7,14 @@
 
 import { pickServerEnv } from "@/lib/nest-portal/lib/server-env";
 import { stripUrlTrailingPunctuation } from "@/lib/nest/sms-link-format";
+import { linqSendMessageParts } from "@/lib/nest/linq-outbound-media";
 
 const LINQ_BASE_URL =
   pickServerEnv(["LINQ_API_BASE_URL"]) || "https://api.linqapp.com/api/partner/v3";
 
 /** Hosted Agent Pay checkout URLs (App Clip / web checkout). */
 export const AGENT_PAY_CHECKOUT_URL_RE =
-  /https?:\/\/(?:[\w.-]+\.)?linqapp\.com\/pay\/[^\s<>\[\]"']+/gi;
+  /https?:\/\/(?:[\w-]+\.)*linqapp\.com\/pay\/[^\s<>\[\]"']+/gi;
 
 export type LinqPaymentRequestStatus =
   | "requested"
@@ -194,6 +195,40 @@ export function stripCheckoutUrlFromText(text: string, checkoutUrl: string): str
 }
 
 export function isAgentPayCheckoutUrl(url: string): boolean {
+  const trimmed = stripUrlTrailingPunctuation(url.trim());
+  if (!trimmed) return false;
   AGENT_PAY_CHECKOUT_URL_RE.lastIndex = 0;
-  return AGENT_PAY_CHECKOUT_URL_RE.test(url.trim());
+  return AGENT_PAY_CHECKOUT_URL_RE.test(trimmed);
+}
+
+export function resolveAgentPayCheckoutUrl(
+  text: string,
+  explicitUrl?: string | null,
+): string | null {
+  if (explicitUrl && isAgentPayCheckoutUrl(explicitUrl)) {
+    return stripUrlTrailingPunctuation(explicitUrl.trim());
+  }
+  return extractAgentPayCheckoutUrl(text);
+}
+
+/**
+ * Deliver LinkPay as a Linq `link` message part (required for App Clip / rich payment card).
+ * Optional intro text is sent as a separate plain-text message first.
+ */
+export async function sendLinqAgentPayCheckout(params: {
+  chatId: string;
+  checkoutUrl: string;
+  introText?: string | null;
+}): Promise<{ chatId: string; providerMessageId: string | null }> {
+  const checkoutUrl = stripUrlTrailingPunctuation(params.checkoutUrl.trim());
+  if (!isAgentPayCheckoutUrl(checkoutUrl)) {
+    throw new Error("Invalid LinkPay checkout URL.");
+  }
+
+  const intro = params.introText?.trim() || "";
+  if (intro) {
+    await linqSendMessageParts(params.chatId, [{ type: "text", value: intro }]);
+  }
+
+  return linqSendMessageParts(params.chatId, [{ type: "link", value: checkoutUrl }]);
 }

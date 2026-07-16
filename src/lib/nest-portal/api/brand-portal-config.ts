@@ -25,7 +25,8 @@ import { getLinqFromNumber } from '@/lib/nest/linq-sender'
 import { ensureSmsUrlsAreClickable } from '@/lib/nest/sms-link-format'
 import { moderateNestOutboundMessage } from '@/lib/nest/outbound-content-moderation'
 import {
-  extractAgentPayCheckoutUrl,
+  resolveAgentPayCheckoutUrl,
+  sendLinqAgentPayCheckout,
   stripCheckoutUrlFromText,
 } from '@/lib/nest/linq-agent-pay'
 import { getLightspeedAccess, lightspeedGetJson } from '../lib/lightspeed-portal-access'
@@ -153,21 +154,24 @@ async function linqSendMessage(
   chatId: string,
   text: string,
   attachmentIds: string[] = [],
+  explicitCheckoutUrl?: string | null,
 ): Promise<LinqMessageResult> {
   const trimmed = text.trim()
 
-  // Agent Pay checkout URLs must be sent as a lone `link` part so iMessage
-  // renders the tappable payment card (App Clip / web checkout) instead of a bare URL.
   const agentPayUrl =
-    attachmentIds.length === 0 ? extractAgentPayCheckoutUrl(trimmed) : null
+    attachmentIds.length === 0
+      ? resolveAgentPayCheckoutUrl(trimmed, explicitCheckoutUrl)
+      : null
   if (agentPayUrl) {
     const intro = stripCheckoutUrlFromText(trimmed, agentPayUrl)
       .replace(/\n*Tap to pay:\s*$/i, '')
+      .replace(/\n*Tap the payment card below.*$/i, '')
       .trim()
-    if (intro) {
-      await linqPostMessageParts(chatId, [{ type: 'text', value: intro }])
-    }
-    return linqPostMessageParts(chatId, [{ type: 'link', value: agentPayUrl }])
+    return sendLinqAgentPayCheckout({
+      chatId,
+      checkoutUrl: agentPayUrl,
+      introText: intro || null,
+    })
   }
 
   const parts: Array<{ type: string; value?: string; attachment_id?: string }> = []
@@ -3023,8 +3027,11 @@ async function handleBrandPortalConfig(req: VercelRequest, res: VercelResponse):
       const attachmentIds = Array.isArray(body.mediaAttachmentIds)
         ? body.mediaAttachmentIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
         : []
+      const agentPayCheckoutUrl =
+        typeof body.agentPayCheckoutUrl === 'string' ? body.agentPayCheckoutUrl.trim() : ''
+      const skipLinqDelivery = body.skipLinqDelivery === true
       if (!chatId) { res.status(400).json({ error: 'chatId is required' }); return }
-      if (!content && attachmentIds.length === 0) {
+      if (!content && attachmentIds.length === 0 && !agentPayCheckoutUrl) {
         res.status(400).json({ error: 'content or mediaAttachmentIds is required' })
         return
       }
@@ -3085,8 +3092,15 @@ async function handleBrandPortalConfig(req: VercelRequest, res: VercelResponse):
           return
         }
         try {
-          const sent = await linqSendMessage(chatId, content, attachmentIds)
-          providerMessageId = sent.providerMessageId
+          if (!skipLinqDelivery) {
+            const sent = await linqSendMessage(
+              chatId,
+              content,
+              attachmentIds,
+              agentPayCheckoutUrl || null,
+            )
+            providerMessageId = sent.providerMessageId
+          }
         } catch (err) {
           res.status(502).json({ error: err instanceof Error ? err.message : 'Could not send via Linq' })
           return

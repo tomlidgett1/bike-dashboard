@@ -52,6 +52,26 @@ export function ensureSmsUrlsAreClickable(text: string): string {
     .trim();
 }
 
+export function buildPaymentLinkIntroMessage(opts: {
+  amount: number;
+  description?: string;
+  formatAmount?: (amount: number) => string;
+}): string {
+  const formatAmount =
+    opts.formatAmount ??
+    ((amount: number) =>
+      new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD" }).format(amount));
+
+  const forPart = opts.description?.trim() ? ` for ${opts.description.trim()}` : "";
+
+  return [
+    `Here's a secure payment link${forPart} (${formatAmount(opts.amount)}).`,
+    "Tap the payment card below to pay with Apple Pay.",
+    "",
+    "Once paid, it's added to your store credit in Lightspeed.",
+  ].join("\n");
+}
+
 export function buildPaymentLinkMessage(opts: {
   amount: number;
   description?: string;

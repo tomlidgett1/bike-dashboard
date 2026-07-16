@@ -12,6 +12,11 @@ import {
   defaultImagePreference,
   resolveProductImages,
 } from "@/lib/scrapers/supplier-image-preferences";
+import {
+  isValidAssignment,
+  resolveMarketplaceCategory,
+  type SupplierCategoryOverrides,
+} from "@/lib/scrapers/supplier-category";
 import type {
   SupplierImageSourcePreferences,
   SupplierScrapedProduct,
@@ -43,6 +48,7 @@ interface SupplierImportInput {
   fieldMapping: FieldMapping;
   imagePreferences?: SupplierImageSourcePreferences;
   excludedImages?: Record<string, string[]>;
+  categoryOverrides?: SupplierCategoryOverrides;
 }
 
 export interface SupplierImportResult {
@@ -62,7 +68,7 @@ function normaliseCanonicalName(name: string): string {
     .replace(/\s+/g, " ");
 }
 
-async function ensureCanonical(
+export async function ensureCanonical(
   admin: SupabaseClient,
   name: string,
   brand: string | null,
@@ -94,17 +100,13 @@ function fallbackCategory(item: SupplierImportItem): {
   category: string;
   subcategory: string;
 } {
-  const haystack = `${item.display_name} ${item.product_description ?? ""}`.toLowerCase();
-  if (/(jersey|helmet|glove|shoe|jacket|short|bib|apparel)/.test(haystack)) {
-    return { category: "Apparel", subcategory: "Other" };
-  }
-  if (/(bike|bicycle|frameset|frame set)/.test(haystack)) {
-    return { category: "Bicycles", subcategory: "Other" };
-  }
-  if (/(nutrition|gel|bar|drink|electrolyte)/.test(haystack)) {
-    return { category: "Nutrition", subcategory: "Other" };
-  }
-  return { category: "Parts", subcategory: "Other" };
+  const resolved = resolveMarketplaceCategory({
+    rawCategory: item.marketplace_category,
+    rawSubcategory: item.marketplace_subcategory,
+    name: item.display_name,
+    description: item.product_description,
+  });
+  return { category: resolved.category, subcategory: resolved.subcategory };
 }
 
 function stableLightspeedId(scraperId: string, sourceId: string): string {
@@ -121,6 +123,17 @@ async function saveProductItem(
     existing?.canonical_product_id ||
     (await ensureCanonical(input.admin, baseName, item.brand));
   const fallback = fallbackCategory(item);
+  // Free-text supplier categories are invisible to marketplace/category
+  // browsing — only vocabulary values may reach the products table.
+  const category = isValidAssignment({
+    category: item.marketplace_category,
+    subcategory: item.marketplace_subcategory,
+  })
+    ? {
+        category: item.marketplace_category as string,
+        subcategory: item.marketplace_subcategory as string,
+      }
+    : fallback;
   const values = {
     user_id: input.ownerUserId,
     listing_type: "store_inventory",
@@ -133,8 +146,8 @@ async function saveProductItem(
     brand: item.brand,
     manufacturer_name: item.brand,
     price: Number.isFinite(item.price) ? item.price : 0,
-    marketplace_category: item.marketplace_category || fallback.category,
-    marketplace_subcategory: item.marketplace_subcategory || fallback.subcategory,
+    marketplace_category: category.category,
+    marketplace_subcategory: category.subcategory,
     product_description:
       item.product_description ||
       [`Source: ${input.scraperName}`, item.sourceUrl].filter(Boolean).join("\n"),
@@ -184,7 +197,7 @@ async function saveProductItem(
   };
 }
 
-async function scheduleCloudinaryUpload(
+export async function scheduleCloudinaryUpload(
   admin: SupabaseClient,
   accessToken: string | null,
   imageId: string,
@@ -517,10 +530,17 @@ export async function importSupplierProducts(
     );
     const mapped = applyFieldMapping(product, input.fieldMapping);
     const baseName = mapped.display_name;
+    const categoryOverride = input.categoryOverrides?.[product.productId];
     const items = materialiseSupplierImportItems(product, input.fieldMapping).map((item) => ({
       ...item,
       heroImageUrl: resolved.heroImageUrl,
       imageUrls: resolved.imageUrls,
+      ...(categoryOverride
+        ? {
+            marketplace_category: categoryOverride.category,
+            marketplace_subcategory: categoryOverride.subcategory,
+          }
+        : {}),
     }));
     const importedItems: ImportedItem[] = [];
 

@@ -109,7 +109,18 @@ export async function POST(request: NextRequest) {
 
   if (insertError || !paymentRequest) {
     console.error("[linkpay-requests] insert failed:", insertError);
-    return json({ error: "Could not create the LinkPay request." }, 500);
+    const detail =
+      typeof insertError?.message === "string" && insertError.message.trim()
+        ? insertError.message.trim()
+        : null;
+    return json(
+      {
+        error: detail
+          ? `Could not create the LinkPay request: ${detail}`
+          : "Could not create the LinkPay request.",
+      },
+      500,
+    );
   }
 
   let linqRequest;

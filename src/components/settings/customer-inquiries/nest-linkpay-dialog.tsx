@@ -6,7 +6,7 @@ import Image from "next/image";
 import { Loader2 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { buildPaymentLinkMessage } from "@/lib/nest/sms-link-format";
+import { buildPaymentLinkIntroMessage } from "@/lib/nest/sms-link-format";
 
 function formatUsd(amount: number) {
   return new Intl.NumberFormat("en-US", {
@@ -31,8 +31,8 @@ export function NestLinkPayDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   chatId: string;
-  /** Puts the Agent Pay checkout link into the compose input for staff to edit (does not send). */
-  onDraftMessage: (content: string) => void;
+  /** Puts intro copy in the compose box and holds the checkout URL for send as a payment card. */
+  onDraftMessage: (payload: { intro: string; checkoutUrl: string }) => void;
 }) {
   const [amountText, setAmountText] = React.useState("");
   const [description, setDescription] = React.useState("");
@@ -87,14 +87,14 @@ export function NestLinkPayDialog({
       if (!res.ok || !data.url) {
         throw new Error(data.error || "Could not create the LinkPay checkout link.");
       }
-      onDraftMessage(
-        buildPaymentLinkMessage({
+      onDraftMessage({
+        intro: buildPaymentLinkIntroMessage({
           amount,
           description: description.trim(),
-          url: data.url,
           formatAmount: formatUsd,
         }),
-      );
+        checkoutUrl: data.url,
+      });
       onOpenChange(false);
     } catch (err) {
       setError(
@@ -126,9 +126,9 @@ export function NestLinkPayDialog({
             <p className="mt-1 text-sm text-gray-500">
               Creates a Linq Agent Pay checkout card and drops it into your message box so
               you can edit before sending. Agent Pay currently charges in USD only. On
-              iPhone it opens as an Apple Pay App Clip; everywhere else it opens a web
-              checkout. Once paid, the amount is deposited onto their Lightspeed credit
-              account.
+              iPhone it should open as an Apple Pay payment card (App Clip when registered);
+              everywhere else it opens a web checkout. Once paid, the amount is deposited onto
+              their Lightspeed credit account.
               {creditBalance != null && creditBalance > 0
                 ? ` Current Yellow Jersey credit: ${formatAud(creditBalance)}.`
                 : ""}

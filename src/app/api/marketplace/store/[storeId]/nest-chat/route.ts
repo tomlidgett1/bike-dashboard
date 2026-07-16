@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isNestMessagingConfigured } from "@/lib/nest/config";
 import { loadNestThreadFromSupabase } from "@/lib/nest/inbox-supabase";
-import { runNestTestChatLocal } from "@/lib/nest/nest-test-chat";
+import { runStorefrontAgentChat } from "@/lib/nest/storefront-agent";
 import {
   persistStorefrontNestTurn,
   storefrontThreadHasStaffReply,
@@ -10,7 +10,7 @@ import { resolveStoreNestBrandKey } from "@/lib/nest/resolve-store-brand-key";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 120;
 
 function json(body: Record<string, unknown>, status = 200) {
   return NextResponse.json(body, {
@@ -185,8 +185,11 @@ export async function POST(
 
     let reply: string | null = null;
     if (!staffActive) {
-      const result = await runNestTestChatLocal({
+      const result = await runStorefrontAgentChat({
+        storeUserId: storeId,
         brandKey,
+        storeName: profile.business_name?.trim() || "Store",
+        chatId,
         message,
         chatHistory: history,
       });

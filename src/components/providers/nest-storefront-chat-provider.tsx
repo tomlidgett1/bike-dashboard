@@ -4,6 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  ArrowLeft,
   Bot,
   ChevronDown,
   Loader2,
@@ -439,6 +440,11 @@ function NestStorefrontChatWidget() {
   const { session, minimise, expand, close, sendMessage, sending } = useNestStorefrontChat();
   const [draft, setDraft] = React.useState("");
   const [introExpanded, setIntroExpanded] = React.useState(true);
+  const [mobileViewport, setMobileViewport] = React.useState<{
+    height: number;
+    top: number;
+  } | null>(null);
+  const [keyboardOpen, setKeyboardOpen] = React.useState(false);
   const introPlayedRef = React.useRef(false);
   const listRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -453,6 +459,72 @@ function NestStorefrontChatWidget() {
     const timer = window.setTimeout(() => inputRef.current?.focus(), 180);
     return () => window.clearTimeout(timer);
   }, [session?.open, session?.minimised]);
+
+  // Follow the visual viewport so the composer sits above the software keyboard.
+  // A separate full-bleed white shell covers the layout viewport so the store
+  // page never shows through the keyboard gap on mobile Safari/Chrome.
+  React.useEffect(() => {
+    if (!session?.open || session.minimised) {
+      setMobileViewport(null);
+      setKeyboardOpen(false);
+      return;
+    }
+    if (!window.matchMedia("(max-width: 639px)").matches) {
+      setMobileViewport(null);
+      setKeyboardOpen(false);
+      return;
+    }
+
+    const viewport = window.visualViewport;
+    const updateViewport = () => {
+      const height = Math.round(viewport?.height ?? window.innerHeight);
+      const top = Math.round(viewport?.offsetTop ?? 0);
+      setMobileViewport({ height, top });
+      setKeyboardOpen(height < window.innerHeight - 80);
+    };
+
+    updateViewport();
+    viewport?.addEventListener("resize", updateViewport);
+    viewport?.addEventListener("scroll", updateViewport);
+    window.addEventListener("orientationchange", updateViewport);
+
+    return () => {
+      viewport?.removeEventListener("resize", updateViewport);
+      viewport?.removeEventListener("scroll", updateViewport);
+      window.removeEventListener("orientationchange", updateViewport);
+    };
+  }, [session?.open, session?.minimised]);
+
+  // Lock background scroll on the full-page mobile chat.
+  React.useEffect(() => {
+    if (!session?.open || session.minimised) return;
+    if (!window.matchMedia("(max-width: 639px)").matches) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const previousPosition = document.body.style.position;
+    const previousTop = document.body.style.top;
+    const previousWidth = document.body.style.width;
+    const scrollY = window.scrollY;
+
+    document.body.style.overflow = "hidden";
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = "100%";
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.body.style.position = previousPosition;
+      document.body.style.top = previousTop;
+      document.body.style.width = previousWidth;
+      window.scrollTo(0, scrollY);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [session?.open, session?.minimised, close]);
 
   // Reset intro when leaving a store page so the next visit plays again.
   React.useEffect(() => {
@@ -522,36 +594,73 @@ function NestStorefrontChatWidget() {
 
   return (
     <AnimatePresence>
+      {/* Opaque full-bleed shell so the store never shows behind the keyboard. */}
+      <motion.div
+        key="nest-storefront-chat-shell"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
+        className="fixed inset-0 z-[119] bg-white sm:hidden"
+        aria-hidden="true"
+      />
       <motion.div
         key="nest-storefront-chat"
-        initial={{ opacity: 0, y: 24, scale: 0.96 }}
+        initial={{ opacity: 0, y: 16, scale: 0.95 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 16, scale: 0.96 }}
-        transition={{ duration: 0.28, ease: "easeOut" }}
-        className="fixed right-3 z-[90] flex h-[480px] w-[min(100vw-1.5rem,360px)] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_16px_48px_rgba(0,0,0,0.16)] sm:right-4"
-        style={{ bottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+        exit={{ opacity: 0, y: 16, scale: 0.95 }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Chat with ${session.storeName}`}
+        style={
+          {
+            "--chat-mobile-height": mobileViewport
+              ? `${mobileViewport.height}px`
+              : "100dvh",
+            "--chat-mobile-top": mobileViewport ? `${mobileViewport.top}px` : "0px",
+          } as React.CSSProperties
+        }
+        className="fixed left-0 right-0 top-[var(--chat-mobile-top)] z-[120] flex h-[var(--chat-mobile-height)] w-full flex-col overflow-hidden bg-white sm:bottom-[max(1rem,env(safe-area-inset-bottom))] sm:left-auto sm:right-4 sm:top-auto sm:h-[480px] sm:w-[360px] sm:rounded-md sm:border sm:border-gray-200 sm:shadow-[0_16px_48px_rgba(0,0,0,0.16)]"
       >
-        <div className="flex shrink-0 items-center gap-2.5 border-b border-gray-100 bg-gray-50 px-3 py-2.5">
+        <div
+          className={cn(
+            "flex shrink-0 items-center gap-2.5 border-b border-gray-100 bg-white px-3 pb-3 sm:gap-2.5 sm:bg-gray-50 sm:px-3 sm:py-2.5",
+            keyboardOpen
+              ? "pt-2"
+              : "pt-[max(0.75rem,env(safe-area-inset-top))]",
+          )}
+        >
+          <button
+            type="button"
+            onClick={close}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-700 transition-colors hover:bg-gray-100 sm:hidden"
+            aria-label="Back to store"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
           {session.storeLogoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={session.storeLogoUrl}
-              alt=""
-              className="h-8 w-8 rounded-xl object-cover ring-1 ring-gray-200"
+              alt={`${session.storeName} logo`}
+              className="h-9 w-9 rounded-full object-cover ring-1 ring-gray-200 sm:h-8 sm:w-8 sm:rounded-md"
             />
           ) : (
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white ring-1 ring-gray-200">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-50 ring-1 ring-gray-200 sm:h-8 sm:w-8 sm:rounded-md">
               <Bot className="h-4 w-4 text-gray-500" />
             </span>
           )}
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-gray-900">{session.storeName}</p>
-            <p className="text-[11px] text-gray-500">Chatbot</p>
+            <p className="truncate text-[15px] font-semibold text-gray-900 sm:text-sm">
+              {session.storeName}
+            </p>
+            <p className="text-xs text-gray-500 sm:text-[11px]">AI store assistant</p>
           </div>
           <button
             type="button"
             onClick={minimise}
-            className="flex h-8 w-8 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-200/70 hover:text-gray-800"
+            className="hidden h-8 w-8 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-200/70 hover:text-gray-800 sm:flex"
             aria-label="Minimise chat"
           >
             <ChevronDown className="h-4 w-4" />
@@ -559,14 +668,20 @@ function NestStorefrontChatWidget() {
           <button
             type="button"
             onClick={close}
-            className="flex h-8 w-8 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-200/70 hover:text-gray-800"
+            className="hidden h-8 w-8 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-200/70 hover:text-gray-800 sm:flex"
             aria-label="Close chat"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div ref={listRef} className="min-h-0 flex-1 space-y-2.5 overflow-y-auto bg-white px-3 py-3">
+        <div
+          ref={listRef}
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions"
+          className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-white px-4 py-4 sm:space-y-2.5 sm:px-3 sm:py-3"
+        >
           {session.messages.map((message) => (
             <div
               key={message.id}
@@ -577,10 +692,10 @@ function NestStorefrontChatWidget() {
             >
               <div
                 className={cn(
-                  "max-w-[85%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed",
+                  "max-w-[88%] whitespace-pre-wrap px-3.5 py-2.5 text-[15px] leading-relaxed sm:max-w-[85%] sm:px-3 sm:py-2 sm:text-[13px]",
                   message.role === "user"
-                    ? "bg-gray-900 text-white"
-                    : "border border-gray-200 bg-gray-50 text-gray-800",
+                    ? "rounded-[1.25rem] rounded-br-md bg-gray-900 text-white"
+                    : "rounded-[1.25rem] rounded-bl-md border border-gray-200 bg-gray-50 text-gray-800",
                 )}
               >
                 {message.text}
@@ -589,7 +704,7 @@ function NestStorefrontChatWidget() {
           ))}
           {sending ? (
             <div className="flex justify-start">
-              <div className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-gray-50 px-3 py-2 text-[12px] text-gray-500">
+              <div className="inline-flex items-center gap-2 rounded-[1.25rem] border border-gray-200 bg-gray-50 px-3.5 py-2 text-[13px] text-gray-500 sm:text-[12px]">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Typing…
               </div>
@@ -598,7 +713,12 @@ function NestStorefrontChatWidget() {
         </div>
 
         <form
-          className="flex shrink-0 items-center gap-2 border-t border-gray-100 bg-white px-3 py-2.5"
+          className={cn(
+            "flex shrink-0 items-center gap-2 bg-white px-3 pt-2 sm:border-t sm:border-gray-100 sm:px-3 sm:py-2.5",
+            keyboardOpen
+              ? "pb-2"
+              : "pb-[max(0.75rem,env(safe-area-inset-bottom))]",
+          )}
           onSubmit={(event) => {
             event.preventDefault();
             const next = draft;
@@ -613,19 +733,20 @@ function NestStorefrontChatWidget() {
             onChange={(event) => setDraft(event.target.value)}
             placeholder="Ask a question…"
             disabled={sending}
-            className="h-10 min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+            enterKeyHint="send"
+            className="h-11 min-w-0 flex-1 rounded-full border border-gray-200 bg-gray-50 px-4 text-base text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gray-900/10 sm:h-10 sm:rounded-xl sm:bg-white sm:px-3 sm:text-sm"
           />
           <button
             type="submit"
             disabled={sending || !draft.trim()}
-            className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-900 text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gray-900 text-white transition-colors hover:bg-gray-800 disabled:opacity-50 sm:h-10 sm:w-10 sm:rounded-xl"
             aria-label="Send message"
           >
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </button>
         </form>
 
-        <div className="flex shrink-0 items-center justify-center gap-1.5 border-t border-gray-100 bg-gray-50/80 px-3 py-2">
+        <div className="hidden shrink-0 items-center justify-center gap-1.5 border-t border-gray-100 bg-gray-50/80 px-3 py-2 sm:flex">
           <span className="text-[11px] text-gray-400">Powered by</span>
           <Image
             src="/yjsmall.png"

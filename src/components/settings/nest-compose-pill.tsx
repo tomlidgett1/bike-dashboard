@@ -36,6 +36,10 @@ import {
   type NestComposeQuickAction,
 } from "@/lib/nest/compose-quick-actions";
 import { ensureSmsUrlsAreClickable } from "@/lib/nest/sms-link-format";
+import {
+  extractAgentPayCheckoutUrl,
+  stripCheckoutUrlFromText,
+} from "@/lib/nest/linq-agent-pay";
 import { cn } from "@/lib/utils";
 import type { NestConversationMessage } from "@/lib/nest/types";
 
@@ -139,6 +143,7 @@ async function sendNestMessage(
   chatId: string,
   content: string,
   mediaAttachmentIds: string[] = [],
+  agentPayCheckoutUrl?: string | null,
 ): Promise<NestConversationMessage> {
   const res = await fetch("/api/store/nest-messages", {
     method: "POST",
@@ -148,6 +153,7 @@ async function sendNestMessage(
       chatId,
       content,
       ...(mediaAttachmentIds.length > 0 ? { mediaAttachmentIds } : {}),
+      ...(agentPayCheckoutUrl ? { agentPayCheckoutUrl } : {}),
     }),
   });
   const data = (await res.json()) as { message?: NestConversationMessage; error?: string };
@@ -224,6 +230,9 @@ export function NestComposePill({
   );
   const dictationStopRef = React.useRef<(() => void) | null>(null);
   const [pendingAttachments, setPendingAttachments] = React.useState<PendingAttachment[]>([]);
+  const [pendingAgentPayCheckoutUrl, setPendingAgentPayCheckoutUrl] = React.useState<string | null>(
+    null,
+  );
   const [uploading, setUploading] = React.useState(false);
   const [isExpanded, setIsExpanded] = React.useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
@@ -259,25 +268,44 @@ export function NestComposePill({
 
   async function sendContent(content: string) {
     const attachmentIds = pendingAttachments.map((item) => item.attachmentId);
-    const normalizedContent = content ? ensureSmsUrlsAreClickable(content) : "";
-    if (!normalizedContent && attachmentIds.length === 0) return;
+    const agentPayCheckoutUrl =
+      pendingAgentPayCheckoutUrl || extractAgentPayCheckoutUrl(content) || null;
+
+    let normalizedContent = content.trim();
+    if (agentPayCheckoutUrl) {
+      normalizedContent = stripCheckoutUrlFromText(normalizedContent, agentPayCheckoutUrl)
+        .replace(/\n*Tap to pay:\s*$/i, "")
+        .trim();
+    } else if (normalizedContent) {
+      normalizedContent = ensureSmsUrlsAreClickable(normalizedContent);
+    }
+
+    if (!normalizedContent && attachmentIds.length === 0 && !agentPayCheckoutUrl) return;
 
     const fallbackLabel =
       pendingAttachments.find((item) => item.kind === "receipt")?.filename ||
       pendingAttachments[0]?.filename ||
-      "Attachment";
-    const optimistic = buildOptimisticStaffMessage(normalizedContent || fallbackLabel);
+      (agentPayCheckoutUrl ? "Payment link" : "Attachment");
+    const optimistic = buildOptimisticStaffMessage(
+      normalizedContent || fallbackLabel,
+    );
     setSendErr(null);
     sendHandlers.onOptimistic(optimistic);
 
     setInFlight((count) => count + 1);
     try {
-      const message = await sendNestMessage(chatId, normalizedContent, attachmentIds);
+      const message = await sendNestMessage(
+        chatId,
+        normalizedContent,
+        attachmentIds,
+        agentPayCheckoutUrl,
+      );
       sendHandlers.onConfirmed(optimistic.id, message);
       for (const attachment of pendingAttachments) {
         if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
       }
       setPendingAttachments([]);
+      setPendingAgentPayCheckoutUrl(null);
     } catch (error) {
       const errMessage = error instanceof Error ? error.message : "Could not send";
       sendHandlers.onFailed(optimistic.id, errMessage);
@@ -290,7 +318,7 @@ export function NestComposePill({
 
   async function send() {
     const content = text.trim();
-    if (!content && pendingAttachments.length === 0) return;
+    if (!content && pendingAttachments.length === 0 && !pendingAgentPayCheckoutUrl) return;
 
     setText("");
     setIsExpanded(false);
@@ -382,6 +410,9 @@ export function NestComposePill({
   }
 
   function draftIntoInput(content: string) {
+    if (!extractAgentPayCheckoutUrl(content)) {
+      setPendingAgentPayCheckoutUrl(null);
+    }
     setText(content);
     setIsExpanded(true);
     setSendErr(null);
@@ -392,6 +423,11 @@ export function NestComposePill({
       el.focus();
       el.setSelectionRange(el.value.length, el.value.length);
     });
+  }
+
+  function draftLinkPayIntoInput(payload: { intro: string; checkoutUrl: string }) {
+    draftIntoInput(payload.intro);
+    setPendingAgentPayCheckoutUrl(payload.checkoutUrl);
   }
 
   React.useEffect(() => {
@@ -761,7 +797,11 @@ export function NestComposePill({
             <Button
               type="submit"
               size="icon"
-              disabled={(!text.trim() && !hasAttachments) || uploading || dictationActive}
+              disabled={
+                (!text.trim() && !hasAttachments && !pendingAgentPayCheckoutUrl) ||
+                uploading ||
+                dictationActive
+              }
               className={cn(
                 "h-8 w-8 shrink-0 rounded-full",
                 (isExpanded || hasAttachments) && "mb-0.5",
@@ -793,7 +833,7 @@ export function NestComposePill({
             open={linkPayOpen}
             onOpenChange={setLinkPayOpen}
             chatId={chatId}
-            onDraftMessage={draftIntoInput}
+            onDraftMessage={draftLinkPayIntoInput}
           />
           <NestComposeQuickActionsEditor
             open={manageOpen}
