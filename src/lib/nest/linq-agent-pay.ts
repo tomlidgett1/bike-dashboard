@@ -6,15 +6,26 @@
  */
 
 import { pickServerEnv } from "@/lib/nest-portal/lib/server-env";
-import { stripUrlTrailingPunctuation } from "@/lib/nest/sms-link-format";
+import {
+  AGENT_PAY_CHECKOUT_URL_RE,
+  extractAgentPayCheckoutUrl,
+  isAgentPayCheckoutUrl,
+  resolveAgentPayCheckoutUrl,
+  stripCheckoutUrlFromText,
+  stripUrlTrailingPunctuation,
+} from "@/lib/nest/sms-link-format";
 import { linqSendMessageParts } from "@/lib/nest/linq-outbound-media";
+
+export {
+  AGENT_PAY_CHECKOUT_URL_RE,
+  extractAgentPayCheckoutUrl,
+  isAgentPayCheckoutUrl,
+  resolveAgentPayCheckoutUrl,
+  stripCheckoutUrlFromText,
+};
 
 const LINQ_BASE_URL =
   pickServerEnv(["LINQ_API_BASE_URL"]) || "https://api.linqapp.com/api/partner/v3";
-
-/** Hosted Agent Pay checkout URLs (App Clip / web checkout). */
-export const AGENT_PAY_CHECKOUT_URL_RE =
-  /https?:\/\/(?:[\w-]+\.)*linqapp\.com\/pay\/[^\s<>\[\]"']+/gi;
 
 export type LinqPaymentRequestStatus =
   | "requested"
@@ -173,42 +184,6 @@ export async function createLinqPaymentRequest(input: {
     throw new Error("Linq Agent Pay did not return a checkout URL.");
   }
   return normalised;
-}
-
-/** First Agent Pay checkout URL found in free text, or null. */
-export function extractAgentPayCheckoutUrl(text: string): string | null {
-  const matches = text.match(AGENT_PAY_CHECKOUT_URL_RE);
-  if (!matches?.length) return null;
-  return stripUrlTrailingPunctuation(matches[0]);
-}
-
-/** Remove a specific checkout URL from message text (keeps surrounding copy). */
-export function stripCheckoutUrlFromText(text: string, checkoutUrl: string): string {
-  const clean = stripUrlTrailingPunctuation(checkoutUrl.trim());
-  if (!clean) return text;
-  return text
-    .split(clean)
-    .join("")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-export function isAgentPayCheckoutUrl(url: string): boolean {
-  const trimmed = stripUrlTrailingPunctuation(url.trim());
-  if (!trimmed) return false;
-  AGENT_PAY_CHECKOUT_URL_RE.lastIndex = 0;
-  return AGENT_PAY_CHECKOUT_URL_RE.test(trimmed);
-}
-
-export function resolveAgentPayCheckoutUrl(
-  text: string,
-  explicitUrl?: string | null,
-): string | null {
-  if (explicitUrl && isAgentPayCheckoutUrl(explicitUrl)) {
-    return stripUrlTrailingPunctuation(explicitUrl.trim());
-  }
-  return extractAgentPayCheckoutUrl(text);
 }
 
 /**

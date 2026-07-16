@@ -35,11 +35,7 @@ import {
   type NestComposeBuiltinId,
   type NestComposeQuickAction,
 } from "@/lib/nest/compose-quick-actions";
-import { ensureSmsUrlsAreClickable } from "@/lib/nest/sms-link-format";
-import {
-  extractAgentPayCheckoutUrl,
-  stripCheckoutUrlFromText,
-} from "@/lib/nest/linq-agent-pay";
+import { ensureSmsUrlsAreClickable, extractAgentPayCheckoutUrl, stripCheckoutUrlFromText } from "@/lib/nest/sms-link-format";
 import { cn } from "@/lib/utils";
 import type { NestConversationMessage } from "@/lib/nest/types";
 
