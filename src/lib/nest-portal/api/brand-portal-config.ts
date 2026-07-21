@@ -24,6 +24,11 @@ import {
 import { getLinqFromNumber } from '@/lib/nest/linq-sender'
 import { ensureSmsUrlsAreClickable } from '@/lib/nest/sms-link-format'
 import { moderateNestOutboundMessage } from '@/lib/nest/outbound-content-moderation'
+import {
+  resolveAgentPayCheckoutUrl,
+  sendLinqAgentPayCheckout,
+  stripCheckoutUrlFromText,
+} from '@/lib/nest/linq-agent-pay'
 import { getLightspeedAccess, lightspeedGetJson } from '../lib/lightspeed-portal-access'
 
 /** Inlined so the Vercel Node bundle always includes it (nested `api/lib/*` can be omitted). */
@@ -116,23 +121,14 @@ async function linqCreateChat(from: string, to: string, text: string): Promise<L
   return { chatId, providerMessageId: extractProviderMessageId(payload) }
 }
 
-async function linqSendMessage(
+async function linqPostMessageParts(
   chatId: string,
-  text: string,
-  attachmentIds: string[] = [],
+  parts: Array<{ type: string; value?: string; attachment_id?: string }>,
 ): Promise<LinqMessageResult> {
   const token = pickServerEnv(['LINQ_API_TOKEN'])
   if (!token) throw new Error('LINQ_API_TOKEN is not configured')
-
-  const parts: Array<{ type: string; value?: string; attachment_id?: string }> = []
-  const trimmed = text.trim()
-  if (trimmed) parts.push({ type: 'text', value: trimmed })
-  for (const attachmentId of attachmentIds) {
-    const id = attachmentId.trim()
-    if (id) parts.push({ type: 'media', attachment_id: id })
-  }
   if (parts.length === 0) {
-    throw new Error('Message must include text or an attachment')
+    throw new Error('Message must include text, a link, or an attachment')
   }
 
   const res = await fetch(`${LINQ_BASE_URL}/chats/${encodeURIComponent(chatId)}/messages`, {
@@ -152,6 +148,39 @@ async function linqSendMessage(
   }
 
   return { chatId, providerMessageId: extractProviderMessageId(payload) }
+}
+
+async function linqSendMessage(
+  chatId: string,
+  text: string,
+  attachmentIds: string[] = [],
+  explicitCheckoutUrl?: string | null,
+): Promise<LinqMessageResult> {
+  const trimmed = text.trim()
+
+  const agentPayUrl =
+    attachmentIds.length === 0
+      ? resolveAgentPayCheckoutUrl(trimmed, explicitCheckoutUrl)
+      : null
+  if (agentPayUrl) {
+    const intro = stripCheckoutUrlFromText(trimmed, agentPayUrl)
+      .replace(/\n*Tap to pay:\s*$/i, '')
+      .replace(/\n*Tap the payment card below.*$/i, '')
+      .trim()
+    return sendLinqAgentPayCheckout({
+      chatId,
+      checkoutUrl: agentPayUrl,
+      introText: intro || null,
+    })
+  }
+
+  const parts: Array<{ type: string; value?: string; attachment_id?: string }> = []
+  if (trimmed) parts.push({ type: 'text', value: trimmed })
+  for (const attachmentId of attachmentIds) {
+    const id = attachmentId.trim()
+    if (id) parts.push({ type: 'media', attachment_id: id })
+  }
+  return linqPostMessageParts(chatId, parts)
 }
 
 function normaliseBrandInternalAccessHandle(input: string): string | null {
@@ -1730,6 +1759,15 @@ function sanitisePortalMessageRow(
       : ''
   }
 
+  const providerMessageId =
+    typeof row.provider_message_id === 'string' ? row.provider_message_id.trim() : ''
+  if (providerMessageId) {
+    metadata.linq_provider_message_id = providerMessageId
+    if (typeof metadata.provider_message_id !== 'string' || !metadata.provider_message_id.trim()) {
+      metadata.provider_message_id = providerMessageId
+    }
+  }
+
   return {
     id: row.id,
     role: row.role,
@@ -2998,8 +3036,11 @@ async function handleBrandPortalConfig(req: VercelRequest, res: VercelResponse):
       const attachmentIds = Array.isArray(body.mediaAttachmentIds)
         ? body.mediaAttachmentIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
         : []
+      const agentPayCheckoutUrl =
+        typeof body.agentPayCheckoutUrl === 'string' ? body.agentPayCheckoutUrl.trim() : ''
+      const skipLinqDelivery = body.skipLinqDelivery === true
       if (!chatId) { res.status(400).json({ error: 'chatId is required' }); return }
-      if (!content && attachmentIds.length === 0) {
+      if (!content && attachmentIds.length === 0 && !agentPayCheckoutUrl) {
         res.status(400).json({ error: 'content or mediaAttachmentIds is required' })
         return
       }
@@ -3060,8 +3101,15 @@ async function handleBrandPortalConfig(req: VercelRequest, res: VercelResponse):
           return
         }
         try {
-          const sent = await linqSendMessage(chatId, content, attachmentIds)
-          providerMessageId = sent.providerMessageId
+          if (!skipLinqDelivery) {
+            const sent = await linqSendMessage(
+              chatId,
+              content,
+              attachmentIds,
+              agentPayCheckoutUrl || null,
+            )
+            providerMessageId = sent.providerMessageId
+          }
         } catch (err) {
           res.status(502).json({ error: err instanceof Error ? err.message : 'Could not send via Linq' })
           return

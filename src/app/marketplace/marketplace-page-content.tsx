@@ -7,10 +7,11 @@ import Image from "next/image";
 import { TrendingUp, Package, X, Search, Store as StoreIcon, User, Clock, DollarSign, SlidersHorizontal, Loader2 } from '@/components/layout/app-sidebar/dashboard-icons';
 import { MarketplaceLayout } from "@/components/layout/marketplace-layout";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
+import { ProductPageCategoryBrowse } from "@/components/marketplace/product-detail/product-page-category-browse";
 import { ProductCard, ProductCardSkeleton } from "@/components/marketplace/product-card";
 import { ScrollReveal } from "@/components/marketplace/scroll-reveal";
 import { ListItemBannerSlot } from "@/components/marketplace/list-item-banner";
-import { UnifiedFilterBar, ViewMode, ListingTypeFilter as ListingTypeFilterType, MarketplaceDesktopCategoryBrowse } from "@/components/marketplace/unified-filter-bar";
+import { UnifiedFilterBar, ViewMode, ListingTypeFilter as ListingTypeFilterType } from "@/components/marketplace/unified-filter-bar";
 import { MarketplaceSpaceTabs } from "@/components/marketplace/marketplace-space-tabs";
 import { BrowseFilterControls, NavFilterSeparator } from "@/components/marketplace/browse-filters-toolbar";
 import { BikeStoresPicker } from "@/components/marketplace/bike-stores-picker";
@@ -29,7 +30,7 @@ import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useInteractionTracker } from "@/lib/tracking/interaction-tracker";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
-import { useMarketplaceData, useLightspeedCategories, useForYouFeed, prefetchMarketplaceSpace } from "@/lib/hooks/use-marketplace-data";
+import { useMarketplaceData, useForYouFeed, prefetchMarketplaceSpace } from "@/lib/hooks/use-marketplace-data";
 import { MARKETPLACE_PROMO_BANNERS_ENABLED } from "@/lib/marketplace-feature-flags";
 import { MARKETPLACE_INITIAL_PAGE_SIZE } from "@/lib/marketplace-constants";
 import { saveStoreSplashSeed } from "@/lib/marketplace/store-splash";
@@ -171,26 +172,19 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   const [selectedLevel3, setSelectedLevel3] = React.useState<string | null>(
     searchParams.get('level3') || null
   );
+  const [categoryMenuOpen, setCategoryMenuOpen] = React.useState(false);
 
-  // Sync category filter state with URL params when they change
-  // This ensures filters reset when navigating between views (Products, Stores, Sellers)
+  // Sync category filter state with URL params when they change.
+  // Canonical L1/L2 apply to every marketplace space, including Stores.
   React.useEffect(() => {
     const urlLevel1 = searchParams.get('level1') || null;
     const urlLevel2 = searchParams.get('level2') || null;
     const urlLevel3 = searchParams.get('level3') || null;
-    
-    // When on Stores view, clear the category filters
-    if (isStoreInventoryView) {
-      if (selectedLevel1 !== null) setSelectedLevel1(null);
-      if (selectedLevel2 !== null) setSelectedLevel2(null);
-      if (selectedLevel3 !== null) setSelectedLevel3(null);
-    } else {
-      // On Products view, sync state with URL params
-      if (urlLevel1 !== selectedLevel1) setSelectedLevel1(urlLevel1);
-      if (urlLevel2 !== selectedLevel2) setSelectedLevel2(urlLevel2);
-      if (urlLevel3 !== selectedLevel3) setSelectedLevel3(urlLevel3);
-    }
-  }, [searchParams, isStoreInventoryView]);
+
+    if (urlLevel1 !== selectedLevel1) setSelectedLevel1(urlLevel1);
+    if (urlLevel2 !== selectedLevel2) setSelectedLevel2(urlLevel2);
+    if (urlLevel3 !== selectedLevel3) setSelectedLevel3(urlLevel3);
+  }, [searchParams, selectedLevel1, selectedLevel2, selectedLevel3]);
 
   // Listing type filter state - derived from space
   // Marketplace space = individuals only, Stores space = stores only
@@ -310,7 +304,6 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
   const [showStickyFilters, setShowStickyFilters] = React.useState(false);
   const [isMobile, setIsMobile] = React.useState(false);
   const categoryPillsRef = React.useRef<HTMLDivElement | null>(null);
-  const forYouDesktopSentinelRef = React.useRef<HTMLDivElement | null>(null);
   const [productGridLayout, setProductGridLayout] = React.useState<
     "grid4" | "grid6" | "grid8"
   >("grid6");
@@ -491,11 +484,11 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     viewMode,
     page: 1,
     pageSize: MARKETPLACE_INITIAL_PAGE_SIZE,
-    // Stores tab uses category_name (Lightspeed); marketplace tab uses marketplace_category
-    level1: isProductSearchActive ? null : isStoreInventoryView ? null : selectedLevel1,
+    // All marketplace spaces filter on canonical Yellow Jersey L1/L2.
+    level1: isProductSearchActive ? null : selectedLevel1,
     level2: isProductSearchActive ? null : selectedLevel2,
     level3: isProductSearchActive ? null : selectedLevel3,
-    lsCategory: isProductSearchActive ? null : isStoreInventoryView ? selectedLevel1 : null,
+    lsCategory: null,
     search: searchQuery,
     listingType: resolvedListingType,
     storeId: selectedStoreId,
@@ -637,22 +630,64 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     [selectedStoreId, stores]
   );
 
-  // Derive marketplace category pills from the currently loaded products
-  const marketplaceCategories = React.useMemo(() => {
-    if (isStoreInventoryView || !products?.length) return [];
-    const categoryMap = new Map<string, number>();
-    products.forEach(product => {
-      const cat = product.marketplace_category;
-      if (cat) categoryMap.set(cat, (categoryMap.get(cat) || 0) + 1);
-    });
-    return Array.from(categoryMap.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([level1]) => ({ label: level1, level1 }));
-  }, [isStoreInventoryView, products]);
+  // Canonical L1 pills for every marketplace space. Prefer the taxonomy API so
+  // empty Yellow Jersey categories still appear in the browse chrome.
+  const [taxonomyCategories, setTaxonomyCategories] = React.useState<
+    Array<{ label: string; level1: string }>
+  >([]);
+  const [taxonomyCategoriesLoading, setTaxonomyCategoriesLoading] = React.useState(true);
 
-  // Bike Stores tab category pills — fetched from dedicated public API,
-  // same data source as the Lightspeed category_name field on products.
-  const { categories: storesViewCategories, isLoading: storesViewCategoriesLoading } = useLightspeedCategories(isUberView, isStoreInventoryView);
+  React.useEffect(() => {
+    let cancelled = false;
+    const listingType = isStoreInventoryView
+      ? 'store_inventory'
+      : isMarketplaceView
+        ? 'private_listing'
+        : null;
+    const params = new URLSearchParams();
+    if (listingType) params.set('listingType', listingType);
+    setTaxonomyCategoriesLoading(true);
+    void fetch(`/api/marketplace/categories?${params}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        const categories = (data?.categories as Array<{ level1: string }> | undefined) || [];
+        if (categories.length > 0) {
+          setTaxonomyCategories(
+            categories.map((category) => ({
+              label: category.level1,
+              level1: category.level1,
+            })),
+          );
+          return;
+        }
+        // Fallback: always show every Yellow Jersey L1 even if the API is empty.
+        void import('@/lib/marketplace/canonical-taxonomy').then(({ listCanonicalLevel1 }) => {
+          if (cancelled) return;
+          setTaxonomyCategories(
+            listCanonicalLevel1().map((level1) => ({ label: level1, level1 })),
+          );
+        });
+      })
+      .catch(() => {
+        void import('@/lib/marketplace/canonical-taxonomy').then(({ listCanonicalLevel1 }) => {
+          if (cancelled) return;
+          setTaxonomyCategories(
+            listCanonicalLevel1().map((level1) => ({ label: level1, level1 })),
+          );
+        });
+      })
+      .finally(() => {
+        if (!cancelled) setTaxonomyCategoriesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isStoreInventoryView, isMarketplaceView]);
+
+  const marketplaceCategories = taxonomyCategories;
+  const storesViewCategories = taxonomyCategories;
+  const storesViewCategoriesLoading = taxonomyCategoriesLoading;
 
   // Derive store categories from fetched products (zero API calls - instant)
   const storeCategories = React.useMemo(() => {
@@ -731,6 +766,13 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     if (searchQuery) params.set('search', searchQuery);
     else params.delete('search');
 
+    // Category filters and product search are meaningless on For You.
+    if (selectedLevel1 || selectedLevel2 || selectedLevel3 || searchQuery) {
+      if (!params.get('space') || params.get('space') === 'for-you') {
+        params.set('space', 'stores');
+      }
+    }
+
     const newUrl = params.toString()
       ? `/marketplace?${params.toString()}`
       : '/marketplace';
@@ -791,16 +833,14 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
       let endpoint = '';
       if (searchQuery) {
         params.set('search', searchQuery);
-        if (listingTypeFilter === 'stores') {
-          if (selectedLevel1) params.set('lsCategory', selectedLevel1);
-        } else {
-          if (selectedLevel1) params.set('level1', selectedLevel1);
-          if (selectedLevel2) params.set('level2', selectedLevel2);
-          if (selectedLevel3) params.set('level3', selectedLevel3);
-        }
+        if (selectedLevel1) params.set('level1', selectedLevel1);
+        if (selectedLevel2) params.set('level2', selectedLevel2);
+        if (selectedLevel3) params.set('level3', selectedLevel3);
         endpoint = `/api/marketplace/products?${params}`;
       } else if (listingTypeFilter === 'stores') {
-        if (selectedLevel1) params.set('lsCategory', selectedLevel1);
+        if (selectedLevel1) params.set('level1', selectedLevel1);
+        if (selectedLevel2) params.set('level2', selectedLevel2);
+        if (selectedLevel3) params.set('level3', selectedLevel3);
         endpoint = `/api/marketplace/products?${params}`;
       } else {
         switch (viewMode) {
@@ -910,7 +950,19 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
     setAccumulatedProducts([]);
     processedDataRef.current = new Set();
     setCurrentPage(1);
-    
+
+    // Category browse must leave For You (filters are ignored there).
+    // Preserve the selected category in the URL; setSpace() would clear it.
+    if (category && isForYouView) {
+      const params = new URLSearchParams(window.location.search);
+      params.delete('view');
+      params.set('space', 'stores');
+      params.set('level1', category);
+      params.delete('level2');
+      params.delete('level3');
+      window.history.pushState(null, '', `/marketplace?${params.toString()}`);
+    }
+
     // Then change the filter
     setSelectedLevel1(category);
     setSelectedLevel2(null);
@@ -1062,18 +1114,44 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
           onOpenMobileBrowseFilters={() => setMobileBrowseSheetOpen(true)}
         />
 
-        <div className="relative z-[2] hidden sm:block bg-white">
-          <MarketplaceSpaceTabs
-            currentSpace={currentSpace}
-            viewMode={viewMode}
-            onViewModeChange={handleViewModeChange}
-            onNavigateToStores={handleNavigateToAllStores}
-            onNavigateToUber={handleNavigateToUber}
-            onNavigateToForYou={() => setSpace("for-you")}
-            onPrefetchSpace={handlePrefetchSpace}
-            scrollSentinelRef={isForYouView ? forYouDesktopSentinelRef : categoryPillsRef}
-            trailing={
-              showDesktopBrowseFilters || isStoresView ? (
+        {/* Category browse — space pills left of category links */}
+        <div className="sticky top-14 z-40 hidden sm:block">
+          <ProductPageCategoryBrowse
+            activeLevel1={isProductSearchActive ? null : selectedLevel1}
+            activeLevel2={isProductSearchActive ? null : selectedLevel2}
+            activeLevel3={isProductSearchActive ? null : selectedLevel3}
+            className="px-4 xl:px-5"
+            onMenuOpenChange={setCategoryMenuOpen}
+            leading={
+              <MarketplaceSpaceTabs
+                variant="inline"
+                currentSpace={currentSpace}
+                viewMode={viewMode}
+                onViewModeChange={handleViewModeChange}
+                onNavigateToStores={handleNavigateToAllStores}
+                onNavigateToUber={handleNavigateToUber}
+                onNavigateToForYou={() => setSpace("for-you")}
+                onPrefetchSpace={handlePrefetchSpace}
+              />
+            }
+          />
+        </div>
+
+        <div
+          className={cn(
+            "relative z-[2] transition-[filter] duration-[420ms] ease-[cubic-bezier(0.04,0.62,0.23,0.98)]",
+            categoryMenuOpen &&
+              "will-change-[filter] sm:blur-[6px] sm:brightness-[0.98] sm:saturate-[0.94]",
+          )}
+        >
+        {(showDesktopBrowseFilters || isStoresView) ? (
+          <div className="relative hidden sm:block bg-white">
+            <MarketplaceSpaceTabs
+              variant="filters"
+              currentSpace={currentSpace}
+              viewMode={viewMode}
+              onViewModeChange={handleViewModeChange}
+              trailing={
                 <div className="flex h-10 items-center gap-3">
                   {isStoresView && (
                     <>
@@ -1098,10 +1176,10 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                     />
                   ) : null}
                 </div>
-              ) : null
-            }
-          />
-        </div>
+              }
+            />
+          </div>
+        ) : null}
 
       {/* Sticky Filter Header - Mobile Only (appears when category pills scroll out) */}
       {showStickyFilters && ((isMarketplaceView && viewMode === 'all') || isStoreInventoryView) && (
@@ -1289,29 +1367,6 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
                   space={isStoresView ? "stores" : "marketplace"}
                 />
               )}
-            {showDesktopBrowseFilters ? (
-              <MarketplaceDesktopCategoryBrowse
-                selectedLevel1={selectedLevel1}
-                selectedLevel2={selectedLevel2}
-                selectedLevel3={selectedLevel3}
-                onLevel1Change={handleLevel1Change}
-                onLevel2Change={handleLevel2Change}
-                onLevel3Change={handleLevel3Change}
-                browseFilters={advancedFilters}
-                onBrowseFiltersChange={handleAdvancedFiltersChange}
-                onBrowseFiltersApply={handleAdvancedFiltersApply}
-                productGridLayout={productGridLayout}
-                onProductGridLayoutChange={setProductGridLayout}
-                categoryPillsRef={categoryPillsRef}
-                dynamicCategories={
-                  isStoresView || isUberView ? storesViewCategories : marketplaceCategories
-                }
-                categoriesLoading={
-                  isStoresView || isUberView ? storesViewCategoriesLoading : loading
-                }
-                suppressCategoryBrowse={isProductSearchActive}
-              />
-            ) : null}
             {isStoresView && selectedStoreId && storeCategories.length > 0 && !isProductSearchActive && (
               <div className="hidden sm:block">
                 <StoreCategoryPills
@@ -1324,11 +1379,6 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
             )}
             {isForYouView ? (
               <>
-                <div
-                  ref={forYouDesktopSentinelRef}
-                  className="hidden sm:block h-px w-full"
-                  aria-hidden="true"
-                />
                 {forYouFeed ? (
                   <ForYouFeedView initialFeed={forYouFeed} hadIdentity embedded />
                 ) : (
@@ -1719,6 +1769,7 @@ export function MarketplacePageContent({ initialProducts, initialPagination }: M
         </div>
             </MarketplaceLayout>
           </section>
+        </div>
         </div>
       </div>
 

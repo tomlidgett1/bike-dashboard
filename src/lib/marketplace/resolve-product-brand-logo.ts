@@ -17,6 +17,13 @@ function normaliseBrandName(value: string | null | undefined): string {
   return (value || '').trim().toLowerCase();
 }
 
+/**
+ * Resolve a product's brand logo for public product pages.
+ *
+ * Reads `store_brands` (public SELECT). Admin approve writes the logo there
+ * after curation, so approved logos appear here. `brand_logo_curations` is
+ * service-role only and cannot be queried from the public product page client.
+ */
 export async function resolveProductBrandLogoUrl(
   supabase: SupabaseClient,
   storeUserId: string,
@@ -33,16 +40,15 @@ export async function resolveProductBrandLogoUrl(
 
   const withLogos = brands as StoreBrandRow[];
   const manufacturerId = product.manufacturer_id ? String(product.manufacturer_id) : null;
-  const nameCandidates = [
-    product.manufacturer_name,
-    product.brand,
-  ]
+  const nameCandidates = [product.manufacturer_name, product.brand]
     .map(normaliseBrandName)
     .filter(Boolean);
 
   if (manufacturerId) {
     const byId = withLogos.find(
-      (b) => b.lightspeed_manufacturer_id && String(b.lightspeed_manufacturer_id) === manufacturerId,
+      (b) =>
+        b.lightspeed_manufacturer_id &&
+        String(b.lightspeed_manufacturer_id) === manufacturerId,
     );
     if (byId?.logo_url) return byId.logo_url;
   }

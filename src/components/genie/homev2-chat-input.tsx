@@ -19,6 +19,7 @@ export function HomeV2ChatInput({
   onFileSelected,
   fileAccept = "application/pdf,.pdf",
   fileButtonLabel = "Attach file",
+  fileMultiple = false,
   canSubmitWithoutText = false,
   placeholderShimmerOnHover = false,
   inputAccessory,
@@ -40,10 +41,12 @@ export function HomeV2ChatInput({
   endAccessory?: React.ReactNode;
   /** Renders above the input row inside the pill (e.g. picked email element badge). */
   inputAccessory?: React.ReactNode;
-  /** When set, the + button opens a PDF picker and selected files are passed here. */
+  /** When set, the + button opens a file picker and selected files are passed here. */
   onFileSelected?: (file: File) => void;
   fileAccept?: string;
   fileButtonLabel?: string;
+  /** Allow selecting multiple files in the picker. */
+  fileMultiple?: boolean;
   canSubmitWithoutText?: boolean;
 }) {
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
@@ -58,24 +61,29 @@ export function HomeV2ChatInput({
   const showShimmerPlaceholder = Boolean(header && placeholderShimmerOnHover && !hasText);
   const truncatePlaceholder = Boolean(compact && floating && !onFileSelected && !header);
   const showTruncatedPlaceholder = truncatePlaceholder && !hasText;
+  const hasInputToolbar = Boolean(inputAccessory);
   const [isMultiline, setIsMultiline] = React.useState(false);
 
   React.useEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea || header) return;
 
+    const maxHeight = compact ? 132 : 160;
+
     if (!hasText) {
       textarea.style.height = "36px";
+      textarea.style.overflowY = "hidden";
       setIsMultiline(false);
       return;
     }
 
     textarea.style.height = "auto";
-    const maxHeight = compact ? 132 : 160;
     const scrollHeight = textarea.scrollHeight;
     const nextHeight = Math.min(scrollHeight, maxHeight);
     textarea.style.height = `${nextHeight}px`;
-    setIsMultiline(scrollHeight > 44 || value.includes("\n"));
+    // Only allow scrolling once content actually exceeds the max height.
+    textarea.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
+    setIsMultiline(scrollHeight > 38 || value.includes("\n"));
   }, [compact, hasText, header, value]);
 
   return (
@@ -119,16 +127,12 @@ export function HomeV2ChatInput({
           Drop image to attach
         </div>
       ) : null}
-      {inputAccessory ? (
-        <div className="border-b border-border/40 px-2 pb-2 pt-2">{inputAccessory}</div>
-      ) : null}
       <div
         className={cn(
-          "flex w-full gap-1 px-2",
           header
-            ? "relative h-9 items-center rounded-full py-0"
+            ? "relative flex h-9 w-full items-center gap-1 rounded-full px-2 py-0"
             : cn(
-                isMultiline ? "items-end py-2" : "items-center py-2",
+                "flex w-full flex-col",
                 isMultiline || inputAccessory ? "rounded-2xl" : "rounded-full",
                 compact ? "min-h-[56px]" : "min-h-[60px]",
               ),
@@ -137,6 +141,21 @@ export function HomeV2ChatInput({
             : "border border-gray-200 bg-white shadow-sm",
         )}
       >
+        {inputAccessory && !header ? (
+          <div className="px-2.5 pb-2 pt-2.5">{inputAccessory}</div>
+        ) : null}
+        <div
+          className={cn(
+            "flex w-full gap-1 px-2",
+            header
+              ? "h-full items-center"
+              : cn(
+                  !hasInputToolbar && "flex-1",
+                  isMultiline ? "items-end py-2" : "items-center",
+                  hasInputToolbar && !isMultiline && "pb-2.5",
+                ),
+          )}
+        >
         {!header && onFileSelected ? (
           <button
             type="button"
@@ -157,10 +176,13 @@ export function HomeV2ChatInput({
             ref={fileInputRef}
             type="file"
             accept={fileAccept}
+            multiple={fileMultiple}
             className="hidden"
             onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) onFileSelected(file);
+              const selected = Array.from(event.target.files || []);
+              for (const file of selected) {
+                onFileSelected(file);
+              }
               event.target.value = "";
             }}
           />
@@ -168,14 +190,8 @@ export function HomeV2ChatInput({
 
         <div
           className={cn(
-            "relative min-w-0",
-            header
-              ? "flex h-full flex-1 items-center self-stretch"
-              :               truncatePlaceholder
-                ? "flex min-w-0 flex-1 items-center self-center"
-                : onFileSelected
-                  ? "flex min-w-0 flex-1 items-center self-center"
-                  : "contents",
+            "relative flex min-w-0 flex-1 items-center",
+            header && "h-full self-stretch",
           )}
         >
           {header && showShimmerPlaceholder ? (
@@ -231,8 +247,8 @@ export function HomeV2ChatInput({
               rows={1}
               placeholder={showTruncatedPlaceholder ? " " : placeholderLabel}
               className={cn(
-                "max-h-[132px] min-h-[36px] flex-1 resize-none border-0 bg-transparent px-2 text-[15px] leading-snug text-foreground outline-none placeholder:text-gray-500",
-                showTruncatedPlaceholder ? "overflow-hidden py-2" : "py-2",
+                "max-h-[132px] min-h-[36px] flex-1 resize-none overflow-y-hidden border-0 bg-transparent px-2 py-0 text-[15px] text-foreground outline-none placeholder:text-gray-500",
+                isMultiline ? "leading-snug" : "leading-[36px]",
                 onFileSelected && "px-1",
               )}
             />
@@ -264,6 +280,7 @@ export function HomeV2ChatInput({
             <Send className="h-4 w-4" />
           )}
         </button>
+        </div>
       </div>
 
       {compact && showDisclaimer ? (

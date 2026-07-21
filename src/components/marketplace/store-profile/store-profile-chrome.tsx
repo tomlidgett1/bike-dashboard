@@ -167,6 +167,11 @@ export interface StoreProfileChromeProps {
   floatingBarExtra?: React.ReactNode;
   /** Mobile home hero — fixed transparent header overlays the hero image */
   heroOverlay?: boolean;
+  /**
+   * Product page chrome: compact ecommerce header (no contact pills),
+   * prominent search, and slim text nav instead of image banner tabs.
+   */
+  productContext?: boolean;
   onBehaviourEvent?: (eventType: StoreAnalyticsEventType, metadata?: Record<string, unknown>) => void;
 }
 
@@ -197,7 +202,7 @@ function StoreDesktopSearchField({
         onChange={(e) => onStoreSearchChange(e.target.value)}
         placeholder={placeholder}
         className={cn(
-          "w-full rounded-md border border-gray-200 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900/10 transition-colors",
+          "w-full rounded-xl border border-gray-200 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:border-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-900/10 transition-colors",
           compact ? "h-9 pl-8 pr-8" : "h-10 pl-9 pr-9",
         )}
       />
@@ -233,6 +238,7 @@ export function StoreProfileChrome({
   immersive = false,
   floatingBarExtra,
   heroOverlay = false,
+  productContext = false,
   onBehaviourEvent,
 }: StoreProfileChromeProps) {
   const [scrolled, setScrolled] = React.useState(false);
@@ -318,11 +324,11 @@ export function StoreProfileChrome({
       >
       <header
         className={cn(
-          "transition-all duration-200 md:bg-white/95 md:backdrop-blur-md",
+          "transition-all duration-200 md:bg-gray-50 md:backdrop-blur-md",
           overlayHeaderActive
             ? "max-md:border-transparent max-md:bg-transparent"
             : cn(
-                "bg-white/95 backdrop-blur-md",
+                "bg-white/95 backdrop-blur-md md:bg-gray-50",
                 scrolled ? "border-b-2 border-[#ffde59]" : "border-b border-gray-200",
               ),
         )}
@@ -359,18 +365,29 @@ export function StoreProfileChrome({
 
           <div
             className={cn(
-              "relative h-14 items-center justify-between gap-3 sm:h-16 sm:gap-4",
+              "relative items-center gap-3 sm:gap-4",
+              productContext ? "h-14" : "h-14 sm:h-16",
               mobileSearchMode ? "hidden md:flex" : "flex",
             )}
           >
-            <div className="flex min-w-0 items-center gap-2.5 sm:gap-3.5">
+            <div
+              className={cn(
+                "flex min-w-0 items-center",
+                productContext ? "max-w-[40%] gap-2.5 sm:max-w-[28%] sm:gap-3" : "gap-2.5 sm:gap-3.5",
+              )}
+            >
               <Link
                 href={homeHref}
                 className={cn(
-                  "h-9 w-9 flex-shrink-0 overflow-hidden rounded-md sm:h-11 sm:w-11",
-                  overlayHeaderActive
-                    ? "max-md:bg-transparent max-md:ring-0"
-                    : "ring-1 ring-gray-200",
+                  "flex-shrink-0 overflow-hidden",
+                  productContext
+                    ? "h-9 w-9 rounded-full ring-1 ring-gray-200"
+                    : cn(
+                        "h-9 w-9 rounded-md sm:h-11 sm:w-11",
+                        overlayHeaderActive
+                          ? "max-md:bg-transparent max-md:ring-0"
+                          : "ring-1 ring-gray-200",
+                      ),
                 )}
                 aria-label={`${store.store_name} store home`}
               >
@@ -388,23 +405,52 @@ export function StoreProfileChrome({
                   <div
                     className={cn(
                       "flex h-full w-full items-center justify-center",
-                      overlayHeaderActive ? "max-md:bg-white/10" : "bg-gray-50",
+                      overlayHeaderActive && !productContext ? "max-md:bg-white/10" : "bg-gray-50",
                     )}
                   >
                     <Store
                       className={cn(
-                        "h-4 w-4 sm:h-5 sm:w-5",
-                        overlayHeaderActive ? "max-md:text-white/80" : "text-gray-400",
+                        "h-4 w-4",
+                        !productContext && "sm:h-5 sm:w-5",
+                        overlayHeaderActive && !productContext
+                          ? "max-md:text-white/80"
+                          : "text-gray-400",
                       )}
                     />
                   </div>
                 )}
               </Link>
-              <div className="flex min-w-0 flex-col items-start gap-0.5 text-left sm:gap-1">
+              {productContext ? (
+                <div className="min-w-0">
+                  <Link
+                    href={homeHref}
+                    className="block truncate text-sm font-semibold tracking-tight text-gray-900 hover:text-gray-700 sm:text-base"
+                  >
+                    {store.store_name}
+                  </Link>
+                  <a
+                    href="/marketplace"
+                    className="mt-0.5 flex min-w-0 items-center gap-1 text-[10px] font-medium text-gray-400 transition-colors hover:text-gray-600"
+                    aria-label="Powered by Yellow Jersey marketplace"
+                    title="Yellow Jersey Marketplace"
+                  >
+                    <span className="shrink-0">Powered by</span>
+                    <Image
+                      src="/yjlogo.svg"
+                      alt="Yellow Jersey"
+                      width={72}
+                      height={16}
+                      className="mt-px h-3 w-auto translate-y-[0.5px] opacity-80"
+                      unoptimized
+                    />
+                  </a>
+                </div>
+              ) : (
+              <div className="flex min-w-0 flex-col items-start justify-center gap-0.5 text-left">
                 <div className="flex min-w-0 items-baseline gap-2">
                   <h1
                     className={cn(
-                      "truncate text-xl font-bold leading-tight tracking-tight sm:text-2xl",
+                      "truncate text-lg font-bold leading-tight tracking-tight sm:text-xl",
                       overlayHeaderActive
                         ? "max-md:text-white"
                         : "text-gray-900",
@@ -434,6 +480,73 @@ export function StoreProfileChrome({
                     </span>
                   )}
                 </div>
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <a
+                    href="/marketplace"
+                    className={cn(
+                      "flex flex-shrink-0 items-center gap-1 text-[10px] font-medium transition-colors",
+                      overlayHeaderActive
+                        ? "text-gray-400 max-md:rounded-md max-md:bg-gray-950/45 max-md:px-1.5 max-md:py-0.5 max-md:text-white/90 max-md:backdrop-blur-sm max-md:hover:text-white"
+                        : "text-gray-400 hover:text-gray-600",
+                    )}
+                    aria-label="Powered by Yellow Jersey marketplace"
+                    title="Yellow Jersey Marketplace"
+                  >
+                    <span className="shrink-0">Powered by</span>
+                    <Image
+                      src="/yjlogo.svg"
+                      alt="Yellow Jersey"
+                      width={72}
+                      height={16}
+                      className={cn(
+                        "mt-px h-3 w-auto translate-y-[0.5px]",
+                        overlayHeaderActive ? "opacity-80 max-md:opacity-100" : "opacity-80",
+                      )}
+                      unoptimized
+                    />
+                  </a>
+                  {showHeaderHoursBadge && openStatus && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onHoursOpenChange(true);
+                      }}
+                      className={cn(
+                        "inline-flex flex-shrink-0 cursor-pointer items-center gap-1 text-left text-[10px] font-semibold leading-none transition-colors focus:outline-none sm:hidden",
+                        overlayHeaderActive
+                          ? "max-md:text-white/90"
+                          : openStatus.open
+                            ? "text-green-700"
+                            : "text-gray-600",
+                      )}
+                      aria-label={`Show opening hours. ${openStatus.label}`}
+                    >
+                      <span
+                        className={cn(
+                          "h-1.5 w-1.5 rounded-full",
+                          openStatus.open
+                            ? overlayHeaderActive
+                              ? "bg-green-400"
+                              : "bg-green-500"
+                            : overlayHeaderActive
+                              ? "bg-white/50"
+                              : "bg-gray-400",
+                        )}
+                        aria-hidden="true"
+                      />
+                      {openStatus.label}
+                    </button>
+                  )}
+                </div>
+              </div>
+              )}
+            </div>
+
+            {!productContext &&
+              (store.address || store.phone || showHeaderHoursBadge) && (
+              <div className="hidden min-w-0 flex-shrink items-center gap-1.5 sm:flex">
                 {showHeaderHoursBadge && openStatus && (
                   <button
                     type="button"
@@ -443,112 +556,85 @@ export function StoreProfileChrome({
                       onHoursOpenChange(true);
                     }}
                     className={cn(
-                      "inline-flex items-center justify-start gap-1 rounded-full text-left text-[10px] font-semibold leading-none transition-colors focus:outline-none focus:ring-2 sm:hidden",
-                      overlayHeaderActive
-                        ? "max-md:text-white/90 max-md:hover:bg-white/10 max-md:focus:ring-white/20"
-                        : "hover:bg-gray-100 focus:ring-gray-900/10",
-                      !overlayHeaderActive && (openStatus.open ? "text-green-700" : "text-gray-600"),
+                      "inline-flex h-7 flex-shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 text-[11px] font-semibold transition-colors hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-900/10",
+                      openStatus.open ? "text-green-700" : "text-gray-600",
                     )}
                     aria-label={`Show opening hours. ${openStatus.label}`}
                   >
                     <span
                       className={cn(
                         "h-1.5 w-1.5 rounded-full",
-                        openStatus.open
-                          ? overlayHeaderActive
-                            ? "bg-green-400"
-                            : "bg-green-500"
-                          : overlayHeaderActive
-                            ? "bg-white/50"
-                            : "bg-gray-400",
+                        openStatus.open ? "bg-green-500" : "bg-gray-400",
                       )}
                       aria-hidden="true"
                     />
                     {openStatus.label}
                   </button>
                 )}
-                {(store.address || store.phone || showHeaderHoursBadge) && (
-                  <div className="hidden min-w-0 items-center gap-1.5 sm:flex">
-                    {showHeaderHoursBadge && openStatus && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          onHoursOpenChange(true);
-                        }}
-                        className={cn(
-                          "inline-flex h-6 flex-shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-semibold transition-colors hover:border-gray-300 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-900/10",
-                          openStatus.open ? "text-green-700" : "text-gray-600",
-                        )}
-                        aria-label={`Show opening hours. ${openStatus.label}`}
-                      >
-                        <span
-                          className={cn(
-                            "h-1.5 w-1.5 rounded-full",
-                            openStatus.open ? "bg-green-500" : "bg-gray-400",
-                          )}
-                          aria-hidden="true"
-                        />
-                        {openStatus.label}
-                      </button>
-                    )}
-                    {store.address &&
-                      (directionsUrl ? (
-                        <a
-                          href={directionsUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onBehaviourEvent?.("contact_click", {
-                              action: "directions",
-                              label: "Store address",
-                              source: "store_header",
-                            });
-                          }}
-                          title="Get directions"
-                          className="inline-flex h-6 min-w-0 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900"
-                        >
-                          <MapPin className="h-3 w-3 flex-shrink-0 text-gray-400" />
-                          <span className="truncate">{store.address}</span>
-                        </a>
-                      ) : (
-                        <span className="inline-flex h-6 min-w-0 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-600">
-                          <MapPin className="h-3 w-3 flex-shrink-0 text-gray-400" />
-                          <span className="truncate">{store.address}</span>
-                        </span>
-                      ))}
-                    {store.phone && (
-                      <a
-                        href={`tel:${store.phone}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onBehaviourEvent?.("contact_click", {
-                            action: "call",
-                            label: "Store phone",
-                            source: "store_header",
-                          });
-                        }}
-                        title={`Call ${store.store_name}`}
-                        className="hidden h-6 flex-shrink-0 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2 text-[11px] font-medium text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 lg:inline-flex"
-                      >
-                        <Phone className="h-3 w-3 flex-shrink-0 text-gray-400" />
-                        {store.phone}
-                      </a>
-                    )}
-                  </div>
+                {store.address &&
+                  (directionsUrl ? (
+                    <a
+                      href={directionsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onBehaviourEvent?.("contact_click", {
+                          action: "directions",
+                          label: "Store address",
+                          source: "store_header",
+                        });
+                      }}
+                      title="Get directions"
+                      className="hidden h-7 min-w-0 max-w-[240px] items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 text-[11px] font-medium text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 lg:inline-flex xl:max-w-xs"
+                    >
+                      <MapPin className="h-3 w-3 flex-shrink-0 text-gray-400" />
+                      <span className="truncate">{store.address}</span>
+                    </a>
+                  ) : (
+                    <span className="hidden h-7 min-w-0 max-w-[240px] items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 text-[11px] font-medium text-gray-600 lg:inline-flex xl:max-w-xs">
+                      <MapPin className="h-3 w-3 flex-shrink-0 text-gray-400" />
+                      <span className="truncate">{store.address}</span>
+                    </span>
+                  ))}
+                {store.phone && (
+                  <a
+                    href={`tel:${store.phone}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onBehaviourEvent?.("contact_click", {
+                        action: "call",
+                        label: "Store phone",
+                        source: "store_header",
+                      });
+                    }}
+                    title={`Call ${store.store_name}`}
+                    className="hidden h-7 flex-shrink-0 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 text-[11px] font-medium text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 xl:inline-flex"
+                  >
+                    <Phone className="h-3 w-3 flex-shrink-0 text-gray-400" />
+                    {store.phone}
+                  </a>
                 )}
               </div>
-            </div>
+            )}
 
-            <div className="flex flex-shrink-0 items-center gap-2">
-              {showHeaderSearch && (
+            {productContext && showHeaderSearch ? (
+              <StoreDesktopSearchField
+                storeSearch={storeSearch}
+                onStoreSearchChange={onStoreSearchChange}
+                placeholder="Search products…"
+                className="mx-2 hidden min-w-0 flex-1 md:block lg:mx-4 lg:max-w-md xl:max-w-lg"
+                compact
+              />
+            ) : null}
+
+            <div className="ml-auto flex flex-shrink-0 items-center gap-2">
+              {!productContext && showHeaderSearch && (
                 <StoreDesktopSearchField
                   storeSearch={storeSearch}
                   onStoreSearchChange={onStoreSearchChange}
                   placeholder="Search products…"
-                  className="hidden md:block w-48 lg:w-64 xl:w-72"
+                  className="hidden md:block w-64 lg:w-80 xl:w-96"
                   compact
                 />
               )}
@@ -590,25 +676,6 @@ export function StoreProfileChrome({
                     "max-md:border max-md:border-white/30 max-md:bg-white/10 max-md:backdrop-blur-sm max-md:hover:bg-white/20 max-md:[&_svg]:text-white",
                 )}
               />
-              <span
-                className="hidden h-6 w-px flex-shrink-0 bg-gray-200 sm:block"
-                aria-hidden="true"
-              />
-              <a
-                href="/marketplace"
-                aria-label="Back to Yellow Jersey marketplace"
-                title="Yellow Jersey Marketplace"
-                className="group hidden h-9 flex-shrink-0 items-center rounded-md px-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 sm:inline-flex"
-              >
-                <Image
-                  src="/yjlogo.svg"
-                  alt="Yellow Jersey"
-                  width={84}
-                  height={20}
-                  className="h-[18px] w-auto opacity-75 transition-opacity group-hover:opacity-100 lg:h-5"
-                  unoptimized
-                />
-              </a>
             </div>
           </div>
         </div>
@@ -618,12 +685,57 @@ export function StoreProfileChrome({
         className={cn(
           mobileSearchMode && "hidden md:block",
           activeTab === "home" ? "max-md:hidden" : "max-md:block",
-          "border-b border-gray-200 bg-gray-50/95 backdrop-blur-sm md:block",
+          "border-b border-gray-200 md:block",
+          productContext ? "bg-white" : "bg-gray-50/95 backdrop-blur-sm",
           contentShell,
-          "pb-2 pt-2 md:pb-2.5 md:pt-2.5",
+          productContext ? "py-0" : "pb-2 pt-2 md:pb-2.5 md:pt-2.5",
         )}
       >
-        {/* Full-width banner tabs — evenly spread, image-backed tiles */}
+        {productContext ? (
+          /* Slim ecommerce text nav for product pages */
+          <div className="flex items-center gap-1 overflow-x-auto overscroll-x-contain scrollbar-hide">
+            {tabs.map(({ key, label, icon: Icon }) => {
+              const active = activeTab === key;
+              const tabClassName = cn(
+                "inline-flex h-10 shrink-0 items-center gap-1.5 border-b-2 px-3 text-sm font-medium transition-colors",
+                active
+                  ? "border-gray-900 text-gray-900"
+                  : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-800",
+              );
+              const tabChildren = (
+                <>
+                  <Icon className="h-3.5 w-3.5 flex-shrink-0" />
+                  {label}
+                </>
+              );
+
+              if (getTabHref) {
+                return (
+                  <Link
+                    key={key}
+                    href={getTabHref(key)}
+                    className={tabClassName}
+                    onClick={() => handleTabClick(key)}
+                  >
+                    {tabChildren}
+                  </Link>
+                );
+              }
+
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => handleTabClick(key)}
+                  className={tabClassName}
+                >
+                  {tabChildren}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+        /* Full-width banner tabs — evenly spread, image-backed tiles */
         <div className="flex items-stretch gap-1.5 overflow-x-auto overflow-y-hidden overscroll-x-contain scrollbar-hide md:grid md:grid-flow-col md:auto-cols-fr md:gap-2 md:overflow-visible">
           {tabs.map(({ key, label, icon: Icon }) => {
             const active = activeTab === key;
@@ -694,29 +806,8 @@ export function StoreProfileChrome({
             );
           })}
         </div>
-
-        {/* Brand logos — relocated to their own strip below the banner tabs */}
-        {store.brands.filter((b) => b.is_active && b.logo_url).length > 0 && (
-          <div className="mt-2 hidden items-center justify-center gap-8 md:flex">
-            {store.brands
-              .filter((b) => b.is_active && b.logo_url)
-              .sort((a, b) => a.display_order - b.display_order)
-              .slice(0, 6)
-              .map((brand) => (
-                <div
-                  key={brand.id}
-                  className="flex h-6 w-16 flex-shrink-0 items-center justify-center"
-                  title={brand.name}
-                >
-                  <img
-                    src={brand.logo_url!}
-                    alt={brand.name}
-                    className="max-h-full max-w-full object-contain opacity-50 transition-opacity hover:opacity-100"
-                  />
-                </div>
-              ))}
-          </div>
         )}
+
       </div>
       </div>
 

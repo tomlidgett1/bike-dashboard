@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { resolveProductImage } from '@/lib/services/image-resolver';
 import { toCurrentHeroPublicId } from '@/lib/utils/cloudinary-transforms';
+import { searchCanonicalCategories } from '@/lib/marketplace/canonical-taxonomy';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,6 +51,8 @@ export async function GET(
         description,
         price,
         category_name,
+        marketplace_category,
+        marketplace_subcategory,
         qoh,
         resolved_image_id,
         resolved_image_source,
@@ -83,11 +86,20 @@ export async function GET(
 
         const imageUrl = resolved?.thumbnail_url || resolved?.card_url || resolved?.original_url || null;
 
+        const categoryLabel = [
+          product.marketplace_category,
+          product.marketplace_subcategory,
+        ]
+          .filter(Boolean)
+          .join(' / ');
+
         return {
           id: product.id,
           name: product.display_name || product.description,
           price: product.price,
-          category: product.category_name || 'Uncategorized',
+          category: categoryLabel || product.category_name || 'Uncategorised',
+          marketplace_category: product.marketplace_category,
+          marketplace_subcategory: product.marketplace_subcategory,
           imageUrl,
           inStock: (product.qoh || 0) > 0,
         };
@@ -103,7 +115,17 @@ export async function GET(
       });
     }
 
-    return NextResponse.json({ products, query: searchTerm });
+    const categories = searchCanonicalCategories(searchTerm, 6).map((category) => ({
+      label: category.label,
+      level1: category.level1,
+      level2: category.level2,
+      level3: category.level3,
+      href: `/marketplace?space=stores&level1=${encodeURIComponent(category.level1)}&level2=${encodeURIComponent(category.level2)}${
+        category.level3 ? `&level3=${encodeURIComponent(category.level3)}` : ''
+      }`,
+    }));
+
+    return NextResponse.json({ products, categories, query: searchTerm });
   } catch (error) {
     console.error('[STORE SEARCH] Error:', error);
     return NextResponse.json({ error: 'Search failed' }, { status: 500 });

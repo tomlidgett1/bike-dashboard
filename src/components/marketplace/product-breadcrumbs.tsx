@@ -55,7 +55,7 @@ export function ProductBreadcrumbs({
         <>
           <BreadcrumbSeparator />
           <Link
-            href={`/marketplace?level1=${encodeURIComponent(level1)}`}
+            href={`/marketplace?space=stores&level1=${encodeURIComponent(level1)}`}
             className={cn(crumbLinkClassName, "shrink-0")}
           >
             {level1}
@@ -67,7 +67,7 @@ export function ProductBreadcrumbs({
         <>
           <BreadcrumbSeparator />
           <Link
-            href={`/marketplace?level1=${encodeURIComponent(level1 || "")}&level2=${encodeURIComponent(level2)}`}
+            href={`/marketplace?space=stores&level1=${encodeURIComponent(level1 || "")}&level2=${encodeURIComponent(level2)}`}
             className={cn(crumbLinkClassName, "shrink-0")}
           >
             {level2}
@@ -79,7 +79,7 @@ export function ProductBreadcrumbs({
         <>
           <BreadcrumbSeparator />
           <Link
-            href={`/marketplace?level1=${encodeURIComponent(level1 || "")}&level2=${encodeURIComponent(level2 || "")}&level3=${encodeURIComponent(level3)}`}
+            href={`/marketplace?space=stores&level1=${encodeURIComponent(level1 || "")}&level2=${encodeURIComponent(level2 || "")}&level3=${encodeURIComponent(level3)}`}
             className={cn(crumbLinkClassName, "shrink-0")}
           >
             {level3}

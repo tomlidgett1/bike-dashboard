@@ -230,7 +230,7 @@ async function markBookingCreated(
   const { error } = await getAdminClient()
     .from('nest_brand_lightspeed_booking_state')
     .update({
-      status: 'created',
+      status: 'confirmed',
       workorder_id: workorderId,
       last_message_at: new Date().toISOString(),
     })

@@ -5,7 +5,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Heart, Share2, ChevronLeft, ShieldCheck, BadgeCheck, Lock, Store, MapPin, Truck, ArrowRight, Eye } from '@/components/layout/app-sidebar/dashboard-icons';
+import { Heart, Share2, ChevronLeft, ShieldCheck, BadgeCheck, Lock, Store, MapPin, Truck, ArrowRight, Eye, EyeOff } from '@/components/layout/app-sidebar/dashboard-icons';
 import { BuyNowButton } from "@/components/marketplace/buy-now-button";
 import { AddToCartButton } from "@/components/marketplace/add-to-cart-button";
 import { MakeOfferButton } from "@/components/marketplace/make-offer-button";
@@ -78,9 +78,9 @@ export function ImmersiveProductLayout({
     : `/marketplace/store/${product.user_id}`;
 
   const similarSeeAllHref = product.marketplace_subcategory
-    ? `/marketplace?level1=${encodeURIComponent(product.marketplace_category || "")}&level2=${encodeURIComponent(product.marketplace_subcategory)}`
+    ? `/marketplace?space=stores&level1=${encodeURIComponent(product.marketplace_category || "")}&level2=${encodeURIComponent(product.marketplace_subcategory)}`
     : product.marketplace_category
-      ? `/marketplace?level1=${encodeURIComponent(product.marketplace_category)}`
+      ? `/marketplace?space=stores&level1=${encodeURIComponent(product.marketplace_category)}`
       : undefined;
 
   const handleShare = async () => {
@@ -197,20 +197,6 @@ export function ImmersiveProductLayout({
 
   return (
     <div className="relative bg-[#0b0b0e] text-white min-h-screen">
-      {isStoreOwner && viewAsCustomer && (
-        <div className="sticky top-0 z-40 border-b border-gray-200 bg-white px-4 py-3 sm:px-8">
-          <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-gray-600">You&apos;re viewing this product as a customer.</p>
-            <button
-              type="button"
-              onClick={() => onViewAsCustomerChange?.(false)}
-              className="shrink-0 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50"
-            >
-              Exit customer view
-            </button>
-          </div>
-        </div>
-      )}
       {/* ── Immersive top bar ─────────────────────────────────────────── */}
       <header className="absolute inset-x-0 top-0 z-30">
         <div className="mx-auto max-w-[1500px] px-4 sm:px-8 h-16 flex items-center justify-between">
@@ -231,6 +217,17 @@ export function ImmersiveProductLayout({
             </span>
           </Link>
           <div className="flex items-center gap-2">
+            {isStoreOwner && viewAsCustomer && onViewAsCustomerChange && (
+              <button
+                type="button"
+                onClick={() => onViewAsCustomerChange(false)}
+                title="Exit customer view"
+                className="inline-flex h-9 items-center gap-1.5 rounded-full bg-white/10 px-3 text-xs font-medium text-white/90 ring-1 ring-white/15 backdrop-blur-md transition-colors hover:bg-white/20 hover:text-white"
+              >
+                <EyeOff className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Exit customer view</span>
+              </button>
+            )}
             <button
               onClick={() => setLiked((v) => !v)}
               aria-label="Save"

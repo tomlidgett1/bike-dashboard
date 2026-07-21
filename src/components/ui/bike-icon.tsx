@@ -49,6 +49,8 @@ export const CATEGORY_ICON_MAP: Record<string, string> = {
   "Seat & Seatposts": "noun-bike-saddle-6991388.svg",
   "Tech & Electronics": "noun-bike-computer-6991376.svg",
   "Wheels & Tyres": "noun-bike-wheels-6991373.svg",
+  "Shop Services": "noun-chain-tool-6991336.svg",
+  "Marketplace Specials": "noun-road-bike-frame-6991314.svg",
   
   // Level 2 Categories - Accessories
   "Bags": "noun-bike-front-rack-6991323.svg",

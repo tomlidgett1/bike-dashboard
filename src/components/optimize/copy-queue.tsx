@@ -6,6 +6,7 @@ import {
   Ban,
   Check,
   FileText,
+  Layers,
   ListChecks,
   Loader2,
   RefreshCw,
@@ -35,6 +36,7 @@ import {
   formatOptimizerProductCount,
   hasDesc,
   hasSpecs,
+  hasSubDescription,
   hasTitle,
   type CopyField,
   type OptimizerProduct,
@@ -50,7 +52,7 @@ import {
   useRejectedProducts,
 } from "@/components/optimize/optimizer-shared";
 
-type CopyFilter = "all" | "title" | "description" | "specs";
+type CopyFilter = "all" | "title" | "description" | "specs" | "subDescription";
 
 type RowRun = Record<CopyField, TextStep>;
 
@@ -59,6 +61,7 @@ const emptyRun = (): RowRun => ({
   title: emptyText(),
   description: emptyText(),
   specs: emptyText(),
+  subDescription: emptyText(),
 });
 
 function missingFields(p: OptimizerProduct): CopyField[] {
@@ -66,12 +69,13 @@ function missingFields(p: OptimizerProduct): CopyField[] {
   if (!hasTitle(p)) out.push("title");
   if (!hasDesc(p)) out.push("description");
   if (!hasSpecs(p)) out.push("specs");
+  if (!hasSubDescription(p)) out.push("subDescription");
   return out;
 }
 
 function rowStatus(run: RowRun | undefined): "idle" | "running" | "done" | "error" {
   if (!run) return "idle";
-  const steps = [run.title, run.description, run.specs];
+  const steps = [run.title, run.description, run.specs, run.subDescription];
   if (steps.some((s) => s.status === "error")) return "error";
   if (steps.some((s) => s.status === "running" || s.status === "queued")) return "running";
   if (steps.every((s) => s.status === "idle")) return "idle";
@@ -96,6 +100,7 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
     title: true,
     description: true,
     specs: false,
+    subDescription: true,
   });
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [runs, setRuns] = React.useState<Record<string, RowRun>>({});
@@ -254,6 +259,49 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
     [setText, setProducts, bicycleOverrides],
   );
 
+  const runSubDescriptions = React.useCallback(
+    async (ids: string[]) => {
+      ids.forEach((id) =>
+        setText(id, "subDescription", { status: "running", detail: "Distilling" }),
+      );
+      try {
+        const res = await fetch("/api/products/generate-sub-descriptions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productIds: ids }),
+          signal: abortRef.current?.signal,
+        });
+        if (!res.ok || !res.body) throw new Error("Failed to start sub-description generation");
+        await readSSE(res.body, (event) => {
+          const id = event.productId as string;
+          if (!id || event.event !== "product_complete") return;
+          if (event.success) {
+            const subDescription = (event.sub_description as string | null) ?? null;
+            if (subDescription) {
+              setProducts((prev) =>
+                prev.map((p) =>
+                  p.id === id ? { ...p, sub_description: subDescription } : p,
+                ),
+              );
+            }
+            setText(id, "subDescription", { status: "done" });
+          } else {
+            setText(id, "subDescription", {
+              status: "error",
+              detail: (event.error as string) || "Failed",
+            });
+          }
+        });
+      } catch (err) {
+        if ((err as Error).name === "AbortError") return;
+        ids.forEach((id) =>
+          setText(id, "subDescription", { status: "error", detail: "Generation failed" }),
+        );
+      }
+    },
+    [setText, setProducts],
+  );
+
   const toggleBicycle = React.useCallback(
     async (product: OptimizerProduct, nextValue: boolean) => {
       if (bicycleSaving.has(product.id)) return;
@@ -313,6 +361,7 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
       if (gapFilter === "title") return !hasTitle(p);
       if (gapFilter === "description") return !hasDesc(p);
       if (gapFilter === "specs") return !hasSpecs(p);
+      if (gapFilter === "subDescription") return !hasSubDescription(p);
       return true;
     });
   }, [products, search, rejectedIds, gapFilter]);
@@ -323,6 +372,7 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
       title: active.filter((p) => !hasTitle(p)).length,
       description: active.filter((p) => !hasDesc(p)).length,
       specs: active.filter((p) => !hasSpecs(p)).length,
+      subDescription: active.filter((p) => !hasSubDescription(p)).length,
     };
   }, [products, rejectedIds]);
 
@@ -361,6 +411,9 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
           ...(fields.title ? { title: { status: "queued" as const } } : {}),
           ...(fields.description ? { description: { status: "queued" as const } } : {}),
           ...(fields.specs ? { specs: { status: "queued" as const } } : {}),
+          ...(fields.subDescription
+            ? { subDescription: { status: "queued" as const } }
+            : {}),
         };
       }
       return next;
@@ -372,6 +425,21 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
     if (fields.description && fields.specs) await runDescriptions(ids, "both");
     else if (fields.description) await runDescriptions(ids, "description");
     else if (fields.specs) await runDescriptions(ids, "specs");
+
+    if (fields.subDescription) {
+      // Sub description must distill the long marketing copy from the DB.
+      // If description wasn't part of this run, generate it first for rows that lack one.
+      if (!fields.description) {
+        const needingDescription = ids.filter((id) => {
+          const product = products.find((item) => item.id === id);
+          return !product?.product_description?.trim();
+        });
+        if (needingDescription.length > 0) {
+          await runDescriptions(needingDescription, "description");
+        }
+      }
+      await runSubDescriptions(ids);
+    }
 
     setRunning(false);
     abortRef.current = null;
@@ -478,6 +546,7 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
                     title: values.includes("title"),
                     description: values.includes("description"),
                     specs: values.includes("specs"),
+                    subDescription: values.includes("subDescription"),
                   });
                 }}
                 className="flex-wrap"
@@ -492,6 +561,12 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
                       count: counts.description,
                     },
                     { key: "specs" as const, label: "Specs", icon: ListChecks, count: counts.specs },
+                    {
+                      key: "subDescription" as const,
+                      label: "Sub descriptions",
+                      icon: Layers,
+                      count: counts.subDescription,
+                    },
                   ] as const
                 ).map(({ key, label, icon: Icon, count }) => (
                   <ToggleGroupItem key={key} value={key} aria-label={label} className="gap-1.5 px-3">
@@ -512,6 +587,11 @@ export function CopyQueue({ fixedScope }: { fixedScope?: OptimizerProductScope }
                 { id: "title" as const, label: "Missing title", count: counts.title },
                 { id: "description" as const, label: "Missing description", count: counts.description },
                 { id: "specs" as const, label: "Missing specs", count: counts.specs },
+                {
+                  id: "subDescription" as const,
+                  label: "Missing sub description",
+                  count: counts.subDescription,
+                },
               ]}
             />
           </OptimiseSubToolbar>

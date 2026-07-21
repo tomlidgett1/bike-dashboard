@@ -5,6 +5,7 @@ import {
   finalizeListingForMarketplace,
   refreshPublicMarketplaceAfterMutation,
 } from "@/lib/server/refresh-public-marketplace";
+import { validateAndResolveCanonicalCategory } from "@/lib/marketplace/validate-canonical-category";
 
 // Helper function to find or create canonical product with AI categorisation
 async function ensureCanonicalProduct(
@@ -90,6 +91,19 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
+    const listingStatus = body.listingStatus || "draft";
+    const requireCategories = listingStatus === "active";
+    const categoryResult = await validateAndResolveCanonicalCategory({
+      marketplace_category: body.marketplace_category,
+      marketplace_subcategory: body.marketplace_subcategory,
+      marketplace_level_3_category: body.marketplace_level_3_category,
+      bikeType: body.bikeType,
+      require: requireCategories,
+    });
+
+    if (!categoryResult.ok) {
+      return NextResponse.json({ error: categoryResult.error }, { status: 400 });
+    }
 
     // ============================================================
     // Ensure Canonical Product exists
@@ -105,6 +119,33 @@ export async function POST(request: NextRequest) {
         manufacturer: body.manufacturer,
       });
       canonical_product_id = canonicalResult.canonical_product_id;
+    }
+
+    // Apply validated category onto the canonical product (source of truth).
+    // Existing classified assignments are preserved unless this listing supplies
+    // a validated replacement.
+    if (categoryResult.value?.marketplace_category_id) {
+      const { data: existingCanonical } = await supabase
+        .from("canonical_products")
+        .select("marketplace_category_id, categorisation_status")
+        .eq("id", canonical_product_id)
+        .maybeSingle();
+
+      if (
+        !existingCanonical?.marketplace_category_id ||
+        existingCanonical.categorisation_status !== "classified"
+      ) {
+        await supabase
+          .from("canonical_products")
+          .update({
+            marketplace_category_id: categoryResult.value.marketplace_category_id,
+            categorisation_status: "classified",
+            categorisation_source: "listing_upload",
+            categorisation_confidence: 1,
+            categorised_at: new Date().toISOString(),
+          })
+          .eq("id", canonical_product_id);
+      }
     }
 
     // ============================================================
@@ -127,7 +168,7 @@ export async function POST(request: NextRequest) {
       user_id: user.id,
       listing_type: "private_listing",
       listing_source: body.facebook_source_url ? "facebook_import" : "manual",
-      listing_status: body.listingStatus || "draft",
+      listing_status: listingStatus,
       facebook_source_url: body.facebook_source_url,
       canonical_product_id: canonical_product_id, // Link to canonical product
 
@@ -138,10 +179,10 @@ export async function POST(request: NextRequest) {
       model: body.model,
       model_year: body.modelYear,
       price: body.price,
-      // Categories will be auto-populated from canonical_products via trigger
-      // But we can set them explicitly if provided (they'll be overwritten by trigger if canonical has categories)
-      marketplace_category: body.marketplace_category,
-      marketplace_subcategory: body.marketplace_subcategory,
+      // Categories project from canonical_products via trigger once assigned.
+      marketplace_category: categoryResult.value?.level1 ?? null,
+      marketplace_subcategory: categoryResult.value?.level2 ?? null,
+      marketplace_level_3_category: categoryResult.value?.level3 ?? null,
 
       // Bike fields
       frame_size: body.frameSize,
@@ -396,7 +437,6 @@ export async function POST(request: NextRequest) {
       // Don't fail the request if voucher check fails
     }
 
-    const listingStatus = body.listingStatus || "draft";
     if (listingStatus === "active") {
       await refreshPublicMarketplaceAfterMutation();
     }

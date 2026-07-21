@@ -167,7 +167,7 @@ export async function GET(request: NextRequest) {
     const { data: requests, error: requestsError } = await auth.supabase
       .from("store_payment_requests")
       .select(
-        "id, amount_cents, description, status, created_at, paid_at, customer_name, customer_handle, nest_chat_id, stripe_session_id, stripe_payment_intent_id, lightspeed_sale_id, lightspeed_credit_account_id, lightspeed_customer_id, lightspeed_workorder_id, lightspeed_synced_at, lightspeed_sync_status, lightspeed_sync_error",
+        "id, amount_cents, description, status, created_at, paid_at, customer_name, customer_handle, nest_chat_id, stripe_session_id, stripe_payment_intent_id, lightspeed_sale_id, lightspeed_credit_account_id, lightspeed_customer_id, lightspeed_workorder_id, lightspeed_synced_at, lightspeed_sync_status, lightspeed_sync_error, provider, checkout_url, linq_payment_request_id",
       )
       .eq("store_user_id", auth.userId)
       .order("created_at", { ascending: false })
@@ -229,7 +229,11 @@ export async function GET(request: NextRequest) {
         lightspeedSyncedAt: row.lightspeed_synced_at,
         lightspeedSyncStatus: row.lightspeed_sync_status,
         lightspeedSyncError: row.lightspeed_sync_error,
-        url: `${appUrl()}/pay/${row.id}`,
+        provider: row.provider ?? "stripe",
+        url:
+          row.provider === "linkpay" && row.checkout_url
+            ? row.checkout_url
+            : `${appUrl()}/pay/${row.id}`,
         events: includeEvents ? eventsByRequest[row.id] ?? [] : undefined,
       })),
     });
@@ -238,7 +242,7 @@ export async function GET(request: NextRequest) {
   const { data: requests, error: requestsError } = await auth.supabase
     .from("store_payment_requests")
     .select(
-      "id, amount_cents, description, status, created_at, paid_at, customer_handle, lightspeed_sale_id, lightspeed_credit_account_id, lightspeed_customer_id, lightspeed_synced_at, lightspeed_sync_status, lightspeed_sync_error",
+      "id, amount_cents, description, status, created_at, paid_at, customer_handle, lightspeed_sale_id, lightspeed_credit_account_id, lightspeed_customer_id, lightspeed_synced_at, lightspeed_sync_status, lightspeed_sync_error, provider, checkout_url",
     )
     .eq("store_user_id", auth.userId)
     .eq("nest_chat_id", chatId)
@@ -279,7 +283,11 @@ export async function GET(request: NextRequest) {
       status: row.status,
       createdAt: row.created_at,
       paidAt: row.paid_at,
-      url: `${appUrl()}/pay/${row.id}`,
+      url:
+        row.provider === "linkpay" && row.checkout_url
+          ? row.checkout_url
+          : `${appUrl()}/pay/${row.id}`,
+      provider: row.provider ?? "stripe",
       lightspeedSaleId: row.lightspeed_sale_id,
       lightspeedCreditAccountId: row.lightspeed_credit_account_id,
       lightspeedCustomerId: row.lightspeed_customer_id,

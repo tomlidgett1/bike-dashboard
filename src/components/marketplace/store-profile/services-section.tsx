@@ -8,14 +8,15 @@ import type { StoreService } from "@/lib/types/store";
 // ============================================================
 // Services Section (Services tab)
 // Renders the store's services as "Clean Checklist" cards,
-// featured services first. Booking is handled by the
-// "Call to book" banner rendered beneath this section.
+// Featured services first. Booking opens the shared ServiceBookingDialog
+// when `onBook` is provided by the store profile page.
 // ============================================================
 
 interface ServicesSectionProps {
   services: StoreService[];
   accent?: string;
   accentText?: string;
+  onBook?: (service: StoreService) => void;
 }
 
 const containerVariants = {
@@ -28,7 +29,12 @@ const itemVariants = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.25, ease: [0.04, 0.62, 0.23, 0.98] as const } },
 };
 
-export function ServicesSection({ services, accent = "#ffde59", accentText = "#0a0a0a" }: ServicesSectionProps) {
+export function ServicesSection({
+  services,
+  accent = "#ffde59",
+  accentText = "#0a0a0a",
+  onBook,
+}: ServicesSectionProps) {
   if (!services || services.length === 0) return null;
 
   const sorted = [...services].sort((a, b) => Number(b.highlight) - Number(a.highlight));
@@ -50,12 +56,14 @@ export function ServicesSection({ services, accent = "#ffde59", accentText = "#0
         animate="visible"
         className="grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3"
       >
-        {sorted.map((s) => (
+        {sorted.map((s, index) => (
           <motion.div key={s.id} variants={itemVariants} className="flex h-full min-h-0">
             <ServiceCard
               service={s}
               accent={accent}
               accentText={accentText}
+              onBook={onBook}
+              backgroundIndex={index}
               className="h-full w-full"
             />
           </motion.div>

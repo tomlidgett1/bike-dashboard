@@ -51,7 +51,7 @@ import {
   type StoreTab,
 } from "@/components/marketplace/store-profile/store-profile-chrome";
 import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
-import type { StoreCategoryWithProducts, StoreProfile, OpeningHours, StoreSectionWithCategories } from "@/lib/types/store";
+import type { StoreCategoryWithProducts, StoreProfile, OpeningHours, StoreSectionWithCategories, StoreService } from "@/lib/types/store";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { resolveLivePrice, sortProductsSaleFirst } from "@/lib/marketplace/pricing";
 import {
@@ -67,6 +67,7 @@ import {
   useStoreSectionViewTracking,
   useStoreTabTracking,
 } from "@/lib/tracking/store-analytics";
+import { ServiceBookingDialog } from "@/components/marketplace/store-profile/service-booking-dialog";
 
 // ============================================================
 // Store Profile View
@@ -1140,6 +1141,8 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
   const [previewMode, setPreviewMode] = React.useState(false);
   const [hoursOpen, setHoursOpen] = React.useState(false);
   const [backgroundRemovingIds, setBackgroundRemovingIds] = React.useState<Set<string>>(new Set());
+  const [serviceBookingOpen, setServiceBookingOpen] = React.useState(false);
+  const [bookingService, setBookingService] = React.useState<StoreService | null>(null);
   const analyticsRootRef = React.useRef<HTMLDivElement | null>(null);
   const shouldTrackStoreAnalytics = !isOwnProfile;
   const analyticsContext = React.useMemo(() => ({ tab: activeTab }), [activeTab]);
@@ -1374,8 +1377,11 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
     (tab: StoreTab) => {
       setActiveTab(tab);
       setSelectedCategory(null);
+      void import("@/lib/nest/storefront-browse-context")
+        .then(({ recordBrowseTab }) => recordBrowseTab(store.id, tab))
+        .catch(() => {});
     },
-    [],
+    [store.id],
   );
 
   const handleCategoryToggle = React.useCallback(
@@ -1387,10 +1393,15 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
           categoryName: name,
           selected: next === name,
         });
+        void import("@/lib/nest/storefront-browse-context")
+          .then(({ recordBrowseCategory }) =>
+            recordBrowseCategory(store.id, name, next === name),
+          )
+          .catch(() => {});
         return next;
       });
     },
-    [activeTab, trackBehaviour],
+    [activeTab, trackBehaviour, store.id],
   );
 
   const handleSaleOnlyToggle = React.useCallback(() => {
@@ -1472,6 +1483,14 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
     setSelectedCategory(categoryName);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [activeTab, trackBehaviour]);
+
+  const handleOpenServiceBooking = React.useCallback(
+    (service?: StoreService | null) => {
+      setBookingService(service ?? null);
+      setServiceBookingOpen(true);
+    },
+    [],
+  );
 
   const handleCategoryRename = React.useCallback(
     async (categoryId: string, name: string): Promise<boolean> => {
@@ -1751,6 +1770,7 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                 onNavigate={handleHomeNavigate}
                 onOpenCollection={handleOpenCollection}
                 onOpenHours={() => handleHoursOpenChange(true)}
+                onBookService={handleOpenServiceBooking}
                 onTrackBehaviour={trackBehaviour}
                 storeSearch={storeSearch}
                 onStoreSearchChange={allProducts.length > 0 ? handleStoreSearchChange : undefined}
@@ -1922,39 +1942,47 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
             {activeTab === "service" &&
               (store.services.length > 0 ? (
                 <div className="space-y-6">
-                  <ServicesSection services={store.services} />
-                  {!viewAsOwner && store.phone && (
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl bg-gray-900 text-white px-6 py-5">
+                  <ServicesSection
+                    services={store.services}
+                    onBook={(svc) => {
+                      trackBehaviour("service_book_click", {
+                        action: "open_booking_form",
+                        label: svc.name,
+                        serviceId: svc.id,
+                        serviceName: svc.name,
+                        price: svc.price ?? null,
+                        tab: "service",
+                        source: "service_card",
+                      });
+                      handleOpenServiceBooking(svc);
+                    }}
+                  />
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-2xl bg-gray-900 text-white px-6 py-5">
                       <div>
                         <h3 className="text-base font-semibold">Need a service or repair?</h3>
                         <p className="text-sm text-gray-300 mt-0.5">
-                          Give {store.store_name} a call to book your bike in.
+                          Pick the day you want the service finished. You can drop the bike off before then.
                         </p>
                       </div>
                       <Button
-                        asChild
                         className="rounded-lg cursor-pointer text-gray-900 font-semibold hover:brightness-95 flex-shrink-0"
                         style={{ backgroundColor: BRAND_YELLOW }}
+                        onClick={() => {
+                          trackBehaviour("service_book_click", {
+                            action: "open_booking_form",
+                            label: "Book a service",
+                            serviceName: "Book a service",
+                            tab: "service",
+                            source: "services_banner",
+                          });
+                          handleOpenServiceBooking(null);
+                        }}
                       >
-                        <a
-                          href={`tel:${store.phone}`}
-                          onClick={() =>
-                            trackBehaviour("service_book_click", {
-                              action: "call_to_book",
-                              label: "Call to book",
-                              serviceName: "Call to book",
-                              tab: "service",
-                              source: "services_banner",
-                            })
-                          }
-                        >
-                          <Phone className="h-4 w-4 mr-2" />
-                          Call to book
-                          <ChevronRight className="h-4 w-4 ml-1" />
-                        </a>
+                        <Wrench className="h-4 w-4 mr-2" />
+                        Book a service
+                        <ChevronRight className="h-4 w-4 ml-1" />
                       </Button>
                     </div>
-                  )}
                 </div>
               ) : (
                 <EmptyState
@@ -1967,6 +1995,19 @@ export function StoreProfileView({ store: initialStore, isOwnProfile, immersive 
                   }
                 />
               ))}
+
+            <ServiceBookingDialog
+              open={serviceBookingOpen}
+              onOpenChange={(open) => {
+                setServiceBookingOpen(open);
+                if (!open) setBookingService(null);
+              }}
+              storeId={store.id}
+              storeName={store.store_name}
+              service={bookingService}
+              accent={BRAND_YELLOW}
+              accentText="#0a0a0a"
+            />
 
             {/* OFFERS */}
             {activeTab === "offers" && (

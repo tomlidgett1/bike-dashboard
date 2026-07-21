@@ -140,9 +140,13 @@ function buildApiUrl(params: MarketplaceDataParams): string {
     if (level3) urlParams.set('level3', level3);
     endpoint = `/api/marketplace/products?${urlParams}`;
   } else if (listingType === 'store_inventory') {
-    // Shop inventory is not served by the trending feed; always use the products index.
-    // Filter by Lightspeed category_name (not marketplace_category, which is null for LS products).
+    // Shop inventory uses the same canonical Yellow Jersey L1/L2 filters as
+    // private listings. Provider Lightspeed categories remain available via
+    // lsCategory for merchant storefront tooling only.
     urlParams.set('pageSize', String(pageSize));
+    if (level1) urlParams.set('level1', level1);
+    if (level2) urlParams.set('level2', level2);
+    if (level3) urlParams.set('level3', level3);
     if (lsCategory) urlParams.set('lsCategory', lsCategory);
     endpoint = `/api/marketplace/products?${urlParams}`;
   } else {

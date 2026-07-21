@@ -98,7 +98,7 @@ export function CrmCommandBar() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex h-9 items-center gap-2 rounded-md bg-white px-3 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-300 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
+        className="inline-flex h-9 items-center gap-2 rounded-2xl bg-white px-3 text-xs font-medium text-gray-600 ring-1 ring-inset ring-gray-300 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
       >
         <Search className="h-3.5 w-3.5" aria-hidden />
         Search or ask

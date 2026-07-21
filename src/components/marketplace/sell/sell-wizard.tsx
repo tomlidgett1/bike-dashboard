@@ -37,6 +37,10 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useAuthModal } from "@/components/providers/auth-modal-provider";
 import { buildListingFormDataFromAnalysis } from "@/lib/marketplace/listing-analysis-form-data";
+import {
+  resolveBikeTypeToCanonicalPath,
+  resolveCanonicalPath,
+} from "@/lib/marketplace/canonical-taxonomy";
 import { AiRedoDialog } from "@/app/marketplace/sell-redesign/_components/ai-redo-dialog";
 import {
   validateItemType,
@@ -174,12 +178,22 @@ export function SellWizard() {
         }
       }
       
-      const categoryMap = {
-        'bike': 'Bicycles',
-        'part': 'Parts',
-        'apparel': 'Apparel'
-      } as const;
-      const marketplace_category = categoryMap[itemType as keyof typeof categoryMap];
+      const canonicalPath =
+        resolveCanonicalPath(
+          quickData.marketplace_category || formData.marketplace_category,
+          quickData.marketplace_subcategory || formData.marketplace_subcategory,
+          quickData.marketplace_level_3_category || formData.marketplace_level_3_category,
+        ) ||
+        resolveBikeTypeToCanonicalPath(quickData.bikeType || formData.bikeType) ||
+        (itemType === 'apparel'
+          ? resolveCanonicalPath('Apparel', 'Casual Clothing')
+          : itemType === 'part'
+            ? resolveCanonicalPath('Accessories', 'Locks')
+            : resolveCanonicalPath('Bicycles', 'Hybrid / Fitness'));
+
+      const marketplace_category = canonicalPath?.level1 ?? 'Bicycles';
+      const marketplace_subcategory = canonicalPath?.level2 ?? null;
+      const marketplace_level_3_category = canonicalPath?.level3 ?? null;
       
       const listingData = {
         // Basic required fields
@@ -193,6 +207,8 @@ export function SellWizard() {
         // Item type and marketplace category
         itemType: itemType,
         marketplace_category: marketplace_category,
+        marketplace_subcategory,
+        marketplace_level_3_category,
         
         // Images - ensure primary is set
         images: images,
@@ -792,12 +808,28 @@ export function SellWizard() {
     setIsPublishing(true);
 
     try {
-      // TODO: Implement API call to create listing
+      const canonicalPath =
+        resolveCanonicalPath(
+          formData.marketplace_category,
+          formData.marketplace_subcategory,
+          formData.marketplace_level_3_category,
+        ) ||
+        resolveBikeTypeToCanonicalPath(formData.bikeType) ||
+        (formData.itemType === "apparel"
+          ? resolveCanonicalPath("Apparel", "Casual Clothing")
+          : formData.itemType === "part"
+            ? resolveCanonicalPath("Accessories", "Locks")
+            : resolveCanonicalPath("Bicycles", "Hybrid / Fitness"));
+
       const response = await fetch("/api/marketplace/listings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
+          marketplace_category: canonicalPath?.level1 ?? formData.marketplace_category,
+          marketplace_subcategory: canonicalPath?.level2 ?? formData.marketplace_subcategory,
+          marketplace_level_3_category:
+            canonicalPath?.level3 ?? formData.marketplace_level_3_category ?? null,
           listingStatus: "active",
           publishedAt: new Date().toISOString(),
           expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(), // 90 days
@@ -1119,6 +1151,7 @@ export function SellWizard() {
             <Step2BPartDetails
               data={{
                 title: formData.title,
+                marketplace_category: formData.marketplace_category,
                 marketplace_subcategory: formData.marketplace_subcategory,
                 partTypeDetail: formData.partTypeDetail,
                 brand: formData.brand,
@@ -1268,6 +1301,7 @@ export function SellWizard() {
             <Step2CApparelDetails
               data={{
                 title: formData.title,
+                marketplace_category: formData.marketplace_category,
                 marketplace_subcategory: formData.marketplace_subcategory,
                 brand: formData.brand,
                 model: formData.model,

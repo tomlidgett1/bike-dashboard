@@ -341,17 +341,52 @@ export async function upsertNestThreadToSupabase(
     },
   ]);
 
-  const messageRows = conversation.messages.map((message) => ({
-    user_id: userId,
-    chat_id: conversation.chatId,
-    nest_message_id: message.id,
-    role: message.role,
-    content: message.content,
-    handle: message.handle,
-    metadata: message.metadata ?? {},
-    created_at: message.createdAt,
-    synced_at: now,
-  }));
+  // Preserve inbox-only reaction flags across portal sync (portal payload
+  // does not include store tapbacks we applied from the CRM).
+  const messageIds = conversation.messages.map((message) => message.id);
+  const existingLikedById = new Map<number, boolean>();
+  if (messageIds.length > 0) {
+    const { data: existingRows, error: existingError } = await supabase
+      .from("store_nest_messages")
+      .select("nest_message_id, metadata")
+      .eq("user_id", userId)
+      .eq("chat_id", conversation.chatId)
+      .in("nest_message_id", messageIds);
+    if (existingError) {
+      console.error(
+        "[nest-inbox-supabase] existing reaction metadata load failed:",
+        existingError.message,
+      );
+    } else {
+      for (const row of existingRows ?? []) {
+        const meta =
+          row.metadata && typeof row.metadata === "object"
+            ? (row.metadata as Record<string, unknown>)
+            : {};
+        if (meta.store_liked === true) {
+          existingLikedById.set(Number(row.nest_message_id), true);
+        }
+      }
+    }
+  }
+
+  const messageRows = conversation.messages.map((message) => {
+    const metadata: Record<string, unknown> = { ...(message.metadata ?? {}) };
+    if (existingLikedById.get(message.id)) {
+      metadata.store_liked = true;
+    }
+    return {
+      user_id: userId,
+      chat_id: conversation.chatId,
+      nest_message_id: message.id,
+      role: message.role,
+      content: message.content,
+      handle: message.handle,
+      metadata,
+      created_at: message.createdAt,
+      synced_at: now,
+    };
+  });
 
   const { error } = await supabase.from("store_nest_messages").upsert(messageRows, {
     onConflict: "user_id,chat_id,nest_message_id",
@@ -360,6 +395,55 @@ export async function upsertNestThreadToSupabase(
   if (error) {
     console.error("[nest-inbox-supabase] message upsert failed:", error.message);
   }
+}
+
+/**
+ * Persist whether the store liked a Nest bubble (Linq tapback) in message metadata.
+ */
+export async function setNestMessageStoreLiked(
+  supabase: SupabaseClient,
+  userId: string,
+  chatId: string,
+  nestMessageId: number,
+  liked: boolean,
+): Promise<boolean> {
+  const { data: row, error: loadError } = await supabase
+    .from("store_nest_messages")
+    .select("metadata")
+    .eq("user_id", userId)
+    .eq("chat_id", chatId)
+    .eq("nest_message_id", nestMessageId)
+    .maybeSingle();
+
+  if (loadError) {
+    console.error("[nest-inbox-supabase] store_liked load failed:", loadError.message);
+    return false;
+  }
+  if (!row) return false;
+
+  const metadata: Record<string, unknown> = {
+    ...(row.metadata && typeof row.metadata === "object"
+      ? (row.metadata as Record<string, unknown>)
+      : {}),
+  };
+  if (liked) {
+    metadata.store_liked = true;
+  } else {
+    delete metadata.store_liked;
+  }
+
+  const { error } = await supabase
+    .from("store_nest_messages")
+    .update({ metadata, synced_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .eq("chat_id", chatId)
+    .eq("nest_message_id", nestMessageId);
+
+  if (error) {
+    console.error("[nest-inbox-supabase] store_liked update failed:", error.message);
+    return false;
+  }
+  return true;
 }
 
 export async function loadNestReadMapFromSupabase(

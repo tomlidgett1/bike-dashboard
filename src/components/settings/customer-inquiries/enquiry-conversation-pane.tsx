@@ -74,10 +74,14 @@ function NestThread({
   messages,
   loading,
   scrollRef,
+  chatId,
+  onStoreLikedChange,
 }: {
   messages: NestConversationMessage[];
   loading: boolean;
   scrollRef: React.RefObject<HTMLDivElement | null>;
+  chatId?: string | null;
+  onStoreLikedChange?: (messageId: number, liked: boolean) => void;
 }) {
   if (loading && messages.length === 0) {
     return (
@@ -114,6 +118,8 @@ function NestThread({
             message={message}
             showTail={showTail}
             layout="inbox"
+            chatId={chatId}
+            onStoreLikedChange={onStoreLikedChange}
           />
         );
       })}
@@ -381,6 +387,11 @@ export function EnquiryConversationPane({ c }: { c: UnifiedInboxController }) {
                 messages={nestMessages}
                 loading={c.nestDetailLoading}
                 scrollRef={nestThreadScrollRef}
+                chatId={row.nestChatId}
+                onStoreLikedChange={(messageId, liked) => {
+                  if (!row.nestChatId) return;
+                  c.handleNestMessageStoreLiked(messageId, liked, row.nestChatId);
+                }}
               />
               {/* Always show the reply box for Nest threads. Closed-case state must
                   not hide it — close-case UI was removed, and image-heavy threads

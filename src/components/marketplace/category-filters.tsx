@@ -33,7 +33,7 @@ export function CategoryFilters({
     selectedCategory
   );
 
-  const categories: MarketplaceCategory[] = ['Bicycles', 'Parts', 'Apparel', 'Nutrition'];
+  const categories: MarketplaceCategory[] = Object.keys(MARKETPLACE_SUBCATEGORIES);
 
   const handleCategoryClick = (category: MarketplaceCategory) => {
     if (selectedCategory === category) {
@@ -150,7 +150,7 @@ export function CategoryFilters({
               </button>
 
               {/* Subcategory Pills */}
-              {MARKETPLACE_SUBCATEGORIES[selectedCategory].map((subcategory) => {
+              {(MARKETPLACE_SUBCATEGORIES[selectedCategory] || []).map((subcategory) => {
                 const isActive = selectedSubcategory === subcategory;
 
                 return (

@@ -11,6 +11,7 @@ const DEFAULT_COPY_FIELDS: CopyBatchFields = {
   title: true,
   description: true,
   specs: true,
+  subDescription: true,
 };
 
 export async function POST(request: NextRequest) {

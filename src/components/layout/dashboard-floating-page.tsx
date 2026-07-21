@@ -41,13 +41,13 @@ export function DashboardFloatingPage({
   const showTitleRow = !hideTitle && title != null && icon != null;
 
   return (
-    <FloatingCardPage>
+    <FloatingCardPage className={showTitleRow ? undefined : "!pt-0"}>
       {showTitleRow ? (
         <FloatingCardPageHeader>
           <FloatingCardPageTitleRow title={title} icon={icon} actions={actions} />
         </FloatingCardPageHeader>
       ) : null}
-      <FloatingCardPageBody>
+      <FloatingCardPageBody className={showTitleRow ? undefined : "!mt-0"}>
         <FloatingCard className={cn("flex min-h-0 flex-1 flex-col", cardClassName)}>
           {showToolbar ? (
             <div className="flex shrink-0 flex-col gap-2 border-b border-border/60 bg-gray-50 px-4 py-3 md:px-5">

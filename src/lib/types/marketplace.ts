@@ -3,32 +3,25 @@
 // ============================================================
 
 import type { BikeSpecsData, BikeSpecSource } from '@/lib/types/bike-specs';
+import type { WorldClassProductPage } from '@/lib/demo/world-class-product-page-types';
+import {
+  listCanonicalLevel1,
+  listCanonicalLevel2,
+} from '@/lib/marketplace/canonical-taxonomy';
 
 // The distinct "spaces" in the marketplace
 export type MarketplaceSpace = 'marketplace' | 'stores' | 'uber' | 'for-you';
 
-export type MarketplaceCategory = 'Bicycles' | 'Parts' | 'Apparel' | 'Nutrition';
+/** Canonical Yellow Jersey L1 category name. */
+export type MarketplaceCategory = string;
 
-export interface MarketplaceSubcategories {
-  Bicycles: string[];
-  Parts: string[];
-  Apparel: string[];
-  Nutrition: string[];
-}
+export type MarketplaceSubcategories = Record<string, string[]>;
 
-export const MARKETPLACE_CATEGORIES: MarketplaceCategory[] = [
-  'Bicycles',
-  'Parts',
-  'Apparel',
-  'Nutrition',
-];
+export const MARKETPLACE_CATEGORIES: MarketplaceCategory[] = listCanonicalLevel1();
 
-export const MARKETPLACE_SUBCATEGORIES: MarketplaceSubcategories = {
-  Bicycles: ['Road', 'Mountain', 'Hybrid', 'Electric', 'Kids', 'BMX', 'Cruiser', 'Other'],
-  Parts: ['Frames', 'Wheels', 'Drivetrain', 'Brakes', 'Handlebars', 'Saddles', 'Pedals', 'Other'],
-  Apparel: ['Jerseys', 'Shorts', 'Jackets', 'Gloves', 'Shoes', 'Helmets', 'Other'],
-  Nutrition: ['Energy Bars', 'Gels', 'Drinks', 'Supplements', 'Other'],
-};
+export const MARKETPLACE_SUBCATEGORIES: MarketplaceSubcategories = Object.fromEntries(
+  MARKETPLACE_CATEGORIES.map((level1) => [level1, listCanonicalLevel2(level1)]),
+);
 
 /** A selectable variant within a master product group (storefront display). */
 export interface ProductVariantOptionDisplay {
@@ -59,6 +52,8 @@ export interface MarketplaceProduct {
   canonical_product_id?: string | null; // Link to canonical product for image discovery
   description: string;
   product_description?: string | null; // AI-generated product description from web search enrichment
+  /** Short 1–2 sentence blurb under stock on the purchase panel. */
+  sub_description?: string | null;
   product_specs?: string | null; // AI-generated comprehensive spec sheet
   product_spec_sources?: BikeSpecSource[] | null; // Official sources cited during AI copy generation
   display_name?: string; // AI-cleaned product name for display
@@ -115,6 +110,10 @@ export interface MarketplaceProduct {
 
   // Per-product opt-in to the full-bleed Immersive product page layout.
   immersive_page?: boolean | null;
+
+  // Published world-class AI product page (Demo → Publish). When set, the live
+  // PDP renders the world-class template instead of standard/immersive.
+  world_class_page?: WorldClassProductPage | null;
 
   // Per-product opt-in to Uber Express delivery. Only effective for verified
   // bicycle stores; checkout revalidates the full cart server-side.

@@ -136,21 +136,23 @@ async function tryGetProductsFromPublicCards(
       query = query.eq('user_id', storeId);
     }
 
+    // Canonical Yellow Jersey filters apply to store and private inventory.
+    // lsCategory remains available for Lightspeed provider-path tooling.
     if (lsCategory) {
       query = query.eq('category_name', lsCategory);
-    } else if (!isStoreFeed && level1) {
+    } else if (level1) {
       query = query.eq('marketplace_category', level1);
-    } else if (!isStoreFeed && category) {
+    } else if (category) {
       query = query.eq('marketplace_category', category);
     }
 
-    if (!isStoreFeed && level2) {
+    if (!lsCategory && level2) {
       query = query.eq('marketplace_subcategory', level2);
-    } else if (!isStoreFeed && subcategory && subcategory !== 'All') {
+    } else if (!lsCategory && subcategory && subcategory !== 'All') {
       query = query.eq('marketplace_subcategory', subcategory);
     }
 
-    if (!isStoreFeed && level3) {
+    if (!lsCategory && level3) {
       query = query.eq('marketplace_level_3_category', level3);
     }
 
@@ -175,11 +177,15 @@ async function tryGetProductsFromPublicCards(
         createdAfter,
         condition,
         brand,
+        level1,
+        level2,
+        level3,
+        lsCategory,
       })
     ) {
       const { rows: browseRows, poolExhausted } = await fetchStoreFeedBrowseRows(
         supabase,
-        { uberOnly, lsCategory },
+        { uberOnly, lsCategory, level1, level2, level3 },
         pageSize,
       );
 

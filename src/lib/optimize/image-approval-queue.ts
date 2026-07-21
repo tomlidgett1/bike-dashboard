@@ -31,6 +31,7 @@ export type ImageApprovalProduct = {
   description: string;
   display_name: string | null;
   product_description: string | null;
+  sub_description?: string | null;
   product_specs: string | null;
   brand: string | null;
   category_name: string | null;

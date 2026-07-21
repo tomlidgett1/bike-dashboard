@@ -41,7 +41,7 @@ export interface BrandImagePromptItem {
 export interface BrandBookingState {
   brand_key: string;
   chat_id: string;
-  status: 'collecting' | 'awaiting_confirm' | 'created';
+  status: 'collecting' | 'awaiting_confirm' | 'creating' | 'created' | 'confirmed';
   sender_handle: string;
   sender_phone_e164: string | null;
   customer_name: string | null;

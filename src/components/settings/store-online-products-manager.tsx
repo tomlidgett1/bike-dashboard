@@ -35,6 +35,10 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
+  listCanonicalLevel1,
+  listCanonicalLevel2,
+} from "@/lib/marketplace/canonical-taxonomy";
+import {
   buildSpeedSearchQuery,
   fetchSerperCandidates,
   runWithConcurrency,
@@ -129,13 +133,10 @@ type ExtractResponseProduct = {
 const MAX_IMAGES = 6;
 const IMAGE_CONCURRENCY = 2;
 
-const CATEGORIES = ["Bicycles", "Parts", "Apparel", "Nutrition"] as const;
-const SUBCATEGORIES: Record<string, string[]> = {
-  Bicycles: ["Road", "Mountain", "Hybrid", "Electric", "Kids", "BMX", "Cruiser", "Other"],
-  Parts: ["Frames", "Wheels", "Drivetrain", "Brakes", "Handlebars", "Saddles", "Pedals", "Other"],
-  Apparel: ["Jerseys", "Shorts", "Jackets", "Gloves", "Shoes", "Helmets", "Other"],
-  Nutrition: ["Energy Bars", "Gels", "Drinks", "Supplements", "Other"],
-};
+const CATEGORIES = listCanonicalLevel1();
+const SUBCATEGORIES: Record<string, string[]> = Object.fromEntries(
+  CATEGORIES.map((level1) => [level1, listCanonicalLevel2(level1)]),
+);
 
 function emptyImageState(): ImageState {
   return {

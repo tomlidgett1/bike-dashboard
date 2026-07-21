@@ -6,6 +6,7 @@ import puppeteer, {
 import chromium from "@sparticuz/chromium-min";
 import {
   assertSafeSupplierUrl,
+  hostnamesRelated,
   type SupplierCredentials,
 } from "@/lib/scrapers/supplier-security";
 import type { SupplierScraperLogger } from "@/lib/scrapers/supplier-logger";
@@ -39,6 +40,10 @@ const USER_AGENT =
   "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 const USERNAME_SELECTORS = [
+  "#login-form-email",
+  "#username",
+  'input[name="username"]',
+  'input[id="username"]',
   'input[type="email"]',
   'input[autocomplete="username"]',
   'input[name*="email" i]',
@@ -49,6 +54,10 @@ const USERNAME_SELECTORS = [
 ];
 
 const PASSWORD_SELECTORS = [
+  "#login-form-password",
+  "#password",
+  'input[name="password"]',
+  'input[id="password"]',
   'input[type="password"]',
   'input[autocomplete="current-password"]',
   'input[name*="password" i]',
@@ -56,17 +65,19 @@ const PASSWORD_SELECTORS = [
 ];
 
 const SUBMIT_SELECTORS = [
+  "#kc-login",
+  'input[name="login"]',
   'button[type="submit"]',
   'input[type="submit"]',
   'button[name*="login" i]',
   'button[id*="login" i]',
   'button[class*="login" i]',
+  "button.btn-primary",
+  'button[class*="btn-primary" i]',
 ];
 
 function hostnamesMatch(left: string, right: string): boolean {
-  const a = left.toLowerCase().replace(/^www\./, "");
-  const b = right.toLowerCase().replace(/^www\./, "");
-  return a === b;
+  return hostnamesRelated(left, right);
 }
 
 export async function launchSupplierBrowser(
@@ -170,6 +181,40 @@ async function firstExistingSelector(
   return null;
 }
 
+/** Wait for SPA login forms (Angular/React) that render after domcontentloaded. */
+async function waitForLoginFields(
+  page: Page,
+  selectors: string[],
+  timeoutMs = 15_000,
+): Promise<string | null> {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const found = await firstExistingSelector(page, selectors);
+    if (found) return found;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return firstExistingSelector(page, selectors);
+}
+
+async function findLoginSubmitSelector(page: Page): Promise<string | null> {
+  const known = await firstExistingSelector(page, SUBMIT_SELECTORS);
+  if (known) return known;
+
+  // Many B2B SPAs use <button class="btn-primary">LOGIN</button> with no type=submit.
+  const textMatch = await page.evaluate(() => {
+    const buttons = Array.from(document.querySelectorAll("button, a, [role='button']"));
+    const loginBtn = buttons.find((button) => {
+      const text = (button.textContent || "").replace(/\s+/g, " ").trim();
+      return /^(log\s*in|sign\s*in)$/i.test(text) || /^login$/i.test(text);
+    });
+    if (!loginBtn) return null;
+    if (loginBtn.id) return `#${CSS.escape(loginBtn.id)}`;
+    loginBtn.setAttribute("data-yj-login-submit", "1");
+    return '[data-yj-login-submit="1"]';
+  });
+  return textMatch;
+}
+
 async function clearAndType(
   page: Page,
   selector: string,
@@ -180,8 +225,18 @@ async function clearAndType(
   await element.evaluate((input) => {
     input.value = "";
     input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await element.click().catch(() => undefined);
+  await element.evaluate((input) => {
+    input.select?.();
   });
   await element.type(value, { delay: 15 });
+  // Angular / Material often need an extra input event after typing.
+  await element.evaluate((input) => {
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("blur", { bubbles: true }));
+  });
 }
 
 export async function navigateSupplierPage(
@@ -197,7 +252,7 @@ export async function navigateSupplierPage(
     timeout: 45_000,
   });
   // Short idle wait: many B2B sites never go fully idle (analytics/websockets).
-  await page.waitForNetworkIdle({ idleTime: 400, timeout: 3_000 }).catch(() => undefined);
+  await page.waitForNetworkIdle({ idleTime: 150, timeout: 800 }).catch(() => undefined);
   const finalUrl = new URL(page.url());
   if (!hostnamesMatch(finalUrl.hostname, allowedHostname)) {
     throw new Error("The supplier redirected YJ to a different website.");
@@ -219,16 +274,25 @@ export async function loginToSupplier(
   logger?.step("login", "Opening supplier login page", { loginUrl });
   await navigateSupplierPage(page, loginUrl, allowedHostname, logger);
 
-  const usernameSelector = await firstExistingSelector(page, [
-    savedSelectors?.username ?? "",
-    ...USERNAME_SELECTORS,
-  ].filter(Boolean));
-  const passwordSelector = await firstExistingSelector(page, [
+  const passwordCandidates = [
     savedSelectors?.password ?? "",
     ...PASSWORD_SELECTORS,
-  ].filter(Boolean));
+  ].filter(Boolean);
+  const usernameCandidates = [
+    savedSelectors?.username ?? "",
+    ...USERNAME_SELECTORS,
+  ].filter(Boolean);
+
+  // SPA login pages (e.g. Shimano B2B Angular) render fields after first paint.
+  const passwordSelector = await waitForLoginFields(page, passwordCandidates);
+  const usernameSelector = await waitForLoginFields(page, usernameCandidates, 5_000);
 
   if (!passwordSelector) {
+    if (credentials.username || credentials.password) {
+      throw new Error(
+        "YJ could not find the supplier login form. The page may still be loading, or login uses a non-standard flow.",
+      );
+    }
     logger?.warn("login", "No password field found, continuing without login");
     return null;
   }
@@ -239,10 +303,10 @@ export async function loginToSupplier(
     throw new Error("YJ found a password field but could not identify the username field.");
   }
 
-  const submitSelector = await firstExistingSelector(page, [
-    savedSelectors?.submit ?? "",
-    ...SUBMIT_SELECTORS,
-  ].filter(Boolean));
+  const submitSelector =
+    (savedSelectors?.submit
+      ? await firstExistingSelector(page, [savedSelectors.submit])
+      : null) || (await findLoginSubmitSelector(page));
   if (!submitSelector) {
     throw new Error("YJ could not identify the supplier login button.");
   }
@@ -261,7 +325,9 @@ export async function loginToSupplier(
     page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 45_000 }).catch(() => undefined),
     page.click(submitSelector),
   ]);
-  await page.waitForNetworkIdle({ idleTime: 400, timeout: 3_000 }).catch(() => undefined);
+  await page.waitForNetworkIdle({ idleTime: 200, timeout: 1_500 }).catch(() => undefined);
+  // Give SPA post-login routing a moment to settle.
+  await new Promise((resolve) => setTimeout(resolve, 1_500));
 
   const finalUrl = new URL(page.url());
   if (!hostnamesMatch(finalUrl.hostname, allowedHostname)) {
@@ -286,7 +352,19 @@ export async function loginToSupplier(
     throw new Error("This supplier requires a verification code. Guided two-factor login is not yet supported.");
   }
   if (loginState.hasLoginError || loginState.hasPassword) {
-    throw new Error("Supplier login failed. Check the username and password.");
+    const alertText = await page
+      .evaluate(() => {
+        const alert = document.querySelector(
+          ".alert, .kc-feedback-text, #input-error, .pf-m-danger, [class*='error' i], .mat-mdc-form-field-error",
+        );
+        return alert?.textContent?.trim() || null;
+      })
+      .catch(() => null);
+    throw new Error(
+      alertText
+        ? `Supplier login failed: ${alertText}`
+        : "Supplier login failed. Check the username and password.",
+    );
   }
 
   logger?.success("login", "Supplier login succeeded", { url: page.url() });

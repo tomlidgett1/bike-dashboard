@@ -85,6 +85,20 @@ export function melbourneDropOffIso(date: string, time: string | null): string {
   return `${date}T${resolvedTime}:00${melbourneOffsetForDate(date)}`;
 }
 
+/**
+ * Lightspeed rejects workorders whose ETA Out is not after Time In, and when a
+ * future-dated timeIn is sent without an etaOut it defaults ETA Out to "now"
+ * and 422s ("ETA Out must be greater than Time In"). Promise end of the
+ * drop-off day, or two hours after a late drop-off.
+ */
+export function melbourneEtaOutIso(date: string, time: string | null): string {
+  if (!DATE_RE.test(date)) throw new Error('drop_off_date must be YYYY-MM-DD');
+  const dropOffHour =
+    time && TIME_24_RE.test(time) ? Number(time.slice(0, 2)) : 9;
+  const etaHour = Math.min(Math.max(17, dropOffHour + 2), 23);
+  return `${date}T${String(etaHour).padStart(2, '0')}:00:00${melbourneOffsetForDate(date)}`;
+}
+
 export function buildBookingMarker(chatId: string): string {
   const safeChatId = chatId.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
   if (!safeChatId) throw new Error('chat_id is required for booking idempotency');
@@ -131,6 +145,7 @@ export function buildLightspeedWorkorderPayload(
     requestedTime,
     payload: {
       timeIn: melbourneDropOffIso(input.dropOffDate, requestedTime),
+      etaOut: melbourneEtaOutIso(input.dropOffDate, requestedTime),
       note: noteLines.join('\n').slice(0, 1200),
       internalNote: `Created from a confirmed Nest customer booking.\n${marker}`,
       warranty: false,

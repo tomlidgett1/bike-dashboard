@@ -215,6 +215,25 @@ function CustomerEnquiriesHeaderActions({ c }: { c: UnifiedInboxController }) {
 
   return (
     <>
+      {c.nestConfigured ? (
+        <Link
+          href="/settings/store/nest-knowledge"
+          className={storeSettingsHeaderActionClass()}
+        >
+          <NestLogo className="size-[15px]" />
+          Train nest
+        </Link>
+      ) : (
+        <button
+          type="button"
+          disabled
+          className={storeSettingsHeaderActionClass(false, true)}
+          title="Connect Nest to train knowledge"
+        >
+          <NestLogo className="size-[15px]" />
+          Train nest
+        </button>
+      )}
       <DropdownMenu open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DropdownMenuTrigger asChild>
           <button
@@ -232,20 +251,7 @@ function CustomerEnquiriesHeaderActions({ c }: { c: UnifiedInboxController }) {
             />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="min-w-44 rounded-lg bg-white p-1.5">
-          {c.nestConfigured ? (
-            <DropdownMenuItem asChild className="gap-2 rounded-md">
-              <Link href="/settings/store/nest-knowledge">
-                <NestLogo className="h-[15px] w-[15px]" />
-                Nest knowledge & training
-              </Link>
-            </DropdownMenuItem>
-          ) : (
-            <DropdownMenuItem disabled className="gap-2 rounded-md">
-              <NestLogo className="h-[15px] w-[15px]" />
-              Nest knowledge & training
-            </DropdownMenuItem>
-          )}
+        <DropdownMenuContent align="end" className="min-w-44 rounded-2xl bg-white p-1.5">
           <DropdownMenuItem asChild className="gap-2 rounded-md">
             <Link href="/settings/store/customer-inquiries/analytics">
               <BarChart3 className="size-[15px]" />

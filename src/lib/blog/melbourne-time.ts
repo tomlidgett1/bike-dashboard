@@ -97,3 +97,29 @@ export function formatMelbourneTime(date = new Date()): string {
     hour12: true,
   });
 }
+
+/** `datetime-local` value for a Date in Australia/Melbourne wall time. */
+export function toMelbourneDateTimeLocal(date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: MELBOURNE_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? '00';
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
+}
+
+/** Tomorrow at 9:00am Melbourne, as a `datetime-local` string. */
+export function defaultMelbourneScheduleLocal(): string {
+  const noonTodayIso = melbourneLocalDateTimeToIso(
+    `${melbourneDayKey(new Date())}T12:00`,
+  );
+  const tomorrow = new Date(new Date(noonTodayIso).getTime() + 24 * 60 * 60 * 1000);
+  const day = melbourneDayKey(tomorrow);
+  return `${day}T09:00`;
+}

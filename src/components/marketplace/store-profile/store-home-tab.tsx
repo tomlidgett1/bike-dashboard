@@ -19,6 +19,7 @@ import {
   Instagram,
   Facebook,
   Bot,
+  Wrench,
 } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
 import { useNestStorefrontChat } from "@/components/providers/nest-storefront-chat-provider";
@@ -45,6 +46,7 @@ import {
 import { StoreMobileTabCards } from "@/components/marketplace/store-profile/store-mobile-tab-cards";
 import { UberCarouselLogo } from "@/components/marketplace/store-profile/uber-carousel-logo";
 import { StoreBanners } from "@/components/marketplace/store-profile/weekly-specials";
+import { StoreBrandMarquee } from "@/components/marketplace/store-profile/store-brand-marquee";
 // ============================================================
 // Store Home Tab — the public landing page for a bicycle store.
 // Renders a polished default from the store's own data and layers
@@ -62,6 +64,8 @@ interface StoreHomeTabProps {
   onOpenCollection: (categoryName: string) => void;
   /** Open the shared store hours sheet/dialog. */
   onOpenHours?: () => void;
+  /** Open the Book a Service booking form (optionally for a specific service). */
+  onBookService?: (service?: StoreService | null) => void;
   onTrackBehaviour?: (eventType: StoreAnalyticsEventType, metadata?: Record<string, unknown>) => void;
   storeSearch?: string;
   onStoreSearchChange?: (value: string, source?: "store_header_search" | "home_floating_search") => void;
@@ -146,6 +150,7 @@ export function StoreHomeTab({
   onNavigate,
   onOpenCollection,
   onOpenHours,
+  onBookService,
   onTrackBehaviour,
   storeSearch = "",
   onStoreSearchChange,
@@ -166,6 +171,19 @@ export function StoreHomeTab({
 
   const handleCta = (cta: HomeCta | null) => {
     if (!cta) return;
+    const label = cta.label.trim().toLowerCase();
+    const isBookServiceCta =
+      cta.href === "service" && label.includes("book");
+    if (isBookServiceCta && onBookService) {
+      onTrackBehaviour?.("service_book_click", {
+        action: "open_booking_form",
+        label: cta.label,
+        tab: "home",
+        source: "home_cta",
+      });
+      onBookService(null);
+      return;
+    }
     onNavigate(cta.href);
   };
 
@@ -260,6 +278,7 @@ export function StoreHomeTab({
           accent={accent}
           accentText={accentText}
           onNavigate={onNavigate}
+          onBookService={onBookService}
           onTrackBehaviour={onTrackBehaviour}
         />
       ) : null,
@@ -359,6 +378,9 @@ export function StoreHomeTab({
 
         {/* Mobile: grey content sheet below the hero with rounded top corners */}
         <div className="max-md:relative max-md:z-10 max-md:-mt-5 max-md:overflow-hidden max-md:rounded-t-xl max-md:bg-gray-50">
+          {/* Brand logo marquee — directly below the hero */}
+          <StoreBrandMarquee brands={store.brands} />
+
           <StoreBanners
             store={store}
             bannersConfig={config.banners}
@@ -763,16 +785,16 @@ function Hero({
       data-store-analytics-label="Home hero"
     >
       {isOwnProfile && <EditButton />}
-      <div className="relative isolate flex min-h-[460px] items-stretch max-md:overflow-visible sm:min-h-[600px] sm:items-center sm:overflow-hidden">
+      <div className="relative isolate flex min-h-[460px] items-stretch overflow-hidden rounded-t-xl max-md:overflow-visible max-md:rounded-none sm:min-h-[600px] sm:items-center">
         {/* Background */}
-        <div className="absolute inset-0 -z-10">
+        <div className="absolute inset-0 -z-10 overflow-hidden rounded-t-xl max-md:rounded-none">
           {heroImages.length > 0 ? (
             <HeroImageRotator images={heroImages} alt="" />
           ) : (
             <HeroFallback store={store} accent={accent} />
           )}
           <div
-            className="absolute inset-0"
+            className="absolute inset-0 rounded-t-xl max-md:rounded-none"
             style={{
               background: alignCenter
                 ? `linear-gradient(180deg, rgba(0,0,0,${hero.overlay / 140}) 0%, rgba(0,0,0,${hero.overlay / 100}) 100%)`
@@ -1537,6 +1559,7 @@ function ServicesTeaser({
   accent,
   accentText,
   onNavigate,
+  onBookService,
   onTrackBehaviour,
 }: {
   store: StoreProfile;
@@ -1544,6 +1567,7 @@ function ServicesTeaser({
   accent: string;
   accentText: string;
   onNavigate: (href: string) => void;
+  onBookService?: (service?: StoreService | null) => void;
   onTrackBehaviour?: (eventType: StoreAnalyticsEventType, metadata?: Record<string, unknown>) => void;
 }) {
   const services = React.useMemo(
@@ -1564,31 +1588,33 @@ function ServicesTeaser({
   const handleBookService = React.useCallback(
     (svc: StoreService) => {
       trackServiceBookClick({
-        action: store.phone ? "call_to_book" : "open_service_tab",
+        action: "open_booking_form",
         label: svc.name,
         serviceId: svc.id,
         serviceName: svc.name,
         price: svc.price ?? null,
         source: "home_service_card",
       });
-      if (store.phone) {
-        window.location.href = `tel:${store.phone}`;
+      if (onBookService) {
+        onBookService(svc);
         return;
       }
       onNavigate("service");
     },
-    [onNavigate, store.phone, trackServiceBookClick],
+    [onBookService, onNavigate, trackServiceBookClick],
   );
   const handleCallToBook = React.useCallback(() => {
     trackServiceBookClick({
-      action: "call_to_book",
-      label: "Call to book",
+      action: onBookService ? "open_booking_form" : "open_service_tab",
+      label: "Book a service",
       source: "home_services_header",
     });
-    if (store.phone) {
-      window.location.href = `tel:${store.phone}`;
+    if (onBookService) {
+      onBookService(null);
+      return;
     }
-  }, [store.phone, trackServiceBookClick]);
+    onNavigate("service");
+  }, [onBookService, onNavigate, trackServiceBookClick]);
 
   return (
     <section
@@ -1607,16 +1633,14 @@ function ServicesTeaser({
               <p className="mt-1 text-gray-500 leading-relaxed">{config.services.subtitle}</p>
             )}
           </div>
-          {store.phone && (
-            <button
-              type="button"
-              onClick={handleCallToBook}
-              className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-5 py-2.5 text-sm font-semibold text-gray-900 shadow-sm transition-colors hover:bg-gray-50 cursor-pointer"
-            >
-              <Phone className="h-4 w-4" />
-              Call to book
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleCallToBook}
+            className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-5 py-2.5 text-sm font-semibold text-gray-900 shadow-sm transition-colors hover:bg-gray-50 cursor-pointer"
+          >
+            <Wrench className="h-4 w-4" />
+            Book a service
+          </button>
         </div>
       </Reveal>
 

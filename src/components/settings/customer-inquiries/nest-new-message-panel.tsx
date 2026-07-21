@@ -263,7 +263,7 @@ export function NestNewMessagePanel({
         .finally(() => {
           if (!cancelled) setCustomerLoading(false);
         });
-    }, 250);
+    }, 150);
     return () => {
       cancelled = true;
       window.clearTimeout(id);
@@ -282,7 +282,13 @@ export function NestNewMessagePanel({
   }
 
   function selectCustomer(customer: NestLightspeedCustomer) {
-    setSelectedMobile(customer.phone);
+    const phone = customer.phone?.trim() || "";
+    if (!phone) {
+      setError("No mobile number on file for this customer in Lightspeed.");
+      return;
+    }
+    setError(null);
+    setSelectedMobile(phone);
     setSelectedCustomerName(customer.name);
     setSelectedCustomerId(customer.customerId);
     setRecipientQuery("");
@@ -447,21 +453,37 @@ export function NestNewMessagePanel({
               <p className="px-3 py-4 text-center text-sm text-red-600">{customerSearchError}</p>
             ) : customers.length > 0 ? (
               <div className="space-y-0.5">
-                {customers.map((customer) => (
-                  <button
-                    key={customer.customerId}
-                    type="button"
-                    onClick={() => selectCustomer(customer)}
-                    className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-gray-50"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium text-gray-900">
-                        {customer.name}
+                {customers.map((customer) => {
+                  const hasMobile = Boolean(customer.phone?.trim());
+                  return (
+                    <button
+                      key={customer.customerId}
+                      type="button"
+                      onClick={() => selectCustomer(customer)}
+                      disabled={!hasMobile || sending}
+                      title={
+                        hasMobile
+                          ? customer.phone
+                          : "No mobile on file in Lightspeed"
+                      }
+                      className={cn(
+                        "flex w-full items-center justify-between gap-3 rounded-md px-3 py-2.5 text-left transition-colors",
+                        hasMobile
+                          ? "hover:bg-gray-50"
+                          : "cursor-not-allowed opacity-60",
+                      )}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium text-gray-900">
+                          {customer.name}
+                        </span>
+                        <span className="block truncate text-xs text-gray-500">
+                          {hasMobile ? customer.phone : "No mobile on file"}
+                        </span>
                       </span>
-                      <span className="block truncate text-xs text-gray-500">{customer.phone}</span>
-                    </span>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <p className="px-3 py-4 text-center text-sm text-gray-400">No customers found.</p>

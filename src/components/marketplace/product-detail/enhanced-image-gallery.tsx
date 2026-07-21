@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import { ChevronLeft, ChevronRight, X } from '@/components/layout/app-sidebar/dashboard-icons';
 import { cn } from "@/lib/utils";
@@ -24,6 +25,8 @@ interface EnhancedImageGalleryProps {
   sidePanel?: React.ReactNode;
   /** Top-right overlay on the primary hero image (e.g. Ask Genie badge). */
   heroOverlay?: React.ReactNode;
+  /** Hide count / nav controls on desktop while another overlay (e.g. category menu) is open. */
+  suppressHeroControlsOnDesktop?: boolean;
 }
 
 export function EnhancedImageGallery({
@@ -33,6 +36,7 @@ export function EnhancedImageGallery({
   onIndexChange,
   sidePanel,
   heroOverlay,
+  suppressHeroControlsOnDesktop = false,
 }: EnhancedImageGalleryProps) {
   const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [fullscreenIndex, setFullscreenIndex] = React.useState(0);
@@ -110,6 +114,21 @@ export function EnhancedImageGallery({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isFullscreen, fullscreenIndex]);
 
+  // Lock page scroll while the lightbox is open.
+  React.useEffect(() => {
+    if (!isFullscreen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [isFullscreen]);
+
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
   if (images.length === 0) {
     return (
       <div className="flex items-center justify-center bg-gray-100 h-[400px]">
@@ -118,7 +137,7 @@ export function EnhancedImageGallery({
     );
   }
 
-  const heroFrameClassName = "rounded-md border border-gray-200";
+  const heroFrameClassName = "rounded-md";
 
   // Reusable grid image component
   const GridImage = ({ 
@@ -183,6 +202,12 @@ export function EnhancedImageGallery({
   const heroFloatingControlClassName =
     "border border-black/5 bg-white/80 text-gray-800 shadow-sm backdrop-blur-md";
 
+  const heroOverlayControlClassName = cn(
+    "z-10",
+    suppressHeroControlsOnDesktop &&
+      "lg:z-0 lg:opacity-0 lg:pointer-events-none transition-opacity duration-200",
+  );
+
   const heroAspectClassName =
     images.length > 1 ? "aspect-[4/3] sm:aspect-[4/2.85]" : "aspect-[4/3]";
 
@@ -220,14 +245,15 @@ export function EnhancedImageGallery({
 
       <span
         className={cn(
-          "absolute top-3 left-3 z-10 flex h-8 items-center rounded-full px-2.5 text-xs font-medium tabular-nums sm:hidden",
+          "absolute top-3 left-3 flex h-8 items-center rounded-full px-2.5 text-xs font-medium tabular-nums sm:hidden",
+          heroOverlayControlClassName,
           heroFloatingControlClassName,
         )}
       >
         {currentIndex + 1} / {images.length}
       </span>
 
-      <div className="absolute top-3 left-3 z-10 hidden items-center gap-2 sm:flex">
+      <div className={cn("absolute top-3 left-3 hidden items-center gap-2 sm:flex", heroOverlayControlClassName)}>
         <span
           className={cn(
             "flex h-8 items-center rounded-full px-2.5 text-xs font-medium tabular-nums",
@@ -254,7 +280,7 @@ export function EnhancedImageGallery({
         ) : null}
       </div>
 
-      <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 sm:hidden">
+      <div className={cn("absolute bottom-3 left-1/2 flex -translate-x-1/2 sm:hidden", heroOverlayControlClassName)}>
         <div className="flex items-center gap-1.5">
           {images.map((_, index) => (
             <button
@@ -296,7 +322,10 @@ export function EnhancedImageGallery({
         ref={thumbnailStripRef}
         className={cn(
           overlay
-            ? "absolute bottom-5 left-1/2 z-10 hidden w-full max-w-[calc(100%-2rem)] -translate-x-1/2 sm:flex sm:justify-center sm:gap-2"
+            ? cn(
+                "absolute bottom-5 left-1/2 hidden w-full max-w-[calc(100%-2rem)] -translate-x-1/2 sm:flex sm:justify-center sm:gap-2",
+                heroOverlayControlClassName,
+              )
             : "relative mt-3 hidden sm:block",
         )}
       >
@@ -343,7 +372,10 @@ export function EnhancedImageGallery({
           <button
             type="button"
             onClick={() => scrollThumbnailStrip("right")}
-            className="absolute right-0 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+            className={cn(
+              "absolute right-0 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50",
+              heroOverlayControlClassName,
+            )}
             aria-label="Scroll thumbnails right"
           >
             <ChevronRight className="h-4 w-4" />
@@ -385,18 +417,20 @@ export function EnhancedImageGallery({
     </div>
   );
 
-  const renderFullscreenModal = () =>
-    isFullscreen ? (
+  const renderFullscreenModal = () => {
+    if (!isFullscreen || !mounted) return null;
+
+    return createPortal(
       <>
         <div
-          className="fixed inset-0 bg-black z-[100]"
+          className="fixed inset-0 z-[100] bg-black"
           onClick={() => setIsFullscreen(false)}
         />
         <div
           className="fixed inset-0 z-[101] flex items-center justify-center p-4"
           onClick={() => setIsFullscreen(false)}
         >
-          <div className="relative w-full h-full max-w-5xl max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+          <div className="relative h-full max-h-[90vh] w-full max-w-5xl" onClick={(e) => e.stopPropagation()}>
             <Image
               src={images[fullscreenIndex]}
               alt={`${productName} - Fullscreen`}
@@ -411,7 +445,7 @@ export function EnhancedImageGallery({
 
           <button
             onClick={() => setIsFullscreen(false)}
-            className="absolute top-4 right-4 p-2 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors"
+            className="absolute right-4 top-4 rounded-full bg-white p-2 shadow-lg transition-colors hover:bg-gray-100"
           >
             <X className="h-6 w-6 text-gray-900" />
           </button>
@@ -423,7 +457,7 @@ export function EnhancedImageGallery({
                   e.stopPropagation();
                   handlePrev();
                 }}
-                className="absolute left-4 top-1/2 -translate-y-1/2 p-3 bg-white/90 rounded-full shadow-lg hover:bg-white transition-colors"
+                className="absolute left-4 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-3 shadow-lg transition-colors hover:bg-white"
               >
                 <ChevronLeft className="h-6 w-6 text-gray-900" />
               </button>
@@ -432,14 +466,14 @@ export function EnhancedImageGallery({
                   e.stopPropagation();
                   handleNext();
                 }}
-                className="absolute right-4 top-1/2 -translate-y-1/2 p-3 bg-white/90 rounded-full shadow-lg hover:bg-white transition-colors"
+                className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-white/90 p-3 shadow-lg transition-colors hover:bg-white"
               >
                 <ChevronRight className="h-6 w-6 text-gray-900" />
               </button>
             </>
           )}
 
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-black/50 backdrop-blur-sm p-2 rounded-lg max-w-[90vw] overflow-x-auto">
+          <div className="absolute bottom-4 left-1/2 flex max-w-[90vw] -translate-x-1/2 gap-2 overflow-x-auto rounded-lg bg-black/50 p-2 backdrop-blur-sm">
             {images.map((image, index) => (
               <button
                 key={index}
@@ -448,7 +482,7 @@ export function EnhancedImageGallery({
                   setFullscreenIndex(index);
                 }}
                 className={cn(
-                  "relative w-12 h-12 rounded-md overflow-hidden border-2 transition-all flex-shrink-0",
+                  "relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-md border-2 transition-all",
                   index === fullscreenIndex
                     ? "border-white"
                     : "border-transparent opacity-60 hover:opacity-100"
@@ -467,12 +501,14 @@ export function EnhancedImageGallery({
             ))}
           </div>
 
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full text-sm font-medium">
+          <div className="absolute left-1/2 top-4 -translate-x-1/2 rounded-full bg-white/90 px-4 py-2 text-sm font-medium backdrop-blur-sm">
             {fullscreenIndex + 1} / {images.length}
           </div>
         </div>
-      </>
-    ) : null;
+      </>,
+      document.body,
+    );
+  };
 
   const renderHeroOverlay = () =>
     heroOverlay ? (

@@ -13,6 +13,7 @@ function captureSupplierLoginState() {
     hasLoginError:
       text.includes("invalid password") ||
       text.includes("incorrect password") ||
+      text.includes("invalid username") ||
       text.includes("login failed") ||
       text.includes("sign in failed"),
     title: document.title,
@@ -280,11 +281,47 @@ function extractSupplierProduct(config) {
     }
   }
 
+  const configuredName = text(document, config.name);
+  const headingName =
+    clean(document.querySelector("h1")?.textContent) ||
+    clean(document.querySelector("h3")?.textContent) ||
+    clean(document.querySelector(".product_title")?.textContent) ||
+    null;
+  const titleName = clean(
+    (document.title || "")
+      .replace(/^FEsports\s*\|\s*/i, "")
+      .replace(/^FE Sports\s*\|\s*/i, ""),
+  );
+  // FE Sports product pages use h3 for the product name; breadcrumb selectors
+  // like a.bcrumbsubcat wrongly return the parent category ("Protection").
+  const isFesportsProduct = /\/Shop\/p_\d+/i.test(window.location.pathname);
+  const name = isFesportsProduct
+    ? headingName || titleName || configuredName || ""
+    : configuredName || headingName || titleName || "";
+
+  const sku =
+    text(document, config.sku) ||
+    (isFesportsProduct
+      ? text(document, ".prx_opt_value[class*='prxsku_']") || text(document, ".prxsku")
+      : null);
+  const price =
+    text(document, config.price) ||
+    (isFesportsProduct
+      ? text(document, "[class*='prxrrp_']") ||
+        text(document, ".prxrrp") ||
+        text(document, "[class*='prx_price_']")
+      : null);
+  const stock =
+    text(document, config.stock) ||
+    (isFesportsProduct
+      ? text(document, "[class*='prx_slev_']") || text(document, ".prx_slev")
+      : null);
+
   return {
-    name: text(document, config.name) || clean(document.querySelector("h1")?.textContent) || "",
-    price: text(document, config.price),
-    sku: text(document, config.sku),
-    stock: text(document, config.stock),
+    name,
+    price,
+    sku,
+    stock,
     brand: text(document, config.brand),
     description: text(document, config.description),
     category: text(document, config.category),
@@ -335,21 +372,103 @@ function collectPublicProductLinksWithText() {
 }
 
 function extractPublicProductImages() {
+  function unwrapProxy(url) {
+    let current = url.replace(/&amp;/g, "&");
+    for (let i = 0; i < 3; i += 1) {
+      const nested = current.match(/\/cdn-cgi\/image\/[^/]+\/(https?:\/\/[^\s"'<>]+)/i)?.[1];
+      if (nested) {
+        current = nested.replace(/[),]+$/g, "");
+        continue;
+      }
+      const storyblok = current.match(/https?:\/\/a\.storyblok\.com\/f\/[^\s"'<>]+/i)?.[0];
+      if (storyblok && storyblok !== current) {
+        current = storyblok.replace(/[),]+$/g, "");
+        continue;
+      }
+      break;
+    }
+    return current;
+  }
+
+  function upgradeImageUrl(url) {
+    let next = unwrapProxy(url);
+    try {
+      const parsed = new URL(next);
+
+      if (/bynder\.com/i.test(parsed.hostname)) {
+        parsed.pathname = parsed.pathname.replace(
+          /\/transform\/(?:Small|Medium|Thumb|Thumbnail|mini|preview)\//i,
+          "/transform/Large/",
+        );
+        if (parsed.searchParams.has("io")) {
+          const io = (parsed.searchParams.get("io") || "")
+            .replace(/width:\d+/gi, "width:2400")
+            .replace(/height:\d+/gi, "")
+            .replace(/,,+/g, ",")
+            .replace(/^,|,$/g, "");
+          parsed.searchParams.set("io", io || "transform:fill,width:2400");
+        } else if (/\/transform\//i.test(parsed.pathname)) {
+          parsed.searchParams.set("io", "transform:fill,width:2400");
+        }
+        parsed.searchParams.set("quality", "100");
+        if (!parsed.searchParams.has("output") && /\.(tif|tiff)(?:$|\?)/i.test(parsed.href)) {
+          parsed.searchParams.set("output", "png");
+        }
+        return parsed.toString();
+      }
+
+      if (/storyblok\.com/i.test(parsed.hostname)) {
+        parsed.pathname = parsed.pathname.replace(/\/m\/\d+x\d*\//i, "/m/2400x0/");
+        if (parsed.searchParams.has("quality")) parsed.searchParams.set("quality", "100");
+        return parsed.toString();
+      }
+
+      for (const key of ["w", "width", "maxwidth", "max_width"]) {
+        if (parsed.searchParams.has(key)) parsed.searchParams.set(key, "2400");
+      }
+      if (parsed.searchParams.has("quality")) parsed.searchParams.set("quality", "100");
+      if (parsed.searchParams.has("q")) parsed.searchParams.set("q", "100");
+      return parsed.toString();
+    } catch {
+      return next;
+    }
+  }
+
   function resolveImageUrl(candidate) {
     if (!candidate || candidate.startsWith("data:") || candidate.endsWith(".svg")) return null;
     const trimmed = candidate.trim().replace(/[),]+$/g, "");
     try {
       const resolved = new URL(trimmed, window.location.href).toString();
       if (!/^https?:\/\//i.test(resolved)) return null;
-
-      // Unwrap Pondigital CDN -> Storyblok source when present.
-      const nestedStoryblok = resolved.match(/https?:\/\/a\.storyblok\.com\/f\/[^\s"'<>]+/i);
-      if (nestedStoryblok) return nestedStoryblok[0].replace(/[),]+$/g, "");
-
-      return resolved;
+      return upgradeImageUrl(resolved);
     } catch {
       return null;
     }
+  }
+
+  function bestFromSrcset(srcset) {
+    if (!srcset) return null;
+    let bestUrl = null;
+    let bestScore = -1;
+    for (const part of srcset.split(",")) {
+      const bits = part.trim().split(/\s+/);
+      const candidate = bits[0];
+      if (!candidate) continue;
+      const descriptor = bits[1] || "";
+      const descriptorScore = descriptor.endsWith("w")
+        ? Number(descriptor.slice(0, -1)) || 0
+        : descriptor.endsWith("x")
+          ? (Number(descriptor.slice(0, -1)) || 0) * 1000
+          : 0;
+      const url = resolveImageUrl(candidate);
+      if (!url) continue;
+      const score = descriptorScore + (/\/transform\/Large\//i.test(url) ? 5000 : 0);
+      if (score >= bestScore) {
+        bestScore = score;
+        bestUrl = url;
+      }
+    }
+    return bestUrl;
   }
 
   function collectHttpUrls(text) {
@@ -363,6 +482,11 @@ function extractPublicProductImages() {
   }
 
   function imageUrl(element) {
+    const fromSrcset =
+      bestFromSrcset(element.getAttribute("srcset")) ||
+      bestFromSrcset(element.getAttribute("data-srcset"));
+    if (fromSrcset) return fromSrcset;
+
     const raw =
       element.getAttribute("data-src") ||
       element.currentSrc ||
@@ -371,7 +495,7 @@ function extractPublicProductImages() {
       const url = resolveImageUrl(raw);
       if (url) return url;
     }
-    return collectHttpUrls(element.getAttribute("srcset"))[0] ?? null;
+    return null;
   }
 
   const imageUrls = [];
@@ -389,7 +513,9 @@ function extractPublicProductImages() {
   for (const selector of selectors) {
     for (const element of document.querySelectorAll(selector)) {
       if (element.tagName.toLowerCase() === "source") {
-        imageUrls.push(...collectHttpUrls(element.getAttribute("srcset")));
+        const best = bestFromSrcset(element.getAttribute("srcset"));
+        if (best) imageUrls.push(best);
+        else imageUrls.push(...collectHttpUrls(element.getAttribute("srcset")));
         continue;
       }
       const url = imageUrl(element);
@@ -435,25 +561,36 @@ function extractPublicProductImages() {
     if (/iVBORw0KGgo/i.test(url)) return false;
     if (/\/cdn-cgi\/image\/[^/]+$/i.test(url) && !/storyblok\.com|bynder\.com/i.test(url)) return false;
     return /\.(jpe?g|png|webp|avif|tif)(?:$|\?)/i.test(url) || /storyblok\.com|pondigital\.solutions|bynder\.com/i.test(url);
-  }).map((url) => url.replace(/&amp;/g, "&"));
+  }).map((url) => upgradeImageUrl(url.replace(/&amp;/g, "&")));
 
   // Prefer larger CDN variants when the same asset appears multiple times.
   const byAsset = new Map();
   for (const url of unique) {
-    const assetKey = url
-      .replace(/\/(?:transform\/)?(?:Large|Medium|Small)\//i, "/")
-      .replace(/width=\d+/gi, "width=X")
-      .replace(/[?&]io=[^&]+/gi, "");
+    const bynderId = url.match(/bynder\.com\/(?:transform\/[^/]+\/)?([0-9a-f-]{36})/i)?.[1];
+    const assetKey =
+      bynderId ||
+      url
+        .replace(/\/(?:transform\/)?(?:Large|Medium|Small|Thumb|Thumbnail)\//gi, "/")
+        .replace(/width[:=]\d+/gi, "width=X")
+        .replace(/quality=\d+/gi, "quality=X")
+        .replace(/[?&]io=[^&]+/gi, "");
     const existing = byAsset.get(assetKey);
-    const score = /\/Large\//i.test(url) ? 3 : /\/Medium\//i.test(url) ? 2 : /width:1280/i.test(url) ? 3 : 1;
+    const width = Number((url.match(/width[:=](\d+)/i) || [])[1] || 0);
+    const score =
+      (/\/Large\//i.test(url) ? 300 : /\/Medium\//i.test(url) ? 120 : 1) +
+      width +
+      (/cdn-cgi\/image\//i.test(url) ? 0 : 80) +
+      (/quality=100/i.test(url) ? 100 : 0);
     if (!existing || score > existing.score) {
       byAsset.set(assetKey, { url, score });
     }
   }
-  const deduped = [...byAsset.values()].map((item) => item.url);
+  const deduped = [...byAsset.values()]
+    .sort((a, b) => b.score - a.score)
+    .map((item) => item.url);
 
   const preferred = deduped.filter((url) =>
-    /(pondigital|storyblok|bynder|cloudinary|cdn|media|upload)/i.test(url),
+    /(storyblok|bynder|cloudinary|cdn|media|upload)/i.test(url),
   );
   const finalUrls = preferred.length > 0 ? preferred : deduped;
 
@@ -470,6 +607,9 @@ function collectBrandSubcategoryLinks(input) {
   const brandPath = brandUrl.pathname.replace(/\/$/, "");
   const results = [];
   const seen = new Set();
+  // FE Sports brand hubs are /Shop/C_1549/Name; product grids are /Shop/c_230_1549/...
+  const feBrandId = brandPath.match(/\/Shop\/C_(\d+)\b/i)?.[1] ?? null;
+  const isFesports = /fesports\.com\.au/i.test(brandUrl.hostname);
 
   for (const anchor of document.querySelectorAll("a[href]")) {
     const href = anchor.href;
@@ -486,15 +626,27 @@ function collectBrandSubcategoryLinks(input) {
       }
       if (/\.(jpg|jpeg|png|gif|pdf|css|js)$/i.test(path)) continue;
 
-      const underBrand =
-        brandPath.length > 1 &&
-        (path.startsWith(`${brandPath}/`) || path.includes(brandPath.split("/").filter(Boolean).at(-1) || "__none__"));
-      const looksLikeCategory =
-        /\/(category|categories|collection|collections|c|shop|filter|product-category)\b/i.test(path) ||
-        /[?&](category|cat|product_cat|filter)=/i.test(url.search) ||
-        underBrand;
+      if (isFesports && feBrandId) {
+        // Only keep this brand's product grid, or true path children.
+        // Reject sibling brand hubs (/Shop/C_999/Other) from the global nav.
+        const isOwnProductGrid = new RegExp(`/Shop/c_\\d+_${feBrandId}\\b`, "i").test(path);
+        const isPathChild = path.startsWith(`${brandPath}/`);
+        const isSiblingBrandHub = /\/Shop\/C_\d+\b/i.test(path) && path !== brandPath;
+        if (isSiblingBrandHub || (!isOwnProductGrid && !isPathChild)) continue;
+      } else {
+        const underBrand =
+          brandPath.length > 1 &&
+          (path.startsWith(`${brandPath}/`) ||
+            path.includes(brandPath.split("/").filter(Boolean).at(-1) || "__none__"));
+        const looksLikeCategory =
+          /\/(category|categories|collection|collections|c|shop|filter|product-category)\b/i.test(
+            path,
+          ) ||
+          /[?&](category|cat|product_cat|filter)=/i.test(url.search) ||
+          underBrand;
 
-      if (!looksLikeCategory) continue;
+        if (!looksLikeCategory) continue;
+      }
 
       const name = (anchor.textContent ?? "").replace(/\s+/g, " ").trim();
       if (!name || name.length > 80) continue;

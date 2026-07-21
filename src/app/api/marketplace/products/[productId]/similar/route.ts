@@ -2,15 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   fetchSimilarProductSource,
   getLlmSimilarProducts,
-  isCompatibleSimilarCandidate,
-  scoreSimilarProductsRuleBased,
+  getRuleBasedSimilarProducts,
 } from '@/lib/marketplace/llm-similar-products';
-import {
-  createPublicSupabaseClient,
-  hasMissingPublicCardFeedError,
-  PUBLIC_MARKETPLACE_CARD_FIELDS,
-  type PublicMarketplaceCardRow,
-} from '@/lib/marketplace/public-card-feed';
 
 // ============================================================
 // Similar Products API
@@ -60,30 +53,8 @@ export async function GET(
     }
 
     if (mode === 'rules') {
-      const supabase = createPublicSupabaseClient();
-      let query = supabase
-        .from('public_marketplace_cards')
-        .select(PUBLIC_MARKETPLACE_CARD_FIELDS)
-        .neq('id', productId)
-        .order('created_at', { ascending: false })
-        .limit(120);
-
-      if (source.marketplace_category) {
-        query = query.eq('marketplace_category', source.marketplace_category);
-      }
-
-      const { data: rows, error } = await query;
-      if (hasMissingPublicCardFeedError(error)) {
-        return NextResponse.json({ products: [], count: 0 }, { headers: cacheHeaders(startTime, 'rules') });
-      }
-
-      const products = scoreSimilarProductsRuleBased(
-        source,
-        ((rows || []) as PublicMarketplaceCardRow[]).filter((row) =>
-          isCompatibleSimilarCandidate(source, row),
-        ),
-        limit,
-      );
+      // Same candidate pool + last-resort fill as the LLM path (never stricter).
+      const products = await getRuleBasedSimilarProducts(source, limit);
 
       return NextResponse.json(
         {

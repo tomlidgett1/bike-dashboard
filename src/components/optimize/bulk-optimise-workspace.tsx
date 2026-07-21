@@ -47,6 +47,7 @@ import {
   hasDesc,
   hasSerperImage,
   hasSpecs,
+  hasSubDescription,
   hasTitle,
   MAX_SELECTED_IMAGES,
   readSSE,
@@ -77,11 +78,11 @@ export type BulkProduct = OptimizerProduct & {
   sellable?: number | null;
 };
 
-type FieldKey = "title" | "description" | "specs" | "photos" | "brand";
+type FieldKey = "title" | "description" | "specs" | "subDescription" | "photos" | "brand";
 
 type FieldSelection = Record<FieldKey, boolean>;
 
-type CopyDraft = { title: string; description: string; specs: string };
+type CopyDraft = { title: string; description: string; specs: string; subDescription: string };
 
 type DirectDescriptionMode = "both" | "description" | "specs";
 
@@ -89,11 +90,19 @@ const FIELD_LABELS: Record<FieldKey, string> = {
   title: "Title",
   description: "Description",
   specs: "Specs",
+  subDescription: "Sub description",
   photos: "Photos",
   brand: "Brand",
 };
 
-const FIELD_ORDER: FieldKey[] = ["title", "description", "specs", "photos", "brand"];
+const FIELD_ORDER: FieldKey[] = [
+  "title",
+  "description",
+  "specs",
+  "subDescription",
+  "photos",
+  "brand",
+];
 
 const DROPDOWN_TRANSITION = { duration: 0.4, ease: [0.04, 0.62, 0.23, 0.98] as const };
 
@@ -111,6 +120,8 @@ function fieldHasContent(product: BulkProduct, field: FieldKey) {
       return hasDesc(product);
     case "specs":
       return hasSpecs(product);
+    case "subDescription":
+      return hasSubDescription(product);
     case "photos":
       return hasSerperImage(product);
     case "brand":
@@ -123,6 +134,7 @@ function defaultFieldSelection(product: BulkProduct): FieldSelection {
     title: !hasTitle(product),
     description: !hasDesc(product),
     specs: !hasSpecs(product),
+    subDescription: !hasSubDescription(product),
     photos: !hasSerperImage(product),
     brand: !product.brand?.trim(),
   };
@@ -130,33 +142,6 @@ function defaultFieldSelection(product: BulkProduct): FieldSelection {
 
 function getSku(product: BulkProduct) {
   return product.custom_sku || product.system_sku || null;
-}
-
-/** True when copy and approved images are on the product — safe to drop from the batch. */
-function isProductFullyOptimised(
-  product: BulkProduct,
-  imageRun: ImageRun | undefined,
-  busy: { copyBusy: boolean; photoBusy: boolean; brandBusy: boolean; saving: boolean },
-): boolean {
-  if (busy.copyBusy || busy.photoBusy || busy.brandBusy || busy.saving) return false;
-
-  const hasApprovedPhotos = hasSerperImage(product);
-  const phase = imageRun?.phase;
-  if (
-    phase === "searching" ||
-    phase === "selecting" ||
-    phase === "saving" ||
-    (phase === "ready" && !hasApprovedPhotos)
-  ) {
-    return false;
-  }
-
-  return (
-    hasTitle(product) &&
-    hasDesc(product) &&
-    hasSpecs(product) &&
-    hasApprovedPhotos
-  );
 }
 
 type ProductApiRow = Omit<BulkProduct, "canonical_images"> & {
@@ -345,7 +330,12 @@ function cachedRunForSmartPayload(
 }
 
 function hasCopyFields(copyFields: CopyBatchFields) {
-  return copyFields.title || copyFields.description || copyFields.specs;
+  return (
+    copyFields.title ||
+    copyFields.description ||
+    copyFields.specs ||
+    copyFields.subDescription
+  );
 }
 
 function directDescriptionMode(copyFields: CopyBatchFields): DirectDescriptionMode | null {
@@ -987,8 +977,15 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
       // The batch API applies one field set per job, so group identical sets.
       const groups = new Map<string, { copyFields: CopyBatchFields; ids: string[] }>();
       for (const { product, copyFields } of targets) {
-        if (!copyFields.title && !copyFields.description && !copyFields.specs) continue;
-        const key = `${copyFields.title}|${copyFields.description}|${copyFields.specs}`;
+        if (
+          !copyFields.title &&
+          !copyFields.description &&
+          !copyFields.specs &&
+          !copyFields.subDescription
+        ) {
+          continue;
+        }
+        const key = `${copyFields.title}|${copyFields.description}|${copyFields.specs}|${copyFields.subDescription}`;
         const group = groups.get(key) ?? { copyFields, ids: [] };
         group.ids.push(product.id);
         groups.set(key, group);
@@ -1057,6 +1054,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
 
       let completed = false;
       let success = false;
+      let marketingDescription: string | null = null;
       await readSSE(response.body, (event) => {
         if (event.event !== "product_complete" || event.productId !== product.id) return;
         completed = true;
@@ -1064,7 +1062,8 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
 
         const patch: Partial<BulkProduct> = {};
         if (typeof event.description === "string" && event.description.trim()) {
-          patch.product_description = event.description;
+          marketingDescription = event.description.trim();
+          patch.product_description = marketingDescription;
         }
         if (typeof event.specs === "string" && event.specs.trim()) {
           patch.product_specs = event.specs;
@@ -1081,6 +1080,46 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
         }
       });
 
+      return {
+        success: completed ? success : response.ok,
+        marketingDescription,
+      };
+    },
+    [patchProduct],
+  );
+
+  const runSubDescriptionCopyForProduct = React.useCallback(
+    async (product: BulkProduct) => {
+      const response = await fetch("/api/products/generate-sub-descriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productIds: [product.id] }),
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error("Sub-description generation failed");
+      }
+
+      let completed = false;
+      let success = false;
+      await readSSE(response.body, (event) => {
+        if (event.event !== "product_complete" || event.productId !== product.id) return;
+        completed = true;
+        success = event.success === true;
+        if (typeof event.sub_description === "string" && event.sub_description.trim()) {
+          const subDescription = event.sub_description.trim();
+          patchProduct(product.id, { sub_description: subDescription });
+          setDrafts((prev) => {
+            const existing = prev[product.id];
+            if (!existing) return prev;
+            return {
+              ...prev,
+              [product.id]: { ...existing, subDescription },
+            };
+          });
+        }
+      });
+
       return completed ? success : response.ok;
     },
     [patchProduct],
@@ -1089,6 +1128,11 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
   const runCopyForProduct = React.useCallback(
     async (product: BulkProduct, copyFields: CopyBatchFields) => {
       let success = true;
+      let hasMarketingDescription = Boolean(
+        (
+          productsRef.current.find((item) => item.id === product.id) ?? product
+        ).product_description?.trim(),
+      );
 
       if (copyFields.title) {
         success = (await runTitleCopyForProduct(product)) && success;
@@ -1096,12 +1140,34 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
 
       const mode = directDescriptionMode(copyFields);
       if (mode) {
-        success = (await runDescriptionCopyForProduct(product, mode)) && success;
+        const descriptionResult = await runDescriptionCopyForProduct(product, mode);
+        success = descriptionResult.success && success;
+        if (descriptionResult.marketingDescription) {
+          hasMarketingDescription = true;
+        }
+      }
+
+      if (copyFields.subDescription) {
+        // Sub description must wait for the long marketing copy.
+        if (!hasMarketingDescription) {
+          const descriptionResult = await runDescriptionCopyForProduct(
+            product,
+            "description",
+          );
+          success = descriptionResult.success && success;
+          hasMarketingDescription = Boolean(descriptionResult.marketingDescription);
+        }
+
+        if (!hasMarketingDescription) {
+          success = false;
+        } else {
+          success = (await runSubDescriptionCopyForProduct(product)) && success;
+        }
       }
 
       return success;
     },
-    [runDescriptionCopyForProduct, runTitleCopyForProduct],
+    [runDescriptionCopyForProduct, runSubDescriptionCopyForProduct, runTitleCopyForProduct],
   );
 
   // ── Brand identification ──────────────────────────────────────────────────
@@ -1234,6 +1300,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
             display_name: draft.title.trim() || null,
             product_description: draft.description.trim() || null,
             product_specs: draft.specs.trim() || null,
+            sub_description: draft.subDescription.trim() || null,
           }),
         });
         if (!response.ok) throw new Error("Save failed");
@@ -1241,6 +1308,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
           display_name: draft.title.trim() || null,
           product_description: draft.description.trim() || null,
           product_specs: draft.specs.trim() || null,
+          sub_description: draft.subDescription.trim() || null,
         });
       } catch {
         /* keep draft so the user can retry */
@@ -1354,33 +1422,6 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
     [removeProductsFromBatch],
   );
 
-  // Drop products from the batch once title, description, specs, and approved
-  // images are all populated — including after copy jobs finish or photos are approved.
-  React.useEffect(() => {
-    const completedIds = products
-      .filter((product) =>
-        isProductFullyOptimised(product, imageRuns[product.id], {
-          copyBusy: copyRunning && copyQueuedIds.has(product.id),
-          photoBusy: IMG_BUSY.includes(imageRuns[product.id]?.phase ?? "idle"),
-          brandBusy: brandBusy.has(product.id),
-          saving: savingIds.has(product.id),
-        }),
-      )
-      .map((product) => product.id);
-
-    if (completedIds.length > 0) {
-      removeProductsFromBatch(completedIds);
-    }
-  }, [
-    products,
-    imageRuns,
-    copyRunning,
-    copyQueuedIds,
-    brandBusy,
-    savingIds,
-    removeProductsFromBatch,
-  ]);
-
   const toggleExpand = (id: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -1396,6 +1437,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
               title: product.display_name || "",
               description: product.product_description || "",
               specs: product.product_specs || "",
+              subDescription: product.sub_description || "",
             },
           }));
         }
@@ -1516,6 +1558,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
       title: false,
       description: false,
       specs: false,
+      subDescription: false,
       photos: false,
       brand: false,
     };
@@ -1564,6 +1607,7 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
           title: selection.title,
           description: selection.description,
           specs: selection.specs,
+          subDescription: selection.subDescription,
         },
       };
     });
@@ -2006,22 +2050,37 @@ export function BulkOptimiseWorkspace({ variant = "default" }: BulkOptimiseWorks
             onDraftChange={(patch) =>
               setDrafts((prev) => ({
                 ...prev,
-                [product.id]: { ...(prev[product.id] ?? { title: "", description: "", specs: "" }), ...patch },
+                [product.id]: {
+                  ...(prev[product.id] ?? {
+                    title: "",
+                    description: "",
+                    specs: "",
+                    subDescription: "",
+                  }),
+                  ...patch,
+                },
               }))
             }
             onSaveDraft={() => void saveDraft(product)}
             onGenerateCopy={() => {
               const selection = fields[product.id] ?? defaultFieldSelection(product);
-              void startCopyForProducts([
-                {
-                  product,
-                  copyFields: {
-                    title: selection.title,
-                    description: selection.description,
-                    specs: selection.specs,
-                  },
-                },
-              ]);
+              const copyFields: CopyBatchFields = {
+                title: selection.title,
+                description: selection.description,
+                specs: selection.specs,
+                subDescription: selection.subDescription,
+              };
+              if (!hasCopyFields(copyFields)) return;
+              // Run sequentially in-process so sub description waits for the
+              // main description (background jobs were racing / skipping).
+              setCopyQueuedIds(new Set([product.id]));
+              void runCopyForProduct(product, copyFields).finally(() => {
+                setCopyQueuedIds((prev) => {
+                  const next = new Set(prev);
+                  next.delete(product.id);
+                  return next;
+                });
+              });
             }}
             onSetBicycle={(value) => void setBicycle(product, value)}
             onAutoDetectBicycle={() => void autoDetectBicycle(product)}
@@ -2459,7 +2518,10 @@ function ProductRow({
                       variant="outline"
                       disabled={
                         copyBusy ||
-                        (!fieldSelection.title && !fieldSelection.description && !fieldSelection.specs)
+                        (!fieldSelection.title &&
+                          !fieldSelection.description &&
+                          !fieldSelection.specs &&
+                          !fieldSelection.subDescription)
                       }
                       onClick={onGenerateCopy}
                     >
@@ -2479,6 +2541,17 @@ function ProductRow({
                     onChange={(event) => onDraftChange({ title: event.target.value })}
                     placeholder="No optimised title yet"
                     className="h-9 rounded-md text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-medium text-muted-foreground">
+                    Sub description
+                  </label>
+                  <Textarea
+                    value={draft?.subDescription ?? product.sub_description ?? ""}
+                    onChange={(event) => onDraftChange({ subDescription: event.target.value })}
+                    placeholder="Short 1–2 sentence blurb shown under stock on the product page"
+                    className="min-h-16 rounded-md text-sm"
                   />
                 </div>
                 <div className="grid gap-3 xl:grid-cols-2">
@@ -2767,7 +2840,13 @@ function ProductRow({
                     size="xs"
                     variant="outline"
                     className="rounded-md"
-                    disabled={copyBusy || (!fieldSelection.title && !fieldSelection.description && !fieldSelection.specs)}
+                    disabled={
+                      copyBusy ||
+                      (!fieldSelection.title &&
+                        !fieldSelection.description &&
+                        !fieldSelection.specs &&
+                        !fieldSelection.subDescription)
+                    }
                     onClick={onGenerateCopy}
                   >
                     {copyBusy ? (
@@ -2799,6 +2878,17 @@ function ProductRow({
                   onChange={(event) => onDraftChange({ title: event.target.value })}
                   placeholder="No optimised title yet"
                   className="h-8 rounded-md text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-muted-foreground">
+                  Sub description
+                </label>
+                <Textarea
+                  value={draft?.subDescription ?? product.sub_description ?? ""}
+                  onChange={(event) => onDraftChange({ subDescription: event.target.value })}
+                  placeholder="Short 1–2 sentence blurb shown under stock on the product page"
+                  className="min-h-16 rounded-md text-xs"
                 />
               </div>
               <div className="grid gap-3 xl:grid-cols-2">

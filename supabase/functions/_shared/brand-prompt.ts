@@ -29,12 +29,39 @@ function formatBookingLine(label: string, value: string | null): string {
   return `- ${label}: ${value && value.trim() ? value.trim() : 'missing'}`;
 }
 
+function isConfirmedBookingStatus(status: BrandBookingState['status']): boolean {
+  return status === 'created' || status === 'confirmed';
+}
+
 function buildBookingStateBlock(state: BrandBookingState | null): string {
   if (!state) {
     return [
       '## Booking Draft',
       'No active booking draft is loaded for this turn.',
       'If the customer starts or continues a booking, use the booking tools rather than relying on memory alone.',
+      'If recent assistant history in this chat already contains a booking confirmation (including website booking confirmations with a due/completion date), treat those details as authoritative for follow-up questions. Do not deny a booking that was just confirmed in this thread.',
+    ].join('\n');
+  }
+
+  if (isConfirmedBookingStatus(state.status)) {
+    return [
+      '## Confirmed Booking',
+      'A real booking already exists for this chat. Treat it as the source of truth for follow-up questions.',
+      `Status: ${state.status}`,
+      formatBookingLine('Name', state.customer_name),
+      formatBookingLine('Bike', state.bike),
+      formatBookingLine('What needs doing', state.comments),
+      formatBookingLine('Due / completion date', state.drop_off_date),
+      state.workorder_id != null ? `- Workorder id: ${state.workorder_id}` : '- Workorder id: missing',
+      state.sender_phone_e164
+        ? `- Phone on file: ${state.sender_phone_e164}`
+        : '- Phone on file: missing',
+      '',
+      'Hard rules for confirmed bookings:',
+      '- When the customer asks when it is due, what day, which bike, or similar, restate the confirmed details above.',
+      '- This is live booking confirmation for this chat, not guesswork. Do not say you cannot see a booking or cannot confirm workshop timing for these stored fields.',
+      '- If they want to change the booking, help with the change (or hand off) rather than pretending no booking exists.',
+      '- Do not call `brand_booking_create` again unless they clearly want a separate new booking.',
     ].join('\n');
   }
 
@@ -135,9 +162,10 @@ function buildCustomerToolBlock(
 
   if (hasCapability(capabilities, 'brand.booking.create')) {
     lines.push(
-      '- **Booking commit rule (MUST follow):** `brand_booking_create` is the ONLY way a real workorder is created in the shop system. Without a successful `brand_booking_create` call this turn, NO booking exists — no matter what the draft says or what the customer said.',
+      '- **Booking commit rule (MUST follow):** For a NEW booking from a draft, `brand_booking_create` is the ONLY way a real workorder is created in the shop system. Without a successful `brand_booking_create` this turn, do not claim a NEW draft booking is locked in.',
       '- Call `brand_booking_create` in the SAME turn the customer confirms a complete booking ("yes", "book it", "go ahead", "cheers thanks"). Do not defer to a later turn. Do not ask the customer to re-confirm.',
-      '- **You MUST NOT state or imply the booking is locked in unless `brand_booking_create` was just called and succeeded this turn.** Forbidden phrasings otherwise: "booked in", "locked in", "got it set", "pencilled in", "you\'re all set", "on the sheet", "see you then", "reserved for", "all booked", "all set", "you\'re sorted", "you\'re good to go". If the tool has not run successfully this turn, summarise the draft and ask the customer to reply yes instead.',
+      '- **Exception:** If a Confirmed Booking block is loaded, or recent assistant history already contains a Nest/website booking confirmation for this chat, you MAY restate those existing details (due date, bike, service). That is not inventing a booking.',
+      '- **You MUST NOT invent a NEW locked-in booking** when neither create succeeded this turn nor a confirmed booking/confirmation exists. Forbidden for invented new bookings: "booked in", "locked in", "got it set", "pencilled in", "you\'re all set", "on the sheet", "see you then", "reserved for", "all booked", "all set", "you\'re sorted", "you\'re good to go". If the tool has not run successfully this turn and there is only a draft, summarise the draft and ask the customer to reply yes instead.',
       '- If any required field changes while status is `awaiting_confirm`, re-summarise the updated draft and ask for a fresh yes before calling create.',
     );
   }

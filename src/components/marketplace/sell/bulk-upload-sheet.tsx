@@ -24,6 +24,10 @@ import {
   getSavedSellerPickupLocation,
   saveSellerPickupLocation,
 } from "@/lib/marketplace/seller-pickup-location";
+import {
+  resolveBikeTypeToCanonicalPath,
+  resolveCanonicalPath,
+} from "@/lib/marketplace/canonical-taxonomy";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -118,6 +122,9 @@ interface ProductFormData {
   shippingCost: number;
   pickupLocation: string;
   pickupAvailable: boolean;
+  marketplace_category?: string;
+  marketplace_subcategory?: string;
+  marketplace_level_3_category?: string | null;
 }
 
 type ProductFieldValue = ProductFormData[keyof ProductFormData];
@@ -896,11 +903,18 @@ export function BulkUploadSheet({
           isPrimary: index === 0,
         }));
 
-        const categoryMap: { [key: string]: string } = {
-          bike: "Bicycles",
-          part: "Parts",
-          apparel: "Apparel",
-        };
+        const canonicalPath =
+          resolveCanonicalPath(
+            product.formData.marketplace_category,
+            product.formData.marketplace_subcategory,
+            product.formData.marketplace_level_3_category,
+          ) ||
+          resolveBikeTypeToCanonicalPath(product.formData.bikeType) ||
+          (product.formData.itemType === "apparel"
+            ? resolveCanonicalPath("Apparel", "Casual Clothing")
+            : product.formData.itemType === "part"
+              ? resolveCanonicalPath("Accessories", "Locks")
+              : resolveCanonicalPath("Bicycles", "Hybrid / Fitness"));
 
         return {
           title: product.formData.title || product.suggestedName,
@@ -925,8 +939,9 @@ export function BulkUploadSheet({
           originalRrp: product.formData.originalRrp,
           images: imageData,
           primaryImageUrl: product.imageUrls[0],
-          marketplace_category:
-            categoryMap[product.formData.itemType] || "Bicycles",
+          marketplace_category: canonicalPath?.level1 || "Bicycles",
+          marketplace_subcategory: canonicalPath?.level2 || null,
+          marketplace_level_3_category: canonicalPath?.level3 || null,
           isNegotiable: true,
           shippingAvailable: product.formData.shippingAvailable,
           shippingCost: product.formData.shippingAvailable

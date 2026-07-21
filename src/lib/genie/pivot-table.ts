@@ -229,8 +229,10 @@ export function buildPivotTableFromRows(
     columnMap.set(bucket.columnKey, bucket.columnLabel);
   }
 
+  // Sort by the raw key, not the display label — pretty date labels like
+  // "Apr 2018" would otherwise order alphabetically instead of chronologically.
   const sortedColumns = [...columnMap.entries()]
-    .sort((a, b) => a[1].localeCompare(b[1], "en-AU"))
+    .sort((a, b) => a[0].localeCompare(b[0], "en-AU"))
     .slice(0, MAX_PIVOT_COLUMNS)
     .map(([key, label]) => ({ key, label }));
 
@@ -252,7 +254,7 @@ export function buildPivotTableFromRows(
   }
 
   const pivotRows = [...rowMap.values()]
-    .sort((a, b) => a.row_label.localeCompare(b.row_label, "en-AU"))
+    .sort((a, b) => a.row_key.localeCompare(b.row_key, "en-AU"))
     .slice(0, MAX_PIVOT_ROWS);
 
   const showTotals = config.show_totals !== false;

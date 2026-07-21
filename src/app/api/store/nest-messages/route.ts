@@ -35,6 +35,12 @@ import {
   moderateNestOutboundMessage,
   NEST_CONTENT_BLOCKED_CODE,
 } from "@/lib/nest/outbound-content-moderation";
+import {
+  isAgentPayCheckoutUrl,
+  sendLinqAgentPayCheckout,
+  stripCheckoutUrlFromText,
+} from "@/lib/nest/linq-agent-pay";
+import { ensureSmsUrlsAreClickable } from "@/lib/nest/sms-link-format";
 import { createClient } from "@/lib/supabase/server";
 
 function json(body: Record<string, unknown>, status = 200) {

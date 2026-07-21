@@ -5,7 +5,6 @@ import {
   buildBookingMissingFieldPrompt,
   buildBookingSummary,
   createBookingWorkorder,
-  deleteBookingState,
   loadBookingState,
   populateBookingCustomerName,
   upsertBookingState,
@@ -297,7 +296,11 @@ export const brandBookingCreateTool: ToolContract = {
       };
     }
 
-    await deleteBookingState(supabase, brand.baseBrandKey, ctx.chatId);
+    await upsertBookingState(supabase, {
+      ...state,
+      status: 'confirmed',
+      workorder_id: create.workorder_id,
+    });
 
     return {
       content: [
@@ -306,7 +309,7 @@ export const brandBookingCreateTool: ToolContract = {
         buildBookingSummary(
           {
             ...state,
-            status: 'created',
+            status: 'confirmed',
             workorder_id: create.workorder_id,
           },
           brand.lightspeedSettings,

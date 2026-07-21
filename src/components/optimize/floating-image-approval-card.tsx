@@ -53,6 +53,7 @@ const emptyCopyRun = (): CopyRunState => ({
   title: { status: "idle" },
   description: { status: "idle" },
   specs: { status: "idle" },
+  subDescription: { status: "idle" },
 });
 
 function LightspeedSkuHint({ product }: { product: ImageApprovalProduct }) {
@@ -82,6 +83,7 @@ const COPY_FIELD_META: Array<{
   { key: "title", label: "Title", icon: Type },
   { key: "description", label: "Description", icon: FileText },
   { key: "specs", label: "Specs", icon: ListChecks },
+  { key: "subDescription", label: "Sub description", icon: FileText },
 ];
 
 function CopyScrollField({
@@ -455,6 +457,10 @@ export function FloatingImageApprovalCard({
         payload.product_description = value || null;
         revert.product_description = product.product_description;
         patchQueueProduct(product.id, { product_description: value || null });
+      } else if (field === "subDescription") {
+        payload.sub_description = value || null;
+        revert.sub_description = product.sub_description;
+        patchQueueProduct(product.id, { sub_description: value || null });
       } else {
         payload.product_specs = value || null;
         revert.product_specs = product.product_specs;
@@ -523,10 +529,16 @@ export function FloatingImageApprovalCard({
   );
 
   const regenerateCopyField = React.useCallback(
-    async (product: ImageApprovalProduct, mode: "description" | "specs") => {
+    async (
+      product: ImageApprovalProduct,
+      mode: "description" | "specs" | "subDescription",
+    ) => {
       const productId = product.id;
       const field: CopyField = mode;
-      setCopyField(productId, field, { status: "running", detail: "Writing" });
+      setCopyField(productId, field, {
+        status: "running",
+        detail: mode === "subDescription" ? "Distilling" : "Writing",
+      });
       copyAbortRef.current?.abort();
       copyAbortRef.current = new AbortController();
 
@@ -536,6 +548,36 @@ export function FloatingImageApprovalCard({
           : {};
 
       try {
+        if (mode === "subDescription") {
+          const response = await fetch("/api/products/generate-sub-descriptions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ productIds: [productId] }),
+            signal: copyAbortRef.current.signal,
+          });
+          if (!response.ok || !response.body) {
+            throw new Error("Failed to start generation");
+          }
+
+          await readSSE(response.body, (event) => {
+            if (event.productId !== productId || event.event !== "product_complete") return;
+
+            if (event.success) {
+              const subDescription = (event.sub_description as string | null) ?? null;
+              if (subDescription) {
+                patchQueueProduct(productId, { sub_description: subDescription });
+              }
+              setCopyField(productId, field, { status: "done" });
+            } else {
+              setCopyField(productId, field, {
+                status: "error",
+                detail: (event.error as string) || "Failed",
+              });
+            }
+          });
+          return;
+        }
+
         const response = await fetch("/api/products/generate-product-descriptions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -920,14 +962,16 @@ export function FloatingImageApprovalCard({
                   );
                 })()}
 
-                {(["description", "specs"] as const).map((key) => {
+                {(["subDescription", "description", "specs"] as const).map((key) => {
                   const meta = COPY_FIELD_META.find((item) => item.key === key)!;
                   const step = currentCopyRun[key];
                   const running = step.status === "running" || step.status === "queued";
                   const text =
                     key === "description"
                       ? current.product_description
-                      : current.product_specs;
+                      : key === "subDescription"
+                        ? current.sub_description
+                        : current.product_specs;
 
                   return (
                     <CopyScrollField
@@ -939,7 +983,9 @@ export function FloatingImageApprovalCard({
                       saving={isCopySaving(current.id, key)}
                       error={step.status === "error"}
                       errorDetail={step.detail}
-                      className="min-h-0 flex-1"
+                      className={
+                        key === "subDescription" ? "max-h-28 shrink-0" : "min-h-0 flex-1"
+                      }
                       multiline
                       onRegenerate={() => void regenerateCopyField(current, key)}
                       onSave={(value) => saveCopyField(current, key, value)}

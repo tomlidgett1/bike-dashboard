@@ -6,6 +6,7 @@ import {
   type FieldMapping,
 } from "@/lib/scrapers/fesports-field-mapping";
 import { requireSupplierScraperManager } from "@/lib/scrapers/supplier-auth";
+import { sanitiseCategoryOverrides } from "@/lib/scrapers/supplier-category";
 import { importSupplierProducts } from "@/lib/scrapers/supplier-import";
 import { loadSupplierScraperRow } from "@/lib/scrapers/supplier-storage";
 import type { SupplierScrapedProduct } from "@/lib/scrapers/supplier-types";
@@ -28,6 +29,7 @@ export async function POST(
       fieldMapping?: unknown;
       imagePreferences?: unknown;
       excludedImages?: unknown;
+      categoryOverrides?: unknown;
     };
     const products = Array.isArray(body.products)
       ? (body.products as SupplierScrapedProduct[])
@@ -78,6 +80,7 @@ export async function POST(
         body.excludedImages && typeof body.excludedImages === "object"
           ? (body.excludedImages as Record<string, string[]>)
           : undefined,
+      categoryOverrides: sanitiseCategoryOverrides(body.categoryOverrides),
     });
 
     await auth.supabase

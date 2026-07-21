@@ -307,6 +307,7 @@ function formatSource(product: Product) {
   if (product.listing_source === "online_catalog") return "Online";
   if (product.listing_source === "fesports_scrape") return "FE Sports";
   if (product.listing_source === "supplier_scrape") return "Supplier";
+  if (product.listing_source === "bike_url_import") return "Official site";
   if (product.listing_source === "manual") return "Listing";
   return "Listing";
 }
@@ -396,6 +397,10 @@ export default function ProductsPage() {
   const [brands, setBrands] = React.useState<string[]>([]);
   const [search, setSearch] = React.useState('');
   const [categoryFilter, setCategoryFilter] = React.useState<string>('');
+  const [marketplaceLevel1Filter, setMarketplaceLevel1Filter] = React.useState<string>('');
+  const [marketplaceLevel2Filter, setMarketplaceLevel2Filter] = React.useState<string>('');
+  const [canonicalLevel1Options, setCanonicalLevel1Options] = React.useState<string[]>([]);
+  const [canonicalLevel2Options, setCanonicalLevel2Options] = React.useState<string[]>([]);
   const [brandFilter, setBrandFilter] = React.useState<string>('');
   const [stockFilter, setStockFilter] = React.useState<string>('all');
   const [statusFilter, setStatusFilter] = React.useState<string>('all');
@@ -479,6 +484,8 @@ export default function ProductsPage() {
         pageSize: pagination.pageSize.toString(),
         search: debouncedSearch,
         category: categoryFilter,
+        marketplace_level1: marketplaceLevel1Filter,
+        marketplace_level2: marketplaceLevel2Filter,
         brand: brandFilter,
         stock: stockFilter,
         status: statusFilter,
@@ -517,14 +524,54 @@ export default function ProductsPage() {
         if (isInitialLoad) setLoading(false);
       }
     }
-  }, [pagination.pageSize, debouncedSearch, categoryFilter, brandFilter, stockFilter, statusFilter, imageFilter, sourceFilter, saleFilter, needsOptimisation, sortBy, sortOrder]);
+  }, [pagination.pageSize, debouncedSearch, categoryFilter, marketplaceLevel1Filter, marketplaceLevel2Filter, brandFilter, stockFilter, statusFilter, imageFilter, sourceFilter, saleFilter, needsOptimisation, sortBy, sortOrder]);
+
+  // Load canonical Yellow Jersey L1/L2 options for catalogue filters.
+  React.useEffect(() => {
+    let cancelled = false;
+    void fetch('/api/marketplace/categories?listingType=store_inventory')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.categories) return;
+        const level1 = (data.categories as Array<{ level1: string; level2Categories: Array<{ name: string }> }>)
+          .map((category) => category.level1);
+        setCanonicalLevel1Options(level1);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (!marketplaceLevel1Filter) {
+      setCanonicalLevel2Options([]);
+      if (marketplaceLevel2Filter) setMarketplaceLevel2Filter('');
+      return;
+    }
+    let cancelled = false;
+    void fetch('/api/marketplace/categories?listingType=store_inventory')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.categories) return;
+        const match = (data.categories as Array<{
+          level1: string;
+          level2Categories: Array<{ name: string }>;
+        }>).find((category) => category.level1 === marketplaceLevel1Filter);
+        setCanonicalLevel2Options((match?.level2Categories || []).map((row) => row.name));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [marketplaceLevel1Filter, marketplaceLevel2Filter]);
 
   // Initial + filter-change fetch
   const initialLoadRef = React.useRef(true);
   React.useEffect(() => {
     fetchProducts(1, initialLoadRef.current);
     initialLoadRef.current = false;
-  }, [debouncedSearch, categoryFilter, brandFilter, stockFilter, statusFilter, imageFilter, sourceFilter, saleFilter, needsOptimisation, sortBy, sortOrder, pagination.pageSize, fetchProducts]);
+  }, [debouncedSearch, categoryFilter, marketplaceLevel1Filter, marketplaceLevel2Filter, brandFilter, stockFilter, statusFilter, imageFilter, sourceFilter, saleFilter, needsOptimisation, sortBy, sortOrder, pagination.pageSize, fetchProducts]);
 
   // Load stats once on mount
   React.useEffect(() => { fetchStats(); }, [fetchStats]);
@@ -870,6 +917,8 @@ export default function ProductsPage() {
   const hasFilters =
     search !== '' ||
     categoryFilter !== '' ||
+    marketplaceLevel1Filter !== '' ||
+    marketplaceLevel2Filter !== '' ||
     brandFilter !== '' ||
     catalogFilterCount > 0 ||
     needsOptimisation;
@@ -1057,18 +1106,49 @@ export default function ProductsPage() {
         ),
       },
       {
+        id: "marketplace_l1",
+        accessorFn: (product) => product.marketplace_category || "",
+        header: "L1",
+        cell: ({ row }) => (
+          <span
+            className={cn(
+              "block truncate text-xs",
+              row.original.marketplace_category
+                ? "text-foreground"
+                : "text-muted-foreground",
+            )}
+            title={row.original.marketplace_category || "Needs categorisation"}
+          >
+            {row.original.marketplace_category || "Needs categorisation"}
+          </span>
+        ),
+      },
+      {
+        id: "marketplace_l2",
+        accessorFn: (product) => product.marketplace_subcategory || "",
+        header: "L2",
+        cell: ({ row }) => (
+          <span
+            className={cn(
+              "block truncate text-xs",
+              row.original.marketplace_subcategory
+                ? "text-foreground"
+                : "text-muted-foreground",
+            )}
+            title={row.original.marketplace_subcategory || "Needs categorisation"}
+          >
+            {row.original.marketplace_subcategory || "—"}
+          </span>
+        ),
+      },
+      {
         id: "category",
-        accessorFn: (product) => product.marketplace_category || product.category_name || "",
-        header: "Category",
+        accessorFn: (product) => product.category_name || "",
+        header: "Lightspeed",
         cell: ({ row }) => {
           const product = row.original;
-          const marketplaceCategory = [
-            product.marketplace_category,
-            product.marketplace_subcategory,
-            product.marketplace_level_3_category,
-          ].filter(Boolean).join(" / ");
           const lightspeedCategory = formatLightspeedCategory(product);
-          const displayLabel = marketplaceCategory || lightspeedCategory || "—";
+          const displayLabel = lightspeedCategory || "—";
           return (
             <div className="min-w-0">
               <ProductCategoryCell
@@ -1286,7 +1366,9 @@ export default function ProductsPage() {
     };
   }, [products.length, pagination.pageSize, syncTableViewport]);
 
-  const categoryLabel = categoryFilter || "All categories";
+  const categoryLabel = categoryFilter || "All Lightspeed categories";
+  const marketplaceLevel1Label = marketplaceLevel1Filter || "All L1 categories";
+  const marketplaceLevel2Label = marketplaceLevel2Filter || "All L2 categories";
   const brandLabel =
     brandFilter === "__none__" ? "No brand" : brandFilter || "All brands";
 
@@ -1375,6 +1457,68 @@ export default function ProductsPage() {
             <div className="flex flex-wrap items-center gap-2">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className={cn(filterTriggerClassName, "w-[170px] justify-between gap-1.5")}>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <Layers className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{marketplaceLevel1Label}</span>
+                    </span>
+                    <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-72 w-56 overflow-y-auto rounded-md">
+                  <DropdownMenuRadioGroup
+                    value={marketplaceLevel1Filter || "all"}
+                    onValueChange={(v) => {
+                      setMarketplaceLevel1Filter(v === "all" ? "" : v);
+                      setMarketplaceLevel2Filter("");
+                    }}
+                  >
+                    <DropdownMenuRadioItem value="all" className="gap-2">
+                      All L1 categories
+                    </DropdownMenuRadioItem>
+                    {canonicalLevel1Options.map((c) => (
+                      <DropdownMenuRadioItem key={c} value={c} className="gap-2 truncate">
+                        <span className="truncate">{c}</span>
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!marketplaceLevel1Filter}
+                    className={cn(filterTriggerClassName, "w-[170px] justify-between gap-1.5")}
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <Tag className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{marketplaceLevel2Label}</span>
+                    </span>
+                    <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-72 w-56 overflow-y-auto rounded-md">
+                  <DropdownMenuRadioGroup
+                    value={marketplaceLevel2Filter || "all"}
+                    onValueChange={(v) => setMarketplaceLevel2Filter(v === "all" ? "" : v)}
+                  >
+                    <DropdownMenuRadioItem value="all" className="gap-2">
+                      All L2 categories
+                    </DropdownMenuRadioItem>
+                    {canonicalLevel2Options.map((c) => (
+                      <DropdownMenuRadioItem key={c} value={c} className="gap-2 truncate">
+                        <span className="truncate">{c}</span>
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className={cn(filterTriggerClassName, "w-[190px] justify-between gap-1.5")}>
                     <span className="flex min-w-0 items-center gap-1.5">
                       <Layers className="size-3.5 shrink-0 text-muted-foreground" />
@@ -1390,7 +1534,7 @@ export default function ProductsPage() {
                   >
                     <DropdownMenuRadioItem value="all" className="gap-2">
                       <Layers className="size-3.5 shrink-0 text-muted-foreground" />
-                      All categories
+                      All Lightspeed categories
                     </DropdownMenuRadioItem>
                     {categories.map((c) => (
                       <DropdownMenuRadioItem key={c} value={c} className="gap-2 truncate">

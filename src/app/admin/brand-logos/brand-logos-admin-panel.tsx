@@ -4,6 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import {
   CheckCircle2,
+  Crop,
   Loader2,
   RefreshCw,
   Search,
@@ -16,7 +17,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { BrandLogoCurationRow } from "@/lib/admin/brand-logo-curation";
+import type { BrandLogoCropPixels } from "@/lib/admin/import-brand-logo";
 import type { BrandLogoSearchResult } from "@/lib/store/brand-logo-serper";
+import { BrandLogoCropDialog } from "./brand-logo-crop-dialog";
 
 type FilterStatus = "pending" | "approved" | "skipped" | "all";
 
@@ -65,6 +68,11 @@ export function BrandLogosAdminPanel() {
   const [searchPage, setSearchPage] = React.useState(1);
   const [searchError, setSearchError] = React.useState<string | null>(null);
   const [actionUrl, setActionUrl] = React.useState<string | null>(null);
+  const [cropTarget, setCropTarget] = React.useState<{
+    imageUrl: string;
+    brandName: string;
+    mode: "approve" | "recrop";
+  } | null>(null);
 
   const loadBrands = React.useCallback(
     async (options?: { sync?: boolean; silent?: boolean; keepSelection?: boolean }) => {
@@ -169,24 +177,51 @@ export function BrandLogosAdminPanel() {
     }
   }, [selected?.id]);
 
-  const handleApprove = async (imageUrl: string) => {
+  const handleApprove = async (imageUrl: string, crop: BrandLogoCropPixels) => {
     if (!selected) return;
+    const approvedId = selected.id;
+    const wasPending = selected.status === "pending";
+    const wasSkipped = selected.status === "skipped";
+    const wasAlreadyApproved = selected.status === "approved";
     try {
       setActionUrl(imageUrl);
+      setSearchError(null);
       const response = await fetch("/api/admin/brand-logos/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ curationId: selected.id, imageUrl }),
+        body: JSON.stringify({ curationId: approvedId, imageUrl, crop }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Approve failed");
 
-      await loadBrands({ silent: true });
-      setSelectedId((current) => {
-        if (current !== selected.id) return current;
-        const remaining = brands.filter((b) => b.id !== selected.id);
-        return remaining[0]?.id ?? null;
+      const updated = (data.curation as BrandLogoCurationRow | undefined) ?? {
+        ...selected,
+        status: "approved" as const,
+        approved_logo_url: imageUrl,
+      };
+
+      // Local list update only — do not re-sync every Lightspeed brand after each click.
+      setBrands((prev) => {
+        const next = prev.map((brand) => (brand.id === approvedId ? updated : brand));
+        return filter === "pending" ? next.filter((brand) => brand.id !== approvedId) : next;
       });
+      if (!wasAlreadyApproved) {
+        setCounts((prev) => ({
+          ...prev,
+          pending: Math.max(0, prev.pending - (wasPending ? 1 : 0)),
+          approved: prev.approved + (wasPending || wasSkipped ? 1 : 0),
+          skipped: Math.max(0, prev.skipped - (wasSkipped ? 1 : 0)),
+        }));
+      }
+      setCandidates([]);
+      setCropTarget(null);
+      if (filter === "pending") {
+        setSelectedId((current) => {
+          if (current !== approvedId) return current;
+          const remaining = brands.filter((brand) => brand.id !== approvedId);
+          return remaining[0]?.id ?? null;
+        });
+      }
     } catch (err) {
       setSearchError(err instanceof Error ? err.message : "Approve failed");
     } finally {
@@ -219,21 +254,42 @@ export function BrandLogosAdminPanel() {
 
   const handleSkip = async () => {
     if (!selected) return;
+    const skippedId = selected.id;
+    const previousStatus = selected.status;
     try {
       setActionUrl("skip");
+      setSearchError(null);
       const response = await fetch("/api/admin/brand-logos/skip", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ curationId: selected.id }),
+        body: JSON.stringify({ curationId: skippedId }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Skip failed");
-      await loadBrands({ silent: true });
-      setSelectedId((current) => {
-        if (current !== selected.id) return current;
-        const remaining = brands.filter((b) => b.id !== selected.id);
-        return remaining[0]?.id ?? null;
+
+      const updated = (data.curation as BrandLogoCurationRow | undefined) ?? {
+        ...selected,
+        status: "skipped" as const,
+      };
+
+      setBrands((prev) => {
+        const next = prev.map((brand) => (brand.id === skippedId ? updated : brand));
+        return filter === "pending" ? next.filter((brand) => brand.id !== skippedId) : next;
       });
+      setCounts((prev) => ({
+        ...prev,
+        pending: Math.max(0, prev.pending - (previousStatus === "pending" ? 1 : 0)),
+        approved: Math.max(0, prev.approved - (previousStatus === "approved" ? 1 : 0)),
+        skipped: prev.skipped + (previousStatus === "skipped" ? 0 : 1),
+      }));
+      setCandidates([]);
+      if (filter === "pending") {
+        setSelectedId((current) => {
+          if (current !== skippedId) return current;
+          const remaining = brands.filter((brand) => brand.id !== skippedId);
+          return remaining[0]?.id ?? null;
+        });
+      }
     } catch (err) {
       setSearchError(err instanceof Error ? err.message : "Skip failed");
     } finally {
@@ -314,7 +370,7 @@ export function BrandLogosAdminPanel() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-gray-900">{brand.brand_name}</p>
                   <p className="text-xs text-gray-400">
-                    {brand.product_count} products
+                    {brand.product_count.toLocaleString("en-AU")} in stock
                     {brand.manufacturer_id ? ` · LS ${brand.manufacturer_id}` : ""}
                   </p>
                 </div>
@@ -346,7 +402,7 @@ export function BrandLogosAdminPanel() {
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">
                   <span className="inline-flex items-center gap-1">
                     <Package className="h-3 w-3" />
-                    {selected.product_count} active products
+                    {selected.product_count.toLocaleString("en-AU")} units in stock
                   </span>
                   {selected.manufacturer_name && selected.manufacturer_name !== selected.brand_name ? (
                     <span>Manufacturer: {selected.manufacturer_name}</span>
@@ -377,18 +433,47 @@ export function BrandLogosAdminPanel() {
 
             {selected.approved_logo_url ? (
               <div className="mt-4 rounded-md border border-gray-200 bg-white p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
-                  Approved logo
-                </p>
-                <div className="relative mt-2 h-16 w-40">
-                  <Image
-                    src={selected.approved_logo_url}
-                    alt={`${selected.brand_name} logo`}
-                    fill
-                    className="object-contain object-left"
-                    sizes="160px"
-                  />
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                      Approved logo
+                    </p>
+                    <div className="relative mt-2 h-16 w-40">
+                      <Image
+                        src={selected.approved_logo_url}
+                        alt={`${selected.brand_name} logo`}
+                        fill
+                        className="object-contain object-left"
+                        sizes="160px"
+                        unoptimized
+                      />
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-md"
+                    disabled={actionUrl === selected.approved_logo_url}
+                    onClick={() =>
+                      setCropTarget({
+                        imageUrl: selected.approved_logo_url!,
+                        brandName: selected.brand_name,
+                        mode: "recrop",
+                      })
+                    }
+                  >
+                    {actionUrl === selected.approved_logo_url ? (
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Crop className="mr-1.5 h-3.5 w-3.5" />
+                    )}
+                    Recrop
+                  </Button>
                 </div>
+                {searchError && selected.status !== "pending" ? (
+                  <p className="mt-3 rounded-md bg-white p-3 text-sm text-red-600">{searchError}</p>
+                ) : null}
               </div>
             ) : null}
 
@@ -472,7 +557,13 @@ export function BrandLogosAdminPanel() {
                                 size="sm"
                                 className="h-8 flex-1 rounded-md"
                                 disabled={busy}
-                                onClick={() => void handleApprove(candidate.url)}
+                                onClick={() =>
+                                  setCropTarget({
+                                    imageUrl: candidate.url,
+                                    brandName: selected.brand_name,
+                                    mode: "approve",
+                                  })
+                                }
                               >
                                 {busy ? (
                                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -502,14 +593,37 @@ export function BrandLogosAdminPanel() {
                   </div>
                 )}
               </>
+            ) : selected.status === "approved" ? (
+              <p className="mt-6 text-sm text-gray-500">
+                Use Recrop to tighten whitespace on the approved logo, or switch to Pending to pick a different image.
+              </p>
             ) : (
               <p className="mt-6 text-sm text-gray-500">
-                This brand is marked as {selected.status}. Switch to Pending to review more logos, or pick another brand.
+                This brand is marked as {selected.status}. Switch to Pending to review logos, or pick another brand.
               </p>
             )}
           </div>
         )}
       </main>
+
+      <BrandLogoCropDialog
+        open={Boolean(cropTarget)}
+        imageUrl={cropTarget?.imageUrl ?? ""}
+        brandName={cropTarget?.brandName ?? "brand"}
+        busy={Boolean(cropTarget && actionUrl === cropTarget.imageUrl)}
+        confirmLabel={
+          cropTarget?.mode === "recrop" ? "Crop & save" : "Crop & approve"
+        }
+        onOpenChange={(open) => {
+          if (!open && !(cropTarget && actionUrl === cropTarget.imageUrl)) {
+            setCropTarget(null);
+          }
+        }}
+        onConfirm={(crop) => {
+          if (!cropTarget) return;
+          void handleApprove(cropTarget.imageUrl, crop);
+        }}
+      />
     </div>
   );
 }

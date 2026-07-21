@@ -214,15 +214,28 @@ export function useMarketplaceSpace() {
   // Get current space from URL, default to For You
   const spaceParam = searchParams.get('space');
   const viewParam = searchParams.get('view');
+  const hasSearch = Boolean(searchParams.get('search')?.trim());
+  const hasCategoryBrowse =
+    Boolean(searchParams.get('level1')) ||
+    Boolean(searchParams.get('level2')) ||
+    Boolean(searchParams.get('level3'));
   
-  // Support legacy 'view' param for backwards compatibility
+  // Support legacy 'view' param for backwards compatibility.
+  // Category / subcategory filters and product search belong on a browse
+  // space, never For You.
   const currentSpace: MarketplaceSpace = React.useMemo(() => {
+    if (hasSearch) {
+      if (spaceParam === 'marketplace' || viewParam === 'marketplace') return 'marketplace';
+      if (spaceParam === 'uber' || viewParam === 'uber') return 'uber';
+      return 'stores';
+    }
     if (spaceParam === 'for-you' || viewParam === 'for-you') return 'for-you';
     if (spaceParam === 'marketplace' || viewParam === 'marketplace') return 'marketplace';
     if (spaceParam === 'stores' || viewParam === 'stores') return 'stores';
     if (spaceParam === 'uber' || viewParam === 'uber') return 'uber';
+    if (hasCategoryBrowse) return 'stores';
     return DEFAULT_MARKETPLACE_SPACE;
-  }, [spaceParam, viewParam]);
+  }, [spaceParam, viewParam, hasCategoryBrowse, hasSearch]);
   
   // Change space and update URL
   const setSpace = React.useCallback((newSpace: MarketplaceSpace) => {

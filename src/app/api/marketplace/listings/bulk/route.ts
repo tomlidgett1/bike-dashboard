@@ -6,6 +6,7 @@ import {
   finalizeListingForMarketplace,
   refreshPublicMarketplaceAfterMutation,
 } from '@/lib/server/refresh-public-marketplace';
+import { validateAndResolveCanonicalCategory } from '@/lib/marketplace/validate-canonical-category';
 
 // ============================================================
 // Bulk Listing Creation API
@@ -35,6 +36,23 @@ async function createSingleListing(
   supabase: any
 ): Promise<{ success: boolean; listingId?: string; error?: string }> {
   try {
+    const categoryResult = await validateAndResolveCanonicalCategory({
+      marketplace_category: listing.marketplace_category,
+      marketplace_subcategory: listing.marketplace_subcategory,
+      marketplace_level_3_category: listing.marketplace_level_3_category,
+      bikeType: listing.bikeType,
+      require: true,
+    });
+
+    if (!categoryResult.ok || !categoryResult.value) {
+      return {
+        success: false,
+        error: categoryResult.ok
+          ? 'A valid Yellow Jersey category and subcategory are required'
+          : categoryResult.error,
+      };
+    }
+
     // Map form data to database columns (matching regular listings API exactly)
     const listingData = {
       user_id: userId,
@@ -49,8 +67,9 @@ async function createSingleListing(
       model: listing.model || null,
       model_year: listing.modelYear || null,
       price: listing.price || 0,
-      marketplace_category: listing.marketplace_category || 'Bicycles',
-      marketplace_subcategory: listing.marketplace_subcategory || null,
+      marketplace_category: categoryResult.value.level1,
+      marketplace_subcategory: categoryResult.value.level2,
+      marketplace_level_3_category: categoryResult.value.level3,
       
       // Images
       images: listing.images || [],

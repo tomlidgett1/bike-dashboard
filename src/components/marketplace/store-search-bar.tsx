@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Search, X, Loader2, Package } from '@/components/layout/app-sidebar/dashboard-icons';
+import { useRouter } from "next/navigation";
+import { Search, X, Loader2, Package, ArrowRight } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { trackStoreSearchEvent } from "@/lib/tracking/store-analytics";
@@ -21,6 +22,14 @@ interface SearchProduct {
   imageUrl: string | null;
   thumbnailUrl?: string; // Pre-generated 100px thumbnail for instant loading
   inStock: boolean;
+}
+
+interface SearchCategory {
+  label: string;
+  href: string;
+  level1: string;
+  level2: string;
+  level3: string | null;
 }
 
 interface StoreSearchBarProps {
@@ -61,8 +70,10 @@ function ProductImageThumbnail({
 }
 
 export function StoreSearchBar({ storeId, storeName, className }: StoreSearchBarProps) {
+  const router = useRouter();
   const [query, setQuery] = React.useState("");
   const [results, setResults] = React.useState<SearchProduct[]>([]);
+  const [categories, setCategories] = React.useState<SearchCategory[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [showDropdown, setShowDropdown] = React.useState(false);
   const [selectedIndex, setSelectedIndex] = React.useState(-1);
@@ -74,6 +85,7 @@ export function StoreSearchBar({ storeId, storeName, className }: StoreSearchBar
   React.useEffect(() => {
     if (query.length < 2) {
       setResults([]);
+      setCategories([]);
       setShowDropdown(false);
       lastTrackedQueryRef.current = null;
       return;
@@ -87,6 +99,7 @@ export function StoreSearchBar({ storeId, storeName, className }: StoreSearchBar
           const data = await response.json();
           const products = data.products || [];
           setResults(products);
+          setCategories(data.categories || []);
           setShowDropdown(true);
           setSelectedIndex(-1);
 
@@ -125,7 +138,7 @@ export function StoreSearchBar({ storeId, storeName, className }: StoreSearchBar
 
   // Keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!showDropdown || results.length === 0) return;
+    if (!showDropdown || (results.length === 0 && categories.length === 0)) return;
 
     switch (e.key) {
       case "ArrowDown":
@@ -167,6 +180,7 @@ export function StoreSearchBar({ storeId, storeName, className }: StoreSearchBar
   const handleClear = () => {
     setQuery("");
     setResults([]);
+    setCategories([]);
     setShowDropdown(false);
     inputRef.current?.focus();
   };
@@ -197,7 +211,7 @@ export function StoreSearchBar({ storeId, storeName, className }: StoreSearchBar
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           onFocus={() => {
-            if (results.length > 0 && query.length >= 2) {
+            if ((results.length > 0 || categories.length > 0) && query.length >= 2) {
               setShowDropdown(true);
             }
           }}
@@ -232,12 +246,12 @@ export function StoreSearchBar({ storeId, storeName, className }: StoreSearchBar
           ref={dropdownRef}
           className="absolute top-full left-0 mt-2 bg-white rounded-md border border-gray-200 shadow-2xl z-50 w-full max-w-xl max-h-[400px] overflow-y-auto animate-in fade-in slide-in-from-top-4 duration-200"
         >
-          {loading && results.length === 0 ? (
+          {loading && results.length === 0 && categories.length === 0 ? (
             <div className="p-8 text-center">
               <Loader2 className="h-8 w-8 animate-spin text-gray-400 mx-auto mb-3" />
               <p className="text-sm text-gray-500">Searching...</p>
             </div>
-          ) : results.length === 0 ? (
+          ) : results.length === 0 && categories.length === 0 ? (
             <div className="p-8 text-center">
               <Search className="h-8 w-8 text-gray-300 mx-auto mb-3" />
               <p className="text-sm font-medium text-gray-900 mb-1">No results found</p>
@@ -245,6 +259,34 @@ export function StoreSearchBar({ storeId, storeName, className }: StoreSearchBar
             </div>
           ) : (
             <div className="py-1">
+              {categories.length > 0 && (
+                <div className="border-b border-gray-100">
+                  <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 bg-gray-50">
+                    Categories
+                  </div>
+                  {categories.map((category) => (
+                    <button
+                      key={category.href}
+                      onClick={() => {
+                        setShowDropdown(false);
+                        setQuery("");
+                        router.push(category.href);
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-gray-50"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {category.label}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          Browse Yellow Jersey category
+                        </p>
+                      </div>
+                      <ArrowRight className="h-4 w-4 shrink-0 text-gray-400" />
+                    </button>
+                  ))}
+                </div>
+              )}
               {results.map((product, index) => (
                 <button
                   key={product.id}
