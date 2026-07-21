@@ -150,17 +150,22 @@ function normaliseSizes(sizes: Array<{ name: string; sku: string | null }>): Bik
 
 export function guessBicycleSubcategory(bikeType: string | null, name: string): string {
   const haystack = `${bikeType ?? ""} ${name}`.toLowerCase();
-  const vocab = MARKETPLACE_SUBCATEGORIES.Bicycles;
+  const vocab = MARKETPLACE_SUBCATEGORIES.Bicycles || [];
   if (/(e-?bike|electric|e-?mtb|pedelec|bosch|shimano ep|fazua)/.test(haystack)) {
-    return vocab.includes("Electric") ? "Electric" : "Other";
+    return "E-Hybrid";
   }
+  if (/(gravel|all-?road)/.test(haystack)) return "Gravel";
+  if (/(cyclocross|\bcx\b)/.test(haystack)) return "Cyclocross";
   if (/(mountain|mtb|trail|enduro|downhill|hardtail)/.test(haystack)) return "Mountain";
-  if (/(road|race|aero|endurance|gravel|cyclocross|all-?road)/.test(haystack)) return "Road";
+  if (/(road|race|aero|endurance)/.test(haystack)) return "Road";
   if (/(kids|youth|junior|balance)/.test(haystack)) return "Kids";
   if (/\bbmx\b/.test(haystack)) return "BMX";
-  if (/(hybrid|commut|city|urban|trekking)/.test(haystack)) return "Hybrid";
-  if (/cruiser/.test(haystack)) return "Cruiser";
-  return "Other";
+  if (/(commut|city|urban)/.test(haystack)) return "Commuter / City";
+  if (/(hybrid|fitness|trekking)/.test(haystack)) return "Hybrid / Fitness";
+  if (/cruiser/.test(haystack)) return "Commuter / City";
+  if (/(folding|foldable)/.test(haystack)) return "Folding";
+  if (/cargo/.test(haystack)) return "Cargo";
+  return vocab.includes("Hybrid / Fitness") ? "Hybrid / Fitness" : vocab[0] || "Road";
 }
 
 function resolveImageUrls(

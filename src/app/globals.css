@@ -554,6 +554,33 @@
   }
 }
 
+/* Storefront brand logo marquee — track holds two identical sequences.
+   Animating to -50% moves exactly one sequence width, so the loop is seamless. */
+@keyframes store-brand-marquee {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
+
+.store-brand-marquee-track {
+  animation: store-brand-marquee var(--store-brand-marquee-duration, 40s) linear infinite;
+  will-change: transform;
+}
+
+.store-brand-marquee-track > * {
+  flex-shrink: 0;
+}
+
+.store-brand-marquee:hover .store-brand-marquee-track {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .store-brand-marquee-track {
+    animation: none;
+    will-change: auto;
+  }
+}
+
 @layer utilities {
   /* Skip rendering product cards below the fold until they're near the viewport */
   .product-card-root {
@@ -646,6 +673,12 @@
 
   .genie-chat-selectable,
   .genie-chat-selectable * {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  .product-detail-selectable,
+  .product-detail-selectable * {
     -webkit-user-select: text;
     user-select: text;
   }
@@ -897,6 +930,14 @@
 
     .genie-chat-selectable,
     .genie-chat-selectable * {
+      -webkit-user-select: text !important;
+      user-select: text !important;
+      -webkit-touch-callout: default !important;
+      touch-action: auto !important;
+    }
+
+    .product-detail-selectable,
+    .product-detail-selectable * {
       -webkit-user-select: text !important;
       user-select: text !important;
       -webkit-touch-callout: default !important;

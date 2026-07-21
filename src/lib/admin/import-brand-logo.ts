@@ -1,6 +1,15 @@
-import { compressLogoImage } from '@/lib/utils/compress-logo-image';
+import sharp from 'sharp';
+import { compressBrandLogoImage } from '@/lib/utils/compress-brand-logo-image';
 
 const MAX_BYTES = 5 * 1024 * 1024;
+
+/** Crop rectangle as percentages of the image (0–100). */
+export type BrandLogoCropPixels = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 
 function isPrivateHost(hostname: string): boolean {
   const host = hostname.toLowerCase();
@@ -10,9 +19,76 @@ function isPrivateHost(hostname: string): boolean {
   return false;
 }
 
+function isValidPercentCrop(
+  crop: BrandLogoCropPixels | null | undefined,
+): crop is BrandLogoCropPixels {
+  if (!crop) return false;
+  return (
+    Number.isFinite(crop.x) &&
+    Number.isFinite(crop.y) &&
+    Number.isFinite(crop.width) &&
+    Number.isFinite(crop.height) &&
+    crop.x >= 0 &&
+    crop.y >= 0 &&
+    crop.width > 0 &&
+    crop.height > 0 &&
+    crop.x + crop.width <= 100.5 &&
+    crop.y + crop.height <= 100.5
+  );
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+async function applyCropAndTrim(
+  buffer: Buffer,
+  crop?: BrandLogoCropPixels | null,
+): Promise<Buffer> {
+  // Orient first so dimensions match what the browser showed in the crop UI.
+  const oriented = await sharp(buffer).rotate().toBuffer({ resolveWithObject: true });
+  let working = oriented.data;
+  const maxW = oriented.info.width;
+  const maxH = oriented.info.height;
+
+  if (isValidPercentCrop(crop) && maxW >= 8 && maxH >= 8) {
+    // Percentages stay correct even if the downloaded file differs in pixel size
+    // from the preview the admin cropped in the browser.
+    const left = clamp(Math.floor((crop.x / 100) * maxW), 0, maxW - 1);
+    const top = clamp(Math.floor((crop.y / 100) * maxH), 0, maxH - 1);
+    const width = clamp(Math.ceil((crop.width / 100) * maxW), 1, maxW - left);
+    const height = clamp(Math.ceil((crop.height / 100) * maxH), 1, maxH - top);
+
+    if (width >= 8 && height >= 8 && left + width <= maxW && top + height <= maxH) {
+      try {
+        working = await sharp(working).extract({ left, top, width, height }).toBuffer();
+      } catch (error) {
+        console.warn('[import-brand-logo] extract failed, using full image', {
+          left,
+          top,
+          width,
+          height,
+          maxW,
+          maxH,
+          crop,
+          error: error instanceof Error ? error.message : error,
+        });
+      }
+    }
+  }
+
+  // Knock out remaining near-white / transparent padding around the mark.
+  try {
+    return await sharp(working).trim({ threshold: 16 }).toBuffer();
+  } catch {
+    return working;
+  }
+}
+
 export async function importBrandLogoFromUrl(options: {
   imageUrl: string;
   storagePathPrefix: string;
+  crop?: BrandLogoCropPixels | null;
   upload: (path: string, buffer: Buffer, contentType: string) => Promise<{ error: Error | null }>;
   getPublicUrl: (path: string) => string;
 }): Promise<{ url: string } | { error: string }> {
@@ -39,6 +115,8 @@ export async function importBrandLogoFromUrl(options: {
       Accept: 'image/*,*/*;q=0.8',
     },
     redirect: 'follow',
+    // Don't hang the approve UI on slow third-party image hosts.
+    signal: AbortSignal.timeout(12_000),
   });
 
   if (!response.ok) {
@@ -63,10 +141,13 @@ export async function importBrandLogoFromUrl(options: {
   let ext = 'png';
 
   if (contentType === 'image/svg+xml') {
+    // SVG can't be pixel-cropped reliably; store as-is.
     ext = 'svg';
     uploadContentType = 'image/svg+xml';
   } else {
-    const compressed = await compressLogoImage(rawBuffer);
+    const prepared = await applyCropAndTrim(rawBuffer, options.crop);
+    // Keep cropped aspect ratio — square padding would reintroduce whitespace.
+    const compressed = await compressBrandLogoImage(prepared);
     uploadBuffer = compressed.buffer;
     uploadContentType = compressed.contentType;
     ext = compressed.extension;

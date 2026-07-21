@@ -3,7 +3,8 @@
 import * as React from "react";
 import Image from "next/image";
 import dynamic from "next/dynamic";
-import { MapPin, Pencil, Truck, Globe, ChevronRight, Eye, Minus, Plus, ShieldCheck, Lock, RotateCcw, Check } from '@/components/layout/app-sidebar/dashboard-icons';
+import Link from "next/link";
+import { MapPin, Pencil, Truck, Globe, ChevronRight, Eye, Minus, Plus, ShieldCheck, Lock, RotateCcw, Check, Store } from '@/components/layout/app-sidebar/dashboard-icons';
 import { BuyerProtectionSheet } from "./buyer-protection-sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,17 +13,12 @@ import { BuyNowButton } from "./buy-now-button";
 import { AddToCartButton } from "./add-to-cart-button";
 import { VariantSelector } from "./product-detail/variant-selector";
 import { ProductAskGenieButton } from "./product-ask-genie-button";
-import { ProductBrandLogoBadge } from "./product-detail/product-brand-logo-badge";
-import {
-  AboutThisSellerSection,
-  type ProductSellerProfile,
-} from "./product-detail/about-this-seller-section";
+import { type ProductSellerProfile } from "./product-detail/about-this-seller-section";
 import { useAuth } from "@/components/providers/auth-provider";
 import type { MarketplaceProduct } from "@/lib/types/marketplace";
 import { resolveLivePrice } from "@/lib/marketplace/pricing";
 import { formatStockOnHandLabel } from "@/lib/marketplace/stock-display";
 import { hasBikeSpecs, parseBikeSpecs } from "@/lib/types/bike-specs";
-import { SpecSources } from "@/components/products/spec-sources";
 import { cn } from "@/lib/utils";
 
 const PickupLocationMap = dynamic(
@@ -52,18 +48,12 @@ function SpecRow({ label, value }: { label: string; value: string | number }) {
 
 type SpecEntry = { label: string; value: string | number };
 
-function getHighlightSpecEntries(
-  product: MarketplaceProduct,
-  stockLabel: string | null,
-): SpecEntry[] {
+function getHighlightSpecEntries(product: MarketplaceProduct): SpecEntry[] {
   const p = product as unknown as Record<string, unknown>;
   const rows: SpecEntry[] = [];
 
   if (p.condition_rating) {
     rows.push({ label: "Condition", value: p.condition_rating as string });
-  }
-  if (stockLabel) {
-    rows.push({ label: "Stock on hand", value: Math.floor(Number(product.qoh)) });
   }
 
   return rows;
@@ -151,28 +141,31 @@ function QuantitySelector({
   onChange: (value: number) => void;
 }) {
   return (
-    <div className="inline-flex items-center overflow-hidden rounded-md border border-gray-200 bg-white">
-      <button
-        type="button"
-        onClick={() => onChange(Math.max(1, quantity - 1))}
-        disabled={quantity <= 1}
-        className="flex h-10 w-10 items-center justify-center text-gray-500 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-        aria-label="Decrease quantity"
-      >
-        <Minus className="h-4 w-4" />
-      </button>
-      <span className="flex h-10 w-12 items-center justify-center border-x border-gray-200 text-sm font-semibold text-gray-900">
-        {quantity}
-      </span>
-      <button
-        type="button"
-        onClick={() => onChange(Math.min(maxQuantity, quantity + 1))}
-        disabled={quantity >= maxQuantity}
-        className="flex h-10 w-10 items-center justify-center text-gray-500 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-        aria-label="Increase quantity"
-      >
-        <Plus className="h-4 w-4" />
-      </button>
+    <div className="inline-flex items-center gap-2.5">
+      <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Qty</span>
+      <div className="inline-flex items-center overflow-hidden rounded-md border border-gray-200 bg-white">
+        <button
+          type="button"
+          onClick={() => onChange(Math.max(1, quantity - 1))}
+          disabled={quantity <= 1}
+          className="flex h-9 w-9 items-center justify-center text-gray-500 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+          aria-label="Decrease quantity"
+        >
+          <Minus className="h-3.5 w-3.5" />
+        </button>
+        <span className="flex h-9 w-10 items-center justify-center border-x border-gray-200 text-sm font-semibold tabular-nums text-gray-900">
+          {quantity}
+        </span>
+        <button
+          type="button"
+          onClick={() => onChange(Math.min(maxQuantity, quantity + 1))}
+          disabled={quantity >= maxQuantity}
+          className="flex h-9 w-9 items-center justify-center text-gray-500 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+          aria-label="Increase quantity"
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -269,13 +262,10 @@ export function ProductDescription({ text }: { text: string }) {
 interface ProductPanelProps {
   product: MarketplaceProduct;
   onProductUpdate?: (updatedProduct: MarketplaceProduct) => void;
-  brandLogoUrl?: string | null;
-  brandName?: string | null;
   isStoreOwner?: boolean;
   viewAsCustomer?: boolean;
   onViewAsCustomerChange?: (value: boolean) => void;
   sellerProfile?: ProductSellerProfile | null;
-  featureBullets?: string[];
 }
 
 type ProductDetailsPanelSimpleProps = ProductPanelProps & {
@@ -285,13 +275,10 @@ type ProductDetailsPanelSimpleProps = ProductPanelProps & {
 export function ProductPurchasePanel({
   product: initialProduct,
   onProductUpdate,
-  brandLogoUrl,
-  brandName,
   isStoreOwner = false,
   viewAsCustomer = false,
   onViewAsCustomerChange,
   sellerProfile = null,
-  featureBullets = [],
 }: ProductPanelProps) {
   const { user } = useAuth();
   const [product, setProduct] = React.useState(initialProduct);
@@ -312,9 +299,7 @@ export function ProductPurchasePanel({
   const maxQuantity =
     product.listing_type === "private_listing" ? 1 : Math.max(1, product.qoh ?? 1);
   const live = resolveLivePrice(product);
-  const displayBrand = (brandName ?? product.brand)?.trim() || null;
   const productTitle = (product as any).display_name || product.description;
-  const overviewText = getOverviewText(product);
 
   React.useEffect(() => {
     setProduct(initialProduct);
@@ -329,70 +314,102 @@ export function ProductPurchasePanel({
     onProductUpdate?.(updatedProduct);
   };
 
-  return (
-    <div className="flex h-full flex-col bg-transparent pb-2 lg:pb-0">
-      <div
-        className={cn(
-          "px-4 pb-4 sm:px-5 lg:px-0 lg:pb-0",
-          brandLogoUrl ? "pt-3 lg:pt-0" : "pt-2 sm:pt-4 lg:pt-0",
-        )}
-      >
-        {brandLogoUrl ? (
-          <div className="mb-3">
-            <ProductBrandLogoBadge logoUrl={brandLogoUrl} brandName={displayBrand} />
-          </div>
-        ) : displayBrand ? (
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">
-            {displayBrand}
-          </p>
-        ) : null}
+  const sellerHref = sellerProfile
+    ? sellerProfile.is_bicycle_store
+      ? `/marketplace/store/${sellerProfile.id}`
+      : `/marketplace/seller/${sellerProfile.id}`
+    : null;
 
-        <h1 className="text-[26px] font-bold leading-tight tracking-tight text-gray-900 lg:text-[28px]">
+  return (
+    <div className="product-detail-selectable flex h-full flex-col bg-transparent pb-2 lg:pb-8">
+      <div className="px-4 pt-2 sm:px-5 sm:pt-4 lg:px-0 lg:pt-0">
+        <h1 className="select-text text-[22px] font-bold leading-[1.2] tracking-tight text-gray-900 sm:text-2xl lg:text-[26px]">
           {productTitle}
         </h1>
 
         {live.onSale ? (
-          <div className="mt-3 lg:mt-2.5">
-            <p className="text-[32px] font-bold leading-none tracking-tight text-gray-900 lg:text-[30px]">
-              {formatProductPrice(live.price)}
-            </p>
-            <p className="mt-1.5 text-sm text-gray-500">
+          <div className="mt-4">
+            <div className="flex flex-wrap items-end gap-x-3 gap-y-1">
+              <p className="text-[28px] font-bold leading-none tracking-tight text-gray-900 lg:text-[30px]">
+                {formatProductPrice(live.price)}
+              </p>
+              <span className="mb-0.5 rounded-md bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">
+                Save {live.percentOff}%
+              </span>
+            </div>
+            <p className="mt-1.5 text-sm text-gray-400">
               Was{" "}
-              <span className="text-gray-400 line-through">
+              <span className="line-through">
                 {formatProductPrice(live.originalPrice as number)}
               </span>
-              <span className="mx-1.5 text-gray-300">·</span>
-              <span className="font-medium text-gray-700">Save {live.percentOff}%</span>
             </p>
           </div>
         ) : (
-          <p className="mt-3 text-[32px] font-bold leading-none tracking-tight text-gray-900 lg:mt-2.5 lg:text-[30px]">
+          <p className="mt-4 text-[28px] font-bold leading-none tracking-tight text-gray-900 lg:text-[30px]">
             {formatProductPrice(live.price)}
           </p>
         )}
 
         {!isSold && stockLabel && (
-          <p className="mt-2.5 text-sm text-gray-500">{stockLabel}</p>
+          <p className="mt-3 inline-flex items-center gap-1.5 text-sm text-gray-600">
+            <span className="h-1.5 w-1.5 rounded-full bg-green-500" aria-hidden />
+            {stockLabel}
+          </p>
         )}
 
+        {product.sub_description?.trim() ? (
+          <p className="mt-3 max-w-prose text-sm leading-relaxed text-gray-600">
+            {product.sub_description.trim()}
+          </p>
+        ) : null}
+
         {product.variants && product.variants.items.length > 1 && (
-          <div className="mt-4">
+          <div className="mt-5">
             <VariantSelector variants={product.variants} />
           </div>
         )}
 
-        {!isSold && !showOwnerTools && maxQuantity > 1 && (
-          <div className="mt-4 lg:mt-3">
-            <QuantitySelector
-              quantity={quantity}
-              maxQuantity={maxQuantity}
-              onChange={setQuantity}
-            />
+        {!isSold && !showOwnerTools && (maxQuantity > 1 || sellerProfile?.name) && (
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-t border-gray-100 pt-5">
+            {maxQuantity > 1 ? (
+              <QuantitySelector
+                quantity={quantity}
+                maxQuantity={maxQuantity}
+                onChange={setQuantity}
+              />
+            ) : (
+              <span />
+            )}
+            {sellerProfile?.name && sellerHref && (
+              <Link
+                href={sellerHref}
+                className="inline-flex min-w-0 items-center gap-2 rounded-md transition-colors hover:bg-gray-50"
+              >
+                <span className="relative h-7 w-7 shrink-0 overflow-hidden rounded-full border border-gray-200 bg-gray-50">
+                  {sellerProfile.logo_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={sellerProfile.logo_url}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center">
+                      <Store className="h-3 w-3 text-gray-400" />
+                    </span>
+                  )}
+                </span>
+                <span className="min-w-0 text-sm text-gray-500">
+                  Sold by{" "}
+                  <span className="font-semibold text-gray-900">{sellerProfile.name}</span>
+                </span>
+              </Link>
+            )}
           </div>
         )}
       </div>
 
-      <div className="space-y-2.5 px-4 pb-4 sm:px-5 lg:shrink-0 lg:px-0 lg:pb-0">
+      <div className="mt-5 space-y-3 px-4 pb-4 sm:px-5 lg:mt-6 lg:shrink-0 lg:px-0 lg:pb-0">
         {isSold ? (
           <div className="rounded-md bg-gray-100 p-4 text-center">
             <Badge className="mb-2 rounded-md border-0 bg-gray-200 px-4 py-1.5 text-sm font-medium text-gray-600">
@@ -442,10 +459,10 @@ export function ProductPurchasePanel({
               variant="default"
               size="lg"
               fullWidth
-              className="h-12 rounded-md bg-[#1e2a3a] text-sm font-semibold text-white hover:bg-[#152232]"
+              className="h-12 rounded-md bg-[#1e2a3a] text-sm font-semibold text-white shadow-sm hover:bg-[#152232]"
             />
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2.5">
               <BuyNowButton
                 productId={product.id}
                 productName={productTitle}
@@ -480,31 +497,11 @@ export function ProductPurchasePanel({
               />
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="h-px flex-1 bg-gray-200" />
-              <p className="flex shrink-0 items-center gap-1.5 text-xs text-gray-400">
-                Secure checkout powered by
-                <Image src="/stripe.svg" alt="Stripe" width={42} height={17} className="opacity-70" />
-              </p>
-              <div className="h-px flex-1 bg-gray-200" />
-            </div>
-
             <ProductPurchaseExtras
               embedded
               product={product}
               viewAsCustomer={viewAsCustomer}
             />
-
-            {(overviewText || featureBullets.length > 0 || sellerProfile) && (
-              <AboutThisSellerSection
-                seller={sellerProfile}
-                inPanel
-                featureBullets={featureBullets}
-                overviewContent={
-                  overviewText ? <ProductDescription text={overviewText} /> : null
-                }
-              />
-            )}
           </>
         )}
       </div>
@@ -538,21 +535,51 @@ export function ProductPurchaseExtras({
 
   if (showOwnerTools || isSold) return null;
 
+  if (embedded) {
+    const hasDelivery =
+      Boolean((product as { shipping_available?: boolean }).shipping_available) ||
+      Boolean(
+        typeof (product as { pickup_location?: string }).pickup_location === "string" &&
+          (product as { pickup_location: string }).pickup_location.trim(),
+      );
+
+    return (
+      <>
+        <div className="overflow-hidden rounded-md bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-gray-900/[0.06]">
+          <button
+            type="button"
+            onClick={() => setBuyerProtectionOpen(true)}
+            className="flex w-full items-center gap-3.5 px-4 py-4 text-left transition-colors hover:bg-gray-50/80"
+          >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-100">
+              <ShieldCheck className="h-[17px] w-[17px] text-gray-700" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[15px] font-semibold tracking-tight text-gray-900">
+                Buyer Protection
+              </p>
+              <p className="mt-0.5 text-sm leading-snug text-gray-500">
+                Included with every purchase
+              </p>
+            </div>
+            <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
+          </button>
+          {hasDelivery ? (
+            <>
+              <div className="mx-4 h-px bg-gray-100" aria-hidden />
+              <ProductDeliveryOptions product={product} variant="inset" />
+            </>
+          ) : null}
+        </div>
+        <BuyerProtectionSheet open={buyerProtectionOpen} onOpenChange={setBuyerProtectionOpen} />
+      </>
+    );
+  }
+
   return (
-    <div
-      className={cn(
-        embedded
-          ? "space-y-3"
-          : "border-t border-gray-200 bg-white px-4 py-5 sm:px-5 lg:px-4 lg:py-6 xl:px-5",
-      )}
-    >
-      <div className={cn(embedded ? "space-y-3" : "mx-auto max-w-[1536px] space-y-5")}>
-        <div
-          className={cn(
-            "grid grid-cols-4 gap-x-2 gap-y-0",
-            !embedded && "sm:gap-x-4",
-          )}
-        >
+    <div className="border-t border-gray-200 bg-white px-4 py-5 sm:px-5 lg:px-4 lg:py-6 xl:px-5">
+      <div className="mx-auto max-w-[1536px] space-y-5">
+        <div className="grid grid-cols-4 gap-x-2 gap-y-0 sm:gap-x-4">
           {TRUST_ITEMS.map(({ icon: Icon, title, subtitle }) => (
             <div key={title} className="flex items-start gap-2">
               <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-600" />
@@ -567,10 +594,7 @@ export function ProductPurchaseExtras({
         <button
           type="button"
           onClick={() => setBuyerProtectionOpen(true)}
-          className={cn(
-            "flex w-full items-center gap-2.5 rounded-xl border border-[#f2e7a8] bg-[#fff8d6] text-left transition-colors hover:bg-[#fff3bf]",
-            embedded ? "px-3 py-2.5" : "gap-3 px-4 py-3 sm:max-w-md",
-          )}
+          className="flex w-full items-center gap-3 rounded-md border border-gray-200 bg-white px-4 py-3 text-left transition-colors hover:border-gray-300 hover:bg-gray-50 sm:max-w-md"
         >
           <div className="relative h-7 w-7 shrink-0 overflow-hidden rounded-md">
             <Image
@@ -591,7 +615,109 @@ export function ProductPurchaseExtras({
         </button>
         <BuyerProtectionSheet open={buyerProtectionOpen} onOpenChange={setBuyerProtectionOpen} />
 
-        {!embedded && <ProductAskGenieButton product={product} />}
+        <ProductDeliveryOptions product={product} />
+
+        <ProductAskGenieButton product={product} />
+      </div>
+    </div>
+  );
+}
+
+function FulfillmentIcon({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-100">
+      {children}
+    </div>
+  );
+}
+
+function formatDeliveryPrice(value: number | undefined): string {
+  if (value === 0 || value == null || !Number.isFinite(value)) {
+    return "Complimentary delivery";
+  }
+  return `${formatProductPrice(value)} delivery`;
+}
+
+function ProductDeliveryOptions({
+  product,
+  className,
+  showHeading = false,
+  variant = "card",
+}: {
+  product: MarketplaceProduct;
+  className?: string;
+  showHeading?: boolean;
+  /** Inset rows inside the unified purchase assurance card. */
+  variant?: "card" | "inset";
+}) {
+  const shippingAvailable = Boolean((product as { shipping_available?: boolean }).shipping_available);
+  const pickupLocation =
+    typeof (product as { pickup_location?: string }).pickup_location === "string"
+      ? (product as { pickup_location: string }).pickup_location.trim()
+      : "";
+  const shippingCost = (product as { shipping_cost?: number }).shipping_cost;
+
+  if (!shippingAvailable && !pickupLocation) return null;
+
+  const rows = (
+    <div className={variant === "inset" ? "divide-y divide-gray-100" : "divide-y divide-gray-100"}>
+      {shippingAvailable ? (
+        <div className="flex items-start gap-3.5 px-4 py-3.5">
+          <FulfillmentIcon>
+            <Truck className="h-[17px] w-[17px] text-gray-600" />
+          </FulfillmentIcon>
+          <div className="min-w-0 flex-1 pt-0.5">
+            <p className="text-[15px] font-semibold tracking-tight text-gray-900">Delivery</p>
+            <p className="mt-0.5 text-sm leading-snug text-gray-500">
+              {formatDeliveryPrice(shippingCost)}
+            </p>
+          </div>
+        </div>
+      ) : null}
+      {pickupLocation ? (
+        <div className="flex items-start gap-3.5 px-4 py-3.5">
+          <FulfillmentIcon>
+            <MapPin className="h-[17px] w-[17px] text-gray-600" />
+          </FulfillmentIcon>
+          <div className="min-w-0 flex-1 pt-0.5">
+            <p className="text-[15px] font-semibold tracking-tight text-gray-900">Pick up</p>
+            <p className="mt-0.5 text-sm leading-snug text-gray-500">{pickupLocation}</p>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+
+  const map = pickupLocation ? (
+    <div className={cn(variant === "inset" ? "px-4 pb-4" : "p-4 pt-0")}>
+      <div className="overflow-hidden rounded-md ring-1 ring-gray-900/[0.06]">
+        <PickupLocationMap location={pickupLocation} className="h-32 w-full" />
+      </div>
+    </div>
+  ) : null;
+
+  if (variant === "inset") {
+    return (
+      <div className={className}>
+        {rows}
+        {map}
+      </div>
+    );
+  }
+
+  return (
+    <div className={className}>
+      {showHeading ? (
+        <h2 className="text-lg font-bold text-gray-900">Delivery Options</h2>
+      ) : null}
+      <div
+        className={cn(
+          "overflow-hidden rounded-md bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] ring-1 ring-gray-900/[0.06]",
+          showHeading && "mt-3",
+        )}
+      >
+        {rows}
+        {map}
       </div>
     </div>
   );
@@ -609,21 +735,17 @@ export function ProductDetailTabs({
   featureBullets?: string[];
 }) {
   const [activeTab, setActiveTab] = React.useState<"overview" | "specs">("overview");
-  const stockLabel = formatStockOnHandLabel(
-    product.qoh,
-    (product as { listing_type?: string }).listing_type,
-  );
-  const highlightSpecs = getHighlightSpecEntries(product, stockLabel);
+  const highlightSpecs = getHighlightSpecEntries(product);
   const structuredSpecs = getStructuredSpecEntries(product);
   const proseSpecs = (product as { product_specs?: string }).product_specs;
   const listSpecs = proseSpecs ? highlightSpecs : [...highlightSpecs, ...structuredSpecs];
   const hasSpecContent = listSpecs.length > 0 || Boolean(proseSpecs);
 
   return (
-    <div className="border-t border-gray-200 bg-white">
+    <div className="product-detail-selectable bg-white">
       {!overviewOnly && (
         <div
-          className="border-b border-gray-200 px-4 sm:px-5 lg:px-4 xl:px-5"
+          className="border-b border-gray-200 px-4 sm:px-5 lg:px-5 xl:px-6"
           role="tablist"
           aria-label="Product details"
         >
@@ -660,7 +782,7 @@ export function ProductDetailTabs({
         </div>
       )}
 
-      <div className="px-4 py-8 sm:px-5 lg:px-4 xl:px-5">
+      <div className="px-4 py-8 sm:px-5 lg:px-5 xl:px-6">
         <div className="mx-auto max-w-[1536px]">
           {(overviewOnly || activeTab === "overview") ? (
             <div className="space-y-6">
@@ -717,51 +839,6 @@ export function ProductDetailTabs({
                   </p>
                 </div>
               )}
-
-              {((product as any).shipping_available || (product as any).pickup_location) && (
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900">Delivery Options</h2>
-                  <div className="mt-3 overflow-hidden rounded-md border border-gray-200 bg-gray-50">
-                    {(product as any).shipping_available && (
-                      <div
-                        className={cn(
-                          "flex items-center gap-3 px-4 py-3",
-                          (product as any).pickup_location && "border-b border-gray-200",
-                        )}
-                      >
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white">
-                          <Truck className="h-4 w-4 text-gray-600" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">Shipping</p>
-                          <p className="text-xs text-gray-500">
-                            {(product as any).shipping_cost === 0 || !(product as any).shipping_cost
-                              ? "Free shipping"
-                              : `$${(product as any).shipping_cost.toLocaleString("en-AU")} shipping`}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                    {(product as any).pickup_location && (
-                      <>
-                        <div className="flex items-center gap-3 px-4 py-3">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white">
-                            <MapPin className="h-4 w-4 text-gray-600" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">Pickup Available</p>
-                            <p className="text-xs text-gray-500">{(product as any).pickup_location}</p>
-                          </div>
-                        </div>
-                        <PickupLocationMap
-                          location={(product as any).pickup_location}
-                          className="h-36 w-full"
-                        />
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
           ) : hasSpecContent ? (
             <div className="space-y-6">
@@ -790,12 +867,6 @@ export function ProductDetailTabs({
           ) : (
             <p className="py-8 text-center text-sm text-gray-400">No specifications available</p>
           )}
-
-          {(product as any).product_spec_sources?.length ? (
-            <div className="mt-8 border-t border-gray-100 pt-6">
-              <SpecSources sources={(product as any).product_spec_sources} />
-            </div>
-          ) : null}
         </div>
       </div>
     </div>

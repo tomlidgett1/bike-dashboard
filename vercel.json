@@ -41,6 +41,10 @@
       "schedule": "*/3 * * * *"
     },
     {
+      "path": "/api/cron/resume-supplier-catalogue-crawls",
+      "schedule": "*/3 * * * *"
+    },
+    {
       "path": "/api/cron/customer-inquiries",
       "schedule": "*/2 * * * *"
     },
@@ -71,6 +75,14 @@
     {
       "path": "/api/cron/domestique-attribution",
       "schedule": "30 */6 * * *"
+    },
+    {
+      "path": "/api/cron/instagram-scheduled-publish",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/api-builder-tables-sync",
+      "schedule": "30 6,20 * * *"
     }
   ]
 }

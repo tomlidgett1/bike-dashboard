@@ -159,6 +159,26 @@ export async function POST(request: NextRequest) {
       // 1. Find or create canonical product
       const canonicalId = await ensureCanonical(supabase, product.name, product.brand);
 
+      const { data: categoryId } = await supabase.rpc('resolve_marketplace_category_id', {
+        p_level1: product.category,
+        p_level2: product.subcategory,
+        p_level3: null,
+      });
+
+      if (categoryId) {
+        await supabase
+          .from('canonical_products')
+          .update({
+            marketplace_category_id: categoryId,
+            categorisation_status: 'classified',
+            categorisation_source: 'online_catalog',
+            categorisation_confidence: 0.9,
+            categorised_at: new Date().toISOString(),
+          })
+          .eq('id', canonicalId)
+          .neq('categorisation_status', 'classified');
+      }
+
       // 2. Create the store product
       const { data: inserted, error: insertError } = await supabase
         .from('products')

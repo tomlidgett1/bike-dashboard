@@ -34,6 +34,7 @@ export interface OptimizerProduct {
   description: string;
   display_name: string | null;
   product_description: string | null;
+  sub_description?: string | null;
   product_specs: string | null;
   is_bicycle?: boolean | null;
   bike_specs?: unknown;
@@ -118,7 +119,7 @@ export interface TextStep {
   detail?: string;
 }
 
-export type CopyField = "title" | "description" | "specs";
+export type CopyField = "title" | "description" | "specs" | "subDescription";
 
 export const IMAGE_CONCURRENCY = 2;
 export const MAX_SELECTED_IMAGES = 6;
@@ -210,6 +211,10 @@ export function hasDesc(p: OptimizerProduct) {
 
 export function hasSpecs(p: OptimizerProduct) {
   return !!p.product_specs;
+}
+
+export function hasSubDescription(p: OptimizerProduct) {
+  return !!p.sub_description?.trim();
 }
 
 export function toSpeedProduct(p: OptimizerProduct): SpeedWorkbenchProduct {

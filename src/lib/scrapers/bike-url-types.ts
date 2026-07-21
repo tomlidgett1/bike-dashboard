@@ -41,6 +41,7 @@ export interface BikeUrlImportRequest {
   imageUrls: string[];
   heroImageUrl: string | null;
   subcategory: string;
+  marketplace_category?: string;
 }
 
 export interface BikeUrlImportResult {

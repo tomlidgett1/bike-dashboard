@@ -11,6 +11,10 @@ import { BulkReviewStep } from "./bulk-review-step";
 import { Loader2, CheckCircle, ExternalLink } from '@/components/layout/app-sidebar/dashboard-icons';
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import {
+  resolveBikeTypeToCanonicalPath,
+  resolveCanonicalPath,
+} from "@/lib/marketplace/canonical-taxonomy";
 
 // ============================================================
 // Bulk Upload Flow
@@ -396,12 +400,18 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual, textUploadToken }
           isPrimary: index === 0,
         }));
 
-        // Map item type to marketplace category
-        const categoryMap: { [key: string]: string } = {
-          'bike': 'Bicycles',
-          'part': 'Parts',
-          'apparel': 'Apparel',
-        };
+        const canonicalPath =
+          resolveCanonicalPath(
+            product.formData.marketplace_category,
+            product.formData.marketplace_subcategory,
+            product.formData.marketplace_level_3_category,
+          ) ||
+          resolveBikeTypeToCanonicalPath(product.formData.bikeType) ||
+          (product.formData.itemType === 'apparel'
+            ? resolveCanonicalPath('Apparel', 'Casual Clothing')
+            : product.formData.itemType === 'part'
+              ? resolveCanonicalPath('Accessories', 'Locks')
+              : resolveCanonicalPath('Bicycles', 'Hybrid / Fitness'));
 
         return {
           title: product.formData.title || product.suggestedName,
@@ -432,7 +442,9 @@ export function BulkUploadFlow({ onComplete, onSwitchToManual, textUploadToken }
           originalRrp: product.formData.originalRrp,
           images: imageData,
           primaryImageUrl: product.imageUrls[0],
-          marketplace_category: categoryMap[product.formData.itemType] || 'Bicycles',
+          marketplace_category: canonicalPath?.level1 || 'Bicycles',
+          marketplace_subcategory: canonicalPath?.level2 || null,
+          marketplace_level_3_category: canonicalPath?.level3 || null,
           isNegotiable: true,
           shippingAvailable: true,
           pickupLocation: null,

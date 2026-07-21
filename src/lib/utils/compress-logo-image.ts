@@ -34,9 +34,10 @@ export async function compressLogoImage(
       // contain pads to an exact square so email clients never distort it
       fit: 'contain',
       background: { r: 255, g: 255, b: 255, alpha: 0 },
-      withoutEnlargement: false,
+      withoutEnlargement: true,
     })
-    .png({ compressionLevel: 9, adaptiveFiltering: true })
+    // Level 6 is ~2–4× faster than 9 with negligible size difference for logos.
+    .png({ compressionLevel: 6, adaptiveFiltering: false })
     .toBuffer();
 
   return {

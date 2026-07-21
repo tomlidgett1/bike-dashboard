@@ -46,7 +46,9 @@
     ".next-preview-b/types/**/*.ts",
     ".next-preview-b/dev/types/**/*.ts",
     ".next-endless-test/types/**/*.ts",
-    ".next-endless-test/dev/types/**/*.ts"
+    ".next-endless-test/dev/types/**/*.ts",
+    ".next-demo-test/types/**/*.ts",
+    ".next-demo-test/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

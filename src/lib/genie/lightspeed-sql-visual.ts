@@ -11,6 +11,8 @@ import type { VisualValueFormat } from "@/lib/genie/visual-format";
 
 export const GENIE_LIGHTSPEED_SQL_VIEW = "genie_lightspeed_sales_report_lines";
 export const GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW = "genie_lightspeed_inventory";
+export const GENIE_API_BUILDER_SQL_VIEW = "genie_api_builder_table_rows";
+export const GENIE_API_BUILDER_SOURCE_SQL_VIEW = "genie_api_builder_source_rows";
 export const GENIE_LIGHTSPEED_SQL_RPC = "execute_lightspeed_genie_sql";
 export const GENIE_LIGHTSPEED_SQL_DEFAULT_LIMIT = 500;
 export const GENIE_LIGHTSPEED_SQL_MAX_LIMIT = 1000;
@@ -65,13 +67,19 @@ export function validateLightspeedReportSql(sql: string): string | null {
   if (/\b(public\.)?lightspeed_inventory\b/i.test(scrubbed)) {
     return `Use ${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW}, not the raw Lightspeed inventory table.`;
   }
+  if (/\b(public\.)?api_builder_table_rows\b/i.test(scrubbed)) {
+    return `Use ${GENIE_API_BUILDER_SQL_VIEW}, not the raw api builder rows table.`;
+  }
+  if (/\b(public\.)?api_builder_source_rows\b/i.test(scrubbed)) {
+    return `Use ${GENIE_API_BUILDER_SOURCE_SQL_VIEW}, not the raw api builder source table.`;
+  }
   if (
     !new RegExp(
-      `\\b(public\\.)?(${GENIE_LIGHTSPEED_SQL_VIEW}|${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW})\\b`,
+      `\\b(public\\.)?(${GENIE_LIGHTSPEED_SQL_VIEW}|${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW}|${GENIE_API_BUILDER_SQL_VIEW}|${GENIE_API_BUILDER_SOURCE_SQL_VIEW})\\b`,
       "i",
     ).test(scrubbed)
   ) {
-    return `Query must read from ${GENIE_LIGHTSPEED_SQL_VIEW} or ${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW}.`;
+    return `Query must read from ${GENIE_LIGHTSPEED_SQL_VIEW}, ${GENIE_LIGHTSPEED_INVENTORY_SQL_VIEW}, ${GENIE_API_BUILDER_SQL_VIEW}, or ${GENIE_API_BUILDER_SOURCE_SQL_VIEW}.`;
   }
   if (
     /\b(raw_sale|raw_line|raw_item|raw_item_shops|raw_vendor|source_hash|user_id|access_token|refresh_token|encrypted|password|secret)\b/i.test(

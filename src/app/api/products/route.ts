@@ -47,6 +47,9 @@ const PRODUCT_LIST_SELECT = `
   is_bicycle,
   bike_specs,
   display_name,
+  product_description,
+  product_specs,
+  sub_description,
   selected_product_image_id,
   variant_group_id,
   variant_master_title,
@@ -122,6 +125,8 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get('sortBy') || 'created_at'
     const sortOrder = searchParams.get('sortOrder') || 'desc'
     const categoryFilter = searchParams.get('category') || ''
+    const marketplaceLevel1 = searchParams.get('marketplace_level1') || ''
+    const marketplaceLevel2 = searchParams.get('marketplace_level2') || ''
     const lsCategoryId = searchParams.get('ls_category_id') || ''
     const stockFilter = searchParams.get('stock') || 'all' // all, in-stock, low-stock
     const statusFilter = searchParams.get('status') || 'all' // all, active, inactive
@@ -181,6 +186,8 @@ export async function GET(request: NextRequest) {
 
     const hasAdditionalFilters = Boolean(
       categoryFilter ||
+      marketplaceLevel1 ||
+      marketplaceLevel2 ||
       lsCategoryId ||
       brandFilter ||
       stockFilter !== 'all' ||
@@ -239,10 +246,17 @@ export async function GET(request: NextRequest) {
     }
     // If 'all', no filter applied
 
-    // Apply category filter
+    // Apply category filters. Canonical Yellow Jersey L1/L2 take precedence
+    // over provider Lightspeed category_name filtering.
+    if (marketplaceLevel1) {
+      query = query.eq('marketplace_category', marketplaceLevel1)
+    }
+    if (marketplaceLevel2) {
+      query = query.eq('marketplace_subcategory', marketplaceLevel2)
+    }
     if (lsCategoryId) {
       query = query.eq('lightspeed_category_id', lsCategoryId)
-    } else if (categoryFilter) {
+    } else if (categoryFilter && !marketplaceLevel1 && !marketplaceLevel2) {
       query = query.eq('category_name', categoryFilter)
     }
 

@@ -135,6 +135,17 @@ export const StoreProductCard = React.memo<StoreProductCardProps>(function Store
         inCarousel ? "product-card-root--in-carousel h-auto" : "h-full",
       )}
       data-analytics-product-id={product.id}
+      data-nest-product-id={product.id}
+      data-nest-product-name={title}
+      data-nest-product-brand={product.brand || undefined}
+      data-nest-product-category={product.marketplace_category || undefined}
+      data-nest-product-price={
+        typeof live.price === "number"
+          ? String(live.price)
+          : typeof product.price === "number"
+            ? String(product.price)
+            : undefined
+      }
     >
       <article
         className={cn(

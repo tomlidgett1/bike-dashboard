@@ -56,19 +56,19 @@ export function StoreProfileSkeleton() {
       <div className="sticky top-0 z-40 animate-pulse">
         <header className="border-b border-gray-200 bg-white/95">
           <div className={shell}>
-            <div className="flex h-14 items-center justify-between gap-3 sm:h-16 sm:gap-4">
-              <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
-                <div className="h-9 w-9 flex-shrink-0 rounded-full bg-gray-200 sm:h-11 sm:w-11" />
+            <div className="flex h-14 items-center gap-3 sm:h-16 sm:gap-4">
+              <div className="flex min-w-0 items-center gap-2.5 sm:gap-3.5">
+                <div className="h-9 w-9 flex-shrink-0 rounded-md bg-gray-200 sm:h-11 sm:w-11" />
                 <div className="min-w-0 space-y-1.5">
                   <div className="h-4 w-36 rounded-md bg-gray-200 sm:h-5 sm:w-44" />
-                  <div className="hidden h-3 w-52 rounded-md bg-gray-200 sm:block" />
+                  <div className="h-3 w-28 rounded-md bg-gray-200" />
                 </div>
               </div>
-              <div className="flex flex-shrink-0 items-center gap-2">
-                <div className="hidden h-9 w-44 rounded-md bg-gray-200 md:block lg:w-56" />
+              <div className="hidden h-7 w-28 flex-shrink-0 rounded-md bg-gray-200 sm:block" />
+              <div className="ml-auto flex flex-shrink-0 items-center gap-2">
+                <div className="hidden h-9 w-64 rounded-xl bg-gray-200 md:block lg:w-80" />
                 <div className="h-9 w-9 rounded-md bg-gray-200 md:hidden" />
                 <div className="h-9 w-9 rounded-md bg-gray-200" />
-                <div className="hidden h-5 w-[84px] rounded-md bg-gray-200 sm:block" />
               </div>
             </div>
           </div>

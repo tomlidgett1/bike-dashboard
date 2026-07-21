@@ -13,6 +13,13 @@ import {
   X,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
+import { useStorefrontProactiveNudge } from "@/lib/hooks/use-storefront-proactive-nudge";
+import {
+  markProactiveNudgeDismissed,
+  readBrowseContext,
+  summariseBrowseContext,
+} from "@/lib/nest/storefront-browse-context";
+import { trackStoreBehaviourEvent } from "@/lib/tracking/store-analytics";
 
 export type NestStorefrontChatMessage = {
   id: string;
@@ -47,6 +54,11 @@ type NestStorefrontChatContextValue = {
     storeName: string;
     storeLogoUrl?: string | null;
   }) => void;
+  /**
+   * Open chat from a proactive Nest shopping nudge, seeding the assistant
+   * question as the first turn when the thread is still empty/welcome-only.
+   */
+  openFromProactiveNudge: (question: string) => void;
   /** Hide the bubble when leaving store pages. */
   releaseBubble: (storeId?: string) => void;
   minimise: () => void;
@@ -54,6 +66,10 @@ type NestStorefrontChatContextValue = {
   close: () => void;
   sendMessage: (text: string) => Promise<void>;
   sending: boolean;
+  /** True while the minimised corner bubble should be hidden (e.g. a modal is open). */
+  bubbleHidden: boolean;
+  /** Temporarily hide/show the minimised corner bubble without dropping the session. */
+  setBubbleHidden: (hidden: boolean) => void;
 };
 
 const STORAGE_KEY = "yj-nest-storefront-chat-v1";
@@ -100,6 +116,7 @@ export function NestStorefrontChatProvider({ children }: { children: React.React
   const [session, setSession] = React.useState<NestStorefrontChatSession | null>(null);
   const [hydrated, setHydrated] = React.useState(false);
   const [sending, setSending] = React.useState(false);
+  const [bubbleHidden, setBubbleHidden] = React.useState(false);
 
   React.useEffect(() => {
     setSession(readSession());
@@ -185,6 +202,41 @@ export function NestStorefrontChatProvider({ children }: { children: React.React
     });
   }, []);
 
+  const openFromProactiveNudge = React.useCallback((question: string) => {
+    const trimmed = question.trim();
+    if (!trimmed) return;
+    setSession((prev) => {
+      if (!prev) return prev;
+      const coreMessages = prev.messages.filter(
+        (message) =>
+          !message.id.startsWith("welcome-") &&
+          !message.id.startsWith("waiting-") &&
+          !message.id.startsWith("error-") &&
+          !message.id.startsWith("nudge-"),
+      );
+      const seeded =
+        coreMessages.length === 0
+          ? [
+              {
+                id: `nudge-${Date.now()}`,
+                role: "assistant" as const,
+                text: trimmed,
+              },
+            ]
+          : prev.messages;
+      markProactiveNudgeDismissed(prev.storeId);
+      trackStoreBehaviourEvent(prev.storeId, "message_open", {
+        source: "proactive_nudge",
+      });
+      return {
+        ...prev,
+        open: true,
+        minimised: false,
+        messages: seeded,
+      };
+    });
+  }, []);
+
   const minimise = React.useCallback(() => {
     setSession((prev) => (prev ? { ...prev, minimised: true, open: true } : prev));
   }, []);
@@ -228,6 +280,7 @@ export function NestStorefrontChatProvider({ children }: { children: React.React
       setSending(true);
 
       try {
+        const browseContext = summariseBrowseContext(readBrowseContext(session.storeId));
         const res = await fetch(`/api/marketplace/store/${session.storeId}/nest-chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -235,6 +288,7 @@ export function NestStorefrontChatProvider({ children }: { children: React.React
             message: trimmed,
             chatId: session.chatId,
             history,
+            browseContext,
           }),
         });
         const data = (await res.json().catch(() => ({}))) as {
@@ -399,24 +453,29 @@ export function NestStorefrontChatProvider({ children }: { children: React.React
       session: hydrated ? session : null,
       openChatbot,
       ensureBubble,
+      openFromProactiveNudge,
       releaseBubble,
       minimise,
       expand,
       close,
       sendMessage,
       sending,
+      bubbleHidden,
+      setBubbleHidden,
     }),
     [
       hydrated,
       session,
       openChatbot,
       ensureBubble,
+      openFromProactiveNudge,
       releaseBubble,
       minimise,
       expand,
       close,
       sendMessage,
       sending,
+      bubbleHidden,
     ],
   );
 
@@ -424,6 +483,7 @@ export function NestStorefrontChatProvider({ children }: { children: React.React
     <NestStorefrontChatContext.Provider value={value}>
       {children}
       <NestStorefrontChatWidget />
+      {/* Proactive agent nudge temporarily disabled */}
     </NestStorefrontChatContext.Provider>
   );
 }
@@ -437,7 +497,8 @@ export function useNestStorefrontChat() {
 }
 
 function NestStorefrontChatWidget() {
-  const { session, minimise, expand, close, sendMessage, sending } = useNestStorefrontChat();
+  const { session, minimise, expand, close, sendMessage, sending, bubbleHidden } =
+    useNestStorefrontChat();
   const [draft, setDraft] = React.useState("");
   const [introExpanded, setIntroExpanded] = React.useState(true);
   const [mobileViewport, setMobileViewport] = React.useState<{
@@ -552,6 +613,7 @@ function NestStorefrontChatWidget() {
   if (!session?.open) return null;
 
   if (session.minimised) {
+    if (bubbleHidden) return null;
     return (
       <div
         className="fixed right-4 z-[90] pointer-events-none"
@@ -758,6 +820,99 @@ function NestStorefrontChatWidget() {
           <span className="text-[11px] font-medium text-gray-500">Yellow Jersey</span>
         </div>
       </motion.div>
+    </AnimatePresence>
+  );
+}
+
+function NestStorefrontProactiveNudge() {
+  const { session, openFromProactiveNudge } = useNestStorefrontChat();
+  const enabled = Boolean(session?.open && session.minimised && session.storeId);
+  const { nudge, dismissNudge } = useStorefrontProactiveNudge({
+    storeId: session?.storeId ?? null,
+    enabled,
+  });
+
+  const visible = enabled && nudge.status === "ready" && Boolean(nudge.question);
+
+  return (
+    <AnimatePresence>
+      {visible ? (
+        <motion.div
+          key="nest-proactive-nudge"
+          initial={{ opacity: 0, y: 16, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 12, scale: 0.95 }}
+          transition={{ duration: 0.3, ease: "easeOut" }}
+          className="fixed right-4 z-[91] w-[min(20.5rem,calc(100vw-2rem))]"
+          style={{ bottom: "max(5.25rem, calc(env(safe-area-inset-bottom) + 4.25rem))" }}
+        >
+          <div className="rounded-md border border-gray-200 bg-white p-3.5 shadow-[0_12px_40px_rgba(0,0,0,0.14)]">
+            <div className="flex items-start gap-2.5">
+              {session?.storeLogoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={session.storeLogoUrl}
+                  alt=""
+                  className="mt-0.5 h-8 w-8 shrink-0 rounded-md object-cover ring-1 ring-gray-200"
+                />
+              ) : (
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gray-50 ring-1 ring-gray-200">
+                  <Bot className="h-4 w-4 text-gray-500" />
+                </span>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium text-gray-500">
+                  {nudge.assistantLabel || session?.storeName || "Store"}
+                </p>
+                <p className="mt-1 text-sm font-medium leading-snug text-gray-900">
+                  {nudge.question}
+                </p>
+                <div className="mt-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (nudge.question) openFromProactiveNudge(nudge.question);
+                      dismissNudge();
+                    }}
+                    className="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-800"
+                  >
+                    Chat about this
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (session?.storeId) {
+                        trackStoreBehaviourEvent(session.storeId, "message_open", {
+                          source: "proactive_nudge_dismiss",
+                        });
+                      }
+                      dismissNudge();
+                    }}
+                    className="rounded-md px-2 py-1.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
+                  >
+                    Not now
+                  </button>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (session?.storeId) {
+                    trackStoreBehaviourEvent(session.storeId, "message_open", {
+                      source: "proactive_nudge_dismiss",
+                    });
+                  }
+                  dismissNudge();
+                }}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+                aria-label="Dismiss"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      ) : null}
     </AnimatePresence>
   );
 }

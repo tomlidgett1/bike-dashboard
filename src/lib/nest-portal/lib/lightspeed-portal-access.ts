@@ -90,11 +90,32 @@ export async function lightspeedGetJson(
   accountId: string,
   path: string,
 ): Promise<Record<string, unknown>> {
+  return lightspeedRequestJson(accessToken, accountId, path, { method: 'GET' })
+}
+
+export async function lightspeedPostJson(
+  accessToken: string,
+  accountId: string,
+  path: string,
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  return lightspeedRequestJson(accessToken, accountId, path, { method: 'POST', body })
+}
+
+async function lightspeedRequestJson(
+  accessToken: string,
+  accountId: string,
+  path: string,
+  opts: { method: 'GET' | 'POST'; body?: Record<string, unknown> },
+): Promise<Record<string, unknown>> {
   const res = await fetch(`${LIGHTSPEED_API_ORIGIN}/API/V3/Account/${encodeURIComponent(accountId)}/${path}`, {
+    method: opts.method,
     headers: {
       Authorization: `Bearer ${accessToken}`,
       Accept: 'application/json',
+      ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
     },
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
   })
   const text = await res.text()
   let data: Record<string, unknown>

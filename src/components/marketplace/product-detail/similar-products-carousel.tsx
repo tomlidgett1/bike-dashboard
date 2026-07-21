@@ -28,7 +28,7 @@ export function SimilarProductsCarousel({
       setIsLoading(true);
       try {
         const response = await fetch(
-          `/api/marketplace/products/${encodeURIComponent(productId)}/similar?limit=12&mode=llm&v=3`,
+          `/api/marketplace/products/${encodeURIComponent(productId)}/similar?limit=12&mode=llm&v=5`,
           { signal: controller.signal, cache: "no-store" },
         );
 
@@ -42,7 +42,7 @@ export function SimilarProductsCarousel({
         // Fallback if LLM path returned nothing — same-category rules ranking.
         if (nextProducts.length === 0) {
           const rulesResponse = await fetch(
-            `/api/marketplace/products/${encodeURIComponent(productId)}/similar?limit=12&mode=rules&v=3`,
+            `/api/marketplace/products/${encodeURIComponent(productId)}/similar?limit=12&mode=rules&v=5`,
             { signal: controller.signal, cache: "no-store" },
           );
           if (rulesResponse.ok) {

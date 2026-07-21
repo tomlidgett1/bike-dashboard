@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import Image from "next/image";
 import { motion } from "framer-motion";
 import { Loader2, Maximize2, Minimize2, Send, X } from "@/components/layout/app-sidebar/dashboard-icons";
 import { Button } from "@/components/ui/button";
@@ -303,12 +302,13 @@ function ProductGeniePanelBody({
                     )}
                   >
                     {productContext.image ? (
-                      <Image
+                      // External brand CDNs vary by listing — avoid next/image host allowlists.
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
                         src={productContext.image}
                         alt=""
-                        fill
-                        className="object-cover"
-                        sizes={isExpanded ? "48px" : "40px"}
+                        className="absolute inset-0 h-full w-full object-cover"
+                        referrerPolicy="no-referrer"
                       />
                     ) : null}
                   </div>
@@ -460,7 +460,13 @@ function ProductGeniePanelBody({
 }
 
 export function ProductGeniePanel() {
-  const { isOpen, close, productContext } = useGenie();
+  const {
+    isOpen,
+    close,
+    productContext,
+    pendingProductQuestion,
+    consumePendingProductQuestion,
+  } = useGenie();
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [input, setInput] = React.useState("");
   const [isLoading, setIsLoading] = React.useState(false);
@@ -805,6 +811,30 @@ export function ProductGeniePanel() {
     },
     [isLoading, messages, productContext],
   );
+
+  // Mid-page ask bar can open Genie with a seeded question.
+  // Consume only inside the timer so React effect cleanup cannot cancel the send.
+  const sendMessageRef = React.useRef(sendMessage);
+  sendMessageRef.current = sendMessage;
+
+  React.useEffect(() => {
+    if (!panelActive || !productContext) return;
+    const seeded = pendingProductQuestion?.trim();
+    if (!seeded) return;
+
+    const timer = window.setTimeout(() => {
+      const question = consumePendingProductQuestion();
+      if (!question) return;
+      void sendMessageRef.current(question);
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    panelActive,
+    productContext?.id,
+    pendingProductQuestion,
+    consumePendingProductQuestion,
+  ]);
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();

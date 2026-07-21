@@ -167,6 +167,10 @@ export function trackStoreSearchEvent(
   const trimmed = searchTerm.trim();
   if (trimmed.length < 2 || trimmed.length > 120) return;
 
+  void import("@/lib/nest/storefront-browse-context")
+    .then(({ recordBrowseSearch }) => recordBrowseSearch(storeOwnerId, trimmed))
+    .catch(() => {});
+
   const body = JSON.stringify({
     storeOwnerId,
     searchTerm: trimmed,

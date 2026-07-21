@@ -100,9 +100,18 @@ interface SearchStore {
   productCount: number;
 }
 
+interface SearchCategory {
+  label: string;
+  level1: string;
+  level2: string;
+  level3: string | null;
+  href: string;
+}
+
 interface SearchResults {
   products: SearchProduct[];
   stores: SearchStore[];
+  categories?: SearchCategory[];
   query: string;
 }
 
@@ -225,14 +234,19 @@ export function InstantSearch({
   // Helper to generate search URL that preserves space context
   const getSearchUrl = React.useCallback((searchTerm: string) => {
     const params = new URLSearchParams();
-    params.set('search', searchTerm);
-    // Add space param based on listing type filter
-    if (spaceContext === 'uber') {
-      params.set('space', 'uber');
-    } else if (listingType === 'store_inventory') {
-      params.set('space', 'stores');
+    params.set("search", searchTerm);
+    // Product search always lands on a browse space. Default marketplace
+    // space is For You, so a bare `?search=` URL would open the wrong tab.
+    if (spaceContext === "uber") {
+      params.set("space", "uber");
+    } else if (
+      spaceContext === "marketplace" ||
+      listingType === "private_listing"
+    ) {
+      params.set("space", "marketplace");
+    } else {
+      params.set("space", "stores");
     }
-    // Marketplace space is default, no param needed for private_listing
     return `/marketplace?${params.toString()}`;
   }, [listingType, spaceContext]);
 
@@ -634,7 +648,11 @@ export function InstantSearch({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const hasResults = results && (results.products.length > 0 || results.stores.length > 0);
+  const hasResults = results && (
+    results.products.length > 0 ||
+    results.stores.length > 0 ||
+    (results.categories?.length || 0) > 0
+  );
   
   // Detect if we're on mobile
   const [isMobile, setIsMobile] = React.useState(false);
@@ -740,6 +758,48 @@ export function InstantSearch({
                 <span className="font-medium">Ask Cycling Expert</span>
                 <ArrowRight className="h-4 w-4 ml-auto text-gray-400" />
               </button>
+            </div>
+          )}
+
+          {/* Canonical category suggestions */}
+          {results?.categories && results.categories.length > 0 && (
+            <div className={cn(mobileFullPage ? "" : "border-b border-gray-100")}>
+              <div className={cn(
+                "py-2 flex items-center gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide",
+                mobileFullPage ? "px-3 pt-2" : "px-4 bg-gray-50"
+              )}>
+                Categories
+              </div>
+              <div className={cn(mobileFullPage ? "" : "py-1")}>
+                {results.categories.map((category) => (
+                  <button
+                    key={category.href}
+                    onClick={() => {
+                      addToRecentSearches(query);
+                      setShowDropdown(false);
+                      setQuery("");
+                      onResultClick?.();
+                      router.push(category.href);
+                    }}
+                    className={cn(
+                      "w-full flex items-center gap-3 transition-colors text-left",
+                      mobileFullPage
+                        ? "px-3 py-3 active:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                        : "px-4 py-2.5 hover:bg-gray-50",
+                    )}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {category.label}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Browse Yellow Jersey category
+                      </p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-gray-400 shrink-0" />
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 

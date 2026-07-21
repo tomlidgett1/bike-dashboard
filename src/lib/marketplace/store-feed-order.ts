@@ -68,6 +68,10 @@ export function shouldApplyStoreFeedBrowseOrder(options: {
   createdAfter?: string | null
   condition?: string | null
   brand?: string | null
+  level1?: string | null
+  level2?: string | null
+  level3?: string | null
+  lsCategory?: string | null
 }): boolean {
   if (!options.isStoreFeed) return false
   if (options.sortBy !== 'newest') return false
@@ -78,5 +82,6 @@ export function shouldApplyStoreFeedBrowseOrder(options: {
   if (options.createdAfter) return false
   if (options.condition) return false
   if (options.brand) return false
+  if (options.level1 || options.level2 || options.level3 || options.lsCategory) return false
   return true
 }

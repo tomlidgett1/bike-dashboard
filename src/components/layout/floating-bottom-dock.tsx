@@ -26,6 +26,7 @@ const LazyFloatingGenieJobsPill = dynamic(
 );
 
 const HOME_PATH = "/settings/store/home";
+const MARKETPLACE_HOME = "/marketplace";
 const STORE_PAGE_PREFIX = "/marketplace/store/";
 const PRODUCT_PAGE_PREFIX = "/marketplace/product/";
 
@@ -37,6 +38,7 @@ function isGenieFloatingOrbVisible(
   productContext: unknown,
 ) {
   if (!pathname || pathname.startsWith("/login")) return false;
+  if (pathname === MARKETPLACE_HOME) return false;
   if (pathname.startsWith(STORE_PAGE_PREFIX)) return false;
   if (pathname.startsWith(PRODUCT_PAGE_PREFIX)) return false;
   if (isStoreDashboardPath(pathname)) return false;

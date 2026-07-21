@@ -13,6 +13,7 @@ function captureSupplierLoginState() {
     hasLoginError:
       text.includes("invalid password") ||
       text.includes("incorrect password") ||
+      text.includes("invalid username") ||
       text.includes("login failed") ||
       text.includes("sign in failed"),
     title: document.title,
@@ -280,11 +281,47 @@ function extractSupplierProduct(config) {
     }
   }
 
+  const configuredName = text(document, config.name);
+  const headingName =
+    clean(document.querySelector("h1")?.textContent) ||
+    clean(document.querySelector("h3")?.textContent) ||
+    clean(document.querySelector(".product_title")?.textContent) ||
+    null;
+  const titleName = clean(
+    (document.title || "")
+      .replace(/^FEsports\s*\|\s*/i, "")
+      .replace(/^FE Sports\s*\|\s*/i, ""),
+  );
+  // FE Sports product pages use h3 for the product name; breadcrumb selectors
+  // like a.bcrumbsubcat wrongly return the parent category ("Protection").
+  const isFesportsProduct = /\/Shop\/p_\d+/i.test(window.location.pathname);
+  const name = isFesportsProduct
+    ? headingName || titleName || configuredName || ""
+    : configuredName || headingName || titleName || "";
+
+  const sku =
+    text(document, config.sku) ||
+    (isFesportsProduct
+      ? text(document, ".prx_opt_value[class*='prxsku_']") || text(document, ".prxsku")
+      : null);
+  const price =
+    text(document, config.price) ||
+    (isFesportsProduct
+      ? text(document, "[class*='prxrrp_']") ||
+        text(document, ".prxrrp") ||
+        text(document, "[class*='prx_price_']")
+      : null);
+  const stock =
+    text(document, config.stock) ||
+    (isFesportsProduct
+      ? text(document, "[class*='prx_slev_']") || text(document, ".prx_slev")
+      : null);
+
   return {
-    name: text(document, config.name) || clean(document.querySelector("h1")?.textContent) || "",
-    price: text(document, config.price),
-    sku: text(document, config.sku),
-    stock: text(document, config.stock),
+    name,
+    price,
+    sku,
+    stock,
     brand: text(document, config.brand),
     description: text(document, config.description),
     category: text(document, config.category),
@@ -570,6 +607,9 @@ function collectBrandSubcategoryLinks(input) {
   const brandPath = brandUrl.pathname.replace(/\/$/, "");
   const results = [];
   const seen = new Set();
+  // FE Sports brand hubs are /Shop/C_1549/Name; product grids are /Shop/c_230_1549/...
+  const feBrandId = brandPath.match(/\/Shop\/C_(\d+)\b/i)?.[1] ?? null;
+  const isFesports = /fesports\.com\.au/i.test(brandUrl.hostname);
 
   for (const anchor of document.querySelectorAll("a[href]")) {
     const href = anchor.href;
@@ -586,15 +626,27 @@ function collectBrandSubcategoryLinks(input) {
       }
       if (/\.(jpg|jpeg|png|gif|pdf|css|js)$/i.test(path)) continue;
 
-      const underBrand =
-        brandPath.length > 1 &&
-        (path.startsWith(`${brandPath}/`) || path.includes(brandPath.split("/").filter(Boolean).at(-1) || "__none__"));
-      const looksLikeCategory =
-        /\/(category|categories|collection|collections|c|shop|filter|product-category)\b/i.test(path) ||
-        /[?&](category|cat|product_cat|filter)=/i.test(url.search) ||
-        underBrand;
+      if (isFesports && feBrandId) {
+        // Only keep this brand's product grid, or true path children.
+        // Reject sibling brand hubs (/Shop/C_999/Other) from the global nav.
+        const isOwnProductGrid = new RegExp(`/Shop/c_\\d+_${feBrandId}\\b`, "i").test(path);
+        const isPathChild = path.startsWith(`${brandPath}/`);
+        const isSiblingBrandHub = /\/Shop\/C_\d+\b/i.test(path) && path !== brandPath;
+        if (isSiblingBrandHub || (!isOwnProductGrid && !isPathChild)) continue;
+      } else {
+        const underBrand =
+          brandPath.length > 1 &&
+          (path.startsWith(`${brandPath}/`) ||
+            path.includes(brandPath.split("/").filter(Boolean).at(-1) || "__none__"));
+        const looksLikeCategory =
+          /\/(category|categories|collection|collections|c|shop|filter|product-category)\b/i.test(
+            path,
+          ) ||
+          /[?&](category|cat|product_cat|filter)=/i.test(url.search) ||
+          underBrand;
 
-      if (!looksLikeCategory) continue;
+        if (!looksLikeCategory) continue;
+      }
 
       const name = (anchor.textContent ?? "").replace(/\s+/g, " ").trim();
       if (!name || name.length > 80) continue;

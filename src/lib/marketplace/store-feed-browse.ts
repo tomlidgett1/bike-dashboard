@@ -13,6 +13,9 @@ import {
 export interface StoreFeedBrowseFilters {
   uberOnly?: boolean
   lsCategory?: string | null
+  level1?: string | null
+  level2?: string | null
+  level3?: string | null
 }
 
 export async function fetchStoreFeedBrowseRows(
@@ -35,6 +38,10 @@ export async function fetchStoreFeedBrowseRows(
 
     if (filters.lsCategory) {
       query = query.eq('category_name', filters.lsCategory)
+    } else {
+      if (filters.level1) query = query.eq('marketplace_category', filters.level1)
+      if (filters.level2) query = query.eq('marketplace_subcategory', filters.level2)
+      if (filters.level3) query = query.eq('marketplace_level_3_category', filters.level3)
     }
 
     return query

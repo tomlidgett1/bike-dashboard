@@ -58,6 +58,7 @@ import {
   hasDesc,
   hasSerperImage,
   hasSpecs,
+  hasSubDescription,
   hasTitle,
   IMG_BUSY,
   IMAGE_CONCURRENCY,
@@ -102,12 +103,14 @@ const emptyCopyRun = (): CopyRun => ({
   title: "idle",
   description: "idle",
   specs: "idle",
+  subDescription: "idle",
 });
 
 const DEFAULT_COPY_FIELDS: Record<CopyField, boolean> = {
   title: true,
   description: true,
   specs: true,
+  subDescription: true,
 };
 
 function sliceQueueIds(ids: string[], batchSize: BatchSize): string[] {
@@ -201,7 +204,7 @@ function jobToCategoryPreload(job: OptimizeJob): CategoryPreloadState {
 
 function copyRunStatus(run: CopyRun | undefined): "idle" | "running" | "done" | "error" {
   if (!run) return "idle";
-  const steps = [run.title, run.description, run.specs];
+  const steps = [run.title, run.description, run.specs, run.subDescription];
   if (steps.some((step) => step === "error")) return "error";
   if (steps.some((step) => step === "running" || step === "queued")) return "running";
   if (steps.some((step) => step === "done")) return "done";
@@ -255,6 +258,7 @@ const COPY_FIELD_LABELS: Record<CopyField, string> = {
   title: "title",
   description: "description",
   specs: "specs",
+  subDescription: "sub description",
 };
 
 function getMissingIndividualCopyLabels(
@@ -265,6 +269,9 @@ function getMissingIndividualCopyLabels(
   if (copyFields.title && !hasTitle(product)) missing.push(COPY_FIELD_LABELS.title);
   if (copyFields.description && !hasDesc(product)) missing.push(COPY_FIELD_LABELS.description);
   if (copyFields.specs && !hasSpecs(product)) missing.push(COPY_FIELD_LABELS.specs);
+  if (copyFields.subDescription && !hasSubDescription(product)) {
+    missing.push(COPY_FIELD_LABELS.subDescription);
+  }
   return missing;
 }
 
@@ -1070,6 +1077,7 @@ export function CatalogueOptimiseModal({
           ...(copyFields.title ? { title: "queued" as const } : {}),
           ...(copyFields.description ? { description: "queued" as const } : {}),
           ...(copyFields.specs ? { specs: "queued" as const } : {}),
+          ...(copyFields.subDescription ? { subDescription: "queued" as const } : {}),
           error: undefined,
         });
       });
@@ -1087,6 +1095,7 @@ export function CatalogueOptimiseModal({
             title: copyFields.title,
             description: copyFields.description,
             specs: copyFields.specs,
+            subDescription: copyFields.subDescription,
           },
           bicycleOverrides: overrides,
           label: labelProduct
@@ -1122,12 +1131,14 @@ export function CatalogueOptimiseModal({
             title: fields.title ? "done" : existing.title,
             description: fields.description ? "done" : existing.description,
             specs: fields.specs ? "done" : existing.specs,
+            subDescription: fields.subDescription ? "done" : existing.subDescription,
           };
         } else if (failedProductIds.includes(id)) {
           next[id] = {
             title: fields.title ? "error" : existing.title,
             description: fields.description ? "error" : existing.description,
             specs: fields.specs ? "error" : existing.specs,
+            subDescription: fields.subDescription ? "error" : existing.subDescription,
             error: "Generation failed",
           };
         } else if (running) {
@@ -1135,6 +1146,7 @@ export function CatalogueOptimiseModal({
             title: fields.title ? "running" : existing.title,
             description: fields.description ? "running" : existing.description,
             specs: fields.specs ? "running" : existing.specs,
+            subDescription: fields.subDescription ? "running" : existing.subDescription,
           };
         }
       }
@@ -2561,6 +2573,7 @@ function IndividualWorkStep({
     { key: "title", label: "Title", icon: Type },
     { key: "description", label: "Description", icon: FileText },
     { key: "specs", label: "Specs", icon: ListChecks },
+    { key: "subDescription", label: "Sub description", icon: Layers },
   ];
 
   return (
@@ -2647,13 +2660,24 @@ function IndividualWorkStep({
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-4 md:grid-cols-3">
+              <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <div>
                   <p className="mb-1.5 text-xs font-medium text-muted-foreground">Title</p>
                   <CopyBatchCell
                     text={product.display_name || product.description}
                     running={copyRun?.title === "running" || copyRun?.title === "queued"}
                     error={copyRun?.title === "error"}
+                  />
+                </div>
+                <div>
+                  <p className="mb-1.5 text-xs font-medium text-muted-foreground">Sub description</p>
+                  <CopyBatchCell
+                    text={product.sub_description}
+                    running={
+                      copyRun?.subDescription === "running" ||
+                      copyRun?.subDescription === "queued"
+                    }
+                    error={copyRun?.subDescription === "error"}
                   />
                 </div>
                 <div>
@@ -2751,6 +2775,7 @@ function CopyBatchStep({
     { key: "title", label: "Title", icon: Type },
     { key: "description", label: "Description", icon: FileText },
     { key: "specs", label: "Specs", icon: ListChecks },
+    { key: "subDescription", label: "Sub description", icon: Layers },
   ];
 
   const allVisibleSelected =
@@ -2765,8 +2790,8 @@ function CopyBatchStep({
   );
 
   const rowGridClass = showBikeSpecsColumn
-    ? "grid-cols-[40px_minmax(140px,1fr)_56px_64px_minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)_88px]"
-    : "grid-cols-[40px_minmax(140px,1fr)_56px_64px_minmax(0,1.15fr)_minmax(0,1.35fr)_minmax(0,1fr)_88px]";
+    ? "grid-cols-[40px_minmax(140px,1fr)_56px_64px_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_88px]"
+    : "grid-cols-[40px_minmax(140px,1fr)_56px_64px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,0.9fr)_88px]";
 
   return (
     <div className="flex h-full min-h-0 flex-col px-5 py-5">
@@ -2841,6 +2866,7 @@ function CopyBatchStep({
           <span className="text-center">Bike</span>
           <span className="text-center">SOH</span>
           <span>Title</span>
+          <span>Sub description</span>
           <span>Description</span>
           <span>Specs</span>
           {showBikeSpecsColumn ? <span>Bike specs</span> : null}
@@ -2906,6 +2932,13 @@ function CopyBatchStep({
                     text={product.display_name || product.description}
                     running={run?.title === "running" || run?.title === "queued"}
                     error={run?.title === "error"}
+                  />
+                  <CopyBatchCell
+                    text={product.sub_description}
+                    running={
+                      run?.subDescription === "running" || run?.subDescription === "queued"
+                    }
+                    error={run?.subDescription === "error"}
                   />
                   <CopyBatchCell
                     text={product.product_description}

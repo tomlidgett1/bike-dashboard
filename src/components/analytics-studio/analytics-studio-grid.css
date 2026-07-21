@@ -1,0 +1,107 @@
+/* Analytics studio canvas: resize from any edge or corner, no handle glyphs. */
+
+.analytics-studio-grid .react-grid-item.react-grid-placeholder {
+  background: rgba(156, 163, 175, 0.18);
+  border: 1px dashed rgba(156, 163, 175, 0.55);
+  border-radius: 0.375rem;
+  opacity: 1;
+}
+
+.analytics-studio-grid .react-grid-item.react-draggable-dragging,
+.analytics-studio-grid .react-grid-item.react-resizable-resizing {
+  z-index: 20;
+}
+
+/* Invisible hit targets only. Never show library corner glyphs. */
+.analytics-studio-grid .react-grid-item > .react-resizable-handle,
+.analytics-studio-grid .react-grid-item:hover > .react-resizable-handle,
+.analytics-studio-grid .react-grid-item.react-resizable-resizing > .react-resizable-handle,
+.analytics-studio-grid .react-grid-item:focus-within > .react-resizable-handle {
+  z-index: 30;
+  opacity: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.analytics-studio-grid .react-grid-item > .react-resizable-handle::after,
+.analytics-studio-grid .react-grid-item > .react-resizable-handle::before {
+  content: none !important;
+  display: none !important;
+  border: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* Full-edge hit areas (still invisible; cursor change is the affordance). */
+.analytics-studio-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-n,
+.analytics-studio-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-s {
+  left: 8px;
+  right: 8px;
+  width: auto;
+  height: 10px;
+  margin-left: 0;
+}
+
+.analytics-studio-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-n {
+  top: 0;
+  cursor: ns-resize;
+}
+
+.analytics-studio-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-s {
+  bottom: 0;
+  cursor: ns-resize;
+}
+
+.analytics-studio-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-e,
+.analytics-studio-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-w {
+  top: 8px;
+  bottom: 8px;
+  height: auto;
+  width: 10px;
+  margin-top: 0;
+}
+
+.analytics-studio-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-e {
+  right: 0;
+  cursor: ew-resize;
+}
+
+.analytics-studio-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-w {
+  left: 0;
+  cursor: ew-resize;
+}
+
+.analytics-studio-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-ne,
+.analytics-studio-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-nw,
+.analytics-studio-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-se,
+.analytics-studio-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-sw {
+  width: 14px;
+  height: 14px;
+}
+
+.analytics-studio-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-ne {
+  top: 0;
+  right: 0;
+  cursor: ne-resize;
+}
+
+.analytics-studio-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-nw {
+  top: 0;
+  left: 0;
+  cursor: nw-resize;
+}
+
+.analytics-studio-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-se {
+  right: 0;
+  bottom: 0;
+  cursor: se-resize;
+}
+
+.analytics-studio-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-sw {
+  left: 0;
+  bottom: 0;
+  cursor: sw-resize;
+}

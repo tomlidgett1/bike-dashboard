@@ -128,11 +128,81 @@ async function runDescriptionsForProduct(
   }
 }
 
+async function runSubDescriptionForProduct(
+  origin: string,
+  internalSecret: string,
+  userId: string,
+  productId: string,
+): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PRODUCT_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${origin}/api/products/generate-sub-descriptions`, {
+      method: "POST",
+      headers: internalHeaders(internalSecret, userId),
+      body: JSON.stringify({ productIds: [productId] }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error("Sub-description generation failed");
+    }
+
+    let success = true;
+    await readSSE(response.body, (event) => {
+      if (event.event !== "product_complete" || event.productId !== productId) return;
+      success = event.success === true;
+    });
+
+    return success;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function productHasMarketingDescription(
+  productId: string,
+  userId: string,
+): Promise<boolean> {
+  const supabase = createServiceRoleClient();
+  const { data } = await supabase
+    .from("products")
+    .select("product_description")
+    .eq("id", productId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  return Boolean(data?.product_description?.trim());
+}
+
 function descriptionMode(copyFields: CopyBatchFields): DescriptionMode | null {
   if (copyFields.description && copyFields.specs) return "both";
   if (copyFields.description) return "description";
   if (copyFields.specs) return "specs";
   return null;
+}
+
+async function ensureMarketingDescription(
+  origin: string,
+  internalSecret: string,
+  userId: string,
+  productId: string,
+  bicycleOverrides: Record<string, boolean>,
+): Promise<boolean> {
+  if (await productHasMarketingDescription(productId, userId)) return true;
+
+  const generated = await runDescriptionsForProduct(
+    origin,
+    internalSecret,
+    userId,
+    productId,
+    "description",
+    bicycleOverrides,
+  );
+  if (!generated) return false;
+
+  return productHasMarketingDescription(productId, userId);
 }
 
 async function runProductCopy(
@@ -145,6 +215,7 @@ async function runProductCopy(
 ): Promise<boolean> {
   const descMode = descriptionMode(copyFields);
   const runsCopyContent = copyFields.description || copyFields.specs;
+  const wantsSubDescription = copyFields.subDescription === true;
   let success = true;
 
   // Title cleaning must complete first — description/specs are derived from the cleaned title.
@@ -176,7 +247,26 @@ async function runProductCopy(
       )) && success;
   }
 
-  if (!copyFields.title && !descMode && !runsCopyContent) return true;
+  // Sub description must distill the long marketing copy. Wait until that exists
+  // (either just generated above, already on the row, or generated now as a dependency).
+  if (wantsSubDescription) {
+    const hasMarketing = await ensureMarketingDescription(
+      origin,
+      internalSecret,
+      userId,
+      productId,
+      bicycleOverrides,
+    );
+    if (!hasMarketing) {
+      success = false;
+    } else {
+      success =
+        (await runSubDescriptionForProduct(origin, internalSecret, userId, productId)) &&
+        success;
+    }
+  }
+
+  if (!copyFields.title && !descMode && !runsCopyContent && !wantsSubDescription) return true;
 
   return success;
 }

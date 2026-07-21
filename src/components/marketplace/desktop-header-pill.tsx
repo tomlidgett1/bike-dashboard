@@ -97,28 +97,6 @@ function DesktopHeaderPillContent() {
         {showNavLinks && mounted && user && (
           <>
             <Link
-              href="/marketplace"
-              className={cn(
-                "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
-                pathname === "/marketplace" && spaceParam !== "for-you"
-                  ? "text-gray-900 bg-gray-100"
-                  : "text-gray-700 hover:bg-gray-100"
-              )}
-            >
-              Home
-            </Link>
-            <Link
-              href="/blog"
-              className={cn(
-                "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
-                pathname.startsWith("/blog")
-                  ? "text-gray-900 bg-gray-100"
-                  : "text-gray-700 hover:bg-gray-100"
-              )}
-            >
-              Blog
-            </Link>
-            <Link
               href={`/marketplace/store/${profile?.user_id || user?.id}`}
               className={cn(
                 "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
@@ -128,22 +106,6 @@ function DesktopHeaderPillContent() {
               )}
             >
               {navLabels.shopfront}
-            </Link>
-            <Link
-              href={getListingsRoute()}
-              className={cn(
-                "px-3 py-1.5 text-sm font-medium rounded-md transition-colors whitespace-nowrap",
-                pathname === "/settings/my-listings" ||
-                pathname.startsWith("/settings/my-listings/") ||
-                pathname === "/marketplace/purchases" ||
-                pathname === "/settings/purchases" ||
-                pathname.startsWith("/marketplace/purchases/") ||
-                pathname.startsWith("/settings/purchases/")
-                  ? "text-gray-900 bg-gray-100"
-                  : "text-gray-700 hover:bg-gray-100"
-              )}
-            >
-              {navLabels.orders}
             </Link>
             <Link
               href={getSettingsRoute()}

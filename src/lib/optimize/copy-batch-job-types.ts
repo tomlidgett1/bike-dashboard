@@ -2,6 +2,8 @@ export type CopyBatchFields = {
   title: boolean;
   description: boolean;
   specs: boolean;
+  /** Short purchase-panel blurb distilled from the long description. */
+  subDescription: boolean;
 };
 
 export type CopyBatchJobMetadata = {

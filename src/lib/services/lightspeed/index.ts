@@ -116,6 +116,8 @@ export {
 export {
   LightspeedClient,
   createLightspeedClient,
+  isLightspeedThrottleError,
+  getLightspeedRetryAfterMs,
   mapLightspeedSerializedBike,
 } from './lightspeed-client'
 

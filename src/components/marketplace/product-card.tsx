@@ -15,6 +15,7 @@ import { cloudinaryCardLoader, extractCloudinaryPublicId } from "@/lib/utils/clo
 import { resolveLivePrice, formatPriceAUD, formatPriceAUDFull } from "@/lib/marketplace/pricing";
 import { cn } from "@/lib/utils";
 import { trackStoreBehaviourEvent } from "@/lib/tracking/store-analytics";
+import { recordBrowseProductView } from "@/lib/nest/storefront-browse-context";
 
 // 1x1 light-grey SVG used as the blur-up placeholder for card images
 const CARD_BLUR_DATA_URL =
@@ -377,6 +378,13 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
         category: product.marketplace_category,
         price: product.price,
       }, product.id);
+      recordBrowseProductView(storeId, {
+        productId: product.id,
+        name: product.display_name || product.description || "Product",
+        brand: product.brand ?? null,
+        category: product.marketplace_category ?? null,
+        price: typeof product.price === "number" ? product.price : null,
+      });
     }
 
     // Navigate to product page
@@ -429,6 +437,14 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
         isList && "w-full",
         !isList && featuredMobile && "sm:col-span-1"
       )}
+      data-analytics-product-id={product.id}
+      data-nest-product-id={product.id}
+      data-nest-product-name={product.display_name || product.description || "Product"}
+      data-nest-product-brand={product.brand || undefined}
+      data-nest-product-category={product.marketplace_category || undefined}
+      data-nest-product-price={
+        typeof product.price === "number" ? String(product.price) : undefined
+      }
     >
       <div
         id={`product-${product.id}`}
@@ -524,19 +540,12 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             </button>
           )}
 
-          {/* Bottom-left badges: Online Only + Sale stacked */}
-          {(productData.listing_source === 'online_catalog' || live.onSale) && (
+          {/* Bottom-left badges: Online Only (sale shown in price row) */}
+          {productData.listing_source === 'online_catalog' && (
             <div className="absolute bottom-2 left-2 z-10 pointer-events-none flex flex-col gap-1 items-start">
-              {productData.listing_source === 'online_catalog' && (
-                <span className="inline-block rounded-md bg-[#ffde59]/70 backdrop-blur-sm px-1.5 py-0.5 text-[10px] font-semibold text-gray-900 shadow-sm tracking-wide">
-                  Online Only
-                </span>
-              )}
-              {live.onSale && (
-                <span className="inline-block rounded-md bg-red-600 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-sm tracking-wide">
-                  Sale
-                </span>
-              )}
+              <span className="inline-block rounded-md bg-[#ffde59]/70 backdrop-blur-sm px-1.5 py-0.5 text-[10px] font-semibold text-gray-900 shadow-sm tracking-wide">
+                Online Only
+              </span>
             </div>
           )}
 
@@ -622,17 +631,51 @@ export const ProductCard = React.memo<ProductCardProps>(function ProductCard({
             ) : null;
 
             if (live.onSale) {
+              const isCarouselSale = !isList && inCarousel && hideStoreMeta;
+              const salePercentLabel =
+                live.percentOff != null && live.percentOff > 0
+                  ? `−${live.percentOff}%`
+                  : "Reduced";
+
+              if (isCarouselSale) {
+                return (
+                  <div className={cn("mb-0 flex items-center gap-1.5 order-1 min-w-0")}>
+                    <p className={cn(priceSizeClass, "mb-0 shrink-0 text-gray-900")}>
+                      {formatPriceAUDFull(live.price)}
+                    </p>
+                    <span className="mb-0 shrink-0 text-[11px] font-medium leading-none text-gray-500">
+                      {salePercentLabel}
+                    </span>
+                    {isUberDeliveryEligible && <UberDeliveryBadge />}
+                    {priceConditionBadge}
+                  </div>
+                );
+              }
+
               return (
-	                <div className={cn("flex items-center gap-1.5 mb-0", !isList && "order-1", hideStoreMeta ? "flex-nowrap overflow-hidden" : "flex-wrap")}>
-	                  <p className={cn(priceSizeClass, "text-red-600 mb-0 shrink-0")}>
-	                    {formatPriceAUDFull(live.price)}
-	                  </p>
-	                  {isUberDeliveryEligible && <UberDeliveryBadge />}
-	                  {priceConditionBadge}
-	                  <p className={cn(priceSizeClass, "text-gray-400 font-normal line-through mb-0", hideStoreMeta && "truncate")}>
-	                    {formatPriceAUDFull(live.originalPrice as number)}
-	                  </p>
-	                </div>
+                <div
+                  className={cn(
+                    "mb-0 flex flex-col gap-0.5",
+                    !isList && "order-1",
+                  )}
+                >
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <p className={cn(priceSizeClass, "mb-0 shrink-0 text-gray-900")}>
+                      {formatPriceAUDFull(live.price)}
+                    </p>
+                    <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-gray-600">
+                      {salePercentLabel}
+                    </span>
+                    {isUberDeliveryEligible && <UberDeliveryBadge />}
+                    {priceConditionBadge}
+                  </div>
+                  <p className="mb-0 text-[11px] leading-none text-gray-400 sm:text-xs">
+                    Was{" "}
+                    <span className="line-through">
+                      {formatPriceAUDFull(live.originalPrice as number)}
+                    </span>
+                  </p>
+                </div>
               );
             }
             return (

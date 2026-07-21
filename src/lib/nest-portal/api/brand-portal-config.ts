@@ -1759,6 +1759,15 @@ function sanitisePortalMessageRow(
       : ''
   }
 
+  const providerMessageId =
+    typeof row.provider_message_id === 'string' ? row.provider_message_id.trim() : ''
+  if (providerMessageId) {
+    metadata.linq_provider_message_id = providerMessageId
+    if (typeof metadata.provider_message_id !== 'string' || !metadata.provider_message_id.trim()) {
+      metadata.provider_message_id = providerMessageId
+    }
+  }
+
   return {
     id: row.id,
     role: row.role,

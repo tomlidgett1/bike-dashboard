@@ -169,16 +169,17 @@ async function resolveAuthConfigId(toolkitSlug: string): Promise<string | null> 
 export async function mintToolkitConnectLink(
   userId: string,
   toolkit: string,
-  options?: { allowMultiple?: boolean; alias?: string },
+  options?: { allowMultiple?: boolean; alias?: string; callbackUrl?: string },
 ): Promise<{ toolkit: string; url: string }> {
   const composio = getComposioClient()
   const composioUserId = getComposioUserId(userId)
   const toolkitSlug = toolkit.trim().toLowerCase()
   const authConfigId = await resolveAuthConfigId(toolkitSlug)
+  const callbackUrl = options?.callbackUrl?.trim() || resolveComposioCallbackUrl()
 
   if (authConfigId) {
     const connectionRequest = await composio.connectedAccounts.link(composioUserId, authConfigId, {
-      callbackUrl: resolveComposioCallbackUrl(),
+      callbackUrl,
       allowMultiple: options?.allowMultiple ?? true,
       ...(options?.alias ? { alias: options.alias } : {}),
     })
@@ -195,7 +196,7 @@ export async function mintToolkitConnectLink(
     ...(authConfigs ? { authConfigs } : {}),
   })
   const connectionRequest = await session.authorize(toolkitSlug, {
-    callbackUrl: resolveComposioCallbackUrl(),
+    callbackUrl,
     ...(options?.alias ? { alias: options.alias } : {}),
   })
   if (!connectionRequest.redirectUrl) {

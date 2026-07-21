@@ -1,28 +1,26 @@
 "use client";
 
 import * as React from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  LabelList,
+  Legend,
+  Line,
+  LineChart,
+  ReferenceLine,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { BarChart3, Download, LineChart as LineChartIcon } from "@/components/layout/app-sidebar/dashboard-icons";
-import * as echarts from "echarts/core";
-import {
-  BarChart as EChartsBarChart,
-  LineChart as EChartsLineChart,
-  type BarSeriesOption,
-  type LineSeriesOption,
-} from "echarts/charts";
-import {
-  DataZoomComponent,
-  GridComponent,
-  LegendComponent,
-  MarkLineComponent,
-  TooltipComponent,
-  type DataZoomComponentOption,
-  type GridComponentOption,
-  type LegendComponentOption,
-  type TooltipComponentOption,
-} from "echarts/components";
-import { CanvasRenderer } from "echarts/renderers";
-import type { ComposeOption, ECharts } from "echarts/core";
 import { Button } from "@/components/ui/button";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 import { cn } from "@/lib/utils";
 import { downloadChartCardAsPng } from "@/lib/utils/genie-visual-export";
 import type {
@@ -32,54 +30,7 @@ import type {
 } from "@/lib/genie/visual-payloads";
 import type { VisualValueFormat } from "@/lib/genie/visual-format";
 
-echarts.use([
-  EChartsBarChart,
-  EChartsLineChart,
-  CanvasRenderer,
-  DataZoomComponent,
-  GridComponent,
-  LegendComponent,
-  MarkLineComponent,
-  TooltipComponent,
-]);
-
-/** Series colour at a given alpha, for gradient area fills. Falls back to null for non-hex/rgb colours so callers can use a flat fill. */
-function colorWithAlpha(color: string, alpha: number): string | null {
-  const hex = /^#([\da-f]{3}|[\da-f]{6})$/i.exec(color.trim());
-  if (hex) {
-    let h = hex[1];
-    if (h.length === 3) h = h.split("").map((c) => c + c).join("");
-    const r = parseInt(h.slice(0, 2), 16);
-    const g = parseInt(h.slice(2, 4), 16);
-    const b = parseInt(h.slice(4, 6), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  }
-  const rgb = /^rgb\(([^)]+)\)$/i.exec(color.trim());
-  if (rgb) {
-    const parts = rgb[1].split(",").slice(0, 3).map((s) => s.trim());
-    if (parts.length === 3) return `rgba(${parts.join(", ")}, ${alpha})`;
-  }
-  return null;
-}
-
 export type { GenieChartPayload, GenieChartPoint, GenieChartSeries };
-
-type GenieChartOption = ComposeOption<
-  | BarSeriesOption
-  | LineSeriesOption
-  | DataZoomComponentOption
-  | GridComponentOption
-  | LegendComponentOption
-  | TooltipComponentOption
->;
-
-interface GenieChartTheme {
-  background: string;
-  border: string;
-  foreground: string;
-  mutedForeground: string;
-  seriesColors: string[];
-}
 
 const FALLBACK_SERIES_COLORS = [
   "#0B6E99",
@@ -89,14 +40,6 @@ const FALLBACK_SERIES_COLORS = [
   "#AD1A72",
   "#787774",
 ];
-
-const DEFAULT_CHART_THEME: GenieChartTheme = {
-  background: "#ffffff",
-  border: "#e5e5e5",
-  foreground: "#171717",
-  mutedForeground: "#737373",
-  seriesColors: FALLBACK_SERIES_COLORS,
-};
 
 function formatVisualValue(value: string | number | null | undefined, format?: VisualValueFormat) {
   if (value == null || value === "") return "—";
@@ -141,61 +84,6 @@ function chartLabel(value: string) {
   return value.length > 20 ? `${value.slice(0, 19)}…` : value;
 }
 
-function escapeTooltipHtml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-function isCanvasSafeColor(value: string) {
-  return (
-    /^#(?:[\da-f]{3,8})$/i.test(value)
-    || /^rgba?\(/i.test(value)
-    || /^hsla?\(/i.test(value)
-    || /^[a-z]+$/i.test(value)
-  );
-}
-
-function resolveCssColor(style: CSSStyleDeclaration, value: string | undefined, fallback: string) {
-  if (!value) return fallback;
-
-  const trimmed = value.trim();
-  const varMatch = /^var\((--[^),\s]+)(?:,\s*([^)]+))?\)$/.exec(trimmed);
-  if (!varMatch) return isCanvasSafeColor(trimmed) ? trimmed : fallback;
-
-  const resolved = style.getPropertyValue(varMatch[1]).trim() || varMatch[2]?.trim() || fallback;
-  return isCanvasSafeColor(resolved) ? resolved : fallback;
-}
-
-function readChartTheme(element: HTMLElement, series: GenieChartSeries[]): GenieChartTheme {
-  const style = getComputedStyle(element);
-  const paletteVars = [
-    "--notion-blue",
-    "--notion-green",
-    "--notion-orange",
-    "--notion-purple",
-    "--notion-pink",
-    "--notion-gray",
-  ];
-
-  return {
-    background: resolveCssColor(style, "var(--background)", DEFAULT_CHART_THEME.background),
-    border: resolveCssColor(style, "var(--border)", DEFAULT_CHART_THEME.border),
-    foreground: resolveCssColor(style, "var(--foreground)", DEFAULT_CHART_THEME.foreground),
-    mutedForeground: resolveCssColor(style, "var(--muted-foreground)", DEFAULT_CHART_THEME.mutedForeground),
-    seriesColors: series.map((item, index) =>
-      resolveCssColor(
-        style,
-        item.color ?? `var(${paletteVars[index % paletteVars.length]})`,
-        FALLBACK_SERIES_COLORS[index % FALLBACK_SERIES_COLORS.length],
-      ),
-    ),
-  };
-}
-
 function coerceChartNumber(value: string | number | null | undefined) {
   if (value == null || value === "") return null;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
@@ -229,271 +117,21 @@ function hasRenderableChartValues(chart: GenieChartPayload) {
   );
 }
 
-function buildChartOption(chart: GenieChartPayload, theme: GenieChartTheme): GenieChartOption {
-  const showLegend = chart.series.length > 1;
-  const labels = chart.data.map((point) => point.label);
-  const showDataZoom =
-    chart.kind === "bar"
-      ? chart.data.length > 6
-      : chart.data.length > 14;
-  const rotateLabels =
-    chart.kind === "bar"
-    && labels.some((label) => label.length > 10 || /\d{4}-\d{2}-\d{2}/.test(label));
-  const isSingleSeries = chart.series.length === 1;
-  const showEndLabel = chart.kind === "line" && isSingleSeries && chart.data.length > 1;
-  const seriesFormats = chart.series.map((item) => item.format ?? chart.valueFormatter);
-  const axisFormats = seriesFormats.filter(
-    (format, index) => seriesFormats.indexOf(format) === index,
-  );
-  const useSecondaryAxis = axisFormats.length > 1;
-  const seriesAxisIndex = (format: VisualValueFormat | undefined) =>
-    useSecondaryAxis && format !== axisFormats[0] ? 1 : 0;
-  const labelFormatter: NonNullable<BarSeriesOption["label"]>["formatter"] = (params) =>
-    formatVisualValue((params as { value?: number | string | null }).value ?? null, chart.valueFormatter);
-  const series = chart.series.map<BarSeriesOption | LineSeriesOption>((item, index) => {
-    const data = chart.data.map((point) => coerceChartNumber(point[item.key]));
-    const color = theme.seriesColors[index];
-    const format = item.format ?? chart.valueFormatter;
-    const yAxisIndex = seriesAxisIndex(format);
-
-    if (chart.kind === "line") {
-      const gradientTop = colorWithAlpha(color, 0.22);
-      const gradientBottom = colorWithAlpha(color, 0.01);
-      return {
-        type: "line",
-        name: item.label,
-        data,
-        yAxisIndex,
-        smooth: true,
-        connectNulls: false,
-        symbol: chart.data.length <= 18 ? "circle" : "none",
-        symbolSize: 6,
-        lineStyle: {
-          width: 3,
-        },
-        itemStyle: {
-          color,
-        },
-        areaStyle: isSingleSeries
-          ? gradientTop && gradientBottom
-            ? {
-                color: {
-                  type: "linear",
-                  x: 0,
-                  y: 0,
-                  x2: 0,
-                  y2: 1,
-                  colorStops: [
-                    { offset: 0, color: gradientTop },
-                    { offset: 1, color: gradientBottom },
-                  ],
-                },
-              }
-            : { opacity: 0.1 }
-          : undefined,
-        // Pin the latest value at the end of the line so the current figure reads at a glance.
-        endLabel: isSingleSeries && chart.data.length > 1
-          ? {
-              show: true,
-              color: theme.foreground,
-              fontSize: 11,
-              fontWeight: 600,
-              formatter: labelFormatter,
-            }
-          : undefined,
-        // A faint average reference line gives instant "above/below normal" context.
-        markLine: isSingleSeries && chart.data.length >= 4
-          ? {
-              silent: true,
-              symbol: "none",
-              lineStyle: { type: "dashed", color: theme.mutedForeground, opacity: 0.45, width: 1 },
-              label: {
-                show: true,
-                position: "insideEndTop",
-                formatter: "avg",
-                color: theme.mutedForeground,
-                fontSize: 10,
-              },
-              data: [{ type: "average", name: "Average" }],
-            }
-          : undefined,
-        emphasis: {
-          focus: "series",
-        },
-      };
-    }
-
-    return {
-      type: "bar",
-      name: item.label,
-      data,
-      yAxisIndex,
-      barMaxWidth: 38,
-      barMinHeight: 2,
-      itemStyle: {
-        color,
-        borderRadius: [6, 6, 0, 0],
-      },
-      // Print the value above each bar when there's room (few, single-series bars).
-      label: isSingleSeries && chart.data.length <= 8
-        ? {
-            show: true,
-            position: "top",
-            color: theme.mutedForeground,
-            fontSize: 10,
-            formatter: labelFormatter,
-          }
-        : undefined,
-      emphasis: {
-        focus: "series",
-      },
-    };
-  });
-
-  return {
-    color: theme.seriesColors,
-    animationDuration: 520,
-    animationEasing: "quarticOut",
-    textStyle: {
-      color: theme.foreground,
-      fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-    },
-    tooltip: {
-      trigger: "axis",
-      confine: true,
-      appendToBody: true,
-      backgroundColor: theme.background,
-      borderColor: theme.border,
-      borderWidth: 1,
-      padding: [8, 10],
-      textStyle: {
-        color: theme.foreground,
-        fontSize: 12,
-      },
-      formatter: (params: unknown) => {
-        const items = Array.isArray(params) ? params : [params];
-        const typedItems = items.filter(
-          (item): item is {
-            axisValueLabel?: string;
-            marker?: string;
-            seriesIndex?: number;
-            seriesName?: string;
-            value?: number | string | null;
-          } => Boolean(item) && typeof item === "object",
-        );
-        const axisLabel = escapeTooltipHtml(String(typedItems[0]?.axisValueLabel ?? ""));
-        const values = typedItems.map((item) => {
-          const index = item.seriesIndex ?? 0;
-          const seriesItem = chart.series[index];
-          const formatted = formatVisualValue(
-            item.value ?? null,
-            seriesItem?.format ?? chart.valueFormatter,
-          );
-          return `${item.marker ?? ""}${escapeTooltipHtml(seriesItem?.label ?? item.seriesName ?? "")}: <strong>${escapeTooltipHtml(formatted)}</strong>`;
-        });
-        return [axisLabel, ...values].join("<br/>");
-      },
-      axisPointer: {
-        type: chart.kind === "bar" ? "shadow" : "line",
-      },
-    },
-    legend: showLegend
-      ? {
-          type: "scroll",
-          top: 0,
-          right: 0,
-          icon: "roundRect",
-          itemWidth: 10,
-          itemHeight: 10,
-          textStyle: {
-            color: theme.mutedForeground,
-            fontSize: 11,
-          },
-          pageIconColor: theme.foreground,
-          pageIconInactiveColor: theme.border,
-          pageTextStyle: {
-            color: theme.mutedForeground,
-          },
-        }
-      : undefined,
-    grid: {
-      top: showLegend ? 34 : 12,
-      right: useSecondaryAxis ? 58 : showEndLabel ? 52 : 14,
-      bottom: showDataZoom ? 42 : 12,
-      left: 10,
-      containLabel: true,
-    },
-    xAxis: {
-      type: "category",
-      data: labels,
-      axisLine: {
-        show: false,
-      },
-      axisTick: {
-        show: false,
-      },
-      axisLabel: {
-        color: theme.mutedForeground,
-        fontSize: 11,
-        hideOverlap: true,
-        rotate: rotateLabels ? 32 : 0,
-        formatter: (value: string) => chartLabel(String(value)),
-      },
-    },
-    yAxis: (useSecondaryAxis ? [axisFormats[0], axisFormats[1]] : [axisFormats[0] ?? chart.valueFormatter]).map(
-      (format, index) => ({
-        type: "value" as const,
-        position: index === 1 ? "right" as const : "left" as const,
-        axisLine: {
-          show: index === 1,
-          lineStyle: { color: theme.border },
-        },
-        axisTick: {
-          show: false,
-        },
-        splitLine: {
-          show: index === 0,
-          lineStyle: {
-            color: theme.border,
-            opacity: 0.72,
-          },
-        },
-        axisLabel: {
-          color: theme.mutedForeground,
-          fontSize: 11,
-          formatter: (value: number) => formatAxisValue(Number(value), format),
-        },
-      }),
-    ),
-    dataZoom: showDataZoom
-      ? [
-          {
-            type: "inside",
-            throttle: 50,
-          },
-          {
-            type: "slider",
-            height: 18,
-            bottom: 4,
-            borderColor: theme.border,
-            fillerColor: "rgba(11, 110, 153, 0.12)",
-            handleStyle: {
-              color: theme.background,
-              borderColor: theme.mutedForeground,
-            },
-            moveHandleStyle: {
-              color: theme.mutedForeground,
-            },
-            textStyle: {
-              color: theme.mutedForeground,
-              fontSize: 10,
-            },
-          },
-        ]
-      : undefined,
-    series,
-  };
+function resolveSeriesColor(series: GenieChartSeries, index: number): string {
+  const color = series.color?.trim();
+  if (color && (/^#/.test(color) || /^rgba?\(/i.test(color) || /^[a-z]+$/i.test(color))) {
+    return color;
+  }
+  return FALLBACK_SERIES_COLORS[index % FALLBACK_SERIES_COLORS.length]!;
 }
+
+export type GenieChartAppearance = {
+  accentColor?: string;
+  axisColor?: string;
+  fontFamily?: string;
+  showGrid?: boolean;
+  tickFontSize?: number;
+};
 
 export function GenieChart({
   chart,
@@ -501,69 +139,99 @@ export function GenieChart({
   embedded = false,
   showExport = true,
   className,
+  appearance,
 }: {
   chart: GenieChartPayload;
   variant?: "chat" | "panel" | "dashboard";
   embedded?: boolean;
   showExport?: boolean;
   className?: string;
+  appearance?: GenieChartAppearance;
 }) {
   const cardRef = React.useRef<HTMLDivElement>(null);
-  const chartElementRef = React.useRef<HTMLDivElement>(null);
-  const chartInstanceRef = React.useRef<ECharts | null>(null);
   const accessibilityTableId = React.useId();
-  const [theme, setTheme] = React.useState<GenieChartTheme>(DEFAULT_CHART_THEME);
   const [isExporting, setIsExporting] = React.useState(false);
   const isLineChart = chart.kind === "line";
   const ChartIcon = isLineChart ? LineChartIcon : BarChart3;
   const isPanel = variant === "panel";
   const isDashboard = variant === "dashboard";
-  const isEmpty = chart.series.length === 0 || chart.data.length === 0 || !hasRenderableChartValues(chart);
-  const option = React.useMemo(() => buildChartOption(chart, theme), [chart, theme]);
+  const isEmpty =
+    chart.series.length === 0
+    || chart.data.length === 0
+    || !hasRenderableChartValues(chart);
 
-  const refreshTheme = React.useCallback(() => {
-    if (!chartElementRef.current) return;
-    setTheme(readChartTheme(chartElementRef.current, chart.series));
-  }, [chart.series]);
+  const seriesMeta = React.useMemo(
+    () =>
+      chart.series.map((item, index) => {
+        const withAccent =
+          index === 0 && appearance?.accentColor?.trim()
+            ? { ...item, color: appearance.accentColor.trim() }
+            : item;
+        return {
+          ...withAccent,
+          color: resolveSeriesColor(withAccent, index),
+          format: withAccent.format ?? chart.valueFormatter,
+        };
+      }),
+    [appearance?.accentColor, chart.series, chart.valueFormatter],
+  );
 
-  React.useEffect(() => {
-    const element = chartElementRef.current;
-    if (!element) return;
+  const axisTick = React.useMemo(
+    () => ({
+      fill: appearance?.axisColor?.trim() || "#737373",
+      fontSize: appearance?.tickFontSize ?? 11,
+      fontFamily: appearance?.fontFamily,
+    }),
+    [appearance?.axisColor, appearance?.fontFamily, appearance?.tickFontSize],
+  );
+  const showGrid = appearance?.showGrid !== false;
 
-    const instance = echarts.init(element, undefined, { renderer: "canvas" });
-    chartInstanceRef.current = instance;
+  const chartConfig = React.useMemo(() => {
+    const config: ChartConfig = {};
+    for (const item of seriesMeta) {
+      config[item.key] = {
+        label: item.label,
+        color: item.color,
+      };
+    }
+    return config;
+  }, [seriesMeta]);
 
-    const resizeObserver = typeof ResizeObserver !== "undefined"
-      ? new ResizeObserver(() => instance.resize())
-      : null;
-    resizeObserver?.observe(element);
+  const chartData = React.useMemo(
+    () =>
+      chart.data.map((point) => {
+        const row: Record<string, string | number | null> = { label: point.label };
+        for (const series of seriesMeta) {
+          row[series.key] = coerceChartNumber(point[series.key]);
+        }
+        return row;
+      }),
+    [chart.data, seriesMeta],
+  );
 
-    const handleResize = () => instance.resize();
-    window.addEventListener("resize", handleResize);
+  const seriesFormats = seriesMeta.map((item) => item.format);
+  const axisFormats = seriesFormats.filter(
+    (format, index) => seriesFormats.indexOf(format) === index,
+  );
+  const useSecondaryAxis = axisFormats.length > 1;
+  const primaryFormat = axisFormats[0] ?? chart.valueFormatter;
+  const secondaryFormat = axisFormats[1];
+  const isSingleSeries = seriesMeta.length === 1;
+  const showBarLabels = !isLineChart && isSingleSeries && chartData.length <= 8;
+  const rotateLabels =
+    !isLineChart
+    && chart.data.some((point) => point.label.length > 10 || /\d{4}-\d{2}-\d{2}/.test(point.label));
 
-    return () => {
-      window.removeEventListener("resize", handleResize);
-      resizeObserver?.disconnect();
-      instance.dispose();
-      chartInstanceRef.current = null;
-    };
-  }, []);
-
-  React.useEffect(() => {
-    refreshTheme();
-
-    const observer = new MutationObserver(refreshTheme);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "style"] });
-
-    return () => observer.disconnect();
-  }, [refreshTheme]);
-
-  React.useEffect(() => {
-    const instance = chartInstanceRef.current;
-    if (!instance) return;
-    instance.setOption(option, true);
-    instance.resize();
-  }, [option]);
+  const averageValue = React.useMemo(() => {
+    if (!isLineChart || !isSingleSeries || chartData.length < 4) return null;
+    const key = seriesMeta[0]?.key;
+    if (!key) return null;
+    const values = chartData
+      .map((row) => row[key])
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    if (values.length === 0) return null;
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  }, [chartData, isLineChart, isSingleSeries, seriesMeta]);
 
   const handleDownloadPng = async () => {
     if (!cardRef.current || isExporting) return;
@@ -581,21 +249,260 @@ export function GenieChart({
     }
   };
 
+  const yAxisSharedProps = {
+    tickLine: false as const,
+    axisLine: false as const,
+    width: 48,
+    tick: axisTick,
+  };
+
   const chartBody = (
     <div
       className={cn(
-        "relative w-full",
+        "relative w-full overflow-hidden",
+        // Explicit height floor so Recharts can measure; card clips overflow (no nested scroll).
         embedded ? "h-full min-h-[180px]" : isPanel || isDashboard ? "h-[220px]" : "h-[280px]",
       )}
+      style={appearance?.fontFamily ? { fontFamily: appearance.fontFamily } : undefined}
     >
-      <div
-        ref={chartElementRef}
-        data-genie-echart
-        className="h-full w-full"
-        role="img"
-        aria-label={`${chart.title}${chart.subtitle ? `. ${chart.subtitle}` : ""}`}
-        aria-describedby={accessibilityTableId}
-      />
+      {!isEmpty ? (
+        <ChartContainer
+          config={chartConfig}
+          className="h-full min-h-[180px] w-full !aspect-auto [&_.recharts-cartesian-axis-tick_text]:fill-gray-500"
+          role="img"
+          aria-label={`${chart.title}${chart.subtitle ? `. ${chart.subtitle}` : ""}`}
+          aria-describedby={accessibilityTableId}
+          initialDimension={{ width: 640, height: 220 }}
+        >
+          {isLineChart ? (
+            <LineChart
+              accessibilityLayer
+              data={chartData}
+              margin={{
+                top: seriesMeta.length > 1 ? 28 : 12,
+                right: useSecondaryAxis ? 48 : 16,
+                left: 4,
+                bottom: 4,
+              }}
+            >
+              {showGrid ? (
+                <CartesianGrid vertical={false} stroke="#e5e5e5" strokeOpacity={0.72} />
+              ) : null}
+              <XAxis
+                dataKey="label"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                minTickGap={16}
+                tickFormatter={(value) => chartLabel(String(value))}
+                tick={axisTick}
+              />
+              <YAxis
+                yAxisId="left"
+                {...yAxisSharedProps}
+                tickFormatter={(value) => formatAxisValue(Number(value), primaryFormat)}
+              />
+              {useSecondaryAxis ? (
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  {...yAxisSharedProps}
+                  tickFormatter={(value) => formatAxisValue(Number(value), secondaryFormat)}
+                />
+              ) : null}
+              <ChartTooltip
+                cursor={{ stroke: "#d4d4d4", strokeWidth: 1 }}
+                content={
+                  <ChartTooltipContent
+                    indicator="line"
+                    formatter={(value, name) => {
+                      const series = seriesMeta.find((item) => item.key === name);
+                      return (
+                        <div className="flex w-full items-center justify-between gap-4">
+                          <span className="text-muted-foreground">
+                            {series?.label ?? String(name)}
+                          </span>
+                          <span className="font-medium tabular-nums text-foreground">
+                            {formatVisualValue(
+                              typeof value === "number" || typeof value === "string"
+                                ? value
+                                : null,
+                              series?.format ?? chart.valueFormatter,
+                            )}
+                          </span>
+                        </div>
+                      );
+                    }}
+                  />
+                }
+              />
+              {seriesMeta.length > 1 ? (
+                <Legend
+                  verticalAlign="top"
+                  align="right"
+                  iconType="circle"
+                  iconSize={8}
+                  wrapperStyle={{
+                    fontSize: axisTick.fontSize,
+                    color: axisTick.fill,
+                    fontFamily: axisTick.fontFamily,
+                  }}
+                />
+              ) : null}
+              {averageValue != null ? (
+                <ReferenceLine
+                  yAxisId="left"
+                  y={averageValue}
+                  stroke="#a3a3a3"
+                  strokeDasharray="4 4"
+                  strokeOpacity={0.7}
+                  label={{
+                    value: "avg",
+                    position: "insideTopRight",
+                    fill: "#a3a3a3",
+                    fontSize: 10,
+                  }}
+                />
+              ) : null}
+              {seriesMeta.map((series) => {
+                const yAxisId =
+                  useSecondaryAxis && series.format !== primaryFormat ? "right" : "left";
+                return (
+                  <Line
+                    key={series.key}
+                    yAxisId={yAxisId}
+                    type="monotone"
+                    dataKey={series.key}
+                    name={series.key}
+                    stroke={`var(--color-${series.key})`}
+                    strokeWidth={3}
+                    dot={chartData.length <= 18 ? { r: 3, strokeWidth: 0 } : false}
+                    activeDot={{ r: 4 }}
+                    connectNulls={false}
+                    isAnimationActive
+                    animationDuration={500}
+                  />
+                );
+              })}
+            </LineChart>
+          ) : (
+            <BarChart
+              accessibilityLayer
+              data={chartData}
+              margin={{
+                top: seriesMeta.length > 1 ? 28 : showBarLabels ? 20 : 12,
+                right: useSecondaryAxis ? 48 : 12,
+                left: 4,
+                bottom: rotateLabels ? 18 : 4,
+              }}
+            >
+              {showGrid ? (
+                <CartesianGrid vertical={false} stroke="#e5e5e5" strokeOpacity={0.72} />
+              ) : null}
+              <XAxis
+                dataKey="label"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                minTickGap={12}
+                interval="preserveStartEnd"
+                angle={rotateLabels ? -32 : 0}
+                textAnchor={rotateLabels ? "end" : "middle"}
+                height={rotateLabels ? 48 : 28}
+                tickFormatter={(value) => chartLabel(String(value))}
+                tick={axisTick}
+              />
+              <YAxis
+                yAxisId="left"
+                {...yAxisSharedProps}
+                tickFormatter={(value) => formatAxisValue(Number(value), primaryFormat)}
+              />
+              {useSecondaryAxis ? (
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  {...yAxisSharedProps}
+                  tickFormatter={(value) => formatAxisValue(Number(value), secondaryFormat)}
+                />
+              ) : null}
+              <ChartTooltip
+                cursor={{ fill: "rgba(0,0,0,0.04)" }}
+                content={
+                  <ChartTooltipContent
+                    indicator="dot"
+                    formatter={(value, name) => {
+                      const series = seriesMeta.find((item) => item.key === name);
+                      return (
+                        <div className="flex w-full items-center justify-between gap-4">
+                          <span className="text-muted-foreground">
+                            {series?.label ?? String(name)}
+                          </span>
+                          <span className="font-medium tabular-nums text-foreground">
+                            {formatVisualValue(
+                              typeof value === "number" || typeof value === "string"
+                                ? value
+                                : null,
+                              series?.format ?? chart.valueFormatter,
+                            )}
+                          </span>
+                        </div>
+                      );
+                    }}
+                  />
+                }
+              />
+              {seriesMeta.length > 1 ? (
+                <Legend
+                  verticalAlign="top"
+                  align="right"
+                  iconType="circle"
+                  iconSize={8}
+                  wrapperStyle={{
+                    fontSize: axisTick.fontSize,
+                    color: axisTick.fill,
+                    fontFamily: axisTick.fontFamily,
+                  }}
+                />
+              ) : null}
+              {seriesMeta.map((series) => {
+                const yAxisId =
+                  useSecondaryAxis && series.format !== primaryFormat ? "right" : "left";
+                return (
+                  <Bar
+                    key={series.key}
+                    yAxisId={yAxisId}
+                    dataKey={series.key}
+                    name={series.key}
+                    fill={`var(--color-${series.key})`}
+                    radius={[6, 6, 0, 0]}
+                    maxBarSize={38}
+                    isAnimationActive
+                    animationDuration={500}
+                  >
+                    {showBarLabels ? (
+                      <LabelList
+                        dataKey={series.key}
+                        position="top"
+                        className="fill-gray-500"
+                        fontSize={10}
+                        formatter={(value) =>
+                          formatVisualValue(
+                            typeof value === "number" || typeof value === "string"
+                              ? value
+                              : null,
+                            series.format ?? chart.valueFormatter,
+                          )
+                        }
+                      />
+                    ) : null}
+                  </Bar>
+                );
+              })}
+            </BarChart>
+          )}
+        </ChartContainer>
+      ) : null}
+
       <table id={accessibilityTableId} className="sr-only">
         <caption>
           {chart.title}. {chart.subtitle ?? ""} {chart.sourceLabel ?? ""}{" "}
@@ -627,6 +534,7 @@ export function GenieChart({
           ))}
         </tbody>
       </table>
+
       {isEmpty ? (
         <div className="absolute inset-0 flex items-center justify-center text-xs font-medium text-muted-foreground">
           No chart data
@@ -637,7 +545,7 @@ export function GenieChart({
 
   if (embedded) {
     return (
-      <div ref={cardRef} className={cn("flex h-full min-h-0 flex-col", className)}>
+      <div ref={cardRef} className={cn("h-full min-h-0 w-full overflow-hidden", className)}>
         {chartBody}
       </div>
     );

@@ -28,7 +28,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "productIds is required" }, { status: 400 });
     }
 
-    if (!copyFields || (!copyFields.title && !copyFields.description && !copyFields.specs)) {
+    if (
+      !copyFields ||
+      (!copyFields.title &&
+        !copyFields.description &&
+        !copyFields.specs &&
+        !copyFields.subDescription)
+    ) {
       return NextResponse.json({ error: "At least one copy field must be selected" }, {
         status: 400,
       });
@@ -36,7 +42,12 @@ export async function POST(request: NextRequest) {
 
     const metadata: CopyBatchJobMetadata = {
       productIds,
-      copyFields,
+      copyFields: {
+        title: !!copyFields.title,
+        description: !!copyFields.description,
+        specs: !!copyFields.specs,
+        subDescription: !!copyFields.subDescription,
+      },
       bicycleOverrides,
       completedProductIds: [],
       failedProductIds: [],

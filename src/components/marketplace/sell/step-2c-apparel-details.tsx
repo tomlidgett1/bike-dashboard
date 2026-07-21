@@ -7,12 +7,19 @@ import {
   APPAREL_SIZES,
   SHOE_SIZES_EU 
 } from "@/lib/types/listing";
-import { MARKETPLACE_SUBCATEGORIES } from "@/lib/types/marketplace";
+import {
+  listCanonicalLevel1,
+  listCanonicalLevel2,
+} from "@/lib/marketplace/canonical-taxonomy";
 import { FormField, SectionHeader, InfoBox } from "./form-elements";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ValidationError, getFieldError } from "@/lib/validation/listing-validation";
+
+const APPAREL_LEVEL1 = ["Apparel", "Accessories", "Protection"].filter((level1) =>
+  listCanonicalLevel1().includes(level1),
+);
 
 // ============================================================
 // Step 2C: Apparel Details Form
@@ -32,6 +39,8 @@ export function Step2CApparelDetails({ data, onChange, errors = [] }: Step2CAppa
     onChange({ ...data, [field]: value });
   };
 
+  const selectedLevel1 = data.marketplace_category || "Apparel";
+  const level2Options = listCanonicalLevel2(selectedLevel1);
   const isShoes = data.marketplace_subcategory === "Shoes";
   const isHelmet = data.marketplace_subcategory === "Helmets";
 
@@ -73,17 +82,51 @@ export function Step2CApparelDetails({ data, onChange, errors = [] }: Step2CAppa
           <FormField
             label="Category"
             required
-            error={getFieldError(errors, "marketplace_subcategory")}
+            error={getFieldError(errors, "marketplace_category")}
           >
             <Select
-              value={data.marketplace_subcategory}
-              onValueChange={(value) => updateField("marketplace_subcategory", value)}
+              value={selectedLevel1}
+              onValueChange={(value) =>
+                onChange({
+                  ...data,
+                  marketplace_category: value,
+                  marketplace_subcategory: listCanonicalLevel2(value)[0] || "",
+                })
+              }
             >
               <SelectTrigger className="rounded-md">
                 <SelectValue placeholder="Select category" />
               </SelectTrigger>
               <SelectContent>
-                {MARKETPLACE_SUBCATEGORIES.Apparel.map((category) => (
+                {APPAREL_LEVEL1.map((category) => (
+                  <SelectItem key={category} value={category}>
+                    {category}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormField>
+
+          <FormField
+            label="Subcategory"
+            required
+            error={getFieldError(errors, "marketplace_subcategory")}
+          >
+            <Select
+              value={data.marketplace_subcategory}
+              onValueChange={(value) =>
+                onChange({
+                  ...data,
+                  marketplace_category: selectedLevel1,
+                  marketplace_subcategory: value,
+                })
+              }
+            >
+              <SelectTrigger className="rounded-md">
+                <SelectValue placeholder="Select subcategory" />
+              </SelectTrigger>
+              <SelectContent>
+                {level2Options.map((category) => (
                   <SelectItem key={category} value={category}>
                     {category}
                   </SelectItem>

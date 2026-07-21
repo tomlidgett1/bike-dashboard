@@ -270,7 +270,7 @@ export function StoreSupplierScraperBuilder() {
   const [sampleProducts, setSampleProducts] = React.useState<SupplierScrapedProduct[]>([]);
 
   // Run configuration
-  const [browseMode, setBrowseMode] = React.useState<SupplierBrowseMode>("category");
+  const [browseMode, setBrowseMode] = React.useState<SupplierBrowseMode>("brand");
   const [optionSearch, setOptionSearch] = React.useState("");
   const [selectedOptionIds, setSelectedOptionIds] = React.useState<Set<string>>(new Set());
   const [maxProducts, setMaxProducts] = React.useState("");
@@ -282,6 +282,15 @@ export function StoreSupplierScraperBuilder() {
     new Set(),
   );
   const [isLoadingBrandCategories, setIsLoadingBrandCategories] = React.useState(false);
+  const [subDiscoveryProgress, setSubDiscoveryProgress] = React.useState<{
+    done: number;
+    total: number;
+  } | null>(null);
+  const [discoveryLogs, setDiscoveryLogs] = React.useState<
+    Array<{ id: string; message: string; level?: string }>
+  >([]);
+  const [hasRunDiscovery, setHasRunDiscovery] = React.useState(false);
+  const discoveryLogEndRef = React.useRef<HTMLDivElement | null>(null);
 
   // Scrape results
   const [products, setProducts] = React.useState<SupplierScrapedProduct[]>([]);
@@ -387,9 +396,12 @@ export function StoreSupplierScraperBuilder() {
   };
 
   const openScraper = (scraper: StoredSupplierScraper) => {
-    const mode = scraper.config.browseModes.includes("category")
-      ? "category"
-      : scraper.config.browseModes[0] ?? "category";
+    const mode: SupplierBrowseMode =
+      scraper.config.brandOptions.length > 0
+        ? "brand"
+        : scraper.config.browseModes.includes("category")
+          ? "category"
+          : scraper.config.browseModes[0] ?? "category";
     setActiveScraperId(scraper.id);
     setBrowseMode(mode);
     setSelectedOptionIds(new Set());
@@ -471,9 +483,11 @@ export function StoreSupplierScraperBuilder() {
       setSampleProducts(payload.sampleProducts ?? []);
       setPassword("");
       setBrowseMode(
-        scraper.config.browseModes.includes("category")
-          ? "category"
-          : scraper.config.browseModes[0] ?? "category",
+        scraper.config.brandOptions.length > 0
+          ? "brand"
+          : scraper.config.browseModes.includes("category")
+            ? "category"
+            : scraper.config.browseModes[0] ?? "category",
       );
       setSelectedOptionIds(new Set());
       setBrandCategories({});
@@ -497,6 +511,9 @@ export function StoreSupplierScraperBuilder() {
     setOptionSearch("");
     setSelectedSubcategoryIds(new Set());
     setBrandCategories({});
+    setDiscoveryLogs([]);
+    setSubDiscoveryProgress(null);
+    setHasRunDiscovery(false);
   };
 
   const toggleOption = (optionId: string) => {
@@ -529,69 +546,179 @@ export function StoreSupplierScraperBuilder() {
 
   const loadOptionCategories = async (
     optionIdsOverride?: string[],
-    options?: { force?: boolean },
+    options?: { force?: boolean; skipConfigMap?: boolean },
   ) => {
     if (!activeScraper) return;
     const ids = optionIdsOverride ?? [...selectedOptionIds];
     if (ids.length === 0) return;
 
-    const toLoad = options?.force
+    let toLoad = options?.force
       ? ids
       : ids.filter((id) => brandCategories[id] === undefined);
+    if (toLoad.length === 0) {
+      toLoad = ids;
+    }
     if (toLoad.length === 0) return;
+
+    const pushLog = (message: string, level = "info") => {
+      setDiscoveryLogs((current) => [
+        ...current,
+        {
+          id: `${Date.now()}-${current.length}-${Math.random().toString(36).slice(2, 7)}`,
+          message,
+          level,
+        },
+      ]);
+    };
+
+    setHasRunDiscovery(true);
+    setDiscoveryLogs([]);
+    pushLog(
+      `Starting nested discovery for ${toLoad.length} ${browseMode}${toLoad.length === 1 ? "" : "s"}…`,
+    );
+
+    // FE Sports: pair brand hubs with product grids already in scrape config.
+    if (browseMode === "brand" && !options?.skipConfigMap) {
+      const mapped: Record<string, SupplierBrowseOption[]> = {};
+      const stillNeedApi: string[] = [];
+      for (const id of toLoad) {
+        const brand = availableOptions.find((option) => option.id === id);
+        const brandId = brand?.url.match(/\/Shop\/C_(\d+)\b/i)?.[1];
+        if (!brandId) {
+          stillNeedApi.push(id);
+          continue;
+        }
+        const related = activeScraper.config.categoryOptions
+          .filter((option) =>
+            new RegExp(`/Shop/c_\\d+_${brandId}\\b`, "i").test(option.url),
+          )
+          .map((option) => ({
+            ...option,
+            kind: "subcategory" as const,
+            parentId: id,
+          }));
+        if (related.length > 0) {
+          mapped[id] = related;
+          pushLog(
+            `${brand?.name ?? id}: mapped ${related.length} product categor${related.length === 1 ? "y" : "ies"}`,
+            "success",
+          );
+        } else {
+          stillNeedApi.push(id);
+        }
+      }
+      if (Object.keys(mapped).length > 0) {
+        setBrandCategories((current) => ({ ...current, ...mapped }));
+        setSelectedSubcategoryIds((current) => {
+          const next = new Set(current);
+          for (const kids of Object.values(mapped)) {
+            for (const kid of kids) next.add(kid.id);
+          }
+          return next;
+        });
+      }
+      if (stillNeedApi.length === 0) {
+        setSubDiscoveryProgress({
+          done: Object.keys(mapped).length,
+          total: toLoad.length,
+        });
+        pushLog(
+          `Nested discovery complete (${Object.keys(mapped).length}/${toLoad.length}).`,
+          "success",
+        );
+        window.setTimeout(() => setSubDiscoveryProgress(null), 800);
+        return;
+      }
+      toLoad = stillNeedApi;
+    }
 
     setIsLoadingBrandCategories(true);
     setError(null);
+    setSubDiscoveryProgress({ done: 0, total: toLoad.length });
+    let completed = 0;
     try {
-      const response = await fetch(
-        `/api/store/scrape/suppliers/${activeScraper.id}/brand-categories`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "text/event-stream",
+      for (let i = 0; i < toLoad.length; i += 10) {
+        const batch = toLoad.slice(i, i + 10);
+        const batchNames = batch
+          .map(
+            (id) =>
+              availableOptions.find((option) => option.id === id)?.name ?? id,
+          )
+          .join(", ");
+        pushLog(`Opening supplier pages for: ${batchNames}`);
+
+        const response = await fetch(
+          `/api/store/scrape/suppliers/${activeScraper.id}/brand-categories`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "text/event-stream",
+            },
+            body: JSON.stringify({
+              mode: browseMode,
+              optionIds: batch,
+            }),
           },
-          body: JSON.stringify({
-            mode: browseMode,
-            optionIds: toLoad,
-          }),
-        },
-      );
+        );
 
-      const contentType = response.headers.get("content-type") ?? "";
-      let categoriesByOption: Record<string, SupplierBrowseOption[]> = {};
+        const contentType = response.headers.get("content-type") ?? "";
+        let categoriesByOption: Record<string, SupplierBrowseOption[]> = {};
 
-      if (contentType.includes("text/event-stream")) {
-        const payload = await consumeSupplierSse<{
-          event: "result";
-          categoriesByBrand?: Record<string, SupplierBrowseOption[]>;
-          categoriesByOption?: Record<string, SupplierBrowseOption[]>;
-        }>(response, () => undefined);
-        categoriesByOption =
-          payload.categoriesByOption ?? payload.categoriesByBrand ?? {};
-      } else {
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.error ?? "Could not load categories.");
+        if (contentType.includes("text/event-stream")) {
+          const payload = await consumeSupplierSse<{
+            event: "result";
+            categoriesByBrand?: Record<string, SupplierBrowseOption[]>;
+            categoriesByOption?: Record<string, SupplierBrowseOption[]>;
+          }>(response, (entry) => {
+            pushLog(entry.message, entry.level);
+          });
+          categoriesByOption =
+            payload.categoriesByOption ?? payload.categoriesByBrand ?? {};
+        } else {
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.error ?? "Could not load categories.");
+          }
+          categoriesByOption =
+            payload.categoriesByOption ?? payload.categoriesByBrand ?? {};
         }
-        categoriesByOption =
-          payload.categoriesByOption ?? payload.categoriesByBrand ?? {};
-      }
 
-      // Mark parents with no nested categories as loaded (empty array).
-      for (const id of toLoad) {
-        if (!(id in categoriesByOption)) categoriesByOption[id] = [];
-      }
+        for (const id of batch) {
+          if (!(id in categoriesByOption)) categoriesByOption[id] = [];
+          const parent = availableOptions.find((option) => option.id === id);
+          const count = (categoriesByOption[id] ?? []).length;
+          pushLog(
+            `${parent?.name ?? id}: found ${count} nested option${count === 1 ? "" : "s"}`,
+            count > 0 ? "success" : "info",
+          );
+        }
 
-      setBrandCategories((current) => ({ ...current, ...categoriesByOption }));
+        setBrandCategories((current) => ({ ...current, ...categoriesByOption }));
+        setSelectedSubcategoryIds((current) => {
+          const next = new Set(current);
+          for (const kids of Object.values(categoriesByOption)) {
+            for (const kid of kids) next.add(kid.id);
+          }
+          return next;
+        });
+        completed += batch.length;
+        setSubDiscoveryProgress({ done: completed, total: toLoad.length });
+      }
+      pushLog(
+        `Nested discovery complete (${completed}/${toLoad.length}).`,
+        "success",
+      );
     } catch (loadError) {
-      setError(
+      const message =
         loadError instanceof Error
           ? loadError.message
-          : "Could not load categories for the selected options.",
-      );
+          : "Could not load categories for the selected options.";
+      pushLog(message, "error");
+      setError(message);
     } finally {
       setIsLoadingBrandCategories(false);
+      setSubDiscoveryProgress(null);
     }
   };
 
@@ -650,16 +777,10 @@ export function StoreSupplierScraperBuilder() {
       ),
     );
 
-  // Whenever brands/categories are selected, load their nested categories for this run.
+  // Nested discovery is started explicitly via the button (not auto on select).
   React.useEffect(() => {
-    if (!activeScraper) return;
-    if (view.kind !== "run" || view.step !== "select") return;
-    if (selectedOptionIds.size === 0) return;
-    const missing = [...selectedOptionIds].filter((id) => brandCategories[id] === undefined);
-    if (missing.length === 0) return;
-    void loadOptionCategories(missing);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeScraperId, selectedOptionIds, browseMode, view]);
+    discoveryLogEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [discoveryLogs]);
 
   const toggleVisibleOptions = () => {
     const allVisibleSelected =
@@ -1452,38 +1573,49 @@ export function StoreSupplierScraperBuilder() {
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-200 px-5 py-4">
                   <div>
                     <h3 className="text-sm font-semibold text-gray-900">
-                      Narrow down each selection
+                      Nested options
                     </h3>
                     <p className="mt-0.5 text-sm text-gray-600">
-                      Tick the categories to include. The run only scrapes what you select here.
+                      Start discovery to load subcategories or nested brands for
+                      your selection, then tick what to scrape.
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    {isLoadingBrandCategories ? (
-                      <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        Loading categories…
-                      </span>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        className="rounded-md"
-                        onClick={() => void loadOptionCategories([...selectedOptionIds], { force: true })}
-                      >
-                        Reload
-                      </Button>
-                    )}
+                    <Button
+                      className="rounded-md"
+                      disabled={
+                        selectedOptionIds.size === 0 || isLoadingBrandCategories
+                      }
+                      onClick={() =>
+                        void loadOptionCategories([...selectedOptionIds], {
+                          force: true,
+                        })
+                      }
+                    >
+                      {isLoadingBrandCategories ? (
+                        <>
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                          Discovering…
+                        </>
+                      ) : browseMode === "brand" ? (
+                        "Start nested brand discovery"
+                      ) : (
+                        "Start subcategory discovery"
+                      )}
+                    </Button>
                     <Button
                       variant="outline"
                       className="rounded-md"
                       disabled={[...selectedOptionIds].every(
-                        (parentId) => (brandCategories[parentId] ?? []).length === 0,
+                        (parentId) =>
+                          (brandCategories[parentId] ?? []).length === 0,
                       )}
                       onClick={() => {
                         setSelectedSubcategoryIds((current) => {
                           const next = new Set(current);
                           for (const parentId of selectedOptionIds) {
-                            for (const category of brandCategories[parentId] ?? []) {
+                            for (const category of brandCategories[parentId] ??
+                              []) {
                               next.add(category.id);
                             }
                           }
@@ -1504,14 +1636,90 @@ export function StoreSupplierScraperBuilder() {
                   </div>
                 </div>
 
+                {isLoadingBrandCategories ||
+                hasRunDiscovery ||
+                discoveryLogs.length > 0 ? (
+                  <div className="border-b border-gray-100 px-5 py-3">
+                    <div className="space-y-2 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          {isLoadingBrandCategories ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-gray-600" />
+                          ) : null}
+                          <p className="text-sm font-medium text-gray-900">
+                            {isLoadingBrandCategories
+                              ? "Nested discovery in progress"
+                              : "Nested discovery log"}
+                          </p>
+                        </div>
+                        {subDiscoveryProgress ? (
+                          <span className="text-xs tabular-nums text-gray-600">
+                            {subDiscoveryProgress.done} /{" "}
+                            {subDiscoveryProgress.total}
+                          </span>
+                        ) : null}
+                      </div>
+                      {subDiscoveryProgress ? (
+                        <Progress
+                          className="h-2"
+                          value={
+                            subDiscoveryProgress.total > 0
+                              ? Math.round(
+                                  (subDiscoveryProgress.done /
+                                    subDiscoveryProgress.total) *
+                                    100,
+                                )
+                              : 0
+                          }
+                        />
+                      ) : null}
+                      <div className="max-h-48 overflow-y-auto rounded-md border border-gray-100 bg-white px-3 py-2 font-mono text-[11px] leading-relaxed">
+                        {discoveryLogs.length === 0 ? (
+                          <p className="text-gray-500">
+                            Waiting for discovery logs…
+                          </p>
+                        ) : (
+                          <ul className="space-y-1">
+                            {discoveryLogs.map((entry) => (
+                              <li
+                                key={entry.id}
+                                className={cn(
+                                  "break-all text-gray-700",
+                                  entry.level === "error" && "text-red-700",
+                                  entry.level === "success" && "text-gray-900",
+                                )}
+                              >
+                                <span className="text-gray-400">
+                                  [{entry.level || "info"}]
+                                </span>{" "}
+                                {entry.message}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        <div ref={discoveryLogEndRef} />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border-b border-gray-100 px-5 py-3">
+                    <div className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs text-gray-600 shadow-sm">
+                      {selectedOptionIds.size} selected. Press the start button
+                      above to discover nested options with live progress.
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-4 p-5">
                   {[...selectedOptionIds].map((parentId) => {
-                    const parent = availableOptions.find((option) => option.id === parentId);
+                    const parent = availableOptions.find(
+                      (option) => option.id === parentId,
+                    );
                     if (!parent) return null;
                     const categories = brandCategories[parentId];
                     const loaded = Array.isArray(categories);
-                    const selectedInParent = (categories ?? []).filter((category) =>
-                      selectedSubcategoryIds.has(category.id),
+                    const selectedInParent = (categories ?? []).filter(
+                      (category) => selectedSubcategoryIds.has(category.id),
                     ).length;
 
                     return (
@@ -1520,20 +1728,26 @@ export function StoreSupplierScraperBuilder() {
                         className="rounded-md border border-gray-200 bg-white p-3"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-sm font-medium text-gray-900">{parent.name}</p>
+                          <p className="text-sm font-medium text-gray-900">
+                            {parent.name}
+                          </p>
                           <span className="text-[11px] text-gray-500">
-                            {!loaded || isLoadingBrandCategories
-                              ? "Loading…"
-                              : categories.length === 0
-                                ? "No nested categories · whole catalogue will be scraped"
-                                : `${selectedInParent} of ${categories.length} selected`}
+                            {isLoadingBrandCategories && !loaded
+                              ? "Discovering…"
+                              : !loaded
+                                ? "Not discovered yet"
+                                : categories.length === 0
+                                  ? "No nested categories · whole catalogue will be scraped"
+                                  : `${selectedInParent} of ${categories.length} selected`}
                           </span>
                         </div>
 
                         {loaded && categories.length > 0 ? (
                           <div className="mt-2 grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
                             {categories.map((category) => {
-                              const subSelected = selectedSubcategoryIds.has(category.id);
+                              const subSelected = selectedSubcategoryIds.has(
+                                category.id,
+                              );
                               return (
                                 <label
                                   key={category.id}
@@ -1547,9 +1761,13 @@ export function StoreSupplierScraperBuilder() {
                                   <input
                                     type="checkbox"
                                     checked={subSelected}
-                                    onChange={() => toggleSubcategory(category.id)}
+                                    onChange={() =>
+                                      toggleSubcategory(category.id)
+                                    }
                                   />
-                                  <span className="min-w-0 truncate">{category.name}</span>
+                                  <span className="min-w-0 truncate">
+                                    {category.name}
+                                  </span>
                                 </label>
                               );
                             })}
@@ -1559,10 +1777,11 @@ export function StoreSupplierScraperBuilder() {
                     );
                   })}
 
-                  {parentsNeedingCategoryChoice.length > 0 && selectedCategoryCount === 0 ? (
+                  {parentsNeedingCategoryChoice.length > 0 &&
+                  selectedCategoryCount === 0 ? (
                     <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
-                      Select at least one category or subcategory above before starting the
-                      scrape.
+                      Select at least one category or subcategory above before
+                      starting the scrape.
                     </div>
                   ) : null}
                 </div>

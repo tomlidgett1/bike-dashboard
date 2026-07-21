@@ -1,9 +1,12 @@
+import { buildContactSearchOrFilter } from "@/lib/crm/contact-search";
+import { createServiceRoleClient } from "@/lib/supabase/server";
 import { createLightspeedClient } from "./lightspeed-client";
 import type { LightspeedCustomer } from "./types";
 
 export type NestCustomerSearchResult = {
   customerId: string;
   name: string;
+  /** Empty when Lightspeed has no mobile on file. */
   phone: string;
 };
 
@@ -386,6 +389,116 @@ function nestCustomerSearchCacheKey(userId: string, query: string): string {
   return `${userId}:${normalizeText(query)}`;
 }
 
+async function searchCrmContactsForNest(
+  userId: string,
+  query: string,
+  limit: number,
+): Promise<NestCustomerSearchResult[]> {
+  const searchFilter = buildContactSearchOrFilter(query);
+  if (!searchFilter) return [];
+
+  try {
+    const admin = createServiceRoleClient();
+    const { data, error } = await admin
+      .from("crm_contacts")
+      .select("id, lightspeed_customer_id, first_name, last_name, phone")
+      .eq("user_id", userId)
+      .or(searchFilter)
+      .limit(Math.max(limit * 3, 24));
+    if (error || !data?.length) return [];
+
+    const q = normalizeText(query);
+    const tokens = queryTokens(query);
+    const ranked = data
+      .map((row) => {
+        const name = [row.first_name, row.last_name]
+          .map((part) => String(part ?? "").trim())
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+        if (!name) return null;
+        const normalisedName = normalizeText(name);
+        let score = 0;
+        if (normalisedName === q) score += 80;
+        else if (normalisedName.includes(q)) score += 40;
+        for (const token of tokens) {
+          if (normalisedName.includes(token)) score += 8;
+        }
+        const phone = String(row.phone ?? "").trim();
+        if (phone) score += 4;
+        return {
+          score,
+          result: {
+            customerId:
+              String(row.lightspeed_customer_id ?? "").trim() ||
+              `crm:${row.id}`,
+            name,
+            phone,
+          } satisfies NestCustomerSearchResult,
+        };
+      })
+      .filter((row): row is { score: number; result: NestCustomerSearchResult } =>
+        Boolean(row && row.score > 0),
+      )
+      .sort(
+        (a, b) =>
+          b.score - a.score || a.result.name.localeCompare(b.result.name),
+      );
+
+    const seen = new Set<string>();
+    const out: NestCustomerSearchResult[] = [];
+    for (const row of ranked) {
+      const key =
+        row.result.customerId ||
+        `${normalizeText(row.result.name)}:${phoneDigits(row.result.phone)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(row.result);
+      if (out.length >= limit) break;
+    }
+    return out;
+  } catch (error) {
+    console.warn(
+      "[nest-customer-search] CRM fast path failed:",
+      error instanceof Error ? error.message : error,
+    );
+    return [];
+  }
+}
+
+function mergeNestCustomerResults(
+  batches: NestCustomerSearchResult[][],
+  limit: number,
+): NestCustomerSearchResult[] {
+  const byKey = new Map<string, NestCustomerSearchResult>();
+
+  for (const batch of batches) {
+    for (const customer of batch) {
+      const phoneKey = phoneDigits(customer.phone);
+      const key =
+        customer.customerId ||
+        (phoneKey ? `phone:${phoneKey}` : `name:${normalizeText(customer.name)}`);
+      const existing = byKey.get(key);
+      if (!existing) {
+        byKey.set(key, customer);
+        continue;
+      }
+      // Prefer a row that has a mobile number.
+      if (!existing.phone && customer.phone) {
+        byKey.set(key, customer);
+      }
+    }
+  }
+
+  const merged = Array.from(byKey.values());
+  merged.sort((a, b) => {
+    const phoneDelta = Number(Boolean(b.phone)) - Number(Boolean(a.phone));
+    if (phoneDelta !== 0) return phoneDelta;
+    return a.name.localeCompare(b.name);
+  });
+  return merged.slice(0, limit);
+}
+
 export async function searchLightspeedCustomersForNest(
   userId: string,
   query: string,
@@ -413,52 +526,59 @@ export async function searchLightspeedCustomersForNest(
 
   // Phone: Contact.mobile filter only (1–2 requests). Compose search must stay snappy.
   if (isPhoneQuery(trimmed)) {
-    const matched = await findCustomerByPhone(userId, trimmed, {
-      allowScan: false,
-      maxScanPages: 0,
-    });
+    const [crmMatches, matched] = await Promise.all([
+      searchCrmContactsForNest(userId, trimmed, limit),
+      findCustomerByPhone(userId, trimmed, {
+        allowScan: false,
+        maxScanPages: 0,
+      }),
+    ]);
+    const lightspeedMatches: NestCustomerSearchResult[] = [];
     if (matched) {
       const phone = pickResultPhone(matched, trimmed);
-      if (phone) {
-        return finish([
-          {
-            customerId: String(matched.customerID),
-            name: customerName(matched),
-            phone,
-          },
-        ]);
-      }
+      lightspeedMatches.push({
+        customerId: String(matched.customerID),
+        name: customerName(matched),
+        phone: phone ?? "",
+      });
     }
-    return finish([]);
+    return finish(mergeNestCustomerResults([crmMatches, lightspeedMatches], limit));
   }
 
   // Exact customer ID lookup — one request.
   if (/^\d+$/.test(trimmed)) {
+    const crmMatches = await searchCrmContactsForNest(userId, trimmed, limit);
     try {
       const profile = await client.getCustomer(trimmed, { load_relations: '["Contact"]' });
       const phone = pickResultPhone(profile, trimmed);
-      if (phone) {
-        return finish([
-          {
-            customerId: String(profile.customerID),
-            name: customerName(profile),
-            phone,
-          },
-        ]);
-      }
+      return finish(
+        mergeNestCustomerResults(
+          [
+            crmMatches,
+            [
+              {
+                customerId: String(profile.customerID),
+                name: customerName(profile),
+                phone: phone ?? "",
+              },
+            ],
+          ],
+          limit,
+        ),
+      );
     } catch {
+      if (crmMatches.length > 0) return finish(crmMatches);
       // Fall through to name search.
     }
   }
 
-  // Fast path (matches brand-portal compose search): two single-page filtered
-  // Customer.json calls in parallel. Do not multipage-scan the whole account.
+  // Local CRM first (usually <50ms), Lightspeed filters in parallel for coverage.
   const tokens = queryTokens(trimmed);
   const first = tokens[0] ?? normalizeText(trimmed);
   const last = tokens.length >= 2 ? tokens[tokens.length - 1]! : first;
   if (first.length < 2) return finish([]);
 
-  const settled = await Promise.allSettled([
+  const lightspeedRequests: Array<Promise<LightspeedCustomer[]>> = [
     client.getCustomers({
       load_relations: '["Contact"]',
       archived: "false",
@@ -471,6 +591,24 @@ export async function searchLightspeedCustomersForNest(
       limit: 20,
       lastName: lightspeedContainsFilter(last),
     }),
+  ];
+  // Multi-token: also ask Lightspeed for first+last together so exact people
+  // like "Sam Danks" are not crowded out of the single-field pages.
+  if (tokens.length >= 2 && first !== last) {
+    lightspeedRequests.push(
+      client.getCustomers({
+        load_relations: '["Contact"]',
+        archived: "false",
+        limit: 20,
+        firstName: lightspeedContainsFilter(first),
+        lastName: lightspeedContainsFilter(last),
+      }),
+    );
+  }
+
+  const [crmMatches, settled] = await Promise.all([
+    searchCrmContactsForNest(userId, trimmed, limit),
+    Promise.allSettled(lightspeedRequests),
   ]);
 
   for (const result of settled) {
@@ -492,23 +630,39 @@ export async function searchLightspeedCustomersForNest(
     );
 
   const seenPhones = new Set<string>();
-  const results: NestCustomerSearchResult[] = [];
+  const seenIds = new Set<string>();
+  const withPhone: NestCustomerSearchResult[] = [];
+  const withoutPhone: NestCustomerSearchResult[] = [];
 
-  for (const { customer } of ranked) {
-    if (results.length >= limit) break;
-    const phone = pickResultPhone(customer, trimmed);
-    if (!phone) continue;
+  for (const { customer, score } of ranked) {
+    const id = String(customer.customerID);
+    if (seenIds.has(id)) continue;
+    seenIds.add(id);
+    const phone = pickResultPhone(customer, trimmed) ?? "";
     const phoneKey = phoneDigits(phone);
-    if (phoneKey && seenPhones.has(phoneKey)) continue;
-    if (phoneKey) seenPhones.add(phoneKey);
-    results.push({
-      customerId: String(customer.customerID),
-      name: customerName(customer),
-      phone,
-    });
+    if (phoneKey) {
+      if (seenPhones.has(phoneKey)) continue;
+      seenPhones.add(phoneKey);
+      withPhone.push({
+        customerId: id,
+        name: customerName(customer),
+        phone,
+      });
+      continue;
+    }
+    // Keep strong name matches even when Nest cannot text them yet.
+    if (score >= 40) {
+      withoutPhone.push({
+        customerId: id,
+        name: customerName(customer),
+        phone: "",
+      });
+    }
   }
 
-  return finish(results);
+  return finish(
+    mergeNestCustomerResults([crmMatches, withPhone, withoutPhone], limit),
+  );
 }
 
 const phoneIndexCache = new Map<string, { expiresAt: number; index: Map<string, string> }>();

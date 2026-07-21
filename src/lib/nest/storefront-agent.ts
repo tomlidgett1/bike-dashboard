@@ -269,11 +269,95 @@ async function createWorkorderBooking(args: {
 // Prompt
 // ---------------------------------------------------------------------------
 
+function formatBrowseContextForPrompt(
+  browseContext?: {
+    interestSummary?: string;
+    focusProduct?: {
+      name?: string;
+      brand?: string | null;
+      category?: string | null;
+      price?: number | null;
+    } | null;
+    currentlyVisible?: Array<{
+      name?: string;
+      brand?: string | null;
+      category?: string | null;
+      price?: number | null;
+    }>;
+    products?: Array<{
+      name?: string;
+      brand?: string | null;
+      category?: string | null;
+      price?: number | null;
+    }>;
+    brands?: string[];
+    categories?: string[];
+    searches?: string[];
+    tabs?: string[];
+    activeCategory?: string | null;
+    activeTab?: string | null;
+    path?: string | null;
+  } | null,
+): string | null {
+  if (!browseContext) return null;
+  const lines: string[] = [];
+  if (browseContext.interestSummary?.trim()) {
+    lines.push(`Summary: ${truncate(browseContext.interestSummary, 360)}`);
+  }
+  const formatProduct = (product: {
+    name?: string;
+    brand?: string | null;
+    category?: string | null;
+    price?: number | null;
+  }) => {
+    const bits = [
+      product.brand?.trim(),
+      product.name?.trim(),
+      product.category?.trim() ? `(${product.category.trim()})` : null,
+      typeof product.price === "number" ? `$${product.price}` : null,
+    ].filter(Boolean);
+    return bits.join(" ");
+  };
+  if (browseContext.focusProduct?.name) {
+    lines.push(`Focus product: ${formatProduct(browseContext.focusProduct)}`);
+  }
+  const visible = (browseContext.currentlyVisible ?? [])
+    .map(formatProduct)
+    .filter(Boolean);
+  if (visible.length > 0) {
+    lines.push(`On screen now: ${visible.slice(0, 4).join("; ")}`);
+  }
+  const products = (browseContext.products ?? [])
+    .slice(0, 6)
+    .map(formatProduct)
+    .filter(Boolean);
+  if (products.length > 0) lines.push(`Also browsed: ${products.join("; ")}`);
+  if ((browseContext.brands ?? []).length > 0) {
+    lines.push(`Brands: ${browseContext.brands!.slice(0, 5).join(", ")}`);
+  }
+  if (browseContext.activeCategory) {
+    lines.push(`Active category: ${browseContext.activeCategory}`);
+  } else if ((browseContext.categories ?? []).length > 0) {
+    lines.push(`Categories: ${browseContext.categories!.slice(0, 5).join(", ")}`);
+  }
+  if ((browseContext.searches ?? []).length > 0) {
+    lines.push(`Searches: ${browseContext.searches!.slice(0, 4).join(", ")}`);
+  }
+  if (browseContext.activeTab) {
+    lines.push(`Tab: ${browseContext.activeTab}`);
+  } else if ((browseContext.tabs ?? []).length > 0) {
+    lines.push(`Tabs: ${browseContext.tabs!.slice(0, 3).join(", ")}`);
+  }
+  if (browseContext.path) lines.push(`Path: ${browseContext.path}`);
+  return lines.length > 0 ? lines.join("\n") : null;
+}
+
 function buildStorefrontInstructions(args: {
   storeName: string;
   config: Record<string, string>;
   knowledge: Array<{ title: string; content_text: string; summary?: string }>;
   businessTimezone?: string | null;
+  browseContextBlock?: string | null;
 }): string {
   const turnContext = buildNestBusinessTurnContextBlock(args.businessTimezone);
 
@@ -305,7 +389,15 @@ function buildStorefrontInstructions(args: {
           )
           .join("\n");
 
-  return `You are the online assistant for ${args.storeName}, a real local bike shop. You chat with customers on the shop's website the way a switched-on, friendly staff member would.
+  const browseSection = args.browseContextBlock
+    ? `## What this customer has been looking at on the website
+Use this as live shopping context. Reference it naturally when helpful (comparisons, fit, use-case, alternatives). Do not recite the list unless asked.
+
+${args.browseContextBlock}
+`
+    : "";
+
+  return `You are the online shopping agent for ${args.storeName}, a real local bike shop. You help customers shop, understand products, compare options, size/fit, service bookings, and anything else a great floor staffer would help with. No stiff FAQ limits: be a proactive shopping partner, still honest about facts.
 
 ## Voice
 - Warm, natural Australian English. Contractions, everyday words, no corporate speak.
@@ -313,6 +405,12 @@ function buildStorefrontInstructions(args: {
 - Plain text only — no markdown, no asterisks, no bullet lists, no headings. Write prices like $129.
 - Be genuinely conversational: acknowledge what they said, answer it, and where it helps, end with ONE natural follow-up question. Never stack questions.
 - Never make facts up. Hours, prices, policies and stock come only from the facts below and your tools. If you don't know, say so and offer to have the team confirm right here in this chat (a teammate sees this thread).
+
+## Shopping help — be useful without boundaries
+- Help with discovery, recommendations, comparisons, budgets, riding style, sizing guidance, accessories that pair well, service needs, and deciding between options they browsed.
+- Lean on browse context when present: continue the shopping journey they already started.
+- You may ask clarifying questions about use-case, fit, budget, or preference.
+- Still never invent stock, prices, warranties, or promotions. Ground product claims in search_products + business facts.
 
 ## Products and stock — use the search_products tool
 - For ANY question about what the shop sells, stocks, has, prices of products, or recommendations ("do you sell lights?", "got any kids bikes?", "how much are tubes?") you MUST call search_products first. Never answer from memory.
@@ -336,7 +434,7 @@ You can book customers in directly. Follow this flow, collecting anything missin
 ## Handover
 - If the customer is upset, wants a human, or asks something the facts and tools can't answer, say a teammate will pick this up right here in the chat, and offer the store phone number from the facts.
 
-${turnContext}
+${browseSection}${turnContext}
 
 ## Business facts
 
@@ -357,6 +455,19 @@ export async function runStorefrontAgentChat(args: {
   chatId: string;
   message: string;
   chatHistory?: PromptCoachChatMessage[];
+  browseContext?: {
+    interestSummary?: string;
+    products?: Array<{
+      name?: string;
+      brand?: string | null;
+      category?: string | null;
+      price?: number | null;
+    }>;
+    categories?: string[];
+    searches?: string[];
+    tabs?: string[];
+    path?: string | null;
+  } | null;
 }): Promise<{ reply: string }> {
   const openaiKey = pickServerEnv(["OPENAI_API_KEY", "NEST_OPENAI_API_KEY"]);
   if (!openaiKey) {
@@ -370,6 +481,7 @@ export async function runStorefrontAgentChat(args: {
   const storeName =
     ctx.config.business_display_name?.trim() || args.storeName || args.brandKey;
   const supabase = createServiceRoleClient();
+  const browseContextBlock = formatBrowseContextForPrompt(args.browseContext);
 
   const searchProductsTool = tool({
     name: "search_products",
@@ -502,6 +614,7 @@ export async function runStorefrontAgentChat(args: {
       config: ctx.config,
       knowledge: ctx.knowledge,
       businessTimezone: ctx.businessTimezone,
+      browseContextBlock,
     }),
     tools: [searchProductsTool, bookServiceTool],
     modelSettings: {

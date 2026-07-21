@@ -90,15 +90,17 @@ export function GenieDataTable({
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const isPanel = variant === "panel";
   const isDashboard = variant === "dashboard";
+  // Dashboard tables match Build a Table: light sticky header, gray-50 borders, row hover.
   const cellTextClass = isPanel || isDashboard ? "text-xs" : "text-sm";
-  const headerPad = isPanel || isDashboard ? "px-3 py-2" : "px-4 py-2";
-  const cellPad = isPanel || isDashboard ? "px-3 py-2" : "px-4 py-2";
+  const headerPad = isDashboard ? "px-3 py-2" : isPanel ? "px-3 py-2" : "px-4 py-2";
+  const cellPad = isDashboard ? "px-3 py-1.5" : isPanel ? "px-3 py-2" : "px-4 py-2";
 
   const columns = React.useMemo<ColumnDef<GenieTableRow>[]>(
     () =>
       table.columns.map((column) => ({
         id: column.key,
-        accessorKey: column.key,
+        // Bracket access: keys like "sale.completeTime" are flat, not nested paths.
+        accessorFn: (row) => row[column.key],
         header: column.label,
         meta: column,
         sortingFn: (rowA, rowB, columnId) =>
@@ -140,11 +142,30 @@ export function GenieDataTable({
   );
 
   const tableSection = (
-      <div className={cn("overflow-x-auto", !embedded && "border-t border-border/70")}>
-        <table className={cn("w-max min-w-full border-collapse", cellTextClass)}>
-          <thead>
+      <div
+        className={cn(
+          isDashboard
+            ? "min-h-0 flex-1 overflow-auto"
+            : cn("overflow-x-auto", !embedded && "border-t border-border/70"),
+        )}
+      >
+        <table
+          className={cn(
+            "border-collapse",
+            cellTextClass,
+            isDashboard
+              ? "w-full min-w-max text-left"
+              : "w-max min-w-full",
+          )}
+        >
+          <thead className={cn(isDashboard && "sticky top-0 z-10 bg-gray-50")}>
             {tableModel.getHeaderGroups().map((headerGroup) => (
-              <tr key={headerGroup.id} className={isPanel ? "bg-muted/45" : "bg-muted/50"}>
+              <tr
+                key={headerGroup.id}
+                className={cn(
+                  isDashboard ? undefined : isPanel ? "bg-muted/45" : "bg-muted/50",
+                )}
+              >
                 {headerGroup.headers.map((header) => {
                   const column = header.column.columnDef.meta as GenieTableColumn;
                   const sorted = header.column.getIsSorted();
@@ -163,7 +184,10 @@ export function GenieDataTable({
                       className={cn(
                         columnMinWidth(column.format, column.align),
                         headerPad,
-                        "border-b border-border/70 font-semibold leading-none text-foreground whitespace-nowrap",
+                        "whitespace-nowrap leading-none",
+                        isDashboard
+                          ? "border-b border-gray-100 font-medium text-gray-600"
+                          : "border-b border-border/70 font-semibold text-foreground",
                         column.align === "right" ? "text-right" : "text-left",
                       )}
                     >
@@ -171,17 +195,26 @@ export function GenieDataTable({
                         type="button"
                         onClick={header.column.getToggleSortingHandler()}
                         className={cn(
-                          "inline-flex max-w-full items-center gap-1.5 whitespace-nowrap rounded-sm outline-none transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/30",
+                          "inline-flex max-w-full items-center gap-1.5 whitespace-nowrap rounded-md outline-none transition-colors focus-visible:ring-2 focus-visible:ring-gray-300",
+                          isDashboard
+                            ? "text-gray-600 hover:text-gray-900"
+                            : "hover:text-primary focus-visible:ring-primary/30",
                           column.align === "right" ? "justify-end" : "justify-start",
                         )}
                       >
                         <span>{flexRender(header.column.columnDef.header, header.getContext())}</span>
                         {sorted === "asc" ? (
-                          <ArrowUp className={cn("shrink-0", isPanel ? "h-3 w-3" : "h-3.5 w-3.5")} />
+                          <ArrowUp className={cn("shrink-0", isPanel || isDashboard ? "h-3 w-3" : "h-3.5 w-3.5")} />
                         ) : sorted === "desc" ? (
-                          <ArrowDown className={cn("shrink-0", isPanel ? "h-3 w-3" : "h-3.5 w-3.5")} />
+                          <ArrowDown className={cn("shrink-0", isPanel || isDashboard ? "h-3 w-3" : "h-3.5 w-3.5")} />
                         ) : (
-                          <ArrowUpDown className={cn("shrink-0 opacity-45", isPanel ? "h-3 w-3" : "h-3.5 w-3.5")} />
+                          <ArrowUpDown
+                            className={cn(
+                              "shrink-0",
+                              isPanel || isDashboard ? "h-3 w-3" : "h-3.5 w-3.5",
+                              isDashboard ? "text-gray-300" : "opacity-45",
+                            )}
+                          />
                         )}
                       </button>
                     </th>
@@ -192,7 +225,14 @@ export function GenieDataTable({
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id} className="border-t border-border/50">
+              <tr
+                key={row.id}
+                className={cn(
+                  isDashboard
+                    ? "hover:bg-gray-50/80"
+                    : "border-t border-border/50",
+                )}
+              >
                 {row.getVisibleCells().map((cell) => {
                   const column = cell.column.columnDef.meta as GenieTableColumn;
                   const display = String(cell.getValue() ?? "—");
@@ -205,8 +245,12 @@ export function GenieDataTable({
                       className={cn(
                         columnMinWidth(column.format, column.align),
                         cellPad,
-                        "align-top text-muted-foreground whitespace-nowrap",
-                        column.align === "right" && "text-right font-mono tabular-nums",
+                        "whitespace-nowrap",
+                        isDashboard
+                          ? "border-b border-gray-50 text-gray-800"
+                          : "align-top text-muted-foreground",
+                        column.align === "right" && "text-right tabular-nums",
+                        column.align === "right" && !isDashboard && "font-mono",
                         !numeric && "max-w-[18rem] truncate",
                       )}
                     >
@@ -217,12 +261,13 @@ export function GenieDataTable({
               </tr>
             ))}
             {rows.length === 0 ? (
-              <tr className="border-t border-border/50">
+              <tr className={cn(!isDashboard && "border-t border-border/50")}>
                 <td
                   colSpan={table.columns.length}
                   className={cn(
                     cellPad,
-                    "h-20 text-center text-xs font-medium text-muted-foreground",
+                    "h-20 text-center text-xs",
+                    isDashboard ? "text-gray-500" : "font-medium text-muted-foreground",
                   )}
                 >
                   No table data
@@ -235,7 +280,16 @@ export function GenieDataTable({
   );
 
   if (embedded) {
-    return <div className="h-full min-h-0">{tableSection}</div>;
+    return (
+      <div className={cn("h-full min-h-0", isDashboard && "flex flex-col")}>
+        {table.subtitle && isDashboard ? (
+          <p className="shrink-0 border-b border-gray-100 px-3 py-1.5 text-[11px] text-gray-500">
+            {table.subtitle}
+          </p>
+        ) : null}
+        {tableSection}
+      </div>
+    );
   }
 
   const shellContent = (

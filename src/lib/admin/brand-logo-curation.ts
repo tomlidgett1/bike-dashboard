@@ -1,6 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { buildBrandLogoSearchQuery } from '@/lib/store/brand-logo-serper';
-import { importBrandLogoFromUrl } from '@/lib/admin/import-brand-logo';
+import {
+  importBrandLogoFromUrl,
+  type BrandLogoCropPixels,
+} from '@/lib/admin/import-brand-logo';
 import { resolveYellowJerseyStoreUserId } from '@/lib/admin/yellow-jersey-store';
 
 export type BrandLogoCurationStatus = 'pending' | 'approved' | 'skipped';
@@ -50,7 +53,7 @@ export async function aggregateYellowJerseyBrands(
 ): Promise<ProductBrandAggregate[]> {
   const { data, error } = await supabase
     .from('products')
-    .select('manufacturer_id, manufacturer_name, brand')
+    .select('manufacturer_id, manufacturer_name, brand, qoh')
     .eq('user_id', storeUserId)
     .eq('is_active', true)
     .gt('qoh', 0);
@@ -63,12 +66,15 @@ export async function aggregateYellowJerseyBrands(
     const brandName = resolveDisplayBrandName(row);
     if (!brandName) continue;
 
+    const units = Math.max(0, Math.floor(Number(row.qoh) || 0));
+    if (units <= 0) continue;
+
     const manufacturerId = row.manufacturer_id ? String(row.manufacturer_id) : null;
     const key = normaliseBrandKey(brandName, manufacturerId);
     const existing = counts.get(key);
 
     if (existing) {
-      existing.product_count += 1;
+      existing.product_count += units;
       continue;
     }
 
@@ -76,7 +82,7 @@ export async function aggregateYellowJerseyBrands(
       brand_name: brandName,
       manufacturer_id: manufacturerId,
       manufacturer_name: row.manufacturer_name?.trim() || brandName,
-      product_count: 1,
+      product_count: units,
     });
   }
 
@@ -88,26 +94,36 @@ export async function syncBrandLogoCurations(
   storeUserId: string,
 ): Promise<{ synced: number; total: number }> {
   const brands = await aggregateYellowJerseyBrands(supabase, storeUserId);
-  let synced = 0;
+  if (brands.length === 0) return { synced: 0, total: 0 };
 
-  for (const brand of brands) {
-    const { error } = await supabase.from('brand_logo_curations').upsert(
-      {
-        store_user_id: storeUserId,
-        brand_name: brand.brand_name,
-        manufacturer_id: brand.manufacturer_id,
-        manufacturer_name: brand.manufacturer_name,
-        product_count: brand.product_count,
-        updated_at: new Date().toISOString(),
-      },
-      {
+  const now = new Date().toISOString();
+  const rows = brands.map((brand) => ({
+    store_user_id: storeUserId,
+    brand_name: brand.brand_name,
+    manufacturer_id: brand.manufacturer_id,
+    manufacturer_name: brand.manufacturer_name,
+    product_count: brand.product_count,
+    updated_at: now,
+  }));
+
+  // Batch upsert in chunks — sequential per-brand upserts were the main sync cost.
+  const CHUNK = 100;
+  let synced = 0;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const chunk = rows.slice(i, i + CHUNK);
+    const { error, count } = await supabase
+      .from('brand_logo_curations')
+      .upsert(chunk, {
         onConflict: 'store_user_id,brand_key',
         ignoreDuplicates: false,
-      },
-    );
+        count: 'exact',
+      });
 
-    if (!error) synced += 1;
-    else console.error('[brand-logo-curation] upsert failed:', brand.brand_name, error.message);
+    if (error) {
+      console.error('[brand-logo-curation] batch upsert failed:', error.message);
+      continue;
+    }
+    synced += count ?? chunk.length;
   }
 
   return { synced, total: brands.length };
@@ -242,6 +258,7 @@ export async function approveBrandLogo(options: {
   supabase: SupabaseClient;
   curationId: string;
   imageUrl: string;
+  crop?: BrandLogoCropPixels | null;
   reviewedBy: string;
 }): Promise<BrandLogoCurationRow> {
   const curation = await getBrandLogoCurationById(options.supabase, options.curationId);
@@ -250,6 +267,7 @@ export async function approveBrandLogo(options: {
   const adminStorage = options.supabase.storage.from('listing-images');
   const importResult = await importBrandLogoFromUrl({
     imageUrl: options.imageUrl,
+    crop: options.crop,
     storagePathPrefix: `brands/${curation.store_user_id}`,
     upload: async (path, buffer, contentType) => {
       const { error } = await adminStorage.upload(path, buffer, {

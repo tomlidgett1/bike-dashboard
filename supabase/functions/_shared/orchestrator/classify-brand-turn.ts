@@ -54,6 +54,7 @@ Rules:
 - Always set mode to "smart" and primaryDomain to "brand".
 - Use tools whenever the reply depends on live shop data or ongoing booking state.
 - If a booking draft already exists, strongly prefer including "brand.booking.read" so the assistant can continue naturally.
+- If a confirmed/created booking already exists, include "brand.booking.read" and set memoryDepth to "full" so due-date and booking follow-ups stay grounded.
 - Include "brand.booking.write" when the user is supplying or changing booking details, or when the booking needs to stay coherent across this turn.
 - Include "brand.booking.create" only when the user is clearly confirming a complete booking now.
 - Include "brand.lightspeed.inventory.read" for pricing/stock/product questions.
@@ -61,7 +62,7 @@ Rules:
 - Include "brand.lightspeed.sales.read" only for internal sales/takings questions.
 - Include Deputy capabilities only for internal mode and only when roster/timesheet/shift changes or reads are relevant.
 - If the turn is pure business FAQ or conversational handling and no live data/state is needed, requiresToolUse can be false and requiredCapabilities can be [].
-- Use memoryDepth "full" when an active booking draft or earlier thread state clearly matters. Otherwise use "light".
+- Use memoryDepth "full" when an active booking draft, confirmed booking, or earlier thread state clearly matters. Otherwise use "light".
 - style:
   - "brief" for quick confirmations or tiny replies
   - "normal" for standard chat turns

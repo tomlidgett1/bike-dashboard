@@ -134,7 +134,12 @@ export async function POST(
     if ("error" in loaded) return loaded.error;
     const { supabase, profile, brandKey } = loaded;
 
-    let body: { message?: unknown; chatId?: unknown; history?: unknown };
+    let body: {
+      message?: unknown;
+      chatId?: unknown;
+      history?: unknown;
+      browseContext?: unknown;
+    };
     try {
       body = (await request.json()) as typeof body;
     } catch {
@@ -148,6 +153,23 @@ export async function POST(
     if (message.length > 1000) {
       return json({ error: "Message is too long." }, 400);
     }
+
+    const browseContext =
+      body.browseContext && typeof body.browseContext === "object"
+        ? (body.browseContext as {
+            interestSummary?: string;
+            products?: Array<{
+              name?: string;
+              brand?: string | null;
+              category?: string | null;
+              price?: number | null;
+            }>;
+            categories?: string[];
+            searches?: string[];
+            tabs?: string[];
+            path?: string | null;
+          })
+        : null;
 
     const existingChatId =
       typeof body.chatId === "string" && body.chatId.trim() ? body.chatId.trim() : "";
@@ -192,6 +214,7 @@ export async function POST(
         chatId,
         message,
         chatHistory: history,
+        browseContext,
       });
       reply = result.reply;
     }

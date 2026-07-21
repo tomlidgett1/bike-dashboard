@@ -23,8 +23,9 @@ import {
   type PublicMarketplaceCardRow,
 } from "@/lib/marketplace/public-card-feed";
 import { resolveProductBrandLogoUrl } from "@/lib/marketplace/resolve-product-brand-logo";
+import { fetchCachedPublicStoreProfile } from "@/lib/marketplace/public-store-profile";
 import type { ProductSellerProfile } from "@/components/marketplace/product-detail/about-this-seller-section";
-import type { OpeningHours } from "@/lib/types/store";
+import type { OpeningHours, StoreProfile } from "@/lib/types/store";
 
 // ============================================================
 // Product Page - Server Component with Parallel Data Fetching
@@ -56,6 +57,7 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
         id,
         description,
         product_description,
+        sub_description,
         product_specs,
         product_spec_sources,
         display_name,
@@ -162,9 +164,10 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
       order: number;
     }> = [];
     
-    const [productImages, immersivePage] = await Promise.all([
+    const [productImages, immersivePage, worldClassPage] = await Promise.all([
       getProductImages(supabase, productId, product.canonical_product_id),
       fetchImmersivePageFlag(supabase, productId),
+      fetchWorldClassPage(supabase, productId),
     ]);
     
     if (productImages.length > 0) {
@@ -243,6 +246,7 @@ async function fetchProduct(productId: string, allowSoldProducts: boolean = fals
       images: imagesForClient.length > 0 ? imagesForClient : product.images,
       image_variants: null,
       immersive_page: immersivePage,
+      world_class_page: worldClassPage,
       uber_delivery_enabled: product.uber_delivery_enabled ?? false,
       // Members of a variant group present the shared master title.
       display_name: variants?.masterTitle || (product as { display_name?: string }).display_name,
@@ -335,6 +339,25 @@ async function fetchImmersivePageFlag(
 
   if (error) return false;
   return !!(data as any)?.immersive_page;
+}
+
+async function fetchWorldClassPage(
+  supabase: ReturnType<typeof createPublicSupabaseClient>,
+  productId: string,
+): Promise<MarketplaceProduct['world_class_page']> {
+  // Read defensively so older databases without world_class_page still render.
+  const { data, error } = await supabase
+    .from('products')
+    .select('world_class_page')
+    .eq('id', productId)
+    .maybeSingle();
+
+  if (error) return null;
+  const page = (data as { world_class_page?: MarketplaceProduct['world_class_page'] } | null)
+    ?.world_class_page;
+  if (!page || typeof page !== 'object') return null;
+  if (typeof (page as { productName?: unknown }).productName !== 'string') return null;
+  return page;
 }
 
 async function fetchPublicCardProducts(
@@ -606,16 +629,10 @@ const fetchCoreProductData = unstable_cache(
 
     const productBrand = product.brand?.trim() || null;
     const supabase = createPublicSupabaseClient();
-    const [brandLogoUrl, sellerProfile] = await Promise.all([
-      product.user_id && product.store_bicycle_store
-        ? resolveProductBrandLogoUrl(supabase, product.user_id, {
-            manufacturer_id: (product as { manufacturer_id?: string | null }).manufacturer_id,
-            manufacturer_name: (product as { manufacturer_name?: string | null }).manufacturer_name,
-            brand: product.brand,
-          })
-        : Promise.resolve(null),
-      product.user_id ? fetchSellerProfile(supabase, product.user_id) : Promise.resolve(null),
-    ]);
+    // Brand logos are resolved outside this cache so approvals show immediately.
+    const sellerProfile = product.user_id
+      ? await fetchSellerProfile(supabase, product.user_id)
+      : null;
 
     // Seller identity for the header and "see all" links is derivable from the
     // product row itself (fetchProduct already resolves these) — no extra query.
@@ -628,9 +645,9 @@ const fetchCoreProductData = unstable_cache(
         }
       : null;
 
-    return { product, sellerInfo, productBrand, brandLogoUrl, sellerProfile };
+    return { product, sellerInfo, productBrand, sellerProfile };
   },
-  ['marketplace-product-core-v1'],
+  ['marketplace-product-core-v3'],
   { revalidate: 60 },
 );
 
@@ -730,11 +747,11 @@ export default async function ProductPage({
   searchParams
 }: {
   params: Promise<{ productId: string }>;
-  searchParams: Promise<{ fromPurchase?: string; fromUpload?: string }>;
+  searchParams: Promise<{ fromPurchase?: string; fromUpload?: string; store?: string }>;
 }) {
   const { productId: param } = await params;
   const productId = extractProductId(param);
-  const { fromPurchase, fromUpload } = await searchParams;
+  const { fromPurchase, fromUpload, store: storeQuery } = await searchParams;
 
   // Allow viewing sold products if coming from purchase history
   const allowSoldProducts = fromPurchase === 'true';
@@ -744,6 +761,37 @@ export default async function ProductPage({
   // If product not found, show 404
   if (!data) {
     notFound();
+  }
+
+  // Fresh on every request so newly approved logos appear without waiting on ISR.
+  const brandLogoUrl =
+    data.product.user_id && data.product.store_bicycle_store
+      ? await resolveProductBrandLogoUrl(
+          createPublicSupabaseClient(),
+          data.product.user_id,
+          {
+            manufacturer_id: (data.product as { manufacturer_id?: string | null })
+              .manufacturer_id,
+            manufacturer_name: (data.product as { manufacturer_name?: string | null })
+              .manufacturer_name,
+            brand: data.product.brand,
+          },
+        )
+      : null;
+
+  // Prefetch store chrome on the server when arriving from a storefront so the
+  // product-page header paints instantly (no client spinner / waterfall).
+  let storeProfile: StoreProfile | null = null;
+  if (
+    storeQuery &&
+    data.sellerInfo?.id === storeQuery &&
+    data.sellerInfo.account_type === "bicycle_store"
+  ) {
+    try {
+      storeProfile = await fetchCachedPublicStoreProfile(storeQuery);
+    } catch (error) {
+      console.error("[Product page] Failed to prefetch store chrome:", error);
+    }
   }
 
   // Recommendation lists stream in after first paint — start fetching now but
@@ -778,9 +826,10 @@ export default async function ProductPage({
         product={data.product}
         sellerInfo={data.sellerInfo}
         sellerProfile={data.sellerProfile}
+        storeProfile={storeProfile}
         recommendationsPromise={recommendationsPromise}
         brandName={data.productBrand ?? null}
-        brandLogoUrl={data.brandLogoUrl}
+        brandLogoUrl={brandLogoUrl}
         showUploadBanner={fromUpload === 'true'}
       />
     </>

@@ -16,6 +16,11 @@ import {
   type ExistingCatalogProduct,
 } from '@/lib/store/online-products-csv';
 import { parseSohFromValues } from '@/lib/store/online-products-csv-parse';
+import {
+  listCanonicalLevel1,
+  listCanonicalLevel2,
+  resolveCanonicalPath,
+} from '@/lib/marketplace/canonical-taxonomy';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -30,13 +35,10 @@ const BATCH_SIZE = 6;
 const BATCH_CONCURRENCY = 2;
 const BATCH_RETRY_DELAY_MS = 800;
 
-const CATEGORIES = ['Bicycles', 'Parts', 'Apparel', 'Nutrition'] as const;
-const SUBCATEGORIES: Record<string, string[]> = {
-  Bicycles: ['Road', 'Mountain', 'Hybrid', 'Electric', 'Kids', 'BMX', 'Cruiser', 'Other'],
-  Parts: ['Frames', 'Wheels', 'Drivetrain', 'Brakes', 'Handlebars', 'Saddles', 'Pedals', 'Other'],
-  Apparel: ['Jerseys', 'Shorts', 'Jackets', 'Gloves', 'Shoes', 'Helmets', 'Other'],
-  Nutrition: ['Energy Bars', 'Gels', 'Drinks', 'Supplements', 'Other'],
-};
+const CATEGORIES = listCanonicalLevel1();
+const SUBCATEGORIES: Record<string, string[]> = Object.fromEntries(
+  CATEGORIES.map((level1) => [level1, listCanonicalLevel2(level1)]),
+);
 
 interface CsvRowForAI {
   rowIndex: number;
@@ -88,8 +90,8 @@ For EVERY row that describes a saleable cycling product, use web search to verif
 - Clean the title into a precise ecommerce product title with brand/model/variant/size/colour where relevant.
 - Preserve important row-specific variant details such as size, colour, flavour, volume, wheel size, speed count, side, front/rear, pair/single, and model year.
 - Use the CSV price when present. Convert prices to an AUD number and return null only if no price can be inferred from the row.
-- Categorise into exactly one category: Bicycles, Parts, Apparel, Nutrition.
-- Choose the most specific subcategory from the supplied category map.
+- Categorise into exactly one Yellow Jersey L1 category from the supplied category map.
+- Choose the most specific L2 subcategory from that map.
 - Write a concise product description and a short bullet-list spec sheet grounded in the row and web research.
 
 Do not invent products for blank rows, section headings, category-only rows, totals, notes, shipping rows, or accessories that are not saleable products.
@@ -248,13 +250,15 @@ function parseJsonObject<T>(text: string): T {
 
 function normaliseCategory(value: string | null | undefined) {
   const match = CATEGORIES.find((category) => category.toLowerCase() === String(value || '').toLowerCase());
-  return match ?? 'Parts';
+  return match ?? 'Accessories';
 }
 
 function normaliseSubcategory(category: string, value: string | null | undefined) {
-  const allowed = SUBCATEGORIES[category] ?? SUBCATEGORIES.Parts;
+  const resolved = resolveCanonicalPath(category, value, null);
+  if (resolved) return resolved.level2;
+  const allowed = SUBCATEGORIES[category] ?? SUBCATEGORIES.Accessories ?? [];
   const match = allowed.find((subcategory) => subcategory.toLowerCase() === String(value || '').toLowerCase());
-  return match ?? 'Other';
+  return match ?? allowed[0] ?? 'Locks';
 }
 
 function normalisePrice(value: number | string | null | undefined) {

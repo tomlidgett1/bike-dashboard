@@ -3,25 +3,28 @@
 import * as React from "react";
 import {
   Bike,
+  Database,
   ScanSearch,
   Sparkles,
 } from "@/components/layout/app-sidebar/dashboard-icons";
 import { DashboardFloatingPage } from "@/components/layout/dashboard-floating-page";
 import { StoreBikeUrlImport } from "@/components/settings/store-bike-url-import";
 import { StoreFesportsScrapeManager } from "@/components/settings/store-fesports-scrape-manager";
+import { StoreSharedCatalogueIngest } from "@/components/settings/store-shared-catalogue-ingest";
 import { StoreSupplierScraperBuilder } from "@/components/settings/store-supplier-scraper-builder";
 import { cn } from "@/lib/utils";
 
-type ScrapeTab = "builder" | "bike" | "fesports";
+type ScrapeTab = "shared" | "builder" | "bike" | "fesports";
 
 const TABS: Array<{ id: ScrapeTab; label: string; icon: typeof Sparkles }> = [
+  { id: "shared", label: "Shared catalogue", icon: Database },
   { id: "builder", label: "Supplier scrapers", icon: Sparkles },
   { id: "bike", label: "Bike from URL", icon: Bike },
   { id: "fesports", label: "FE Sports", icon: ScanSearch },
 ];
 
 export function StoreScrapePageContent() {
-  const [activeTab, setActiveTab] = React.useState<ScrapeTab>("builder");
+  const [activeTab, setActiveTab] = React.useState<ScrapeTab>("shared");
 
   return (
     <DashboardFloatingPage
@@ -50,7 +53,9 @@ export function StoreScrapePageContent() {
           ))}
         </div>
       </div>
-      {activeTab === "builder" ? (
+      {activeTab === "shared" ? (
+        <StoreSharedCatalogueIngest />
+      ) : activeTab === "builder" ? (
         <StoreSupplierScraperBuilder />
       ) : activeTab === "bike" ? (
         <StoreBikeUrlImport />

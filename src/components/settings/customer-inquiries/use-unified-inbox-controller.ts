@@ -804,13 +804,35 @@ export function useUnifiedInboxController() {
 
   /**
    * Replace the open thread with a fresh server copy, keeping any optimistic
-   * messages (negative ids) the server hasn't confirmed yet.
+   * messages (negative ids) the server hasn't confirmed yet, and preserving
+   * inbox-only like state until the server round-trips store_liked.
    */
   const applyFreshNestThread = React.useCallback(
     (conversation: NestConversationDetail, listChat?: NestConversationListItem) => {
       const prev = nestDetailRef.current;
       let next = mergeNestThreadFromList(conversation, listChat);
       if (prev && prev.chatId === conversation.chatId) {
+        const prevLiked = new Map<number, boolean>();
+        for (const message of prev.messages) {
+          if (message.metadata?.store_liked === true) {
+            prevLiked.set(message.id, true);
+          }
+        }
+        if (prevLiked.size > 0) {
+          next = {
+            ...next,
+            messages: next.messages.map((message) => {
+              if (!prevLiked.get(message.id) || message.metadata?.store_liked === true) {
+                return message;
+              }
+              return {
+                ...message,
+                metadata: { ...(message.metadata ?? {}), store_liked: true },
+              };
+            }),
+          };
+        }
+
         const pending = prev.messages.filter(
           (message) =>
             message.id < 0 &&
@@ -1125,6 +1147,25 @@ export function useUnifiedInboxController() {
       return { ...prev, messages: prev.messages.filter((item) => item.id !== tempId) };
     });
   }, []);
+
+  const handleNestMessageStoreLiked = React.useCallback(
+    (messageId: number, liked: boolean, chatId: string) => {
+      setNestDetail((prev) => {
+        if (!prev || prev.chatId !== chatId) return prev;
+        const messages = prev.messages.map((message) => {
+          if (message.id !== messageId) return message;
+          const metadata = { ...(message.metadata ?? {}) };
+          if (liked) metadata.store_liked = true;
+          else delete metadata.store_liked;
+          return { ...message, metadata };
+        });
+        const next = { ...prev, messages };
+        setCachedNestThread(next);
+        return next;
+      });
+    },
+    [],
+  );
 
   const handleNestMessageSent = React.useCallback(
     (message: NestConversationMessage, chatId: string) => {
@@ -1539,6 +1580,7 @@ export function useUnifiedInboxController() {
     handleNestMessageOptimistic,
     handleNestMessageConfirmed,
     handleNestMessageFailed,
+    handleNestMessageStoreLiked,
     handleNestMessageSent,
     handleNestStarted,
     listLoading,

@@ -16,7 +16,7 @@ import {
   ensureCanonical,
   scheduleCloudinaryUpload,
 } from "@/lib/scrapers/supplier-import";
-import { MARKETPLACE_SUBCATEGORIES } from "@/lib/types/marketplace";
+import { resolveCanonicalPath } from "@/lib/marketplace/canonical-taxonomy";
 import type { BikeSpecsData } from "@/lib/types/bike-specs";
 
 export const dynamic = "force-dynamic";
@@ -49,16 +49,22 @@ function parseBody(raw: unknown): BikeUrlImportRequest | null {
     ? (body.imageUrls as unknown[]).map(String).filter(Boolean)
     : [];
 
-  const subcategory = String(body.subcategory ?? "Other");
+  const rawLevel1 = String((body as { marketplace_category?: string }).marketplace_category ?? "Bicycles");
+  const rawLevel2 = String(body.subcategory ?? "Hybrid / Fitness");
+  const resolved =
+    resolveCanonicalPath(rawLevel1, rawLevel2, null) ||
+    resolveCanonicalPath("Bicycles", rawLevel2, null) ||
+    resolveCanonicalPath("E-Bikes", rawLevel2, null) ||
+    resolveCanonicalPath("Bicycles", "Hybrid / Fitness", null);
+
   return {
     draft,
     price,
     sizes,
     imageUrls,
     heroImageUrl: body.heroImageUrl ? String(body.heroImageUrl) : imageUrls[0] ?? null,
-    subcategory: MARKETPLACE_SUBCATEGORIES.Bicycles.includes(subcategory)
-      ? subcategory
-      : "Other",
+    subcategory: resolved?.level2 ?? "Hybrid / Fitness",
+    marketplace_category: resolved?.level1 ?? "Bicycles",
   };
 }
 
@@ -150,7 +156,7 @@ export async function POST(request: NextRequest) {
         is_bicycle: true,
         bike_specs: bikeSpecs,
         price: input.price,
-        marketplace_category: "Bicycles",
+        marketplace_category: input.marketplace_category || "Bicycles",
         marketplace_subcategory: input.subcategory,
         product_description:
           draft.description || [`Source: official product page`, draft.sourceUrl].join("\n"),

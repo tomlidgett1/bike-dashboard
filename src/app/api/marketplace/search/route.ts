@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { resolveProductImage } from '@/lib/services/image-resolver';
 import { toCurrentHeroPublicId } from '@/lib/utils/cloudinary-transforms';
+import { searchCanonicalCategories } from '@/lib/marketplace/canonical-taxonomy';
 
 export const dynamic = 'force-dynamic';
 
@@ -114,6 +115,13 @@ export async function GET(request: NextRequest) {
         const thumbnailUrl = resolved?.thumbnail_url;
         if (!imageUrl) return null;
 
+        const categoryLabel = [
+          product.marketplace_category,
+          product.marketplace_subcategory,
+        ]
+          .filter(Boolean)
+          .join(' / ');
+
         return {
           id: product.product_id,
           name: product.display_name || product.description,
@@ -122,7 +130,9 @@ export async function GET(request: NextRequest) {
           discount_percent: readyProduct.discount_percent != null ? parseFloat(readyProduct.discount_percent) : null,
           discount_active: readyProduct.discount_active ?? false,
           discount_ends_at: readyProduct.discount_ends_at ?? null,
-          category: product.marketplace_category,
+          category: categoryLabel || product.marketplace_category,
+          marketplace_category: product.marketplace_category,
+          marketplace_subcategory: product.marketplace_subcategory,
           imageUrl: thumbnailUrl || imageUrl, // Use thumbnail for search dropdown (smaller, faster)
           thumbnailUrl, // Pre-generated thumbnail for instant loading
           storeName: product.listing_type === 'private_listing' 
@@ -148,12 +158,23 @@ export async function GET(request: NextRequest) {
         productCount: store.product_count || 0,
       }));
 
+    const categories = searchCanonicalCategories(searchTerm, 6).map((category) => ({
+      label: category.label,
+      level1: category.level1,
+      level2: category.level2,
+      level3: category.level3,
+      href: `/marketplace?space=stores&level1=${encodeURIComponent(category.level1)}&level2=${encodeURIComponent(category.level2)}${
+        category.level3 ? `&level3=${encodeURIComponent(category.level3)}` : ''
+      }`,
+    }));
+
     const totalTime = performance.now() - startTime;
     console.log(`⚡ [INSTANT SEARCH] Total response time: ${totalTime.toFixed(2)}ms - ${products.length} products, ${stores.length} stores`);
 
     const response = NextResponse.json({
       products,
       stores,
+      categories,
       query: searchTerm,
     });
 

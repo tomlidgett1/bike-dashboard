@@ -69,6 +69,7 @@ export interface ListingFormData {
   // Categories
   marketplace_category?: string;
   marketplace_subcategory?: string;
+  marketplace_level_3_category?: string | null;
   
   // Bike-Specific
   frameSize?: string;
@@ -160,6 +161,7 @@ export interface BikeDetailsFormData {
 // Step 2B: Part Details
 export interface PartDetailsFormData {
   title?: string;
+  marketplace_category?: string;
   marketplace_subcategory?: string;
   partTypeDetail?: string;
   brand?: string;
@@ -174,6 +176,7 @@ export interface PartDetailsFormData {
 // Step 2C: Apparel Details
 export interface ApparelDetailsFormData {
   title?: string;
+  marketplace_category?: string;
   marketplace_subcategory?: string;
   brand?: string;
   model?: string;

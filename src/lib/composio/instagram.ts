@@ -24,9 +24,202 @@ export async function listInstagramConnections(userId: string): Promise<Composio
   return listActiveConnections(accounts, 'instagram')
 }
 
-export async function mintInstagramConnectLink(userId: string): Promise<{ url: string }> {
-  const link = await mintToolkitConnectLink(userId, 'instagram', { allowMultiple: false })
+export async function mintInstagramConnectLink(
+  userId: string,
+  options?: { callbackUrl?: string },
+): Promise<{ url: string }> {
+  const link = await mintToolkitConnectLink(userId, 'instagram', {
+    allowMultiple: false,
+    callbackUrl: options?.callbackUrl,
+  })
   return { url: link.url }
+}
+
+export type InstagramPublishResult = {
+  mediaId: string | null
+  creationId: string | null
+  igUserId: string | null
+  username: string | null
+}
+
+/**
+ * Publish a single image post or story via Composio (Meta auth is handled by Composio).
+ * Flow: create media container → publish container.
+ *
+ * Feed images: omit media_type (inferred from image_url).
+ * Stories: media_type = STORIES.
+ */
+export async function publishInstagramPhotoPost(args: {
+  userId: string
+  imageUrl: string
+  caption: string
+  destination?: 'post' | 'story'
+  connectedAccountId?: string
+}): Promise<InstagramPublishResult> {
+  const connections = await listInstagramConnections(args.userId)
+  const connection =
+    (args.connectedAccountId
+      ? connections.find((c) => c.id === args.connectedAccountId)
+      : null) ?? connections[0]
+
+  if (!connection) {
+    throw new Error('Connect Instagram in Yellow Jersey first.')
+  }
+
+  const profile = await fetchInstagramProfile(args.userId, connection.id)
+  const igUserId = profile.id || 'me'
+  const isStory = args.destination === 'story'
+
+  const containerArgs: Record<string, unknown> = {
+    ig_user_id: igUserId,
+    image_url: args.imageUrl,
+  }
+  if (isStory) {
+    containerArgs.media_type = 'STORIES'
+  } else if (args.caption.trim()) {
+    containerArgs.caption = args.caption
+  }
+
+  const container = await executeInstagramTool(
+    args.userId,
+    'INSTAGRAM_POST_IG_USER_MEDIA',
+    containerArgs,
+    connection.id,
+  )
+
+  const creationId = pickString(
+    container.id,
+    container.creation_id,
+    (container.data as Record<string, unknown> | undefined)?.id,
+    (container.data as Record<string, unknown> | undefined)?.creation_id,
+  )
+  if (!creationId) {
+    throw new Error('Instagram did not return a media container id.')
+  }
+
+  return publishInstagramContainer({
+    userId: args.userId,
+    igUserId,
+    creationId,
+    username: profile.username,
+    connectedAccountId: connection.id,
+  })
+}
+
+/**
+ * Publish a multi-image feed carousel (2–10 photos) via Composio.
+ */
+export async function publishInstagramCarouselPost(args: {
+  userId: string
+  imageUrls: string[]
+  caption: string
+  connectedAccountId?: string
+}): Promise<InstagramPublishResult> {
+  const urls = args.imageUrls.map((url) => url.trim()).filter(Boolean)
+  if (urls.length < 2) {
+    throw new Error('A carousel needs at least 2 photos.')
+  }
+  if (urls.length > 10) {
+    throw new Error('Instagram carousels support up to 10 photos.')
+  }
+
+  const connections = await listInstagramConnections(args.userId)
+  const connection =
+    (args.connectedAccountId
+      ? connections.find((c) => c.id === args.connectedAccountId)
+      : null) ?? connections[0]
+
+  if (!connection) {
+    throw new Error('Connect Instagram in Yellow Jersey first.')
+  }
+
+  const profile = await fetchInstagramProfile(args.userId, connection.id)
+  const igUserId = profile.id || 'me'
+
+  const container = await executeInstagramTool(
+    args.userId,
+    'INSTAGRAM_CREATE_CAROUSEL_CONTAINER',
+    {
+      ig_user_id: igUserId,
+      child_image_urls: urls,
+      caption: args.caption.trim() || undefined,
+    },
+    connection.id,
+  )
+
+  const creationId = pickString(
+    container.id,
+    container.creation_id,
+    (container.data as Record<string, unknown> | undefined)?.id,
+    (container.data as Record<string, unknown> | undefined)?.creation_id,
+  )
+  if (!creationId) {
+    throw new Error('Instagram did not return a carousel container id.')
+  }
+
+  return publishInstagramContainer({
+    userId: args.userId,
+    igUserId,
+    creationId,
+    username: profile.username,
+    connectedAccountId: connection.id,
+  })
+}
+
+async function publishInstagramContainer(args: {
+  userId: string
+  igUserId: string
+  creationId: string
+  username: string | null
+  connectedAccountId: string
+}): Promise<InstagramPublishResult> {
+  const published = await executeInstagramTool(
+    args.userId,
+    'INSTAGRAM_POST_IG_USER_MEDIA_PUBLISH',
+    {
+      ig_user_id: args.igUserId,
+      creation_id: args.creationId,
+    },
+    args.connectedAccountId,
+  )
+
+  const mediaId = pickString(
+    published.id,
+    (published.data as Record<string, unknown> | undefined)?.id,
+  )
+
+  return {
+    mediaId,
+    creationId: args.creationId,
+    igUserId: args.igUserId === 'me' ? null : args.igUserId,
+    username: args.username,
+  }
+}
+
+export async function disconnectInstagramAccount(
+  userId: string,
+  connectedAccountId?: string,
+): Promise<void> {
+  const connections = await listInstagramConnections(userId)
+  const targets = connectedAccountId
+    ? connections.filter((c) => c.id === connectedAccountId)
+    : connections
+
+  if (targets.length === 0) return
+
+  const composio = getComposioClient()
+  for (const connection of targets) {
+    try {
+      await composio.connectedAccounts.delete(connection.id)
+    } catch (error) {
+      console.error('[composio/instagram] disconnect failed:', connection.id, error)
+      throw new Error(
+        error instanceof Error
+          ? error.message
+          : 'Could not disconnect Instagram. Try again from Settings.',
+      )
+    }
+  }
 }
 
 async function executeInstagramTool(

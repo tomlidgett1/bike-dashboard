@@ -5,7 +5,8 @@ export type MarketplaceReadinessBlockerId =
   | 'inactive'
   | 'listing_status'
   | 'out_of_stock'
-  | 'no_approved_image';
+  | 'no_approved_image'
+  | 'needs_categorisation';
 
 export interface MarketplaceReadinessBlocker {
   id: MarketplaceReadinessBlockerId;
@@ -23,6 +24,9 @@ export interface MarketplaceReadinessInput {
   listing_status: string | null;
   listing_type: string | null;
   qoh: number | null;
+  marketplace_category?: string | null;
+  marketplace_subcategory?: string | null;
+  categorisation_status?: string | null;
   hasApprovedImage?: boolean | null;
   selected_product_image_id?: string | null;
   productImages?: ResolvableProductImage[] | null;
@@ -143,6 +147,21 @@ export function getMarketplaceReadiness(
       id: 'no_approved_image',
       label: 'No approved image',
       action: 'Add images and approve a primary image (Images action)',
+    });
+  }
+
+  const hasCanonicalCategories =
+    Boolean(input.marketplace_category?.trim()) &&
+    Boolean(input.marketplace_subcategory?.trim()) &&
+    (input.categorisation_status == null ||
+      input.categorisation_status === '' ||
+      input.categorisation_status === 'classified');
+
+  if (!hasCanonicalCategories) {
+    blockers.push({
+      id: 'needs_categorisation',
+      label: 'Needs categorisation',
+      action: 'Assign a valid Yellow Jersey category and subcategory',
     });
   }
 

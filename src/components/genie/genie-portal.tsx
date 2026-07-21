@@ -8,6 +8,7 @@ import { GenieButton } from "./genie-button";
 import { useGenie } from "@/components/providers/genie-provider";
 
 const HIDDEN_ON = ["/login"];
+const MARKETPLACE_HOME = "/marketplace";
 const STORE_PAGE_PREFIX = "/marketplace/store/";
 const PRODUCT_PAGE_PREFIX = "/marketplace/product/";
 
@@ -21,7 +22,11 @@ export function GeniePortal() {
   const isProductPage = pathname?.startsWith(PRODUCT_PAGE_PREFIX) ?? false;
   const isStoreDashboard = isStoreDashboardPath(pathname);
   const showFloatingButton =
-    !isStorePage && !isStoreDashboard && !productContext && !isProductPage;
+    !isStorePage &&
+    !isStoreDashboard &&
+    !productContext &&
+    !isProductPage &&
+    pathname !== MARKETPLACE_HOME;
 
   // Dashboard uses the topbar Agent control; marketplace store pages hide the orb too.
   // Product Q&A must work on mobile when opened from a listing.

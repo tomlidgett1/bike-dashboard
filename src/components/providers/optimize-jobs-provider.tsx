@@ -306,7 +306,12 @@ export function OptimizeJobsProvider({ children }: { children: React.ReactNode }
         completedAt: null,
         metadata: {
           productIds: [],
-          copyFields: { title: true, description: true, specs: true },
+          copyFields: {
+            title: true,
+            description: true,
+            specs: true,
+            subDescription: true,
+          },
           bicycleOverrides: {},
           completedProductIds: [],
           failedProductIds: [],

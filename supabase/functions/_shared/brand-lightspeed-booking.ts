@@ -121,11 +121,9 @@ export async function loadBookingState(
     await supabase.from(STATE_TABLE).delete().eq('brand_key', brandKey).eq('chat_id', chatId);
     return null;
   }
-  // A row in 'created' status that survived the delete (race) — wipe it now.
-  if ((data as BookingState).status === 'created') {
-    await supabase.from(STATE_TABLE).delete().eq('brand_key', brandKey).eq('chat_id', chatId);
-    return null;
-  }
+  // Keep created/confirmed rows so Nest can answer follow-ups (due date, bike,
+  // workorder) after a website or chat booking. Draft flow uses collecting /
+  // awaiting_confirm; created/confirmed are completed bookings.
   return data as BookingState;
 }
 
@@ -608,10 +606,9 @@ export async function tryDeterministicBookingCommit(
 
   await upsertBookingState(deps.supabase, {
     ...bookingState,
-    status: 'created',
+    status: 'confirmed',
     workorder_id: create.workorder_id,
   });
-  await deleteBookingState(deps.supabase, deps.brandKey, deps.chatId);
 
   const firstName = bookingState.customer_name?.split(' ')[0] ?? 'cheers';
   const dayLabel = formatHumanDate(bookingState.drop_off_date!);
@@ -720,6 +717,15 @@ export async function applyBookingClaimGuard(
     (t) => t.name === 'brand_booking_create' && t.outcome === 'success',
   );
   if (bookingCreatedOk) {
+    return { text };
+  }
+
+  // Already-confirmed bookings (website or prior Nest create): allow restating
+  // due dates / confirmation language without remediating.
+  if (
+    bookingState &&
+    (bookingState.status === 'created' || bookingState.status === 'confirmed')
+  ) {
     return { text };
   }
 
@@ -962,11 +968,9 @@ export async function tryHandleLightspeedBookingTurn(
     }
     await upsertBookingState(supabase, {
       ...merged,
-      status: 'created',
+      status: 'confirmed',
       workorder_id: create.workorder_id,
     });
-    // Best-effort cleanup so the row doesnt stick around.
-    await deleteBookingState(supabase, brandKey, chatId);
     return {
       text: [
         stablePick(`${chatId}:booked`, [

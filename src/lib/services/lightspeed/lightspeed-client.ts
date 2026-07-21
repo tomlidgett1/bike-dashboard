@@ -67,6 +67,8 @@ interface CursorPageProgress {
 interface CursorOptions {
   maxPages?: number
   limit?: number
+  /** Resume from a previously returned next-page URL. */
+  startCursor?: string | null
   onPage?: (progress: CursorPageProgress) => void
 }
 
@@ -164,6 +166,29 @@ function isAbortError(error: unknown): boolean {
 
 function isLightspeedApiError(error: unknown, status?: number): error is LightspeedApiError {
   return error instanceof LightspeedApiError && (status == null || error.status === status)
+}
+
+/** True when Lightspeed asked us to back off (HTTP 429 / retryable busy). */
+export function isLightspeedThrottleError(error: unknown): boolean {
+  if (isLightspeedApiError(error, 429)) return true
+  if (error instanceof LightspeedApiError && error.retryable) return true
+  if (!(error instanceof Error)) return false
+  return /lightspeed is busy|rate.?limit|retry shortly|retry requested after/i.test(
+    error.message,
+  )
+}
+
+/** Best-effort Retry-After from a busy/429 error (ms). */
+export function getLightspeedRetryAfterMs(error: unknown, fallbackMs = 15_000): number {
+  if (!(error instanceof Error)) return fallbackMs
+  const match = error.message.match(/after\s+(\d+)\s*ms/i)
+  if (match) {
+    const parsed = Number(match[1])
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return Math.min(Math.max(parsed, 1_000), 120_000)
+    }
+  }
+  return fallbackMs
 }
 
 class SharedLightspeedRateLimiter {
@@ -1288,16 +1313,25 @@ export class LightspeedClient {
   async getAllSalesCursor(
     additionalParams?: Omit<LightspeedQueryParams, 'offset' | 'limit'>,
     options?: CursorOptions
-  ): Promise<{ sales: LightspeedSale[]; pagesFetched: number; hitPageLimit: boolean }> {
+  ): Promise<{
+    sales: LightspeedSale[]
+    pagesFetched: number
+    hitPageLimit: boolean
+    nextCursor: string | null
+  }> {
     const allSales: LightspeedSale[] = []
     const limit = Math.min(Math.max(options?.limit ?? 100, 1), 100)
     const maxPages = Math.max(options?.maxPages ?? 50, 1)
     const accountId = await this.getAccountId()
+    const startCursor = typeof options?.startCursor === 'string'
+      ? options.startCursor.trim()
+      : ''
 
-    let endpoint: string | null = `/Account/${accountId}/Sale.json${this.buildQueryString({
-      ...additionalParams,
-      limit,
-    })}`
+    let endpoint: string | null = startCursor
+      || `/Account/${accountId}/Sale.json${this.buildQueryString({
+        ...additionalParams,
+        limit,
+      })}`
     let pagesFetched = 0
 
     while (endpoint && pagesFetched < maxPages) {
@@ -1327,6 +1361,7 @@ export class LightspeedClient {
       sales: allSales,
       pagesFetched,
       hitPageLimit: Boolean(endpoint),
+      nextCursor: endpoint,
     }
   }
 

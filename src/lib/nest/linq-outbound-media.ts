@@ -116,3 +116,65 @@ export function buildLinqSendParts(
   }
   return parts;
 }
+
+/** Standard iMessage tapbacks + custom emoji. Ref: https://docs.linqapp.com/guides/messaging/reactions/ */
+export type LinqReactionType =
+  | "love"
+  | "like"
+  | "dislike"
+  | "laugh"
+  | "emphasize"
+  | "question"
+  | "custom";
+
+export type LinqReactionOperation = "add" | "remove";
+
+/**
+ * Add or remove a reaction on a Linq message.
+ * POST /v3/messages/{messageId}/reactions
+ */
+export async function sendLinqReaction(input: {
+  messageId: string;
+  type: LinqReactionType;
+  operation?: LinqReactionOperation;
+  customEmoji?: string;
+  partIndex?: number;
+}): Promise<void> {
+  const messageId = input.messageId.trim();
+  if (!messageId) throw new Error("Linq message id is required.");
+
+  const operation = input.operation ?? "add";
+  const body: Record<string, string | number> = {
+    operation,
+    type: input.type,
+  };
+
+  if (input.type === "custom") {
+    const emoji = input.customEmoji?.trim();
+    if (!emoji) throw new Error("custom_emoji is required when type is custom.");
+    body.custom_emoji = emoji;
+  }
+
+  if (typeof input.partIndex === "number" && Number.isFinite(input.partIndex)) {
+    body.part_index = Math.max(0, Math.floor(input.partIndex));
+  }
+
+  const token = linqToken();
+  const res = await fetch(
+    `${LINQ_BASE_URL}/messages/${encodeURIComponent(messageId)}/reactions`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    },
+  );
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    const snippet = detail.replace(/\s+/g, " ").trim().slice(0, 240);
+    throw new Error(snippet || `Linq reaction failed (${res.status})`);
+  }
+}

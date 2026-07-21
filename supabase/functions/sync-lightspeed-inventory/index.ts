@@ -660,7 +660,7 @@ Deno.serve(async (req) => {
         .from('canonical_products')
         .select('id')
         .in('id', uniqueCanonicalIds)
-        .or('cleaned.is.null,cleaned.eq.false,marketplace_category.is.null')
+        .neq('categorisation_status', 'classified')
       
       if (uncategorisedCanonicals && uncategorisedCanonicals.length > 0) {
         const uncategorisedIds = uncategorisedCanonicals.map((c: any) => c.id)

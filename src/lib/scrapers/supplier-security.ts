@@ -23,6 +23,14 @@ function hostnamesMatch(left: string, right: string): boolean {
   return a === b;
 }
 
+/** Exact match or shared parent domain (e.g. auth.pondealer.bike ↔ pondealer.bike). */
+export function hostnamesRelated(left: string, right: string): boolean {
+  const a = left.toLowerCase().replace(/^www\./, "");
+  const b = right.toLowerCase().replace(/^www\./, "");
+  if (a === b) return true;
+  return a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
+}
+
 export interface SupplierCredentials {
   username: string;
   password: string;
@@ -95,7 +103,7 @@ export async function assertSafeSupplierUrl(
     throw new Error("Private and local supplier addresses are not supported.");
   }
 
-  if (allowedHostname && !hostnamesMatch(hostname, allowedHostname)) {
+  if (allowedHostname && !hostnamesRelated(hostname, allowedHostname)) {
     throw new Error("The scraper cannot navigate away from the supplier website.");
   }
 

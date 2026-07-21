@@ -2,10 +2,14 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { MarketplaceHeader } from "@/components/marketplace/marketplace-header";
+import { MarketplaceSpaceTabs } from "@/components/marketplace/marketplace-space-tabs";
 import { StoreProductContextHeader } from "@/components/marketplace/product-detail/store-product-context-header";
+import { EyeOff } from "@/components/layout/app-sidebar/dashboard-icons";
 import { ProductBreadcrumbs } from "@/components/marketplace/product-breadcrumbs";
+import { ProductPageCategoryBrowse } from "@/components/marketplace/product-detail/product-page-category-browse";
+import { ProductBrandLogoBadge } from "@/components/marketplace/product-detail/product-brand-logo-badge";
 import { ProductPurchasePanel, ProductDetailTabs, shouldShowProductDetailTabs, getFeatureBullets } from "@/components/marketplace/product-details-panel-simple";
 import { ProductAskGenieFloatingPill } from "@/components/marketplace/product-ask-genie-floating-pill";
 import { ProductAskGenieImageBadge } from "@/components/marketplace/product-ask-genie-image-badge";
@@ -24,10 +28,15 @@ import {
   BikeSpecExplorePanel,
   type BikeSpecSelection,
 } from "@/components/marketplace/bike-spec-explore-panel";
-import type { MarketplaceProduct } from "@/lib/types/marketplace";
+import type { MarketplaceProduct, MarketplaceSpace } from "@/lib/types/marketplace";
+import type { StoreProfile } from "@/lib/types/store";
 import { useAuth } from "@/components/providers/auth-provider";
+import { useNestStorefrontChat } from "@/components/providers/nest-storefront-chat-provider";
 import { useProductView, trackGalleryView } from "@/lib/tracking/interaction-tracker";
 import { useStoreProductView } from "@/lib/tracking/store-analytics";
+import { cn } from "@/lib/utils";
+import { prefetchMarketplaceSpace } from "@/lib/hooks/use-marketplace-data";
+import type { ViewMode } from "@/components/marketplace/unified-filter-bar";
 
 const SimilarProductsCarousel = dynamic(
   () => import("@/components/marketplace/product-detail/similar-products-carousel").then((mod) => mod.SimilarProductsCarousel),
@@ -42,6 +51,14 @@ const ProductUploadSuccessBanner = dynamic(
 
 const ImmersiveProductLayout = dynamic(
   () => import("./immersive-product-layout").then((mod) => mod.ImmersiveProductLayout),
+  { ssr: false },
+);
+
+const WorldClassProductPageTemplate = dynamic(
+  () =>
+    import("@/components/demo/world-class-product-page-template").then(
+      (mod) => mod.WorldClassProductPageTemplate,
+    ),
   { ssr: false },
 );
 
@@ -65,6 +82,8 @@ interface ProductPageClientProps {
   brandName: string | null;
   brandLogoUrl?: string | null;
   sellerProfile?: ProductSellerProfile | null;
+  /** Prefetched store chrome for product pages opened from a storefront. */
+  storeProfile?: StoreProfile | null;
   showUploadBanner?: boolean;
 }
 
@@ -84,8 +103,10 @@ export function ProductPageClient({
   brandName,
   brandLogoUrl = null,
   sellerProfile = null,
+  storeProfile = null,
   showUploadBanner = false
 }: ProductPageClientProps) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const fromStoreId = searchParams.get('store');
   const { user } = useAuth();
@@ -99,7 +120,70 @@ export function ProductPageClient({
   const isOwner = !!user && user.id === product.user_id;
   const isStoreOwner = isOwner && product.store_account_type === "bicycle_store";
   const [viewAsCustomer, setViewAsCustomer] = React.useState(false);
+  const [categoryMenuOpen, setCategoryMenuOpen] = React.useState(false);
   const showOwnerTools = isOwner && !viewAsCustomer;
+  const { ensureBubble, releaseBubble } = useNestStorefrontChat();
+
+  const productSpace: MarketplaceSpace =
+    product.listing_type === "private_listing" ? "marketplace" : "stores";
+
+  const goToMarketplaceSpace = React.useCallback(
+    (space: MarketplaceSpace) => {
+      if (space === "for-you") {
+        router.push("/marketplace?space=for-you");
+        return;
+      }
+      router.push(`/marketplace?space=${space}`);
+    },
+    [router],
+  );
+
+  const handlePrefetchSpace = React.useCallback((space: MarketplaceSpace) => {
+    prefetchMarketplaceSpace(space);
+  }, []);
+
+  const handleViewModeChange = React.useCallback(
+    (_mode: ViewMode) => {
+      goToMarketplaceSpace("marketplace");
+    },
+    [goToMarketplaceSpace],
+  );
+
+  const categorySpaceTabs = (
+    <MarketplaceSpaceTabs
+      variant="inline"
+      currentSpace={productSpace}
+      viewMode="all"
+      onViewModeChange={handleViewModeChange}
+      onNavigateToStores={() => goToMarketplaceSpace("stores")}
+      onNavigateToUber={() => goToMarketplaceSpace("uber")}
+      onNavigateToForYou={() => goToMarketplaceSpace("for-you")}
+      onPrefetchSpace={handlePrefetchSpace}
+    />
+  );
+  // Keep Nest shopping agent available on store product pages.
+  React.useEffect(() => {
+    if (
+      isOwner ||
+      product.store_account_type !== "bicycle_store" ||
+      !sellerInfo ||
+      sellerInfo.account_type !== "bicycle_store"
+    ) {
+      return;
+    }
+    ensureBubble({
+      storeId: sellerInfo.id,
+      storeName: sellerInfo.name,
+      storeLogoUrl: sellerInfo.logo_url,
+    });
+    return () => releaseBubble(sellerInfo.id);
+  }, [
+    ensureBubble,
+    isOwner,
+    product.store_account_type,
+    releaseBubble,
+    sellerInfo,
+  ]);
 
   // Track product view with dwell time
   useProductView(product.id, user?.id);
@@ -115,6 +199,34 @@ export function ProductPageClient({
     !isOwner && product.store_account_type === "bicycle_store" ? product.user_id : null,
     product.id,
   );
+
+  // Feed Nest shopping-agent browse context when viewing a store product.
+  React.useEffect(() => {
+    if (isOwner || product.store_account_type !== "bicycle_store" || !product.user_id) return;
+    void import("@/lib/nest/storefront-browse-context")
+      .then(({ recordBrowseProductView }) =>
+        recordBrowseProductView(product.user_id, {
+          productId: product.id,
+          name: product.display_name || product.description || "Product",
+          brand: product.brand ?? null,
+          category: product.marketplace_category ?? null,
+          price: typeof product.price === "number" ? product.price : null,
+          source: "detail",
+          dwellMs: 2500,
+        }),
+      )
+      .catch(() => {});
+  }, [
+    isOwner,
+    product.brand,
+    product.description,
+    product.display_name,
+    product.id,
+    product.marketplace_category,
+    product.price,
+    product.store_account_type,
+    product.user_id,
+  ]);
 
   // Get all available images
   const images = React.useMemo(() => {
@@ -168,9 +280,9 @@ export function ProductPageClient({
 
   // Build the "See All" href for similar products
   const similarSeeAllHref = product.marketplace_subcategory
-    ? `/marketplace?level1=${encodeURIComponent(product.marketplace_category)}&level2=${encodeURIComponent(product.marketplace_subcategory)}`
+    ? `/marketplace?space=stores&level1=${encodeURIComponent(product.marketplace_category)}&level2=${encodeURIComponent(product.marketplace_subcategory)}`
     : product.marketplace_category
-      ? `/marketplace?level1=${encodeURIComponent(product.marketplace_category)}`
+      ? `/marketplace?space=stores&level1=${encodeURIComponent(product.marketplace_category)}`
       : undefined;
 
   // Build the "See All" href for seller products
@@ -191,6 +303,19 @@ export function ProductPageClient({
     [localProduct.brand, brandName],
   );
 
+  const exitCustomerViewButton =
+    isStoreOwner && viewAsCustomer ? (
+      <button
+        type="button"
+        onClick={() => setViewAsCustomer(false)}
+        title="Exit customer view"
+        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900"
+      >
+        <EyeOff className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">Exit customer view</span>
+      </button>
+    ) : null;
+
   const galleryProps = {
     images,
     productName: product.display_name || product.description,
@@ -199,6 +324,7 @@ export function ProductPageClient({
     heroOverlay: showAskGenie ? (
       <ProductAskGenieImageBadge product={localProduct} />
     ) : undefined,
+    suppressHeroControlsOnDesktop: categoryMenuOpen,
   };
 
   const productBreadcrumbs = (
@@ -210,6 +336,16 @@ export function ProductPageClient({
     />
   );
 
+  const breadcrumbBrandLogo = brandLogoUrl ? (
+    <ProductBrandLogoBadge
+      logoUrl={brandLogoUrl}
+      brandName={localProduct.brand || brandName}
+      align="right"
+      size="md"
+      className="shrink-0"
+    />
+  ) : null;
+
   const showProductDetailTabs = shouldShowProductDetailTabs(localProduct);
 
   const featureBullets = React.useMemo(
@@ -220,13 +356,10 @@ export function ProductPageClient({
   const purchasePanel = (
     <ProductPurchasePanel
       product={localProduct}
-      brandLogoUrl={brandLogoUrl}
-      brandName={localProduct.brand || brandName}
       isStoreOwner={isStoreOwner}
       viewAsCustomer={viewAsCustomer}
       onViewAsCustomerChange={setViewAsCustomer}
       sellerProfile={sellerProfile}
-      featureBullets={featureBullets}
     />
   );
 
@@ -234,7 +367,6 @@ export function ProductPageClient({
     <ProductDetailTabs
       product={localProduct}
       overviewOnly={!showProductDetailTabs}
-      hideOverviewDescription={!showOwnerTools && !isSold}
       featureBullets={featureBullets}
     />
   );
@@ -247,6 +379,97 @@ export function ProductPageClient({
   );
 
   // Immersive layout — per-product opt-in (Store Settings → Products tab).
+  // World-class published pages take precedence over immersive.
+  if (product.world_class_page) {
+    return (
+      <>
+        {showStoreHeader ? (
+          <StoreProductContextHeader
+            storeId={fromStoreId!}
+            initialStore={storeProfile}
+            actionButtons={exitCustomerViewButton}
+          />
+        ) : (
+          <>
+            <MarketplaceHeader
+              compactSearchOnMobile
+              showFloatingButton={false}
+              currentSpace={productSpace}
+            />
+            {exitCustomerViewButton ? (
+              <div className="border-b border-gray-100 bg-white px-4 py-2">{exitCustomerViewButton}</div>
+            ) : null}
+          </>
+        )}
+
+        {/* Category nav — same L1/L2 browse strip as the standard PDP */}
+        <div className="sticky top-14 z-40 hidden lg:block">
+          <ProductPageCategoryBrowse
+            activeLevel1={localProduct.marketplace_category}
+            activeLevel2={localProduct.marketplace_subcategory}
+            activeLevel3={localProduct.marketplace_level_3_category}
+            className="px-4 xl:px-5"
+            onMenuOpenChange={setCategoryMenuOpen}
+            leading={categorySpaceTabs}
+          />
+        </div>
+
+        <div
+          className={cn(
+            "relative z-0 transition-[filter] duration-[420ms] ease-[cubic-bezier(0.04,0.62,0.23,0.98)]",
+            categoryMenuOpen &&
+              "will-change-[filter] lg:blur-[6px] lg:brightness-[0.98] lg:saturate-[0.94]",
+          )}
+        >
+          <WorldClassProductPageTemplate
+            page={product.world_class_page}
+            viewMode="desktop"
+            product={localProduct}
+            showAskGenie={showAskGenie}
+            level1={localProduct.marketplace_category}
+            level2={localProduct.marketplace_subcategory}
+            level3={localProduct.marketplace_level_3_category}
+            listingPrice={
+              typeof localProduct.price === "number" ? localProduct.price : null
+            }
+            seller={{
+              name:
+                sellerInfo?.name ||
+                localProduct.store_name ||
+                "Store",
+              logoUrl:
+                sellerInfo?.logo_url ||
+                localProduct.store_logo_url ||
+                storeProfile?.logo_url ||
+                null,
+              location: storeProfile?.address || null,
+              verified: sellerInfo?.account_type === "bicycle_store",
+            }}
+          />
+
+          <div className="mx-auto min-w-0 max-w-[1536px] space-y-8 overflow-x-hidden px-4 pt-8 pb-6 sm:px-4 sm:pb-8 lg:px-4 lg:pt-10 lg:pb-10 xl:px-5">
+            <SimilarProductsCarousel
+              productId={product.id}
+              seeAllHref={similarSeeAllHref}
+              seeAllLabel="Browse Category"
+            />
+            <ProductRecommendationsSection
+              promise={recommendationsPromise}
+              sellerName={sellerInfo?.name ?? null}
+              sellerSeeAllHref={sellerSeeAllHref}
+              sellerSeeAllLabel="View All Listings"
+              brandName={brandName}
+            />
+          </div>
+        </div>
+        <ProductGeniePanel />
+        {showAskGenie ? (
+          <ProductAskGenieFloatingPill product={localProduct} />
+        ) : null}
+      </>
+    );
+  }
+
   if (product.immersive_page) {
     return (
       <ImmersiveProductLayout
@@ -266,13 +489,48 @@ export function ProductPageClient({
   return (
     <>
       {showStoreHeader ? (
-        <StoreProductContextHeader storeId={fromStoreId!} />
+        <StoreProductContextHeader
+          storeId={fromStoreId!}
+          initialStore={storeProfile}
+          actionButtons={exitCustomerViewButton}
+        />
       ) : (
-        <MarketplaceHeader compactSearchOnMobile showFloatingButton={false} />
+        <>
+          <MarketplaceHeader
+            compactSearchOnMobile
+            showFloatingButton={false}
+            currentSpace={productSpace}
+          />
+          {exitCustomerViewButton ? (
+            <div className="pointer-events-none fixed right-3 top-3 z-50 sm:right-4 sm:top-4">
+              <div className="pointer-events-auto shadow-sm">{exitCustomerViewButton}</div>
+            </div>
+          ) : null}
+        </>
       )}
+
+      {/* Category nav — flush below header, above product content */}
+      <div className="sticky top-14 z-40 hidden lg:block">
+        <ProductPageCategoryBrowse
+          activeLevel1={localProduct.marketplace_category}
+          activeLevel2={localProduct.marketplace_subcategory}
+          activeLevel3={localProduct.marketplace_level_3_category}
+          className="px-4 xl:px-5"
+          onMenuOpenChange={setCategoryMenuOpen}
+          leading={categorySpaceTabs}
+        />
+      </div>
       
       {/* Main Content */}
-      <div className="min-h-screen overflow-x-hidden bg-white sm:bg-gray-50 pb-28 sm:pb-8">
+      <div
+        className={cn(
+          "min-h-screen overflow-x-hidden bg-white pb-28 sm:bg-gray-50 sm:pb-8",
+          "relative z-0",
+          "transition-[filter] duration-[420ms] ease-[cubic-bezier(0.04,0.62,0.23,0.98)]",
+          categoryMenuOpen &&
+            "will-change-[filter] lg:blur-[6px] lg:brightness-[0.98] lg:saturate-[0.94]",
+        )}
+      >
         {/* Upload Success Banner */}
         {showBanner && (
           <ProductUploadSuccessBanner
@@ -280,53 +538,46 @@ export function ProductPageClient({
             onClose={() => setShowBanner(false)}
           />
         )}
-
-        {isStoreOwner && viewAsCustomer && (
-          <div className="mx-auto max-w-[1536px] px-4 pt-4 sm:px-4 lg:px-4 xl:px-5">
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
-              <p className="text-sm text-gray-600">You&apos;re viewing this product as a customer.</p>
-              <button
-                type="button"
-                onClick={() => setViewAsCustomer(false)}
-                className="shrink-0 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50"
-              >
-                Exit customer view
-              </button>
-            </div>
-          </div>
-        )}
         
         <div>
-          {/* Desktop: photos (white) + info (gray); white wrapper avoids gray dead space beside thumbnails */}
-          <div className="hidden bg-white lg:block lg:pb-0">
-            <div className="mx-auto max-w-[1536px] pl-3 pr-4 xl:pl-4 xl:pr-6">
-              <div className="pt-6 pb-6">{productBreadcrumbs}</div>
-            </div>
-            <div className="mx-auto flex max-w-[1536px] items-start">
-              <div
-                ref={heroColumnRef}
-                className="min-w-0 w-[57%] bg-white pl-3 pr-4 xl:pl-4 xl:pr-6"
-              >
-                <EnhancedImageGallery {...galleryProps} />
+          {/* Desktop: inset floating white card on gray page bg */}
+          <div className="hidden lg:block lg:px-4 lg:pt-4 xl:px-5">
+            <div className="mx-auto max-w-[1536px] overflow-visible rounded-xl border border-gray-200 bg-white shadow-[0_-1px_0_rgba(0,0,0,0.03)]">
+              <div className="overflow-hidden">
+                <div className="border-b border-gray-100 px-5 xl:px-6">
+                  <div className="flex items-center justify-between gap-3 py-2">
+                    <div className="min-w-0 flex-1">{productBreadcrumbs}</div>
+                    {breadcrumbBrandLogo}
+                  </div>
+                </div>
+                <div className="flex items-start pt-6">
+                  <div
+                    ref={heroColumnRef}
+                    className="min-w-0 w-[57%] bg-white pb-8 pl-5 pr-4 xl:pl-6 xl:pr-6"
+                  >
+                    <EnhancedImageGallery {...galleryProps} />
+                  </div>
+                  <div
+                    className="sticky top-0 min-w-0 w-[43%] shrink-0 self-start overflow-y-auto overflow-x-hidden bg-white px-5 xl:pl-6 xl:pr-8"
+                    style={
+                      heroHeight
+                        ? { height: heroHeight, maxHeight: heroHeight }
+                        : undefined
+                    }
+                  >
+                    {infoPanelContent}
+                  </div>
+                </div>
+                {detailTabs && <div className="hidden lg:block">{detailTabs}</div>}
               </div>
-              <div
-                className="sticky top-0 min-w-0 w-[43%] shrink-0 self-start overflow-y-auto overflow-x-hidden bg-white px-4 xl:px-5"
-                style={
-                  heroHeight
-                    ? { height: heroHeight, maxHeight: heroHeight }
-                    : undefined
-                }
-              >
-                {infoPanelContent}
-              </div>
             </div>
-            {detailTabs && <div className="hidden lg:block">{detailTabs}</div>}
           </div>
 
           {/* Mobile / tablet: stacked gallery + flat gray info */}
           <div className="bg-white lg:hidden">
-            <div className="hidden sm:block max-w-[1536px] mx-auto px-4 sm:px-4 pt-4 sm:pt-6 mb-4 sm:mb-6">
-              {productBreadcrumbs}
+            <div className="mx-auto mb-3 hidden max-w-[1536px] items-center justify-between gap-3 px-4 pt-2 sm:mb-4 sm:flex sm:pt-3">
+              <div className="min-w-0 flex-1">{productBreadcrumbs}</div>
+              {breadcrumbBrandLogo}
             </div>
             <EnhancedImageGallery
               {...galleryProps}
@@ -344,6 +595,7 @@ export function ProductPageClient({
               bikeSpecs={localProduct.bike_specs}
               interactive
               onSpecClick={setExploreSpec}
+              className="mt-6 sm:mt-8"
             />
           )}
 
@@ -365,7 +617,7 @@ export function ProductPageClient({
           />
 
           {/* Recommendation Carousels */}
-          <div className="mx-auto min-w-0 max-w-[1536px] space-y-2 overflow-x-hidden border-t border-gray-200 bg-gray-50 px-4 pt-4 pb-4 sm:px-4 sm:pb-5 lg:px-4 lg:pt-5 lg:pb-6 xl:px-5">
+          <div className="mx-auto min-w-0 max-w-[1536px] space-y-8 overflow-x-hidden px-4 pt-8 pb-6 sm:px-4 sm:pb-8 lg:px-4 lg:pt-10 lg:pb-10 xl:px-5">
             {/* Similar Items Carousel — LLM-ranked in real time (client-fetched) */}
             <SimilarProductsCarousel
               productId={product.id}

@@ -469,6 +469,7 @@ export const Wrench = Tuning2;
 export const X = CloseSquare;
 export const XCircle = CloseCircle;
 export const Zap = Bolt;
+export { MagniferZoomIn };
 export const ZoomIn = MagniferZoomIn;
 
 // Marketplace / product-page aliases

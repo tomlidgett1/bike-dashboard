@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Bot } from "@/components/layout/app-sidebar/dashboard-icons";
+import { Bot, ThumbsUp } from "@/components/layout/app-sidebar/dashboard-icons";
 import { cn } from "@/lib/utils";
 import type { NestConversationMessage } from "@/lib/nest/types";
 
@@ -376,14 +376,59 @@ function NestImageBubble({
   );
 }
 
+export function nestLinqProviderMessageId(
+  message: NestConversationMessage,
+): string | null {
+  const meta = message.metadata ?? {};
+  for (const key of ["linq_provider_message_id", "provider_message_id", "providerMessageId"]) {
+    const value = meta[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function messageIsStoreLiked(message: NestConversationMessage): boolean {
+  return message.metadata?.store_liked === true;
+}
+
+async function reactToNestMessage(input: {
+  chatId: string;
+  nestMessageId: number;
+  providerMessageId: string | null;
+  liked: boolean;
+}): Promise<void> {
+  const res = await fetch("/api/store/nest-message-reaction", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chatId: input.chatId,
+      nestMessageId: input.nestMessageId,
+      type: "like",
+      operation: input.liked ? "add" : "remove",
+      ...(input.providerMessageId
+        ? { providerMessageId: input.providerMessageId }
+        : {}),
+    }),
+  });
+  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  if (!res.ok) {
+    throw new Error(data.error || "Could not like message.");
+  }
+}
+
 export function NestThreadMessage({
   message,
   showTail = true,
   layout = "nest",
+  chatId = null,
+  onStoreLikedChange,
 }: {
   message: NestConversationMessage;
   showTail?: boolean;
   layout?: NestBubbleLayout;
+  /** Required for inbox like reactions (Linq tapbacks). */
+  chatId?: string | null;
+  onStoreLikedChange?: (messageId: number, liked: boolean) => void;
 }) {
   const isStaff =
     (typeof message.handle === "string" && message.handle.startsWith("staff@")) ||
@@ -424,6 +469,39 @@ export function NestThreadMessage({
   const isPending = message.metadata?.send_state === "pending";
   const showBotBadge = isAi;
   const hasRenderableContent = images.length > 0 || bubbles.some((bubble) => bubble.trim());
+  const canLike =
+    layout === "inbox" && isCustomer && !isSystem && Boolean(chatId?.trim()) && !isPending;
+  const providerMessageId = nestLinqProviderMessageId(message);
+  const [liked, setLiked] = React.useState(() => messageIsStoreLiked(message));
+  const [liking, setLiking] = React.useState(false);
+  const [likeError, setLikeError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    setLiked(messageIsStoreLiked(message));
+  }, [message.id, message.metadata?.store_liked]);
+
+  const handleToggleLike = React.useCallback(async () => {
+    if (!canLike || !chatId || liking) return;
+    const nextLiked = !liked;
+    setLikeError(null);
+    setLiked(nextLiked);
+    onStoreLikedChange?.(message.id, nextLiked);
+    setLiking(true);
+    try {
+      await reactToNestMessage({
+        chatId,
+        nestMessageId: message.id,
+        providerMessageId,
+        liked: nextLiked,
+      });
+    } catch (error) {
+      setLiked(!nextLiked);
+      onStoreLikedChange?.(message.id, !nextLiked);
+      setLikeError(error instanceof Error ? error.message : "Could not like message.");
+    } finally {
+      setLiking(false);
+    }
+  }, [canLike, chatId, liking, liked, message.id, onStoreLikedChange, providerMessageId]);
 
   if (!hasRenderableContent && !isSystem) {
     return null;
@@ -432,12 +510,17 @@ export function NestThreadMessage({
   return (
     <div
       className={cn(
-        "flex px-1",
+        "group/msg flex px-1",
         isSystem ? "justify-center" : alignEnd ? "justify-end" : "justify-start",
         isPending && "opacity-80",
       )}
     >
-      <div className={cn("flex max-w-[min(78%,28rem)] flex-col space-y-1", alignEnd && "items-end")}>
+      <div
+        className={cn(
+          "relative flex max-w-[min(78%,28rem)] flex-col space-y-1",
+          alignEnd && "items-end",
+        )}
+      >
         {showBotBadge ? <BotBadge alignEnd={alignEnd} /> : null}
         {isStaff && !isSystem ? (
           <p
@@ -449,48 +532,90 @@ export function NestThreadMessage({
             Staff
           </p>
         ) : null}
-        {images.map((image, index) => (
-          <NestImageBubble
-            key={`${message.id}-img-${index}`}
-            url={image.url}
-            attachmentId={image.attachmentId}
-            filename={image.filename}
-            variant={bubbleVariant}
-            showTail={
-              showTail &&
-              index === images.length - 1 &&
-              bubbles.every((bubble) => !bubble.trim())
-            }
-          />
-        ))}
-        {bubbles.map((bubble, index) => {
-          const trimmed = bubble.trim();
-          if (!trimmed) return null;
-          const imageOnly = isImageUrl(trimmed);
+        <div className="flex items-end gap-1.5">
+          <div
+            className={cn(
+              "relative flex min-w-0 flex-col space-y-1",
+              liked && "mt-2",
+            )}
+          >
+            {images.map((image, index) => (
+              <NestImageBubble
+                key={`${message.id}-img-${index}`}
+                url={image.url}
+                attachmentId={image.attachmentId}
+                filename={image.filename}
+                variant={bubbleVariant}
+                showTail={
+                  showTail &&
+                  index === images.length - 1 &&
+                  bubbles.every((bubble) => !bubble.trim())
+                }
+              />
+            ))}
+            {bubbles.map((bubble, index) => {
+              const trimmed = bubble.trim();
+              if (!trimmed) return null;
+              const imageOnly = isImageUrl(trimmed);
 
-          return (
-            <NestChatBubble
-              key={`${message.id}-${index}`}
-              variant={bubbleVariant}
-              showTail={showTail && index === bubbles.length - 1}
-              dense={imageOnly}
+              return (
+                <NestChatBubble
+                  key={`${message.id}-${index}`}
+                  variant={bubbleVariant}
+                  showTail={showTail && index === bubbles.length - 1}
+                  dense={imageOnly}
+                >
+                  {imageOnly ? (
+                    <div className="overflow-hidden rounded-[14px]">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={trimmed}
+                        alt="Shared image"
+                        className="block max-h-72 max-w-full object-cover"
+                        loading="lazy"
+                      />
+                    </div>
+                  ) : (
+                    <RichText text={bubble} />
+                  )}
+                </NestChatBubble>
+              );
+            })}
+            {liked ? (
+              <button
+                type="button"
+                onClick={() => void handleToggleLike()}
+                disabled={!canLike || liking}
+                aria-label={canLike ? "Remove like" : "Liked"}
+                title={canLike ? "Remove like" : "Liked"}
+                className={cn(
+                  "absolute -top-2.5 z-10 flex h-[22px] w-[22px] items-center justify-center rounded-full border border-gray-200/90 bg-white text-[11px] leading-none shadow-sm",
+                  alignEnd ? "-left-1.5" : "-right-1.5",
+                  canLike && "hover:bg-gray-50 disabled:opacity-60",
+                )}
+              >
+                <span aria-hidden="true">👍</span>
+              </button>
+            ) : null}
+          </div>
+          {canLike && !liked ? (
+            <button
+              type="button"
+              onClick={() => void handleToggleLike()}
+              disabled={liking}
+              aria-label="Like message"
+              title="Like"
+              className="mb-0.5 shrink-0 self-center rounded-md border border-gray-200 bg-white p-1.5 text-gray-500 shadow-sm transition-opacity hover:text-gray-800 disabled:opacity-60 opacity-100 sm:opacity-0 sm:group-hover/msg:opacity-100 sm:focus-visible:opacity-100"
             >
-              {imageOnly ? (
-                <div className="overflow-hidden rounded-[14px]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={trimmed}
-                    alt="Shared image"
-                    className="block max-h-72 max-w-full object-cover"
-                    loading="lazy"
-                  />
-                </div>
-              ) : (
-                <RichText text={bubble} />
-              )}
-            </NestChatBubble>
-          );
-        })}
+              <ThumbsUp className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+        </div>
+        {likeError ? (
+          <p className="rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] text-gray-600">
+            {likeError}
+          </p>
+        ) : null}
         {!isSystem ? (
           <p
             className={cn(

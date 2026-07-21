@@ -31,7 +31,12 @@ import {
   consumeSupplierSse,
   type SupplierLogEntry,
 } from "@/lib/scrapers/supplier-logger";
-import { MARKETPLACE_SUBCATEGORIES } from "@/lib/types/marketplace";
+import { listCanonicalLevel2 } from "@/lib/marketplace/canonical-taxonomy";
+
+const BIKE_SUBCATEGORY_OPTIONS = [
+  ...listCanonicalLevel2("Bicycles").map((name) => ({ level1: "Bicycles", name })),
+  ...listCanonicalLevel2("E-Bikes").map((name) => ({ level1: "E-Bikes", name })),
+];
 import { cn } from "@/lib/utils";
 
 type Stage = "input" | "extracting" | "review" | "importing" | "done";
@@ -84,7 +89,8 @@ export function StoreBikeUrlImport() {
   const [name, setName] = React.useState("");
   const [brand, setBrand] = React.useState("");
   const [description, setDescription] = React.useState("");
-  const [subcategory, setSubcategory] = React.useState("Other");
+  const [subcategory, setSubcategory] = React.useState("Hybrid / Fitness");
+  const [marketplaceCategory, setMarketplaceCategory] = React.useState("Bicycles");
   const [price, setPrice] = React.useState("");
   const [sizes, setSizes] = React.useState<EditableSize[]>([]);
   const [images, setImages] = React.useState<string[]>([]);
@@ -127,6 +133,10 @@ export function StoreBikeUrlImport() {
       setBrand(nextDraft.brand ?? "");
       setDescription(nextDraft.description);
       setSubcategory(nextDraft.subcategory);
+      const matched = BIKE_SUBCATEGORY_OPTIONS.find(
+        (option) => option.name === nextDraft.subcategory,
+      );
+      setMarketplaceCategory(matched?.level1 ?? "Bicycles");
       setPrice(
         nextDraft.currency === "AUD" && nextDraft.price ? String(nextDraft.price) : "",
       );
@@ -198,6 +208,7 @@ export function StoreBikeUrlImport() {
           imageUrls: orderedImages,
           heroImageUrl: heroImage,
           subcategory,
+          marketplace_category: marketplaceCategory,
         }),
       });
       const payload = await response.json();
@@ -465,14 +476,26 @@ export function StoreBikeUrlImport() {
                 </div>
                 <div className="space-y-1.5">
                   <Label>Bicycle subcategory</Label>
-                  <Select value={subcategory} onValueChange={setSubcategory}>
+                  <Select
+                    value={`${marketplaceCategory}|${subcategory}`}
+                    onValueChange={(value) => {
+                      const [level1, level2] = value.split("|");
+                      setMarketplaceCategory(level1 || "Bicycles");
+                      setSubcategory(level2 || "Hybrid / Fitness");
+                    }}
+                  >
                     <SelectTrigger className="rounded-md">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {MARKETPLACE_SUBCATEGORIES.Bicycles.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {option}
+                      {BIKE_SUBCATEGORY_OPTIONS.map((option) => (
+                        <SelectItem
+                          key={`${option.level1}|${option.name}`}
+                          value={`${option.level1}|${option.name}`}
+                        >
+                          {option.level1 === "E-Bikes"
+                            ? `${option.name} (E-Bike)`
+                            : option.name}
                         </SelectItem>
                       ))}
                     </SelectContent>

@@ -3,6 +3,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 import { matchProductsBulk } from '../_shared/canonical-matching.ts'
+import { batchCategoriseCanonicals } from '../_shared/canonical-service.ts'
 
 console.log('Function "sync-from-cache" running!')
 
@@ -169,6 +170,46 @@ Deno.serve(async (req) => {
       canonical_id: (p as any).canonical_product_id?.substring(0, 8) || 'NULL',
     }))
     console.log(`📊 [SYNC FROM CACHE] Sample matches:`, sampleMatches)
+
+    // Categorise newly linked canonical products so store inventory gets
+    // Yellow Jersey L1/L2 before becoming marketplace-ready.
+    const uniqueCanonicalIds = Array.from(new Set(
+      productsToInsert
+        .map((p) => (p as any).canonical_product_id)
+        .filter(Boolean),
+    )) as string[]
+
+    if (uniqueCanonicalIds.length > 0) {
+      const { data: uncategorisedCanonicals } = await supabaseAdmin
+        .from('canonical_products')
+        .select('id')
+        .in('id', uniqueCanonicalIds)
+        .neq('categorisation_status', 'classified')
+
+      if (uncategorisedCanonicals && uncategorisedCanonicals.length > 0) {
+        const openaiApiKey = Deno.env.get('OPENAI_API_KEY')
+        await sendProgress({
+          phase: 'categorising',
+          message: `Categorising ${uncategorisedCanonicals.length} products...`,
+          progress: 50,
+        })
+        if (openaiApiKey) {
+          try {
+            const { success, failed } = await batchCategoriseCanonicals(
+              supabaseAdmin,
+              uncategorisedCanonicals.map((row: { id: string }) => row.id),
+              openaiApiKey,
+              20,
+            )
+            console.log(`✅ [SYNC FROM CACHE] Categorised ${success} (${failed} failed)`)
+          } catch (categorisationError) {
+            console.error('⚠️ [SYNC FROM CACHE] Categorisation error:', categorisationError)
+          }
+        } else {
+          console.warn('⚠️ [SYNC FROM CACHE] OPENAI_API_KEY not set, skipping AI categorisation')
+        }
+      }
+    }
 
     await sendProgress({ 
       phase: 'insert', 

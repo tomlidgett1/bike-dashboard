@@ -22,7 +22,8 @@ export default async function BrandLogosAdminPage() {
         <div className="mb-6">
           <h1 className="text-xl font-semibold text-gray-900">Brand logo curation</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Review and approve logos for every brand stocked on Yellow Jersey. Approved logos appear on product pages.
+            Review Lightspeed brands for Ashburton Cycles, ranked by units in stock. Approve, reject
+            candidates, or skip. Only approved logos appear on product pages (top-right of the breadcrumb).
           </p>
         </div>
         <BrandLogosAdminPanel />

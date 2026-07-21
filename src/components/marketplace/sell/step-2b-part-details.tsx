@@ -2,12 +2,29 @@
 
 import * as React from "react";
 import { PartDetailsFormData, COMMON_COMPONENT_BRANDS } from "@/lib/types/listing";
-import { MARKETPLACE_SUBCATEGORIES } from "@/lib/types/marketplace";
+import {
+  listCanonicalLevel1,
+  listCanonicalLevel2,
+} from "@/lib/marketplace/canonical-taxonomy";
 import { FormField, SectionHeader, Autocomplete, InfoBox } from "./form-elements";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ValidationError, getFieldError } from "@/lib/validation/listing-validation";
+
+const PART_LEVEL1 = [
+  "Frames & Framesets",
+  "Wheels & Tyres",
+  "Drivetrain",
+  "Brakes",
+  "Cockpit",
+  "Seat & Seatposts",
+  "Pedals",
+  "Accessories",
+  "Protection",
+  "Maintenance & Workshop",
+  "Tech & Electronics",
+].filter((level1) => listCanonicalLevel1().includes(level1));
 
 // ============================================================
 // Step 2B: Part Details Form
@@ -26,6 +43,9 @@ export function Step2BPartDetails({ data, onChange, errors = [] }: Step2BPartDet
   ) => {
     onChange({ ...data, [field]: value });
   };
+
+  const selectedLevel1 = data.marketplace_category || PART_LEVEL1[0] || "Drivetrain";
+  const level2Options = listCanonicalLevel2(selectedLevel1);
 
   // Auto-generate title
   React.useEffect(() => {
@@ -57,19 +77,53 @@ export function Step2BPartDetails({ data, onChange, errors = [] }: Step2BPartDet
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <FormField
-            label="Part Category"
+            label="Category"
             required
-            error={getFieldError(errors, "marketplace_subcategory")}
+            error={getFieldError(errors, "marketplace_category")}
           >
             <Select
-              value={data.marketplace_subcategory}
-              onValueChange={(value) => updateField("marketplace_subcategory", value)}
+              value={selectedLevel1}
+              onValueChange={(value) =>
+                onChange({
+                  ...data,
+                  marketplace_category: value,
+                  marketplace_subcategory: listCanonicalLevel2(value)[0] || "",
+                })
+              }
             >
               <SelectTrigger className="rounded-md">
                 <SelectValue placeholder="Select category" />
               </SelectTrigger>
               <SelectContent>
-                {MARKETPLACE_SUBCATEGORIES.Parts.map((category) => (
+                {PART_LEVEL1.map((category) => (
+                  <SelectItem key={category} value={category}>
+                    {category}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormField>
+
+          <FormField
+            label="Subcategory"
+            required
+            error={getFieldError(errors, "marketplace_subcategory")}
+          >
+            <Select
+              value={data.marketplace_subcategory}
+              onValueChange={(value) =>
+                onChange({
+                  ...data,
+                  marketplace_category: selectedLevel1,
+                  marketplace_subcategory: value,
+                })
+              }
+            >
+              <SelectTrigger className="rounded-md">
+                <SelectValue placeholder="Select subcategory" />
+              </SelectTrigger>
+              <SelectContent>
+                {level2Options.map((category) => (
                   <SelectItem key={category} value={category}>
                     {category}
                   </SelectItem>
