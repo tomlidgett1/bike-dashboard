@@ -437,7 +437,6 @@ export async function POST(request: NextRequest) {
       // Don't fail the request if voucher check fails
     }
 
-    const listingStatus = body.listingStatus || "draft";
     if (listingStatus === "active") {
       await refreshPublicMarketplaceAfterMutation();
     }

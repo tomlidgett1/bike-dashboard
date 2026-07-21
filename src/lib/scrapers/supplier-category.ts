@@ -51,10 +51,27 @@ function toAssignment(path: CanonicalCategoryPath, confident: boolean): Resolved
   };
 }
 
-export function isValidAssignment(assignment: SupplierCategoryAssignment): boolean {
-  return Boolean(
-    resolveCanonicalPath(assignment.category, assignment.subcategory, null),
-  );
+export function isValidAssignment(value: unknown): value is SupplierCategoryAssignment {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  if (typeof candidate.category !== "string" || typeof candidate.subcategory !== "string") {
+    return false;
+  }
+  return Boolean(resolveCanonicalPath(candidate.category, candidate.subcategory, null));
+}
+
+export function sanitiseCategoryOverrides(value: unknown): SupplierCategoryOverrides {
+  if (!value || typeof value !== "object") return {};
+  const overrides: SupplierCategoryOverrides = {};
+  for (const [productId, assignment] of Object.entries(value as Record<string, unknown>)) {
+    if (isValidAssignment(assignment)) {
+      overrides[productId] = {
+        category: assignment.category,
+        subcategory: assignment.subcategory,
+      };
+    }
+  }
+  return overrides;
 }
 
 export function resolveMarketplaceCategory(
