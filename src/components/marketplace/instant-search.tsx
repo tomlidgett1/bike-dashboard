@@ -775,7 +775,7 @@ export function InstantSearch({
                   <button
                     key={category.href}
                     onClick={() => {
-                      addToRecentSearches(query);
+                      saveRecentSearch(query);
                       setShowDropdown(false);
                       setQuery("");
                       onResultClick?.();
