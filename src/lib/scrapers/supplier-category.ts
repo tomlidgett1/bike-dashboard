@@ -74,31 +74,62 @@ export function sanitiseCategoryOverrides(value: unknown): SupplierCategoryOverr
   return overrides;
 }
 
+export function resolveMarketplaceCategory(input: {
+  rawCategory?: string | null;
+  rawSubcategory?: string | null;
+  name?: string | null;
+  description?: string | null;
+}): ResolvedMarketplaceCategory;
 export function resolveMarketplaceCategory(
   rawCategory?: string | null,
   rawSubcategory?: string | null,
   productName?: string | null,
+): ResolvedMarketplaceCategory;
+export function resolveMarketplaceCategory(
+  rawCategoryOrInput?:
+    | string
+    | null
+    | {
+        rawCategory?: string | null;
+        rawSubcategory?: string | null;
+        name?: string | null;
+        description?: string | null;
+      },
+  rawSubcategory?: string | null,
+  productName?: string | null,
 ): ResolvedMarketplaceCategory {
-  const direct = resolveCanonicalPath(rawCategory, rawSubcategory, null);
+  const input =
+    rawCategoryOrInput && typeof rawCategoryOrInput === "object"
+      ? rawCategoryOrInput
+      : {
+          rawCategory: rawCategoryOrInput,
+          rawSubcategory,
+          name: productName,
+          description: null,
+        };
+
+  const direct = resolveCanonicalPath(input.rawCategory, input.rawSubcategory, null);
   if (direct) return toAssignment(direct, true);
 
   // Try treating provider L1 as a detailed L1 with first available L2.
-  if (rawCategory?.trim()) {
+  if (input.rawCategory?.trim()) {
     const level1Match = listCanonicalLevel1().find(
-      (name) => name.toLocaleLowerCase() === rawCategory.trim().toLocaleLowerCase(),
+      (name) => name.toLocaleLowerCase() === input.rawCategory!.trim().toLocaleLowerCase(),
     );
     if (level1Match) {
       const level2 = listCanonicalLevel2(level1Match)[0];
       if (level2) {
         return toAssignment(
           { level1: level1Match, level2, level3: null },
-          Boolean(rawSubcategory?.trim()),
+          Boolean(input.rawSubcategory?.trim()),
         );
       }
     }
   }
 
-  const haystack = [rawCategory, rawSubcategory, productName].filter(Boolean).join(" ");
+  const haystack = [input.rawCategory, input.rawSubcategory, input.name, input.description]
+    .filter(Boolean)
+    .join(" ");
   for (const rule of KEYWORD_RULES) {
     if (rule.pattern.test(haystack)) {
       return toAssignment(rule.path, false);
